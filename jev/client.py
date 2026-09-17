@@ -4,8 +4,7 @@ Uses the official `typesafe-sdk` when it is installed (Python 3.10+). On an olde
 requests go through a small stdlib fallback so the demo still runs; the request and response JSON
 are identical either way (https://docs.typesafe.ai/api).
 
-Around the call sit three things a demo that spends real money should have:
-  * a replay cache of recorded answers (see jev/replay.py),
+Around the call sit two things a demo that spends real money should have:
   * a spend guard (per-run budget and a local rate limit),
   * request/response capture for the "Inspect JSON" drawer, without ever capturing the key.
 """
@@ -21,8 +20,7 @@ import urllib.request
 from collections import deque
 from typing import Any, Dict, Optional
 
-from .config import REPLAY_PATH, Settings
-from .replay import ReplayStore
+from .config import Settings
 
 try:  # the official SDK needs Python >= 3.10
     import typesafe_sdk
@@ -54,12 +52,10 @@ class JevError(Exception):
 class JevResult:
     """One System One call: typed answers plus everything the UI shows about the call."""
 
-    def __init__(self, request: dict, response: dict, latency_ms: float, replayed: bool = False,
-                 backend: str = ""):
+    def __init__(self, request: dict, response: dict, latency_ms: float, backend: str = ""):
         self.request = request
         self.response = response
         self.latency_ms = latency_ms
-        self.replayed = replayed
         self.backend = backend
         self.answers: Dict[str, dict] = response.get("answers", {})
         self.model: str = response.get("model", request.get("model", ""))
@@ -81,7 +77,6 @@ class JevResult:
             "input_tokens": self.input_tokens,
             "output_tokens": int(self.usage.get("output_tokens") or 0),
             "cost_usd": self.cost_usd,
-            "replayed": self.replayed,
             "backend": self.backend,
         }
 
@@ -90,7 +85,7 @@ class JevResult:
 
 
 class SpendGuard:
-    """Per-process budget and rate limit for live calls. Replayed answers are free and uncounted."""
+    """Per-process budget and rate limit for live calls."""
 
     def __init__(self, budget_usd: float = 2.0, rpm: int = 120):
         self.budget_usd = budget_usd
@@ -129,16 +124,11 @@ class SpendGuard:
 
 
 class JevClient:
-    def __init__(self, settings: Optional[Settings] = None, replay: Optional[ReplayStore] = None,
-                 guard: Optional[SpendGuard] = None, api_key: Optional[str] = None, timeout: float = 30.0):
+    def __init__(self, settings: Optional[Settings] = None, guard: Optional[SpendGuard] = None,
+                 api_key: Optional[str] = None, timeout: float = 30.0):
         self.settings = settings or Settings()
         self.timeout = timeout
         self._memory_key = api_key
-        mode = self.settings.replay_mode
-        self.replay = replay if replay is not None else ReplayStore(REPLAY_PATH)
-        if mode == "record":
-            self.replay.recording = True
-        self.replay_enabled = mode != "off"
         self.guard = guard or SpendGuard(self.settings.budget_usd, self.settings.rpm)
         self._sdk = None
         self._sdk_key: Optional[str] = None
@@ -182,10 +172,6 @@ class JevClient:
 
     def system_one(self, state: Any, questions: Dict[str, dict]) -> JevResult:
         payload = {"state": state, "model": self.model, "questions": questions}
-        if self.replay_enabled:
-            entry = self.replay.get(self.model, state, questions)
-            if entry:
-                return JevResult(payload, entry["response"], entry["latency_ms"], replayed=True, backend="replay")
         if not self.api_key:
             raise JevError("No TypeSafe API key yet. Click “Connect API key” in the top-right, or add "
                            "TYPESAFE_API_KEY to .env.", status=401)
@@ -195,8 +181,6 @@ class JevClient:
         latency_ms = (time.perf_counter() - started) * 1000
         result = JevResult(payload, response, latency_ms, backend=self.backend)
         self.guard.record(result)
-        if self.replay.recording:
-            self.replay.put(self.model, state, questions, response, latency_ms)
         return result
 
     def models(self) -> dict:

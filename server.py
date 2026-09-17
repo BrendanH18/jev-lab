@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import dispatch, envfile, examples, find, hello, recording, security, shield, workbench
+from jev import dispatch, envfile, examples, find, hello, security, shield, workbench
 from jev.autopilot import Autopilot, find_message
 from jev.client import PRICE_PER_INPUT_TOKEN_USD, JevClient, JevError
 from jev.config import PROJECT_ROOT, Settings
@@ -70,7 +70,6 @@ def api_status(_body):
         "backend": client.backend,
         "price_per_mtok_input": PRICE_PER_INPUT_TOKEN_USD * 1_000_000,
         "spend": client.guard.snapshot(),
-        "replay": dict(client.replay.stats(), enabled=client.replay_enabled),
         "env": env_status(),
     }
 
@@ -118,20 +117,6 @@ def api_key_forget(_body):
 
 def api_models(_body):
     return client.models()
-
-
-def api_replay(body):
-    if "recording" in body:
-        client.replay.recording = bool(body["recording"])
-    return dict(client.replay.stats(), enabled=client.replay_enabled)
-
-
-def api_replay_record(_body):
-    if not client.configured:
-        raise JevError("Recording needs an API key.", status=401)
-    counts = recording.record_all(client)
-    client.replay.recording = settings.replay_mode == "record"
-    return {"counts": counts, "replay": dict(client.replay.stats(), enabled=client.replay_enabled)}
 
 
 # --- demos ---------------------------------------------------------------------------------
@@ -346,8 +331,6 @@ ROUTES = {
     ("POST", "/api/key"): api_key,
     ("POST", "/api/key/forget"): api_key_forget,
     ("GET", "/api/models"): api_models,
-    ("POST", "/api/replay"): api_replay,
-    ("POST", "/api/replay/record"): api_replay_record,
     ("GET", "/api/scenarios"): api_scenarios,
     ("POST", "/api/hello"): api_hello,
     ("POST", "/api/shield"): api_shield,
@@ -462,11 +445,9 @@ def main():
         print("Could not listen on 127.0.0.1:%d (%s). Set PORT=<other port> and try again." % (port, err))
         return 1
     key_note = ("API key from %s" % client.key_source) if client.configured else "no API key yet: connect one in the app"
-    replay = client.replay.stats()
     print("\n  Jev Lab %s  →  http://127.0.0.1:%d" % (VERSION, port))
     print("  model %s via %s · %s" % (client.model, client.backend, key_note))
-    print("  replay cache: %d recorded answers%s · budget $%.2f per run\n" % (
-        replay["entries"], " (recording)" if replay["recording"] else "", client.guard.budget_usd))
+    print("  every call is live · spend guard $%.2f per run (JEV_LAB_BUDGET_USD)\n" % client.guard.budget_usd)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

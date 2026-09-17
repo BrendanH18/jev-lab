@@ -72,7 +72,7 @@ function render() {
         h("span", { title: "is_yes_no_question" }, `yes/no-question ${pct(t.probs.is_yes_no_question)}`),
         h("span", { title: "names_a_guess" }, `guess ${pct(t.probs.names_a_guess)}`),
         t.probs.names_a_guess >= 0.6 ? h("span", { title: "guess_matches" }, `match ${pct(t.probs.guess_matches)}`) : null,
-        h("span", {}, `${ms(t.meta.latency_ms)}${t.meta.replayed ? " (replayed)" : ""}`))))),
+        h("span", {}, ms(t.meta.latency_ms)))))),
     !g.over ? h("div", { style: { display: "flex", gap: "8px" } },
       h("button", { class: "btn ghost sm", onclick: giveUp }, "Give up & reveal"),
       h("button", { class: "btn ghost sm", onclick: newGame }, icon("reset"), "New game")) : null);

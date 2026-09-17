@@ -13,10 +13,9 @@ uv run server.py          # or: python3 server.py  (Python 3.10+, or 3.9 with a 
 open http://127.0.0.1:8321
 ```
 
-No key yet? Get one at [console.typesafe.ai](https://console.typesafe.ai/settings/keys), press
-**Connect API key** in the app, and it is validated and (optionally) saved to a gitignored `.env`
-for you. If the repo ships a `data/replay.json`, every built-in demo already works without a key
-by replaying recorded Jev answers.
+You need a TypeSafe API key: get one at [console.typesafe.ai](https://console.typesafe.ai/settings/keys),
+press **Connect API key** in the app, and it is validated and (optionally) saved to a gitignored
+`.env` for you. Every answer in Jev Lab is a live Jev call; nothing is canned or replayed.
 
 ## What's inside
 
@@ -54,20 +53,6 @@ The Workbench is the part that turns "cool demo" into "how do I build with this"
 - **Export code.** Any request as working Python (official SDK), JavaScript (official SDK), or
   curl.
 
-## Recording answers for people without a key
-
-TypeSafe's cookbooks ship a JSON cache so readers can run them without a key. Jev Lab does the
-same. Once, with your key:
-
-```
-uv run scripts/record_replay.py      # or press "Record demo answers now" in the app's key dialog
-```
-
-This runs every built-in scenario (under 100 calls, well under a cent) and writes
-`data/replay.json`. Commit it. From then on the built-in demos replay genuine Jev answers for
-anyone who clones the repo; custom input still goes live. Replayed results carry a **replayed**
-badge and the recorded latency. Set `JEV_LAB_REPLAY=off` to force live calls.
-
 ## Security
 
 The server binds to `127.0.0.1` and checks every request (Host allow-list against DNS rebinding,
@@ -89,7 +74,6 @@ SDK's names.
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | API root |
 | `JEV_LAB_BUDGET_USD` | `2.00` | Stop live calls after this much spend in one server run |
 | `JEV_LAB_RPM` | `120` | Local cap on live calls per minute |
-| `JEV_LAB_REPLAY` | `on` | `on` replays recorded answers, `off` never does, `record` also records new ones |
 | `PORT` | `8321` | Listen port |
 
 ## Project layout
@@ -97,7 +81,7 @@ SDK's names.
 ```
 server.py             stdlib HTTP server: pages + JSON API, security checks, key onboarding
 jev/client.py         one place that calls TypeSafe (official SDK, stdlib fallback on 3.9),
-                      replay cache, spend guard, request/response capture
+                      spend guard, request/response capture
 jev/shield.py         Shield questions, sender-domain facts, verdict composition
 jev/dispatch.py       Dispatch questions, regex candidates, resolution, policy checks, gating
 jev/autopilot.py      merged request, integrated vs. Dispatch-alone pipelines, benchmark
@@ -107,11 +91,9 @@ jev/workbench.py      validation, saved tests, expectations, bulk runs, code exp
 jev/examples.py       the twelve example patterns
 jev/security.py       request checks (host, fetch metadata, origin, token, content type)
 jev/envfile.py        safe .env read/write (gitignore + tracked checks, 0600, atomic)
-jev/replay.py         recorded-answer cache
 jev/world.py          Harbor Coffee state and the actions that change it
 data/samples/         handbook, 20 Questions words, sample tickets
 data/workbench/       your saved tests (JSON)
-data/replay.json      recorded Jev answers (create with scripts/record_replay.py)
 static/               vanilla JS + CSS, no build step
 tests/                offline tests with fake answers; SDK transport tests via MockTransport
 ```

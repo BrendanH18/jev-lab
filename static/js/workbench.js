@@ -250,7 +250,7 @@ function renderSaveForm() {
     h("div", { class: "panel-head" }, icon("save"), h("h2", {}, W.editingId ? `Update test “${W.editingId}”` : "Save as a test"), h("div", { class: "spacer" }),
       h("button", { class: "btn sm ghost", onclick: () => { W.saveOpen = false; render(); } }, icon("x"))),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
-      h("p", { class: "muted", style: { fontSize: "12.5px" } }, "Expectations start from the answers you just got. Edit them to what you believe is correct; the Tests tab replays this state and checks the answers against them."),
+      h("p", { class: "muted", style: { fontSize: "12.5px" } }, "Expectations start from the answers you just got. Edit them to what you believe is correct; the Tests tab re-runs this state live and checks the answers against them."),
       name, notes, h("div", { class: "grid", style: { gap: "6px" } }, rows),
       h("div", {}, h("button", { class: "btn primary", onclick: saveTest }, icon("save"), "Save to data/workbench/"))));
 }
@@ -352,7 +352,7 @@ function renderBulk() {
           h("div", { class: "panel-body grid", style: { gap: "10px" } },
             src("current", `Current Build questions (${Object.keys(current).length})`),
             src("sample", `Sample: support triage (${Object.keys(b.sampleQuestions || {}).length})`),
-            h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own request; they run 8 at a time. Recorded rows replay free; the rest are live and count against the session budget. Cap: 200 rows per run."),
+            h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run."),
             h("div", {}, runBtn))),
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Why this matters")),
@@ -416,7 +416,6 @@ function renderBulkTable() {
         h("span", { class: "stat accent" }, "wall", h("b", {}, ms(res.wall_ms))),
         h("span", { class: "stat" }, "tokens", h("b", {}, num(res.input_tokens))),
         h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd))),
-        res.replayed ? h("span", { class: "badge accent" }, icon("replay"), `${res.replayed} replayed`) : null,
         h("button", { class: "btn sm", onclick: csv }, "Download CSV"))),
     h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
       h("thead", {}, h("tr", {}, th("__row", "#"), h("th", {}, "row"), qids.map((q) => th(q, q)))),
@@ -439,7 +438,7 @@ function bulkQuestionsForResult(res) {
 // ---------- Examples ----------
 function renderExamples() {
   return h("div", { class: "grid", style: { gap: "16px" } },
-    h("p", { class: "muted", style: { maxWidth: "760px" } }, "Twelve starting points, one per pattern. Open any of them in Build to see the exact state and questions, run it, then change the wording and watch the probabilities move. The recorded answers replay for free; edits go live."),
+    h("p", { class: "muted", style: { maxWidth: "760px" } }, "Twelve starting points, one per pattern. Open any of them in Build to see the exact state and questions, run it, then change the wording and watch the probabilities move."),
     h("div", { class: "gallery" }, W.examples.map((ex) => h("div", { class: "panel ex" },
       h("div", { class: "pat" }, ex.pattern), h("h3", {}, ex.title), h("p", {}, ex.blurb),
       h("div", { class: "codenote" }, h("b", { style: { color: "var(--muted)" } }, "In code: "), ex.code),

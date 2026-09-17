@@ -6,7 +6,6 @@ Environment variables (the first three are the official TypeSafe SDK names):
   TYPESAFE_DEFAULT_MODEL  model name or alias (default jev-latest)
   JEV_LAB_BUDGET_USD      stop making live calls after this much spend in one server run (default 2.00)
   JEV_LAB_RPM             local cap on live calls per minute (default 120)
-  JEV_LAB_REPLAY          on | off | record   (default on: replay recorded answers when available)
   PORT                    listen port (default 8321)
 """
 
@@ -22,7 +21,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 SAMPLES_DIR = DATA_DIR / "samples"
 WORKBENCH_DIR = DATA_DIR / "workbench"
-REPLAY_PATH = DATA_DIR / "replay.json"
 ENV_PATH = PROJECT_ROOT / ".env"
 
 KEY_ENV = "TYPESAFE_API_KEY"
@@ -73,11 +71,6 @@ class Settings:
     @property
     def rpm(self) -> int:
         return int(_float(self.get("JEV_LAB_RPM"), 120))
-
-    @property
-    def replay_mode(self) -> str:
-        mode = (self.get("JEV_LAB_REPLAY", "on") or "on").lower()
-        return mode if mode in ("on", "off", "record") else "on"
 
     @property
     def port(self) -> int:

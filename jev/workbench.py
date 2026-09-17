@@ -256,8 +256,7 @@ def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "t
     return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
             "rows": len(rows), "completed": len(done), "stopped": stop["error"],
             "cost_usd": sum(r["meta"]["cost_usd"] for r in done),
-            "input_tokens": sum(r["meta"]["input_tokens"] for r in done),
-            "replayed": sum(1 for r in done if r["meta"].get("replayed"))}
+            "input_tokens": sum(r["meta"]["input_tokens"] for r in done)}
 
 
 # --- code export ---------------------------------------------------------------------------

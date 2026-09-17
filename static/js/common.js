@@ -97,7 +97,6 @@ const ICONS = {
   trash: '<path d="M4 6h12M8 6V4h4v2M6 6l.8 11h6.4L14 6"/>',
   copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2"/>',
   plus: '<path d="M10 4v12M4 10h12"/>',
-  replay: '<path d="M4 10a6 6 0 1 1 2 4.5"/><path d="M4 15v-4h4"/>',
   sparkle: '<path d="M10 2.5l1.8 5.2 5.2 1.8-5.2 1.8L10 16.5l-1.8-5.2L3 9.5l5.2-1.8z"/>',
 };
 export function icon(name, cls = "icon") {
@@ -217,9 +216,8 @@ export function inspect(trace, title = "Jev request") {
   const m = trace.meta || {};
   mount(drawer.meta,
     stat("model", m.model), stat("questions", m.question_count),
-    stat(m.replayed ? "recorded latency" : "latency", ms(m.latency_ms)),
-    stat("input tokens", num(m.input_tokens)), stat("cost", usd(m.cost_usd), true),
-    m.replayed ? h("span", { class: "badge accent" }, icon("replay"), "replayed") : null);
+    stat("latency", ms(m.latency_ms)),
+    stat("input tokens", num(m.input_tokens)), stat("cost", usd(m.cost_usd), true));
   drawer.show("request");
   drawer.panel.classList.add("open");
   drawer.backdrop.classList.add("open");
@@ -232,10 +230,9 @@ export function stat(k, v, accent = false) {
 export function callStats(meta, onInspect, calls = 1) {
   return h("div", { class: "stat-row" },
     stat(`${calls} call${calls > 1 ? "s" : ""}`, `${meta.question_count} questions`),
-    stat(meta.replayed ? "recorded" : "latency", ms(meta.latency_ms), true),
+    stat("latency", ms(meta.latency_ms), true),
     stat("tokens", num(meta.input_tokens)),
     stat("cost", usd(meta.cost_usd)),
-    meta.replayed ? h("span", { class: "badge accent", title: "A recorded Jev answer for this exact request was replayed. No live call, no cost." }, icon("replay"), "replayed") : null,
     onInspect && h("button", { class: "btn sm ghost", onclick: onInspect }, icon("code"), "Inspect JSON"));
 }
 
@@ -268,7 +265,7 @@ function renderPill() {
   const s = status.spend || {};
   const parts = status.configured
     ? [h("span", { class: "dot" }), `${status.model}`, h("span", { class: "sep" }), `${usd(s.spent_usd)} · ${num(s.live_calls)} live`]
-    : [h("span", { class: "dot" }), status.replay?.entries ? "No key · replaying recorded answers" : "Connect API key"];
+    : [h("span", { class: "dot" }), "Connect API key"];
   mount(pill, ...parts);
 }
 
@@ -278,7 +275,6 @@ export function openSettings(reason = "") {
   modalOpen = true;
   const env = status.env || {};
   const s = status.spend || {};
-  const r = status.replay || {};
   const input = h("input", { class: "input mono", type: "password", placeholder: "paste your TypeSafe API key", autocomplete: "new-password", spellcheck: "false" });
   const save = h("input", { type: "checkbox", checked: env.can_save });
   if (!env.can_save) save.disabled = true;
@@ -312,18 +308,10 @@ export function openSettings(reason = "") {
     h("div", { class: "meter" }, h("i", { style: { width: pct(budgetPct, 1), background: budgetPct > 0.8 ? "var(--warning)" : "var(--series)" } })),
     h("div", { class: "muted", style: { fontSize: "12.5px" } }, `${usd(s.spent_usd)} of a ${money(s.budget_usd)} budget · ${num(s.live_calls)} live calls · ${num(s.input_tokens)} input tokens · local cap ${s.rpm}/min. Change with `, h("code", {}, "JEV_LAB_BUDGET_USD"), " and ", h("code", {}, "JEV_LAB_RPM"), "."));
 
-  const recordBtn = h("button", { class: "btn sm", disabled: !status.configured, onclick: record }, icon("replay"), "Record demo answers now");
-  const replaySection = h("div", { class: "grid", style: { gap: "8px" } },
-    h("div", { class: "section-label" }, "Replay cache"),
-    h("div", { class: "muted", style: { fontSize: "12.5px" } },
-      r.entries ? `${num(r.entries)} recorded Jev answers in data/replay.json (${num(r.hits)} replayed this run). Built-in demos use them instead of live calls; your own input always goes live.`
-        : "Empty. Once you have a key, record the built-in demos so this repo works for people who have no key yet. Costs well under a cent."),
-    h("div", {}, recordBtn));
-
   mount(wrap, h("div", { class: "panel modal pop", style: { width: "min(600px, 100%)", maxHeight: "92vh", overflow: "auto" } },
     h("div", { class: "panel-head" }, icon("key"), h("h3", {}, "API key & safety"), h("div", { class: "spacer" }),
       h("span", { class: "faint", style: { fontSize: "12px" } }, status.backend)),
-    h("div", { class: "panel-body grid", style: { gap: "18px" } }, keySection, spendSection, replaySection)));
+    h("div", { class: "panel-body grid", style: { gap: "18px" } }, keySection, spendSection)));
 
   function close() { wrap.remove(); modalOpen = false; }
   async function submit() {
@@ -352,21 +340,6 @@ export function openSettings(reason = "") {
       window.dispatchEvent(new CustomEvent("jev:status", { detail: status }));
     } catch (e) { error.textContent = e.message; }
   }
-  async function record() {
-    recordBtn.disabled = true;
-    mount(recordBtn, h("span", { class: "spin" }), " Recording every built-in scenario…");
-    try {
-      const res = await api("/api/replay/record", {});
-      const c = res.counts;
-      toast(`Recorded ${c.live_calls} live calls (≈ ${usd(c.cost_usd_x1e6 / 1e6)}) into data/replay.json. Commit it!`);
-      await refreshStatus();
-      close();
-    } catch (e) {
-      toast(e.message, "error");
-      recordBtn.disabled = false;
-      mount(recordBtn, icon("replay"), "Record demo answers now");
-    }
-  }
   connect.addEventListener("click", submit);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
   document.body.append(wrap);
@@ -383,7 +356,7 @@ export async function initChrome(active) {
     h("a", { class: "brand", href: "/" }, h("span", { class: "brand-mark" }, "J"), "Jev Lab", h("small", {}, "TypeSafe System One")),
     h("nav", { class: "nav" }, LINKS.map(([href, label]) => h("a", { href, class: href === active ? "active" : "" }, label))),
     h("div", { class: "spacer" }),
-    h("button", { id: "key-pill", class: "key-pill", onclick: () => openSettings(), title: "API key, spend, and replay settings" }, h("span", { class: "dot" }), "Checking…"));
+    h("button", { id: "key-pill", class: "key-pill", onclick: () => openSettings(), title: "API key and spend settings" }, h("span", { class: "dot" }), "Checking…"));
   document.body.prepend(bar);
   return refreshStatus();
 }

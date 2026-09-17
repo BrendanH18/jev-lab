@@ -54,8 +54,7 @@ The dashboard can write `TYPESAFE_API_KEY=…` into `.env` in the project folder
 ### Spend guard
 
 Live calls stop once the run has spent `JEV_LAB_BUDGET_USD` (default $2.00) or exceeds
-`JEV_LAB_RPM` calls per minute (default 120). Replayed answers from `data/replay.json` are free
-and uncounted. Batch endpoints cap their input size (50 messages, 200 rows, 100 questions).
+`JEV_LAB_RPM` calls per minute (default 120). Batch endpoints cap their input size (50 messages, 200 rows, 100 questions).
 
 ### What is *not* covered
 
