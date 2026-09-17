@@ -28,7 +28,7 @@ EXAMPLES: List[dict] = [
                 "Calm, just stating facts", "Frustrated but civil", "Very angry, strong language"]),
             "is_urgent": noul("Does the message convey urgency or time-sensitivity?"),
         },
-        "expect": {"department": {"choice": "technical"}, "is_urgent": {"min": 0.7}},
+        "expect": {"department": {"choice": "billing"}, "is_urgent": {"min": 0.7}},
     },
     {
         "id": "llm-guardrail",
@@ -238,6 +238,22 @@ EXAMPLES: List[dict] = [
         "expect": {"taste": {"min": 1.5}, "shipping": {"max": 0.5}, "service": {"min": 1.5}},
     },
 ]
+
+
+# The question set behind the Workbench's bulk sample: a taxonomy wide enough for a real inbox.
+BULK_QUESTIONS = {
+    "department": choice("Which team should handle this message?", {
+        "billing": "Charges, refunds, invoices, subscription payments, or suspected card fraud",
+        "shipping": "Delivery status, lost or damaged packages, address changes, returns of physical items",
+        "technical": "The website, app, checkout, login, promo codes, or a malfunctioning machine",
+        "product": "Questions about coffee, brewing, ingredients, allergens, availability, or recommendations",
+        "wholesale": "Cafes, restaurants, hotels, and other businesses buying in volume",
+        "none": "No team needs to act: thanks, praise, unsubscribe requests, or feedback with no ask"}),
+    "frustration": score("How frustrated does the writer sound?", [
+        "Calm, just stating facts or asking", "Frustrated but civil", "Very angry, strong language"]),
+    "is_urgent": noul("Does the message need attention today rather than within the week?"),
+    "wants_refund": noul("Does the writer ask for a refund, replacement, or money back?"),
+}
 
 
 def public_examples() -> List[dict]:
