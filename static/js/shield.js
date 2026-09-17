@@ -274,12 +274,13 @@ function renderBatch(res) {
   const rows = res.results.map((r) => {
     const m = S.inbox.find((x) => x.id === r.id);
     const current = S.results[r.id];
-    const truthAttack = m.label?.attack;
+    const expected = m.label?.shield || (m.label?.attack ? "quarantine" : "safe");
+    const matched = current.verdict.level === expected;
     return h("tr", { style: { cursor: "pointer" }, onclick: () => select(r.id) },
       h("td", {}, h("b", {}, m.from_name), h("div", { class: "faint" }, m.subject)),
       h("td", {}, statusBadge(current.verdict.level)),
       h("td", { class: "num" }, pct(current.verdict.risk)),
-      h("td", {}, truthAttack ? h("span", { class: "badge critical" }, "attack") : h("span", { class: "badge" }, "benign")),
+      h("td", {}, h("span", { class: `badge ${matched ? "good" : "warning"}`, title: m.label?.expect || "" }, icon(matched ? "check" : "alert"), `expected ${expected}`)),
       h("td", { class: "num" }, ms(r.meta.latency_ms)),
       h("td", { class: "num" }, num(r.meta.input_tokens)));
   });
@@ -290,10 +291,10 @@ function renderBatch(res) {
         stat("wall time", ms(res.wall_ms), true), stat("sum of calls", ms(sumLatency)),
         stat("tokens", num(res.total_input_tokens)), stat("total cost", usd(res.total_cost_usd), true))),
     h("div", { class: "scroll" }, h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, ["Message", "Verdict", "Risk", "Scenario label", "Latency", "Tokens"].map((t, i) => h("th", { class: i >= 2 && i !== 3 ? "num" : "" }, t)))),
+      h("thead", {}, h("tr", {}, ["Message", "Verdict", "Risk", "Expected from the text", "Latency", "Tokens"].map((t, i) => h("th", { class: i >= 2 && i !== 3 ? "num" : "" }, t)))),
       h("tbody", {}, rows))),
     h("div", { class: "panel-body faint", style: { fontSize: "12px" } },
-      "“Scenario label” is ground truth written with the demo. It is not sent to Jev and is shown only so you can judge the verdicts."));
+      "“Expected” is what the message text alone should trigger, written with the demo and never sent to Jev. A stranger asking for someone else's refund reads as safe here; Autopilot catches that one with a code check against the order data."));
 }
 
 boot().catch(handleError);

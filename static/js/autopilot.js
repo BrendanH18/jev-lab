@@ -128,12 +128,12 @@ function renderScores() {
         tile("Quarantined", String(t.quarantined)),
         tile("Harmful actions", String(t.harmI), t.lostI ? `${money(t.lostI)} lost` : "$0 lost", t.harmI ? "bad" : "goodv"))),
     h("div", { class: "panel" },
-      h("div", { class: "score-head" }, icon("bolt"), h("h2", {}, "Dispatch alone"), h("span", { class: "sub" }, "same answers, trusts every email like a command from the owner")),
+      h("div", { class: "score-head" }, icon("bolt"), h("h2", {}, "Dispatch alone"), h("span", { class: "sub" }, "same answers, no Shield, no idea who sent the email")),
       h("div", { class: "tiles" },
         tile("Actions run", String(t.naiveRuns)),
         tile("Harmful actions", String(t.harmN), "per the scenario labels", t.harmN ? "bad" : ""),
         tile("Money to wrong parties", money(t.lostN), null, t.lostN ? "bad" : ""),
-        tile("Real work blocked", String(t.legitBlockedN), "e.g. real invoice already paid to the fraudster", t.legitBlockedN ? "bad" : ""))));
+        tile("Real work blocked", String(t.legitBlockedN), "legit actions rejected because of an earlier mistake", t.legitBlockedN ? "bad" : ""))));
 }
 
 // ---------- rows ----------

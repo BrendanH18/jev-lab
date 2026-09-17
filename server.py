@@ -323,7 +323,7 @@ def api_wb_bulk(body):
 
 
 def api_wb_bulk_sample(_body):
-    return {"rows": workbench.load_sample_rows(), "questions": examples.get("support-triage")["questions"]}
+    return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS}
 
 
 ROUTES = {
