@@ -39,6 +39,18 @@ a weekly calendar, a staff handbook, and an inbox.
 Every result shows the model, latency, tokens, and cost of the call it came from, with an
 **Inspect JSON** drawer that shows the exact request and response.
 
+## What it looks like
+
+Live answers from `jev-1.13.0` on 17 September 2026, unedited.
+
+![Autopilot: ten emails handled in ten calls, three scams quarantined, Dispatch alone shown beside it](docs/screenshots/autopilot.png)
+
+![Shield: one email, ten questions, the weighted verdict, and the whole inbox screened in parallel](docs/screenshots/shield.png)
+
+![Find: six questions asked of the handbook in one request, two correctly reported as not in the document](docs/screenshots/find.png)
+
+![Workbench bulk mode: forty tickets classified on four dimensions in under a second](docs/screenshots/workbench-bulk.png)
+
 ## The Workbench
 
 The Workbench is the part that turns "cool demo" into "how do I build with this":
