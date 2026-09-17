@@ -7,6 +7,11 @@ a choice, a score, or a probability for each one, with calibrated confidence, in
 It never generates prose, so your code branches on the answers directly. Jev Lab puts that inside
 ordinary software in six different ways, then hands you a Workbench to build your own.
 
+Jev Lab is an independent, open-source demo. It is not affiliated with or endorsed by TypeSafe;
+"TypeSafe" and "Jev" are their names. Latency and price figures quoted here come from
+[TypeSafe's docs](https://docs.typesafe.ai/models) as of September 2026 and will change; the app
+shows the real latency and cost of every call it makes, and no answer is ever canned.
+
 ```
 git clone https://github.com/BrendanH18/jev-lab && cd jev-lab
 uv run server.py          # or: python3 server.py  (Python 3.10+, or 3.9 with a stdlib fallback)
