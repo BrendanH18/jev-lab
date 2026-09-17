@@ -1,0 +1,20 @@
+[project]
+name = "jev-lab"
+version = "0.2.0"
+description = "Six small apps and a workbench that show what TypeSafe's Jev (System One) model can do"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["typesafe", "jev", "system-one", "ai", "demo"]
+dependencies = [
+  "typesafe-sdk>=0.6.0",
+]
+
+[project.urls]
+Repository = "https://github.com/BrendanH18/jev-lab"
+Documentation = "https://docs.typesafe.ai"
+
+# Jev Lab is an application, not a library: `uv run server.py` installs the dependency into a
+# project venv and starts the server. No build backend is needed.
+[tool.uv]
+package = false

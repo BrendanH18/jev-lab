@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the official SDK (Python 3.10+)
+        if: matrix.python != '3.9'
+        run: python -m pip install "typesafe-sdk>=0.6.0"
+      - name: Run tests (no API key needed)
+        run: python -m unittest discover -v tests
+      - name: Import the server
+        run: python -c "import server; print(len(server.ROUTES), 'routes')"
+
+  uv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: uv sync + tests
+        run: |
+          uv sync
+          uv run python -m unittest discover tests

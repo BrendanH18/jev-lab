@@ -1,0 +1,41 @@
+# Sample support messages for the Workbench's bulk mode. One message per line.
+My order arrived with the bag torn and beans everywhere. Can I get a replacement or a refund?
+Do you sell decaf in whole bean? I only see ground on the site.
+I was charged twice for order A-2210. Please fix this today, it overdrew my account.
+Love the new Ethiopia roast, best cup I've had all year. Thank you!
+How do I pause my subscription for two months while I travel?
+The espresso machine I bought has a leaking steam wand after three days.
+Is the house blend nut free? My kid has a severe allergy.
+Cancel my subscription immediately and confirm by email.
+Can you ship to Toronto and how long does it take?
+Your website won't let me apply the promo code FALL20 at checkout.
+I'd like to set up a wholesale account for my bakery, we go through about 15 lbs a week.
+The tracking number says delivered but nothing is here. Checked with neighbors already.
+What grind setting do you recommend for a Chemex?
+This is the third month in a row my box came late. I'm getting pretty tired of this.
+Can I change the delivery address on order A-2278 before it ships?
+Do you offer gift subscriptions with a printed card?
+Coffee tastes stale, roast date on the bag is from two months ago. Not okay.
+Is there a discount for ordering 5 bags at once?
+I never received the receipt for my last order and need it for expenses.
+Just wanted to say your barista at the Harbor Street shop was super kind today.
+Unsubscribe me from marketing emails please.
+Please send the invoice for the wholesale order to accounts@northsidebistro.example instead of me.
+My grinder makes a grinding noise even when empty. Is that normal?
+Are the bags recyclable or compostable?
+I ordered a medium roast and got a dark roast. Order A-2301.
+How much caffeine is in a cup of the cold brew concentrate?
+The cafe was out of oat milk two days in a row. Can you restock?
+I need to return an unopened kettle, it was a duplicate gift.
+Can you recommend a coffee similar to the Guatemala you discontinued?
+The mobile site keeps logging me out when I add items to the cart.
+My package was left in the rain and the box was soaked through.
+Hi, do you roast on demand or ship from stock?
+I want a refund. Order A-2288. The whole box tasted burnt.
+Do you have a referral program? A friend wants to sign up.
+We're a hotel and want 40 lbs a month with our own labels, who do I talk to?
+Please stop sending me two boxes, I only signed up for one subscription.
+Can I pick up my online order at the store instead of shipping?
+Is your cold brew kit dishwasher safe?
+The espresso sampler was amazing, are you planning a holiday sampler too?
+Someone used my card on your site, I don't recognize order A-2310. Please cancel it.

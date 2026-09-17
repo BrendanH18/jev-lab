@@ -1,0 +1,72 @@
+# Secrets for the 20 Questions game. One per line; lines starting with # are ignored.
+# Format: word | category shown to the player as a hint
+giraffe | animal
+penguin | animal
+octopus | animal
+honeybee | animal
+crocodile | animal
+kangaroo | animal
+dolphin | animal
+owl | animal
+hedgehog | animal
+goldfish | animal
+elephant | animal
+flamingo | animal
+tortoise | animal
+bat | animal
+lobster | animal
+pizza | food
+sushi | food
+pancake | food
+watermelon | food
+avocado | food
+croissant | food
+popcorn | food
+espresso | food
+pretzel | food
+chocolate | food
+banana | food
+taco | food
+lemon | food
+oatmeal | food
+umbrella | object
+toaster | object
+piano | object
+bicycle | object
+telescope | object
+hammer | object
+candle | object
+refrigerator | object
+scissors | object
+backpack | object
+trampoline | object
+lighthouse | object
+compass | object
+guitar | object
+skateboard | object
+microscope | object
+harmonica | object
+snowplow | object
+kayak | object
+helicopter | object
+submarine | object
+volcano | place or nature
+glacier | place or nature
+desert | place or nature
+waterfall | place or nature
+rainbow | place or nature
+tornado | place or nature
+coral reef | place or nature
+library | place or nature
+airport | place or nature
+cave | place or nature
+firefighter | job
+astronaut | job
+dentist | job
+chef | job
+librarian | job
+pilot | job
+beekeeper | job
+lifeguard | job
+plumber | job
+magician | job

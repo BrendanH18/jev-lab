@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workbench · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧰</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .wb-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+    .qcard { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+    .qcard .row { display: grid; grid-template-columns: minmax(120px, 1fr) 110px auto; gap: 8px; align-items: center; }
+    .qcard textarea { min-height: 54px; }
+    .crit { display: grid; gap: 6px; }
+    .crit .cr { display: grid; grid-template-columns: 130px 1fr auto; gap: 6px; align-items: center; }
+    .crit .cr.score { grid-template-columns: 34px 1fr auto; }
+    .crit .cr .lv { font: 600 11px var(--mono); color: var(--faint); text-align: center; }
+    .crit .cr.noul { grid-template-columns: 44px 1fr; }
+    .crit .cr .k { font: 600 11px var(--mono); color: var(--faint); }
+    .qlist { display: grid; gap: 10px; }
+    .state-box textarea { min-height: 150px; font-family: var(--mono); font-size: 12.5px; }
+    .raw textarea { min-height: 260px; font-family: var(--mono); font-size: 12px; }
+    .exp { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; font-size: 12.5px; }
+    .exp input { width: 90px; }
+    .code { position: relative; }
+    .code pre { margin: 0; padding: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; font: 12px/1.55 var(--mono); overflow: auto; max-height: 460px; white-space: pre; }
+    .code .copy { position: absolute; top: 8px; right: 8px; }
+    .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .ex { display: grid; gap: 8px; padding: 16px; align-content: start; }
+    .ex h3 { font-size: 15px; }
+    .ex .pat { font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-text); }
+    .ex p { font-size: 12.5px; color: var(--muted); }
+    .ex .codenote { font-size: 12px; color: var(--faint); border-left: 2px solid var(--line-strong); padding-left: 8px; }
+    .tests .item { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); align-items: center; }
+    .tests .checks { font: 11.5px var(--mono); color: var(--muted); }
+    .bulk textarea { min-height: 180px; font-family: var(--mono); font-size: 12.5px; }
+    .bulk-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+    .bulk-table th.sorted { color: var(--accent-text); }
+    .bulk-table td.row { max-width: 380px; }
+    .cell-choice { font-weight: 600; }
+    .cell-num { font-family: var(--mono); }
+    .pill-num { display: inline-block; min-width: 42px; text-align: right; font-family: var(--mono); }
+    .heat { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: var(--track); vertical-align: middle; margin-left: 6px; overflow: hidden; }
+    .heat i { display: block; height: 100%; background: var(--series); }
+    @media (max-width: 1000px) { .wb-grid { grid-template-columns: 1fr; } .qcard .row { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 6 · Workbench</div>
+        <h1>Build your own: state in, typed answers out, code around it</h1>
+        <p class="lede">Write a state and some questions, run them, and see the probabilities. Save what you agree with as a test, run your tests whenever you change wording or the model version, run one question set over hundreds of rows, and export working code for the official SDKs.</p>
+      </div>
+    </div>
+    <div class="tabbar" id="tabs"></div>
+    <div id="view"></div>
+  </main>
+  <script type="module" src="/js/workbench.js"></script>
+</body>
+</html>

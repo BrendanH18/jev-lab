@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 32px; align-items: center; padding: 26px 0 30px; }
+    .hero h1 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 700; }
+    .hero h1 em { font-style: normal; color: var(--accent-text); }
+    .hero .lede { font-size: 16.5px; color: var(--muted); margin-top: 18px; max-width: 560px; line-height: 1.6; }
+    .hero .cta { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+    .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 26px; max-width: 560px; }
+    .vs div { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); font-size: 12.5px; color: var(--muted); }
+    .vs b { display: block; color: var(--text); font-size: 12px; font-family: var(--mono); margin-bottom: 4px; }
+    .play textarea { min-height: 92px; font-size: 14.5px; }
+    .onboard { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .onboard .step { display: grid; gap: 6px; padding: 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; }
+    .onboard .step .n { font: 700 11px var(--mono); color: var(--accent-text); letter-spacing: 0.1em; }
+    .features { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 10px 0 34px; }
+    .feature { padding: 18px; }
+    .feature h3 { font-size: 14.5px; margin: 10px 0 6px; }
+    .feature p { color: var(--muted); font-size: 13px; }
+    .feature .ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+    .apps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .app { display: grid; gap: 10px; padding: 22px; text-decoration: none; transition: border-color 0.2s, transform 0.2s; align-content: start; }
+    .app:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); transform: translateY(-2px); }
+    .app h3 { font-size: 19px; }
+    .app .num { font: 600 11px var(--mono); color: var(--faint); letter-spacing: 0.1em; text-align: left; }
+    .app ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
+    .app .go { color: var(--accent-text); font-weight: 600; display: inline-flex; gap: 6px; align-items: center; margin-top: 4px; }
+    .app.featured { background: linear-gradient(160deg, var(--accent-soft), var(--panel) 55%); }
+    h2.section { font-size: 22px; margin: 44px 0 6px; letter-spacing: -0.02em; }
+    .section-lede { color: var(--muted); margin-bottom: 16px; max-width: 760px; }
+    .honest { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .honest .panel-body p { font-size: 13px; color: var(--muted); }
+    .honest h4 { font-size: 13.5px; margin-bottom: 6px; }
+    @media (max-width: 1020px) { .hero, .apps, .honest { grid-template-columns: 1fr; } .features { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 640px) { .features, .answers, .vs, .onboard { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">TypeSafe · Jev · a System One model</div>
+        <h1>AI that answers in <em>types</em>, not paragraphs.</h1>
+        <p class="lede">Jev isn't a chatbot. You give it some context and a list of questions with fixed answer options. It returns a choice, a score, or a probability for each one, and your code branches on those directly. There's no prose to parse and no agent loop. It works like a quick gut check that your program can call, about a hundred milliseconds at a time.</p>
+        <div class="vs">
+          <div><b>LLM</b>prompt → text → parse → hope it matches your schema</div>
+          <div><b>Jev</b>state + typed questions → typed answers + probabilities</div>
+        </div>
+        <div class="cta">
+          <a class="btn primary" href="/autopilot">See it in action: Autopilot</a>
+          <a class="btn" href="/workbench">Build your own in the Workbench</a>
+        </div>
+      </div>
+      <div class="panel play">
+        <div class="panel-head"><h2>Try it · 4 questions, 1 call</h2><div class="spacer"></div><span id="play-status"></span></div>
+        <div class="panel-body grid" style="gap:12px">
+          <textarea id="play-text" class="input">Hi, my espresso machine arrived with a cracked water tank and I have a cafe opening tomorrow morning. I need a replacement or my money back ASAP.</textarea>
+          <div class="chips" id="play-examples"></div>
+          <div class="answers" id="play-answers"><div class="empty" style="grid-column:1/-1">Answers appear here.</div></div>
+          <div id="play-stats"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel hidden" id="onboard" style="margin-bottom:26px">
+      <div class="panel-head"><h2 id="onboard-title">Get set up in about a minute</h2><div class="spacer"></div><span class="faint" id="onboard-note"></span></div>
+      <div class="panel-body onboard" id="onboard-steps"></div>
+    </section>
+
+    <div class="grid features">
+      <div class="panel feature"><div class="ic" data-i="code"></div><h3>Typed by construction</h3><p>Every answer is one of the options you defined, along with the full probability distribution. It never returns a value outside your schema.</p></div>
+      <div class="panel feature"><div class="ic" data-i="layers"></div><h3>Many questions, one call</h3><p>Questions are evaluated in parallel and independently of each other against the same context, so adding more questions barely adds latency.</p></div>
+      <div class="panel feature"><div class="ic" data-i="eye"></div><h3>Calibrated confidence</h3><p>The probabilities are trained to reflect real uncertainty, so your code can decide when to act, when to ask, and when to escalate.</p></div>
+      <div class="panel feature"><div class="ic" data-i="bolt"></div><h3>Fast and cheap</h3><p>TypeSafe's docs say most queries take about 100 ms and cost <span class="mono">$0.042</span> per million input tokens, with output free. Every page here shows the latency and cost it actually measured.</p></div>
+    </div>
+
+    <h2 class="section" id="apps">Six apps, one fictional business</h2>
+    <p class="section-lede">Harbor Coffee Co. is a small roaster with orders, suppliers, a calendar, a handbook, and an inbox. Each app puts Jev inside ordinary software in a different way. The Workbench is where you build your own.</p>
+    <div class="grid apps">
+      <a class="panel app" href="/shield">
+        <div class="num">APP 1</div>
+        <h3>🛡️ Shield</h3>
+        <p class="muted">Checks inbound email for prompt injection, phishing, vendor impersonation, and payment-redirect scams.</p>
+        <ul>
+          <li>10 questions (Noul, Score, Choice) in one call</li>
+          <li>Weighted risk and hard rules live in code</li>
+          <li>Move a weight slider and every message re-scores with no new Jev call</li>
+        </ul>
+        <span class="go">Open Shield →</span>
+      </a>
+      <a class="panel app" href="/dispatch">
+        <div class="num">APP 2</div>
+        <h3>⚡ Dispatch</h3>
+        <p class="muted">Turns plain-English commands into typed function calls on a live business.</p>
+        <ul>
+          <li>Live preview updates as you type</li>
+          <li>One call picks the action and fills every action's arguments</li>
+          <li>Confidence and risk decide whether to run, confirm, or clarify</li>
+        </ul>
+        <span class="go">Open Dispatch →</span>
+      </a>
+      <a class="panel app featured" href="/autopilot">
+        <div class="num">APP 3 · INTEGRATED</div>
+        <h3>🧭 Autopilot</h3>
+        <p class="muted">Shield and Dispatch share one call per email. The inbox handles itself, and the scams get stopped.</p>
+        <ul>
+          <li>Side by side with Dispatch alone: watch it pay a fraudster</li>
+          <li>Shield's sender checks feed Dispatch's permission rules</li>
+          <li>A benchmark compares one merged call with two separate calls</li>
+        </ul>
+        <span class="go">Open Autopilot →</span>
+      </a>
+      <a class="panel app" href="/find">
+        <div class="num">APP 4</div>
+        <h3>🔎 Find</h3>
+        <p class="muted">Semantic search over a document with no embeddings and no index: one Choice over line IDs per question.</p>
+        <ul>
+          <li>Ask the employee handbook eight things in one call</li>
+          <li>A separate Noul says whether the answer exists at all</li>
+          <li>Paste your own document</li>
+        </ul>
+        <span class="go">Open Find →</span>
+      </a>
+      <a class="panel app" href="/play">
+        <div class="num">APP 5</div>
+        <h3>🎲 Play</h3>
+        <p class="muted">20 Questions with Jev as the referee. Real-time yes/no judgments from calibrated probabilities.</p>
+        <ul>
+          <li>Four Nouls per turn: answer, valid question, guess, match</li>
+          <li>“Probably” means P(yes) between 60% and 85%</li>
+          <li>A whole game costs a fraction of a cent</li>
+        </ul>
+        <span class="go">Open Play →</span>
+      </a>
+      <a class="panel app" href="/workbench">
+        <div class="num">APP 6 · BUILD YOUR OWN</div>
+        <h3>🧰 Workbench</h3>
+        <p class="muted">Your state, your questions. Run, save as tests, run over hundreds of rows, export SDK code.</p>
+        <ul>
+          <li>12 example patterns: guardrails, verification, routing, extraction…</li>
+          <li>Tests with expectations, saved as JSON you can commit</li>
+          <li>Bulk mode with sortable columns and CSV export</li>
+        </ul>
+        <span class="go">Open Workbench →</span>
+      </a>
+    </div>
+
+    <h2 class="section">Built the way TypeSafe recommends</h2>
+    <p class="section-lede">Jev has known weak spots, and these apps are built to avoid them. <a href="https://docs.typesafe.ai/model-jaggedness/jev-1.13" target="_blank" rel="noopener">TypeSafe's docs list them</a>.</p>
+    <div class="grid honest">
+      <div class="panel"><div class="panel-body"><h4>Math, dates, and exact values stay in code</h4><p>Dollar amounts and times are found with regex, and Jev picks which one the request means. Refund windows, invoice matching, and balances are plain arithmetic.</p></div></div>
+      <div class="panel"><div class="panel-body"><h4>Narrow questions, composed in code</h4><p>"Is this a scam?" is broken into small questions: does it redirect a payment, who does the sender claim to be, does it pressure you? A weighted formula you can edit combines them.</p></div></div>
+      <div class="panel"><div class="panel-body"><h4>Jev selects, it doesn't generate</h4><p>Replies come from templates Jev picks. Task text is copied from the request. Nothing in these apps asks Jev to write prose.</p></div></div>
+    </div>
+  </main>
+  <script type="module" src="/js/index.js"></script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shield · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .shield-grid { grid-template-columns: 290px minmax(0, 1fr) 320px; align-items: start; }
+    .inbox-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 11px 14px; border-bottom: 1px solid var(--line); cursor: pointer; text-align: left; background: none; border-left: 3px solid transparent; width: 100%; border-top: 0; border-right: 0; }
+    .inbox-item:hover { background: var(--panel-2); }
+    .inbox-item.active { background: var(--panel-2); border-left-color: var(--accent); }
+    .inbox-item .from { font-weight: 600; font-size: 13px; display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+    .inbox-item .from span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .inbox-item .subj { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .inbox-item .badge { font-size: 11px; padding: 1px 7px; flex: none; }
+    .mail-head { display: grid; gap: 2px; }
+    .mail-head .subject { font-size: 17px; font-weight: 650; }
+    .mail-body { white-space: pre-wrap; color: var(--muted); font-size: 13.5px; line-height: 1.6; margin-top: 12px; padding: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; max-height: 260px; overflow: auto; }
+    .verdict { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+    .risk-num { font: 600 44px/1 var(--mono); letter-spacing: -0.03em; }
+    .risk-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .rule { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+    .rule .icon { margin-top: 2px; }
+    .signal-row { display: grid; grid-template-columns: minmax(150px, 34%) 1fr 52px 70px; gap: 10px; align-items: center; font-size: 12.5px; }
+    .signal-row .lbl { color: var(--muted); }
+    .signal-row.hot .lbl { color: var(--text); font-weight: 600; }
+    .signal-row .contrib { font: 500 11.5px var(--mono); color: var(--faint); text-align: right; }
+    .signal-row .val { font: 500 12px var(--mono); text-align: right; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .domain-check { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12.5px; margin-top: 12px; padding: 10px 12px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); }
+    .domain-check dt { color: var(--faint); }
+    .domain-check dd { margin: 0; font-family: var(--mono); }
+    .slider { display: grid; grid-template-columns: 1fr 42px; gap: 2px 10px; align-items: center; font-size: 12.5px; }
+    .slider .name { color: var(--muted); grid-column: 1 / -1; display: flex; justify-content: space-between; }
+    .slider output { font: 500 12px var(--mono); text-align: right; }
+    .compose { display: grid; gap: 10px; }
+    .compose .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .score-levels { display: grid; gap: 4px; margin-top: 8px; }
+    .rescore-note { font-size: 12px; color: var(--accent-text); min-height: 18px; }
+    @media (max-width: 1180px) { .shield-grid { grid-template-columns: 260px minmax(0, 1fr); } .shield-policy { grid-column: 1 / -1; } }
+    @media (max-width: 820px) { .shield-grid, .two-col, .compose .row { grid-template-columns: 1fr; } .signal-row { grid-template-columns: 1fr 1fr 48px; } .signal-row .contrib { display: none; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 1 · Shield</div>
+        <h1>Check every email before anything acts on it</h1>
+        <p class="lede">One Jev call asks ten narrow questions about a message at the same time. Your code combines the answers into a verdict, using weights and hard rules you can see and change. Changing a weight re-scores instantly without another Jev call.</p>
+      </div>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn primary" id="scan-all"><span id="scan-icon"></span>Scan whole inbox in parallel</button>
+    </div>
+
+    <div class="grid shield-grid">
+      <section class="panel">
+        <div class="panel-head"><h2>Inbox</h2><div class="spacer"></div><span class="faint" id="inbox-count"></span></div>
+        <div id="inbox"></div>
+      </section>
+
+      <section class="grid" style="gap:16px">
+        <div class="panel"><div class="panel-body" id="message"></div></div>
+        <div class="panel" id="result-panel"><div class="empty">Pick a message to screen it with Jev.</div></div>
+        <div class="panel hidden" id="batch-panel"></div>
+      </section>
+
+      <aside class="grid shield-policy" style="gap:16px">
+        <div class="panel">
+          <div class="panel-head"><h2>Policy (code you control)</h2></div>
+          <div class="panel-body grid" style="gap:14px" id="policy"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>How the verdict is computed</h2></div>
+          <div class="panel-body grid" style="gap:10px; font-size:12.5px" >
+            <p class="muted">Each signal's <b>probability × weight</b> is combined with a noisy-OR, <code>risk = 1 − Π(1 − wᵢ·pᵢ)</code>, so a single strong signal is enough to raise risk.</p>
+            <p class="muted">Hard rules run on their own. For example, any message aimed at an AI assistant is quarantined, whatever the weights say.</p>
+            <p class="muted">The sender-domain check is ordinary string comparison. Jev only answers <i>who the sender claims to be</i>, and code checks whether the email domain matches.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/js/shield.js"></script>
+</body>
+</html>

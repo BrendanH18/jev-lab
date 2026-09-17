@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Play · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .play-grid { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); align-items: start; }
+    .board { display: grid; gap: 14px; }
+    .thinking { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .thinking em { font-style: normal; color: var(--accent-text); }
+    .turns { display: grid; gap: 8px; }
+    .turn { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+    .turn .n { font: 600 12px var(--mono); color: var(--faint); padding-top: 2px; }
+    .turn .q { font-weight: 500; }
+    .turn .r { font-weight: 700; white-space: nowrap; }
+    .turn .r.yes { color: var(--good-text); } .turn .r.no { color: var(--critical-text); } .turn .r.maybe { color: var(--warning-text); } .turn .r.win { color: var(--accent-text); }
+    .turn .probs { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; font: 11.5px var(--mono); color: var(--faint); }
+    .ask { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .ask input { font-size: 16px; padding: 12px 14px; }
+    .ends { display: grid; gap: 10px; padding: 16px; border-radius: 12px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    .ends .secret { font: 700 28px/1.1 var(--mono); }
+    @media (max-width: 900px) { .play-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 5 · Play</div>
+        <h1>20 Questions, refereed by Jev in real time</h1>
+        <p class="lede">Jev is thinking of something. Ask yes/no questions or name your guess. Each turn is one request with four questions asked at once, and the answer you see is a threshold on a calibrated probability, which is why Jev can say “probably” and mean it.</p>
+      </div>
+    </div>
+    <div class="grid play-grid">
+      <section class="panel"><div class="panel-body board" id="board"></div></section>
+      <aside class="grid" style="gap:16px">
+        <div class="panel">
+          <div class="panel-head"><h2>What happens each turn</h2></div>
+          <div class="panel-body grid" style="gap:10px; font-size:12.5px">
+            <p class="muted">The state is <code>{secret, player_question}</code>. Four Noul questions run in parallel:</p>
+            <ul class="muted" style="margin:0; padding-left:18px; display:grid; gap:4px">
+              <li><b>answer_is_yes</b> — the honest yes/no answer for the secret thing</li>
+              <li><b>is_yes_no_question</b> — did you actually ask a yes/no question?</li>
+              <li><b>names_a_guess</b> — are you naming a specific thing?</li>
+              <li><b>guess_matches</b> — does your guess mean the same thing as the secret?</li>
+            </ul>
+            <p class="muted">Code maps P(yes) to <b>Yes</b> ≥ 85%, <b>Probably</b> ≥ 60%, <b>Hard to say</b>, <b>Probably not</b> ≤ 40%, <b>No</b> ≤ 15%. A guess wins when both guess Nouls agree. The secret stays on the server; the request traces are released when the game ends.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Why this is interesting</h2></div>
+          <div class="panel-body grid" style="gap:8px; font-size:12.5px">
+            <p class="muted">A game turn costs about a hundred tokens, so a whole game is a fraction of a cent, and each answer arrives fast enough to feel like a person is answering.</p>
+            <p class="muted">The same shape (hidden state + a player's free text → typed judgments) runs interactive tutorials, quizzes, escape-room puzzles, and NPC dialogue without a text-generating model in the loop.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/js/play.js"></script>
+</body>
+</html>

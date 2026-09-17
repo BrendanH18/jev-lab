@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Find · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔎</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .find-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
+    .doc { font: 12.5px/1.55 var(--mono); max-height: 70vh; overflow: auto; padding: 6px 0; }
+    .doc .ln { display: grid; grid-template-columns: 46px 1fr; gap: 10px; padding: 3px 12px; border-left: 3px solid transparent; }
+    .doc .ln .id { color: var(--faint); }
+    .doc .ln.head { color: var(--text); font-weight: 600; }
+    .doc .ln.hit { background: var(--accent-soft); border-left-color: var(--accent); }
+    .doc .ln.hit2 { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); border-left-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .doc textarea { min-height: 70vh; font: 12.5px/1.55 var(--mono); }
+    .queries { display: grid; gap: 6px; }
+    .query { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+    .result { display: grid; gap: 10px; }
+    .result .q { font-size: 15px; font-weight: 600; }
+    .hit { display: grid; grid-template-columns: 52px 1fr; gap: 10px; align-items: start; font-size: 13px; padding: 4px 8px; border-radius: 8px; cursor: pointer; }
+    .hit:hover { background: var(--panel-3); }
+    .hit .p { font: 600 12px var(--mono); color: var(--accent-text); text-align: right; }
+    .hit.top .p { color: var(--text); }
+    .hit .txt { color: var(--muted); }
+    .hit.top .txt { color: var(--text); }
+    .hit .mini { height: 4px; border-radius: 2px; background: var(--track); margin-top: 5px; overflow: hidden; }
+    .hit .mini i { display: block; height: 100%; background: var(--series); }
+    @media (max-width: 1000px) { .find-grid { grid-template-columns: 1fr; } .doc { max-height: 40vh; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 4 · Find</div>
+        <h1>Semantic search with no embeddings, no index, one request</h1>
+        <p class="lede">Every line of a document gets an ID. For each question, one Choice question over those IDs says <i>where</i> the answer is, and a Noul says <i>whether</i> the document answers it at all. Several questions share one call because they share the same document. Try the employee handbook, then paste your own text.</p>
+      </div>
+    </div>
+    <div class="grid find-grid">
+      <section class="panel">
+        <div class="panel-head"><h2>Document</h2><span class="faint" id="doc-count"></span><div class="spacer"></div>
+          <button class="btn sm ghost" id="doc-sample">Load sample</button>
+          <button class="btn sm" id="doc-edit">Edit</button></div>
+        <div id="doc"></div>
+      </section>
+      <section class="grid" style="gap:16px">
+        <div class="panel">
+          <div class="panel-head"><h2>Questions to ask the document</h2><div class="spacer"></div><span class="faint" id="q-note"></span></div>
+          <div class="panel-body grid" style="gap:12px">
+            <div class="queries" id="queries"></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+              <button class="btn sm ghost" id="q-add"></button>
+              <div style="flex:1"></div>
+              <button class="btn primary" id="search"></button>
+            </div>
+          </div>
+        </div>
+        <div class="panel" id="results"><div class="empty">Results appear here. One request answers every question at once.</div></div>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="/js/find.js"></script>
+</body>
+</html>

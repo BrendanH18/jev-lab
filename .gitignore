@@ -1,0 +1,16 @@
+# Secrets: the app refuses to write .env unless this line is here.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local screenshots / scratch
+.shots/
+.DS_Store
+
+# Claude Code local settings
+.claude/

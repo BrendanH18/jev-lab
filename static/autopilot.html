@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autopilot · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .score-grid { grid-template-columns: 1fr 1fr; }
+    .score-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 0; }
+    .score-head h2 { font-size: 15px; }
+    .score-head .sub { font-size: 12px; color: var(--faint); }
+    .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 14px 16px 16px; }
+    .tile.bad .v { color: var(--critical-text); }
+    .tile.goodv .v { color: var(--good-text); }
+    .flow { display: grid; gap: 10px; }
+    .flow-head, .row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+    .flow-head { padding: 0 16px; font: 600 10.5px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+    .row { padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); align-items: start; transition: border-color 0.3s, opacity 0.3s; }
+    .row.queued { opacity: 0.45; }
+    .row.active { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .row .cell { display: grid; gap: 6px; min-width: 0; }
+    .row .cell > .badge { justify-self: start; }
+    .row .from { font-weight: 600; font-size: 13px; }
+    .row .subj { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .addr { font: 11.5px var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sig { font: 500 12px var(--mono); color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .why { font-size: 12px; color: var(--muted); }
+    .why li { margin: 1px 0; }
+    .why ul { margin: 0; padding-left: 16px; }
+    .harm { border-radius: 9px; padding: 8px 10px; background: var(--critical-soft); border: 1px solid color-mix(in srgb, var(--critical) 40%, transparent); font-size: 12.5px; }
+    .harm b { color: var(--critical-text); }
+    .ok-note { border-radius: 9px; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line); font-size: 12.5px; }
+    .drivers { display: flex; flex-wrap: wrap; gap: 4px; }
+    .drivers span { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+    .main-grid { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+    .bench-chart { display: grid; gap: 14px; }
+    .bench-chart .bars .bar-row { grid-template-columns: 112px 1fr 64px; }
+    .pipeline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+    .pipeline .node { padding: 4px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); }
+    .pipeline .node.hot { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--text); background: var(--accent-soft); }
+    .ledger { display: grid; gap: 4px; font-size: 12px; }
+    .ledger div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 8px; border-radius: 7px; background: var(--panel-2); }
+    .ledger .bad { background: var(--critical-soft); }
+    @media (max-width: 1240px) { .main-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 980px) { .flow-head { display: none; } .row { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 720px) { .score-grid, .row { grid-template-columns: 1fr; } .tiles { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 3 · Autopilot = Shield + Dispatch</div>
+        <h1>An inbox that handles itself without getting scammed</h1>
+        <p class="lede">Every email gets <b>one</b> Jev call that asks Shield's questions and Dispatch's questions together. Shield's verdict decides whether an action is allowed, and Shield's sender checks feed Dispatch's permission rules. The right-hand column uses the same answers to show what Dispatch would have done alone, so the comparison costs nothing extra.</p>
+      </div>
+      <div style="flex:1"></div>
+      <div class="controls">
+        <button class="btn primary" id="run"></button>
+        <button class="btn" id="step"></button>
+        <button class="btn ghost" id="reset"></button>
+      </div>
+    </div>
+
+    <div class="grid score-grid" id="scores" style="margin-bottom:16px"></div>
+
+    <div class="grid main-grid">
+      <section class="flow">
+        <div class="flow-head"><span>Incoming email</span><span>One Jev call → Shield</span><span>Autopilot (integrated)</span><span>Dispatch alone</span></div>
+        <div class="flow" id="rows"></div>
+      </section>
+      <aside class="grid" style="gap:16px">
+        <div class="panel">
+          <div class="panel-head"><icon-slot data-i="layers"></icon-slot><h2>Why merge them? Measured</h2></div>
+          <div class="panel-body grid" style="gap:12px" id="bench">
+            <p class="muted" style="font-size:12.5px">Run the same Shield and Dispatch questions on the vendor-fraud email three ways: two calls one after the other, two calls at the same time, and one merged call.</p>
+            <button class="btn" id="bench-btn">Run benchmark (5 live calls)</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Where the money went</h2></div>
+          <div class="panel-body grid" style="gap:14px" id="ledgers"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Per-email pipeline</h2></div>
+          <div class="panel-body grid" style="gap:10px; font-size:12.5px">
+            <div class="pipeline"><span class="node hot">email</span>→<span class="node hot">1 Jev call · 21 questions</span>→<span class="node">Shield verdict</span>→<span class="node">typed call</span>→<span class="node">policy + sender checks</span>→<span class="node">run · ask · quarantine</span></div>
+            <p class="muted">Everything after the Jev call is ordinary, testable code. When an email lands in <b>Needs you</b>, the proposed action is already filled in, so approving it doesn't need another Jev call.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/js/autopilot.js"></script>
+</body>
+</html>

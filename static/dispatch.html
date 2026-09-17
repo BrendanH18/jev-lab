@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dispatch · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .dispatch-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; }
+    .cmd { position: relative; }
+    .cmd input { font-size: 18px; padding: 16px 120px 16px 46px; border-radius: 14px; background: var(--panel); }
+    .cmd .lead { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--accent-text); }
+    .cmd .trail { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: flex; gap: 8px; align-items: center; }
+    .cmd-meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 10px 2px 0; flex-wrap: wrap; }
+    .args { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .arg { display: inline-flex; gap: 6px; align-items: baseline; padding: 4px 9px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); font-size: 12px; }
+    .arg .n { color: var(--faint); font-family: var(--mono); }
+    .arg .p { font: 600 11.5px var(--mono); color: var(--muted); }
+    .arg.weak { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); }
+    .arg.user { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+    .decision { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+    .decision ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+    .checks { display: grid; gap: 6px; }
+    .check { display: flex; gap: 8px; align-items: center; font-size: 12.5px; }
+    .check .ok { color: var(--good-text); } .check .no { color: var(--warning-text); } .check .blk { color: var(--critical-text); }
+    .fanout { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+    .fq { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); font-size: 12px; transition: opacity 0.2s; }
+    .fq .id { font-family: var(--mono); color: var(--faint); font-size: 11px; }
+    .fq .v { font-weight: 600; margin-top: 2px; display: flex; justify-content: space-between; gap: 8px; }
+    .fq .v span:last-child { font-family: var(--mono); color: var(--muted); font-weight: 500; }
+    .fq.unused { opacity: 0.42; }
+    .fq.used { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    .world { display: grid; gap: 14px; }
+    .world h3 { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 8px; color: var(--muted); font-weight: 600; }
+    .cal { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .cal .day { background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px; min-height: 92px; }
+    .cal .day b { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+    .cal .evt { margin-top: 6px; font-size: 11.5px; line-height: 1.3; padding: 5px 6px; border-radius: 6px; background: var(--series-soft); border-left: 3px solid var(--series); }
+    .cal .evt .t { font-family: var(--mono); color: var(--muted); font-size: 10.5px; }
+    .activity { display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+    .activity .a { font-size: 12.5px; display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 8px; background: var(--panel-2); }
+    @media (max-width: 1080px) { .dispatch-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 640px) { .cal { grid-template-columns: repeat(2, 1fr); } .cmd input { font-size: 15px; padding-right: 16px; } .cmd .trail { display: none; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 2 · Dispatch</div>
+        <h1>Type a request in plain English, get a function call you can run</h1>
+        <p class="lede">A single Jev call picks the action <i>and</i> fills in the arguments for every possible action at the same time. Code keeps only the answers for the chosen action, works out exact amounts and times, checks business rules, and uses confidence to decide whether to run the action, ask you to confirm, or ask what you meant.</p>
+      </div>
+    </div>
+
+    <div class="cmd">
+      <span class="lead" id="cmd-icon"></span>
+      <input id="cmd" class="input" placeholder="e.g. refund maya's order, the bag arrived torn open" autocomplete="off" spellcheck="false">
+      <span class="trail"><span id="cmd-status"></span><kbd>⏎ run</kbd></span>
+    </div>
+    <div class="cmd-meta">
+      <div class="chips" id="examples"></div>
+      <label class="toggle"><input type="checkbox" id="live" checked><span class="track"></span>Live preview while typing</label>
+    </div>
+
+    <div class="grid dispatch-grid" style="margin-top:18px">
+      <section class="panel" id="read"><div class="empty">Type a command or pick an example. Jev's read appears here as you type.</div></section>
+      <aside class="panel">
+        <div class="panel-head"><h2>Harbor Coffee Co. · live state</h2><div class="spacer"></div>
+          <button class="btn sm ghost" id="reset"><span id="reset-icon"></span>Reset</button></div>
+        <div class="panel-body world" id="world"></div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/js/dispatch.js"></script>
+</body>
+</html>
