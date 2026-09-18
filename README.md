@@ -22,6 +22,9 @@ You need a TypeSafe API key: get one at [console.typesafe.ai](https://console.ty
 press **Connect API key** in the app, and it is validated and (optionally) saved to a gitignored
 `.env` for you. Every answer in Jev Lab is a live Jev call; nothing is canned or replayed.
 
+Stop the server with `Ctrl+C`. If it's running in the background, `kill $(lsof -ti :8321)` (or
+`pkill -f server.py`).
+
 ## What's inside
 
 All six apps run on one fictional business, **Harbor Coffee Co.**: orders, vendors with invoices,
