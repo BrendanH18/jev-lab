@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security policy
+    url: https://github.com/BrendanH18/jev-lab/blob/main/SECURITY.md
+    about: Read the reporting process before disclosing a vulnerability.
+  - name: TypeSafe documentation
+    url: https://docs.typesafe.ai
+    about: Provider API, model, and SDK documentation.

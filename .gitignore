@@ -12,6 +12,10 @@ __pycache__/
 .shots/
 .DS_Store
 
+# Optional live evaluation reports (may contain input data and model answers)
+/report.json
+/reports/
+
 # Claude Code local settings
 .claude/
 CLAUDE.md

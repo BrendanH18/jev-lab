@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible problem with Jev Lab.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For vulnerabilities, follow [SECURITY.md](https://github.com/BrendanH18/jev-lab/blob/main/SECURITY.md).
+        Remove API keys, private inputs, and sensitive traces from everything you share.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the affected page or command and a minimal synthetic input if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Commit or version, OS, Python version, browser, and installation method (uv or pip). For model behavior, include the model name.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Optional redacted errors, screenshots, or request/response details.
