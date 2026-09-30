@@ -51,7 +51,7 @@ class HttpTests(unittest.TestCase):
                 self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
 
     def test_browser_assets_are_served(self):
-        for path in ("/css/app.css", "/js/common.js"):
+        for path in ("/css/app.css", "/js/common.js", "/js/../css/app.css"):
             with self.subTest(path=path):
                 status, headers, body = self.request("GET", path)
                 self.assertEqual(status, 200)
@@ -116,6 +116,30 @@ class HttpTests(unittest.TestCase):
                 status, _, body = self.request("GET", "/linked.txt")
         self.assertEqual(status, 404)
         self.assertNotIn(b"private fixture", body)
+
+    def test_static_traversal_cannot_read_parent_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            static = root / "static"
+            static.mkdir()
+            (root / "private.txt").write_text("private fixture")
+            with patch.object(server, "STATIC", static):
+                status, _, body = self.request("GET", "/../private.txt")
+        self.assertEqual(status, 404)
+        self.assertNotIn(b"private fixture", body)
+
+    def test_static_symlink_within_directory_is_served(self):
+        with tempfile.TemporaryDirectory() as folder:
+            static = Path(folder) / "static"
+            static.mkdir()
+            asset = static / "asset.css"
+            asset.write_text("body { color: green; }")
+            (static / "linked.css").symlink_to(asset)
+            with patch.object(server, "STATIC", static):
+                status, headers, body = self.request("GET", "/linked.css")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "text/css; charset=utf-8")
+        self.assertEqual(body, b"body { color: green; }")
 
 
 if __name__ == "__main__":

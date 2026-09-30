@@ -426,13 +426,18 @@ class Handler(BaseHTTPRequestHandler):
             html = (STATIC / PAGES[path]).read_text()
             html = html.replace("</head>", '<meta name="jev-csrf" content="%s">\n</head>' % SESSION_TOKEN, 1)
             return self._send(200, html.encode(), "text/html; charset=utf-8")
-        file = (STATIC / path.lstrip("/")).resolve()
-        if STATIC.resolve() not in file.parents or not file.is_file():
+        static_root = os.path.realpath(STATIC)
+        file = os.path.realpath(os.path.join(static_root, path.lstrip("/")))
+        # Resolve symlinks before checking containment; the separator excludes sibling prefixes.
+        if not file.startswith(static_root + os.sep):
             return self._send(404, {"error": "Not found"})
-        ctype = mimetypes.guess_type(str(file))[0] or "application/octet-stream"
+        if not os.path.isfile(file):
+            return self._send(404, {"error": "Not found"})
+        ctype = mimetypes.guess_type(file)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype.endswith("javascript"):
             ctype += "; charset=utf-8"
-        self._send(200, file.read_bytes(), ctype)
+        with open(file, "rb") as asset:
+            self._send(200, asset.read(), ctype)
 
     def do_GET(self):
         self._handle("GET")
