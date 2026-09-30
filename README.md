@@ -1,156 +1,177 @@
 # Jev Lab
 
-Six small apps and a workbench that show what [TypeSafe's **Jev**](https://docs.typesafe.ai) can do.
+**Explore typed AI decisions in a local, interactive workbench.**
 
-Jev is a *System One* model: you send it some state and a set of typed questions, and it returns
-a choice, a score, or a probability for each one, with calibrated confidence, in about 100 ms.
-It never generates prose, so your code branches on the answers directly. Jev Lab puts that inside
-ordinary software in six different ways, then hands you a Workbench to build your own.
+[![CI](https://github.com/BrendanH18/jev-lab/actions/workflows/test.yml/badge.svg)](https://github.com/BrendanH18/jev-lab/actions/workflows/test.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Jev Lab is an independent, open-source demo. It is not affiliated with or endorsed by TypeSafe;
-"TypeSafe" and "Jev" are their names. Latency and price figures quoted here come from
-[TypeSafe's docs](https://docs.typesafe.ai/models) as of September 2026 and will change; the app
-shows the real latency and cost of every call it makes, and no answer is ever canned.
+Jev Lab demonstrates how to build software with [TypeSafe's Jev](https://docs.typesafe.ai/introduction).
+Send a state and typed questions; receive choices, scores, and probabilities that your code can
+use directly. Explore five focused demos, a homepage playground, and a Workbench for your own data.
 
+The application uses a Python standard-library web server, the official TypeSafe SDK, and vanilla
+JavaScript. There is no frontend build step, database, or embedding index.
+
+[Quick start](#quick-start) · [Demos](#explore-the-demos) · [Workbench](#build-with-the-workbench) ·
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
+![Jev Lab dashboard and interactive playground](docs/screenshots/overview.png)
+
+## Quick start
+
+You need **Python 3.10+**, [uv](https://docs.astral.sh/uv/getting-started/installation/), and a
+[TypeSafe API key](https://console.typesafe.ai/settings/keys) for live model calls.
+
+```sh
+git clone https://github.com/BrendanH18/jev-lab.git
+cd jev-lab
+uv sync --locked
+uv run --locked server.py
 ```
-git clone https://github.com/BrendanH18/jev-lab && cd jev-lab
-uv run server.py          # or: python3 server.py  (Python 3.10+, or 3.9 with a stdlib fallback)
-open http://127.0.0.1:8321
+
+1. Open **<http://127.0.0.1:8321>** in your browser.
+2. Select **Connect API key**. Keep the key in memory for this session or save it to the local,
+   gitignored `.env` file.
+3. Try the homepage playground, then explore **Autopilot** or build a request in **Workbench**.
+
+The interface starts without a key; model-backed features require one and make paid API calls.
+Stop the server with `Ctrl+C`.
+
+<details>
+<summary>Install with pip instead of uv</summary>
+
+Create and activate a virtual environment, then install the application's runtime dependency:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install "typesafe-sdk>=0.6.0"
+python server.py
 ```
 
-You need a TypeSafe API key: get one at [console.typesafe.ai](https://console.typesafe.ai/settings/keys),
-press **Connect API key** in the app, and it is validated and (optionally) saved to a gitignored
-`.env` for you. Every answer in Jev Lab is a live Jev call; nothing is canned or replayed.
+On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell. The pip installation uses
+the latest compatible SDK; uv uses the versions committed in `uv.lock`.
 
-Stop the server with `Ctrl+C`. If it's running in the background, `kill $(lsof -ti :8321)` (or
-`pkill -f server.py`).
+</details>
 
-## What's inside
+## Explore the demos
 
-All six apps run on one fictional business, **Harbor Coffee Co.**: orders, vendors with invoices,
-a weekly calendar, a staff handbook, and an inbox.
+The business demos share a fictional coffee roaster, **Harbor Coffee Co.**, with orders, vendors,
+invoices, a calendar, and an inbox. Actions change local simulation state: they do not send email,
+issue real refunds, or transfer money.
 
-| App | What it shows | Jev pattern |
+| Experience | What to try | Pattern to learn |
 | --- | --- | --- |
-| 🛡️ **Shield** | Screens inbound email for prompt injection, phishing, vendor impersonation, and payment-redirect fraud. Ten questions per email, one call. Move a weight slider and every message re-scores with no new call. | Decomposed judgments, weighted in code; hard rules; parallel batch |
-| ⚡ **Dispatch** | Plain-English commands become typed function calls (`refund_order(order="A-1041", reason="damaged")`). Live preview while you type. Confidence and risk decide: run, confirm, or clarify. | Speculative fan-out (one call fills every function's arguments); confidence-gated routing |
-| 🧭 **Autopilot** | Shield + Dispatch in **one** call per email. Side by side with Dispatch alone, which cannot see who is asking: it refunds a stranger's claim on someone else's order, and on the fake-invoice email it either pays $4,250 to the attacker's account or asks you to confirm with no warning attached. Autopilot quarantines both, with reasons. A built-in benchmark measures merged vs. separate calls. | Composition: one verdict gates another's actions; sender facts feed permission checks |
-| 🔎 **Find** | Semantic search over the staff handbook with no embeddings and no index. Eight questions, one request. A separate Noul says whether the document answers at all. | Choice over line IDs (up to 255); existence check |
-| 🎲 **Play** | 20 Questions with Jev as the referee, in real time. "Probably" means P(yes) is between 60 % and 85 %. | Hidden state + free text → four Nouls per turn |
-| 🧰 **Workbench** | Your state, your questions. Run, save as tests with expectations, run a question set over hundreds of rows, export Python / JavaScript / curl. Twelve example patterns to start from. | Everything above, on your own data |
+| **Playground** | Classify a message with four questions in one call. | Choice, Score, and Noul together |
+| **Shield** | Screen email for phishing, prompt injection, impersonation, and payment redirects; adjust weights without another model call. | Atomic judgments composed with weights and rules |
+| **Dispatch** | Turn a command into a typed action; inspect whether it runs, needs confirmation, or needs clarification. | Candidate extraction and confidence-based routing |
+| **Autopilot** | Process an inbox with Shield and Dispatch combined; compare with Dispatch alone and benchmark separate versus merged requests. | Composition and sender-aware policy checks |
+| **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
+| **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
+| **Workbench** | Write questions, save expectations, run batches, and export code. | Experimentation and repeatable model evaluation |
 
-Every result shows the model, latency, tokens, and cost of the call it came from, with an
-**Inspect JSON** drawer that shows the exact request and response.
+Model-backed results include the request and response in **Inspect JSON**, alongside latency,
+token usage, and estimated cost. Model judgments are live; reweighting, replanning, exports, and
+simulation updates run locally.
 
-## What it looks like
+![Autopilot comparing integrated handling with Dispatch alone](docs/screenshots/autopilot.png)
 
-Live answers from `jev-1.13.0` on 17 September 2026, unedited.
+<details>
+<summary>More screenshots</summary>
 
-![Autopilot: ten emails handled in ten calls, three scams quarantined, Dispatch alone shown beside it](docs/screenshots/autopilot.png)
+![Shield email screening and weighted verdict](docs/screenshots/shield.png)
+![Dispatch command planning and policy checks](docs/screenshots/dispatch.png)
+![Find handbook search results](docs/screenshots/find.png)
+![Workbench bulk classification](docs/screenshots/workbench-bulk.png)
 
-![Shield: one email, ten questions, the weighted verdict, and the whole inbox screened in parallel](docs/screenshots/shield.png)
+</details>
 
-![Find: six questions asked of the handbook in one request, two correctly reported as not in the document](docs/screenshots/find.png)
+Screenshots show example runs; answers and timings vary with inputs, model version, and service
+conditions.
 
-![Workbench bulk mode: forty tickets classified on four dimensions in under a second](docs/screenshots/workbench-bulk.png)
+## Build with the Workbench
 
-## The Workbench
+- **Build:** supply text or JSON state and edit Noul, Choice, and Score questions visually or as JSON.
+- **Test:** save a run with editable expectations, then rerun after changing questions or models.
+- **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
+- **Learn:** start from twelve examples covering triage, moderation, routing, extraction, and more.
+- **Export:** generate Python, JavaScript, or curl requests for use outside Jev Lab.
 
-The Workbench is the part that turns "cool demo" into "how do I build with this":
+Saved tests are JSON files in `data/workbench/`. They persist across restarts and can be committed
+deliberately as fixtures. Review their input data before sharing them.
 
-- **Build.** A state (text or JSON) and a list of questions with a visual editor or raw JSON.
-  Run, read the probabilities, then edit the wording and run again.
-- **Tests.** Save a run as a test. Expectations start from the answers you got (`choice ==
-  billing`, `P(yes) ≥ 0.5`, `score in [1, 2]`); edit them to what you believe is right. Tests are
-  JSON files in `data/workbench/`, so they can be committed and run again when you change a
-  question or the model version.
-- **Bulk.** Paste rows (one per line, or a JSON array), run the same questions over all of them
-  eight at a time, sort by any column, download the CSV. At $0.042 per million input tokens, a
-  question set over a million short messages costs about ten dollars.
-- **Examples.** Guardrails, citation checking, tool-call verification, model routing, date
-  extraction without date math, entity matching, résumé screening, moderation, semantic lint,
-  lead scoring, review feature extraction, support triage.
-- **Export code.** Any request as working Python (official SDK), JavaScript (official SDK), or
-  curl.
-
-## Security
-
-The server binds to `127.0.0.1` and checks every request (Host allow-list against DNS rebinding,
-`Sec-Fetch-Site`, `Origin`, a per-run session token, JSON-only bodies, a strict CSP). The key is
-never sent to the browser or written to logs. When the app saves the key to `.env` it first
-checks that `.env` is gitignored and not tracked, then writes it atomically with `0600`
-permissions. A per-run spend guard (`JEV_LAB_BUDGET_USD`, default $2) and a local rate limit stop
-runaway loops. Details in [SECURITY.md](SECURITY.md).
+See the [Workbench guide](docs/workbench.md) for a complete request, expectation format, and limits.
 
 ## Configuration
 
-Set these in the environment or in `.env` (see `.env.example`). The first three are the official
-SDK's names.
+Set variables in your process environment or a project-root `.env` file. Nonempty environment
+values take precedence over `.env`; see [.env.example](.env.example).
 
-| Variable | Default | Meaning |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | | Your key |
-| `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Model or alias |
-| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | API root |
-| `JEV_LAB_BUDGET_USD` | `2.00` | Stop live calls after this much spend in one server run |
-| `JEV_LAB_RPM` | `120` | Local cap on live calls per minute |
-| `PORT` | `8321` | Listen port |
+| `TYPESAFE_API_KEY` | Unset | Key used for live TypeSafe requests |
+| `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Model name or alias; pin a version for comparisons |
+| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | TypeSafe API root |
+| `JEV_LAB_BUDGET_USD` | `2.00` | Estimated spend threshold per process |
+| `JEV_LAB_RPM` | `120` | Local limit on admitted model calls per minute |
+| `PORT` | `8321` | HTTP port on `127.0.0.1` |
 
-## Project layout
+For example, choose another port:
 
-```
-server.py             stdlib HTTP server: pages + JSON API, security checks, key onboarding
-jev/client.py         one place that calls TypeSafe (official SDK, stdlib fallback on 3.9),
-                      spend guard, request/response capture
-jev/shield.py         Shield questions, sender-domain facts, verdict composition
-jev/dispatch.py       Dispatch questions, regex candidates, resolution, policy checks, gating
-jev/autopilot.py      merged request, integrated vs. Dispatch-alone pipelines, benchmark
-jev/find.py           line-ID search over a document
-jev/play.py           20 Questions game state and turn logic
-jev/workbench.py      validation, saved tests, expectations, bulk runs, code export
-jev/examples.py       the twelve example patterns
-jev/security.py       request checks (host, fetch metadata, origin, token, content type)
-jev/envfile.py        safe .env read/write (gitignore + tracked checks, 0600, atomic)
-jev/world.py          Harbor Coffee state and the actions that change it
-data/samples/         handbook, 20 Questions words, sample tickets
-data/workbench/       your saved tests (JSON)
-static/               vanilla JS + CSS, no build step
-tests/                offline tests with fake answers; SDK transport tests via MockTransport
+```sh
+PORT=8322 uv run --locked server.py
 ```
 
-## Tests
+Cost displays use returned input-token counts and the fixed pricing constant in
+[`jev/client.py`](jev/client.py). They are estimates, not billing records. The spend guard checks
+completed-call estimates before admitting another call; concurrent calls can exceed the threshold.
+Use your provider's billing controls for a hard spending limit. See [security and data handling](SECURITY.md).
 
-```
-uv run python -m unittest discover tests        # or: python3 -m unittest discover tests
-```
+## Development
 
-No key or network needed. The tests feed API-shaped fake answers through the real composition
-code and drive the official SDK through an in-memory transport. CI runs them on Python 3.9, 3.12,
-and 3.13 (`.github/workflows/test.yml`).
+Run the offline suite:
 
-To see what the live model actually says for every built-in scenario (after changing a question,
-a threshold, or the model version):
-
-```
-uv run scripts/validate.py          # ~100 small calls, well under a cent; prints a report
+```sh
+uv run --locked python -m unittest discover -v tests
 ```
 
-## Design principles (from TypeSafe's docs)
+No API key or external API access is needed for the tests. SDK tests use an in-memory transport;
+HTTP tests start a temporary loopback server. CI tests the locked dependencies on Python
+3.10–3.14, the legacy standard-library fallback on Python 3.9, and JavaScript syntax.
 
-- **Code owns the workflow.** Jev appears only where a judgment is needed. Deterministic rules,
-  arithmetic, dates, lookups, and side effects stay in code.
-- **Atomic questions, composed in code.** "Is this a scam?" becomes seven narrow questions and a
-  weighted formula you can edit without touching the model.
-- **Select, don't generate.** Amounts, times, and dates are found in code and Jev picks the
-  intended one. Replies come from templates Jev chooses between.
-- **Confidence scales with risk.** Low-risk actions run at 50 % confidence, refunds at 80 %,
-  payments at 90 %, and every action also has to pass the code checks.
-- **Test the wording.** Question text is code; the Workbench's tests treat it that way.
+For optional live evaluation after changing question wording or model versions:
 
-The weights, thresholds, and question wording were written from the docs and the
-[known jagged edges of jev-1.13](https://docs.typesafe.ai/model-jaggedness/jev-1.13). Treat them
-as starting points and tune them on real answers.
+```sh
+uv run --locked scripts/validate.py --out report.json
+```
 
-## License
+This makes paid API calls using the configured key and prints observed results. Its exit status
+reports execution errors, not whether the model matched every scenario expectation. Review the
+report before sharing it.
 
-MIT. See [LICENSE](LICENSE).
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and pull request guidance, and the
+[architecture guide](docs/architecture.md) for the request flow and source map.
+
+## Troubleshooting
+
+| Symptom | Next step |
+| --- | --- |
+| No key configured or a `401` response | Connect a key in the app or set `TYPESAFE_API_KEY`. Check that the provider accepts it. |
+| `.env` cannot be saved | Read the dialog's explanation. `.env` must be gitignored, untracked, and writable. |
+| Session-token `403` after a restart | Reload the page to get the new session token. |
+| Budget `402` or rate-limit `429` | Inspect usage in the app. Wait for the rate window or restart with an appropriate budget. |
+| Port already in use | Set another `PORT` and open the corresponding loopback URL. |
+
+For reproducible bugs and feature proposals, [open an issue](https://github.com/BrendanH18/jev-lab/issues).
+Report vulnerabilities using the process in [SECURITY.md](SECURITY.md).
+
+## Project and license
+
+Jev Lab is an independent open-source demonstration maintained by
+[Brendan Hallas](https://github.com/BrendanH18). It is not affiliated with or endorsed by TypeSafe.
+TypeSafe and Jev belong to their respective owners. Demo policies and thresholds are examples to
+evaluate on your own data before adapting them to an application.
+
+Contributions are welcome under the [contribution guide](CONTRIBUTING.md) and
+[Code of Conduct](CODE_OF_CONDUCT.md). Licensed under the [MIT License](LICENSE).

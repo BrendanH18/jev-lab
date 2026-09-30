@@ -1,68 +1,91 @@
-# Security
+# Security policy
 
-Jev Lab runs a local web server that holds a paid API key. This document says what the server
-does to keep that key, and your credits, safe. If you find a problem, open a GitHub issue with
-the label `security` (or email the maintainer if the repo lists one). Please do not post a
-working exploit before a fix is available.
+Jev Lab is a local demonstration that holds a paid API key. Run it on your own machine and keep
+the loopback binding. It has no multi-user authentication or supported public deployment mode.
 
-## What is protected
+## Report a vulnerability
 
-- **The API key.** It lives in the server process and, if you choose, in `.env`. It is never sent
-  to the browser and never written to logs. `/api/status` reports only *whether* a key is
-  configured and where it came from.
-- **Your credits.** Only requests from pages served by this process can trigger live calls, and a
-  per-run spend guard stops runaway loops.
+Use the repository's **Security → Report a vulnerability** option if private reporting is enabled:
+[repository security page](https://github.com/BrendanH18/jev-lab/security).
+GitHub documents the [private reporting process](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately).
 
-## How
+If that option is unavailable, use a private contact channel listed on the
+[maintainer's profile](https://github.com/BrendanH18). If no private channel is listed, open an
+issue asking for a secure contact method, without exploit details, keys, or sensitive data.
 
-### The server only talks to your own browser
+Include the affected commit or version, reproduction steps, expected impact, and a suggested fix
+if you have one. Use a disposable test key when reproduction requires API access. Do not post
+working exploits or sensitive traces publicly before maintainers have had a chance to investigate.
+No response-time guarantee or bug bounty is offered.
 
-`server.py` binds to `127.0.0.1` only. On top of that, `jev/security.py` checks every request:
+## Supported code
 
-1. **Host allow-list.** The `Host` header must be `127.0.0.1`, `localhost`, or `[::1]` on the
-   server's port. This defeats DNS rebinding, where a hostile site points its own DNS name at
-   your loopback address.
-2. **Fetch Metadata.** Browsers send `Sec-Fetch-Site`; any value other than `same-origin` or
-   `none` is refused. This is the mechanism Go 1.25's `http.CrossOriginProtection` and Datasette
-   use instead of CSRF tokens.
-3. **Origin check.** If an `Origin` header is present it must be one of ours.
-4. **Session token.** Every state-changing request must carry `X-Jev-Token`, a random value
-   generated at startup and embedded only in pages this process serves. It is a custom header, so
-   browsers preflight it, and a cross-origin page can neither read the token nor pass the
-   preflight (the server never sends CORS headers).
-5. **JSON only.** Request bodies must be `application/json`, which rules out HTML form posts.
-6. **Content-Security-Policy** `script-src 'self'` on every page, so no inline or third-party
-   script can run even if some content were reflected.
+Security fixes target the current `main` branch. Older tags and forks do not have a separate
+security-maintenance commitment. Reproduce reports on a recent checkout when possible.
 
-Chrome 142+ additionally asks the user before a public website may contact a local address at
-all (Local Network Access), which is another layer on top of the above.
+## Key handling
 
-### Saving the key to `.env`
+- The server holds the API key in memory or reads it from environment configuration or `.env`.
+  Application responses and request inspectors do not include the authorization header.
+- The connection dialog validates a key using the provider's models endpoint before activating it.
+- Saving requires `.env` to be gitignored, untracked, and writable. Writes are atomic and use
+  owner-only `0600` permissions on systems that support them.
+- Replacing a different saved key requires an explicit replacement choice. **Forget key** removes
+  the saved key and clears its use for the current process; a key exported in the launching shell
+  can still be read again on a future restart.
+- Other programs running as your user can read `.env` and access the local server. These controls
+  do not protect against a compromised machine or malicious local software.
 
-The dashboard can write `TYPESAFE_API_KEY=…` into `.env` in the project folder. Before it does:
+The key is sent to the configured `TYPESAFE_BASE_URL` for authentication. Only configure an API
+root you trust.
 
-- the key is validated with a `GET /v1/models` call, so a typo is never stored;
-- `.env` must be **ignored by git** (`git check-ignore`, or the `.gitignore` text when git is
-  absent) and **not already tracked**; otherwise the server refuses and tells you why;
-- the file is written atomically and `chmod 0600` (owner read/write only);
-- other lines in an existing `.env` are preserved, and a *different* key that is already saved
-  is never overwritten silently: you have to "Forget" it first.
+## Local HTTP protections
 
-"Forget key" removes the line again (and deletes the file if nothing else is in it). The
-`.env.example` file documents the variables without containing a key.
+The server binds to `127.0.0.1`. [`jev/security.py`](jev/security.py) and
+[`server.py`](server.py) implement:
 
-### Spend guard
+1. A loopback Host allow-list to reject requests addressed to unrelated hostnames.
+2. Fetch Metadata and Origin checks on state-changing requests.
+3. A random per-process `X-Jev-Token` required for POST requests, embedded in served pages.
+4. JSON content-type checks on nonempty POST bodies and a 4 MiB request-body limit.
+5. A Content Security Policy restricting scripts and API connections to the application's origin,
+   plus `nosniff`, `no-store`, and a no-referrer policy.
+6. Static-file resolution confined to the `static/` directory, including resolved symlink targets.
 
-Live calls stop once the run has spent `JEV_LAB_BUDGET_USD` (default $2.00) or exceeds
-`JEV_LAB_RPM` calls per minute (default 120). Batch endpoints cap their input size (50 messages, 200 rows, 100 questions).
+GET requests require an allowed Host but do not require a session token. The server does not send
+CORS permission headers. Its request checks are intended to reduce cross-site request and DNS
+rebinding risks; they are not user authentication. The UI loads fonts from Google Fonts, which
+is allowed by the style and font CSP directives.
 
-### What is *not* covered
+Do not expose the server through a tunnel, reverse proxy, or network-facing bind. Reload browser
+tabs after restarting so their session tokens match the new process.
 
-- Other programs running as your user can read `.env`, like any other file you own.
-- Do not expose the server to a network. If you must, put it behind an authenticating proxy;
-  the Host check will reject requests addressed to any name other than localhost anyway.
-- Sample data and your own Workbench inputs are sent to TypeSafe's API. Do not paste secrets.
+## Spending limits
 
-## Reporting
+The client checks a per-process estimated budget (`JEV_LAB_BUDGET_USD`, default `2.00`) and a local
+rate limit (`JEV_LAB_RPM`, default `120`) before admitting model calls. Values at or below zero
+disable the corresponding check.
 
-Open an issue or contact the maintainer. Thank you.
+These are convenience guards, not hard billing caps. Spend is recorded after successful calls
+using returned input-token counts and a fixed price constant. Concurrent requests can pass the
+check before earlier calls finish; retries and unsuccessful requests are not separately accounted
+for. The limit resets when the process restarts. Provider-side billing controls should enforce
+any hard spending limit.
+
+Batch features limit input sizes: Shield accepts up to 50 messages; Workbench bulk accepts up to
+200 rows and question sets up to 100 questions. See the [Workbench guide](docs/workbench.md).
+
+## Data handling and demo boundaries
+
+State and questions for live calls are sent to TypeSafe, or to your configured API root. Do not
+use confidential data unless you have assessed that provider's handling of it. The local request
+inspector, CSV exports, live validation reports, and saved Workbench tests can contain the inputs
+and model answers you supplied.
+
+Workbench tests persist as plaintext JSON under `data/workbench/`, which is intentionally eligible
+for version control. Review these files before committing. Other demo worlds and game sessions
+live in memory and reset on restart.
+
+Refunds, payments, email replies, and calendar changes only modify fictional local state. Shield
+and Autopilot demonstrate model judgments and policy composition; they do not establish that a
+message or action is safe in a real system.

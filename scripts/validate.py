@@ -3,9 +3,9 @@
 
     uv run scripts/validate.py [--out report.json]
 
-Use it after changing question wording, thresholds, or the model version. It spends real credits
-(about a hundred small calls, well under a cent) and prints a human-readable report; nothing is
-cached or reused by the app.
+Use it after changing question wording, thresholds, or the model version. It makes paid API calls
+and prints a human-readable report; nothing is cached or reused by the app. Costs use the client's
+fixed pricing estimate. Scenario mismatches are reported for review, not treated as exit failures.
 """
 
 from __future__ import annotations

@@ -1,1 +1,1 @@
-"""Jev Lab: Shield, Dispatch, and Autopilot demos for TypeSafe's Jev model."""
+"""Jev Lab: interactive demos and a workbench for TypeSafe's Jev model."""

@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest a focused improvement or new use case.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Who would benefit, and what are they trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the desired behavior and how it fits the local demo or Workbench.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+      description: Optional workarounds, implementation ideas, dependencies, or scope considerations.
