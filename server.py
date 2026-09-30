@@ -378,6 +378,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, status, payload, content_type="application/json"):
         data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        # Header values must stay on one line, including MIME types inferred from static paths.
+        content_type = content_type.replace("\r", "").replace("\n", "")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
