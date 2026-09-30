@@ -63,6 +63,26 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertEqual(json.loads(body)["reason"], "host")
 
+    def test_static_content_type_cannot_inject_headers_or_body(self):
+        with tempfile.TemporaryDirectory() as folder:
+            static = Path(folder)
+            asset = b"body { color: green; }"
+            (static / "asset.css").write_bytes(asset)
+            for newline in ("\r\n", "\r", "\n"):
+                with self.subTest(newline=newline):
+                    content_type = "text/css" + newline + "X-Injected: yes" + newline * 2 + "injected body"
+                    with patch.object(server, "STATIC", static), patch.object(
+                        server.mimetypes, "guess_type", return_value=(content_type, None)
+                    ):
+                        status, headers, body = self.request("GET", "/asset.css")
+                    self.assertEqual(status, 200)
+                    self.assertNotIn("X-Injected", headers)
+                    self.assertEqual(headers["Content-Type"],
+                                     "text/cssX-Injected: yesinjected body; charset=utf-8")
+                    self.assertEqual(headers["Content-Length"], str(len(asset)))
+                    self.assertEqual(headers["Cache-Control"], "no-store")
+                    self.assertEqual(body, asset)
+
     def test_post_without_session_token_is_rejected(self):
         status, _, body = self.request("POST", "/api/workbench/export", "{}",
                                        {"Content-Type": "application/json"})

@@ -92,10 +92,18 @@ async function boot() {
 
 // ---------- render ----------
 function render() {
+  let view;
+  switch (W.tab) {
+    case "tests": view = renderTests(); break;
+    case "bulk": view = renderBulk(); break;
+    case "examples": view = renderExamples(); break;
+    default:
+      W.tab = "build";
+      view = renderBuild();
+  }
   mount("#tabs", TABS.map(([k, label]) => h("button", { class: `tab${W.tab === k ? " active" : ""}`, onclick: () => { W.tab = k; location.hash = k; render(); } },
     label, k === "tests" && W.items.length ? ` (${W.items.length})` : "")));
-  const view = { build: renderBuild, tests: renderTests, bulk: renderBulk, examples: renderExamples }[W.tab];
-  mount("#view", view());
+  mount("#view", view);
 }
 
 // ---------- Build ----------
