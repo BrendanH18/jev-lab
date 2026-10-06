@@ -308,13 +308,14 @@ function renderBatch(res) {
     }
     const expected = m.label?.shield || (m.label?.attack ? "quarantine" : "safe");
     const matched = current.verdict.level === expected;
+    const meta = current.meta;
     return h("tr", { style: { cursor: "pointer" }, onclick: () => select(r.id) },
       h("td", {}, h("b", {}, m.from_name), h("div", { class: "faint" }, m.subject)),
       h("td", {}, statusBadge(current.verdict.level)),
       h("td", { class: "num" }, pct(current.verdict.risk)),
       h("td", {}, h("span", { class: `badge ${matched ? "good" : "warning"}`, title: m.label?.expect || "" }, icon(matched ? "check" : "alert"), `expected ${expected}`)),
-      h("td", { class: "num" }, ms(r.meta.latency_ms)),
-      h("td", { class: "num" }, num(r.meta.input_tokens)));
+      h("td", { class: "num" }, meta ? ms(meta.latency_ms) : "—"),
+      h("td", { class: "num" }, meta ? num(meta.input_tokens) : "—"));
   });
   const sumLatency = res.results.reduce((s, r) => s + (r.meta?.latency_ms || 0), 0);
   mount(panel,
