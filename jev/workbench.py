@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List
 
 from .client import JevClient, JevError
 from .config import SAMPLES_DIR, WORKBENCH_DIR
@@ -235,28 +236,59 @@ def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "t
     if not rows:
         raise WorkbenchError("No rows to run")
     started = time.perf_counter()
-    stop = {"error": None}
+    stop = threading.Event()
+    stopped = {"error": None}
+    lock = threading.Lock()
 
     def one(index_row):
         index, row = index_row
-        if stop["error"]:
-            return {"index": index, "row": row, "skipped": True}
         state = row if isinstance(row, (dict, list)) else {field: row}
         try:
             result = client.system_one(state, questions)
             return {"index": index, "row": row, "answers": result.answers, "meta": result.meta()}
         except JevError as err:
             if err.status in (401, 402):
-                stop["error"] = str(err)
+                with lock:
+                    if stopped["error"] is None:
+                        stopped["error"] = str(err)
+                stop.set()
             return {"index": index, "row": row, "error": str(err)}
 
-    with ThreadPoolExecutor(max_workers=BULK_CONCURRENCY) as pool:
-        results = list(pool.map(one, enumerate(rows)))
+    def skipped(index_row):
+        index, row = index_row
+        return {"index": index, "row": row, "skipped": True}
+
+    results = map_until_stopped(one, list(enumerate(rows)), BULK_CONCURRENCY, stop, skipped)
     done = [r for r in results if "answers" in r]
     return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
-            "rows": len(rows), "completed": len(done), "stopped": stop["error"],
+            "rows": len(rows), "completed": len(done), "stopped": stopped["error"],
             "cost_usd": sum(r["meta"]["cost_usd"] for r in done),
             "input_tokens": sum(r["meta"]["input_tokens"] for r in done)}
+
+
+def map_until_stopped(fn: Callable, items: list, max_workers: int, stop: threading.Event, skipped: Callable) -> list:
+    """Run fn(item) with at most max_workers in flight. Once stop is set, remaining items are not started."""
+    if not items:
+        return []
+    results: list = [None] * len(items)
+    workers = max(1, min(max_workers, len(items)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        pending = {}
+        next_i = 0
+        while next_i < len(items) or pending:
+            while next_i < len(items) and len(pending) < workers and not stop.is_set():
+                pending[pool.submit(fn, items[next_i])] = next_i
+                next_i += 1
+            if stop.is_set():
+                while next_i < len(items):
+                    results[next_i] = skipped(items[next_i])
+                    next_i += 1
+            if not pending:
+                break
+            done, _ = wait(set(pending), return_when=FIRST_COMPLETED)
+            for fut in done:
+                results[pending.pop(fut)] = fut.result()
+    return results
 
 
 # --- code export ---------------------------------------------------------------------------

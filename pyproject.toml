@@ -18,5 +18,15 @@ Releases = "https://github.com/BrendanH18/jev-lab/releases"
 
 # Jev Lab is an application, not a library: `uv run server.py` installs the dependency into a
 # project venv and starts the server. No build backend is needed.
+[dependency-groups]
+dev = ["ruff>=0.14"]
+
 [tool.uv]
 package = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

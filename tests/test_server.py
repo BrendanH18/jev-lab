@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import server
+from helpers import fake_answers
+from jev.client import JevError
 
 
 class HttpTests(unittest.TestCase):
@@ -160,6 +162,58 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["Content-Type"], "text/css; charset=utf-8")
         self.assertEqual(body, b"body { color: green; }")
+
+    def test_shield_batch_keeps_results_when_one_call_fails(self):
+        messages = [
+            {"id": "a", "from_name": "A", "from_email": "a@example.com", "subject": "One", "body": "Hello"},
+            {"id": "b", "from_name": "B", "from_email": "b@example.com", "subject": "Two", "body": "Hello"},
+        ]
+
+        def fake(body):
+            if body["message"]["id"] == "a":
+                raise JevError("slow down", status=429)
+            return {"meta": {"cost_usd": 0.01, "input_tokens": 4}, "answers": {}, "fact": {}, "verdict": {}}
+
+        with patch.object(server, "api_shield", side_effect=fake):
+            out = server.api_shield_batch({"messages": messages})
+        self.assertEqual([r["id"] for r in out["results"]], ["a", "b"])
+        self.assertEqual(out["results"][0]["status"], 429)
+        self.assertEqual(out["completed"], 1)
+        self.assertIsNone(out["stopped"])
+        self.assertAlmostEqual(out["total_cost_usd"], 0.01)
+
+    def test_dispatch_execute_requires_a_plan_from_this_server(self):
+        server.dispatch_world.reset()
+        server._approved_plans.clear()
+        self.addCleanup(server.dispatch_world.reset)
+        self.addCleanup(server._approved_plans.clear)
+        with self.assertRaises(server.BadRequest) as ctx:
+            server.api_dispatch_execute({
+                "tool": "refund_order", "exec_args": {"order": "A-1041", "reason": "damaged"}})
+        self.assertIn("not approved", str(ctx.exception))
+        self.assertFalse(server.dispatch_world.state["orders"]["A-1041"]["refunded"])
+
+        text = "pay packright's invoice"
+        cands = server.dispatch.candidates(text)
+        questions = server.dispatch.questions(server.dispatch_world.state, cands, source="command")
+        answers = fake_answers(questions, {"tool": "pay_vendor", "pay.vendor": "packright", "pay.amount": "open_invoice"})
+        plan = server.dispatch.plan(answers, cands, server.dispatch_world, "command", text)
+        self.assertEqual(plan["decision"], "execute")
+        server._remember_plan(plan)
+        # The browser's JSON.stringify turns 860.0 into 860, which comes back as an int.
+        args = dict(plan["exec_args"], amount=int(plan["exec_args"]["amount"]))
+        self.assertEqual(server._action_key(plan["tool"], args), server._action_key(plan["tool"], plan["exec_args"]))
+        out = server.api_dispatch_execute({"tool": plan["tool"], "exec_args": args})
+        self.assertEqual(out["executed"]["kind"], "payment")
+        with self.assertRaises(server.BadRequest):
+            server.api_dispatch_execute({"tool": plan["tool"], "exec_args": args})
+
+        confirm = dict(plan, decision="confirm")
+        server._remember_plan(confirm)
+        self.assertIsNotNone(server.dispatch.recheck(confirm, server.dispatch_world))
+        with self.assertRaises(server.BadRequest) as blocked:
+            server.api_dispatch_execute({"tool": plan["tool"], "exec_args": args})
+        self.assertIn("paid", str(blocked.exception).lower())
 
 
 if __name__ == "__main__":

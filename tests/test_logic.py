@@ -103,6 +103,22 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(p["decision"], "execute")
         self.assertEqual(p["exec_args"], {"meeting": "northside_tasting", "day": "friday", "time": "15:00"})
 
+    def test_recheck_blocks_a_refund_that_already_happened(self):
+        p = self.plan("refund maya's torn bag", {"tool": "refund_order", "refund.order": "A-1041",
+                                                 "refund.reason": "damaged"})
+        self.world.execute(p["tool"], p["exec_args"], {})
+        self.assertIn("Already refunded", dispatch.recheck(p, self.world))
+
+    def test_recheck_lets_a_confirmation_through_and_a_fresh_execute(self):
+        confirm = self.plan("tom's kit broke", {"tool": "refund_order", "refund.order": "A-1044",
+                                                "refund.reason": "damaged"})
+        self.assertEqual(confirm["decision"], "confirm")
+        self.assertIsNone(dispatch.recheck(confirm, self.world))
+        fresh = self.plan("refund maya's torn bag", {"tool": "refund_order", "refund.order": "A-1041",
+                                                     "refund.reason": "damaged"})
+        self.assertEqual(fresh["decision"], "execute")
+        self.assertIsNone(dispatch.recheck(fresh, self.world))
+
     def test_low_tool_probability_clarifies(self):
         cands = dispatch.candidates("hmm")
         qs = dispatch.questions(self.world.state, cands)
