@@ -41,17 +41,24 @@ function currentMessage() {
   return S.selected === COMPOSE_ID ? draft : S.inbox.find((m) => m.id === S.selected);
 }
 
+function resultBadge(r) {
+  if (!r) return null;
+  if (r.verdict) return statusBadge(r.verdict.level);
+  if (r.error) return statusBadge("reject", r.skipped ? "Skipped" : "Failed");
+  return null;
+}
+
 function renderInbox() {
   $("#inbox-count").textContent = `${S.inbox.length} messages`;
   const items = S.inbox.map((m) => {
     const r = S.results[m.id];
     return h("button", { class: `inbox-item${S.selected === m.id ? " active" : ""}`, onclick: () => select(m.id) },
-      h("div", { class: "from" }, h("span", {}, m.from_name), r ? statusBadge(r.verdict.level) : null),
+      h("div", { class: "from" }, h("span", {}, m.from_name), resultBadge(r)),
       h("div", { class: "subj" }, m.subject));
   });
   const composeResult = S.results[COMPOSE_ID];
   items.push(h("button", { class: `inbox-item${S.selected === COMPOSE_ID ? " active" : ""}`, onclick: () => select(COMPOSE_ID) },
-    h("div", { class: "from" }, h("span", { style: { color: "var(--accent-text)" } }, "✎ Write your own"), composeResult ? statusBadge(composeResult.verdict.level) : null),
+    h("div", { class: "from" }, h("span", { style: { color: "var(--accent-text)" } }, "✎ Write your own"), resultBadge(composeResult)),
     h("div", { class: "subj" }, "Try to sneak something past it")));
   mount("#inbox", items);
 }
@@ -120,6 +127,10 @@ async function screen(message) {
 function renderResult(res, note = "") {
   if (!res) {
     mount("#result-panel", h("div", { class: "empty" }, "Write a message and screen it."));
+    return;
+  }
+  if (!res.verdict) {
+    mount("#result-panel", h("div", { class: "empty" }, res.error || "This message was not screened."));
     return;
   }
   const v = res.verdict;
@@ -233,7 +244,7 @@ const rescore = debounce(async () => {
   if (!targets.length) return;
   const started = performance.now();
   try {
-    const updated = await Promise.all(targets.map(async ([id, r]) => {
+    const updated = await Promise.all(targets.filter(([, r]) => r.verdict && r.answers && r.fact).map(async ([id, r]) => {
       const { verdict, compute_ms } = await api("/api/shield/rescore", { answers: r.answers, fact: r.fact, weights: S.weights, policy: S.policy });
       return [id, { ...r, verdict }, compute_ms];
     }));
@@ -254,13 +265,25 @@ async function scanAll() {
   mount("#scan-icon", h("span", { class: "spin" }));
   try {
     const res = await api("/api/shield/batch", { messages: S.inbox, weights: S.weights });
-    for (const r of res.results) S.results[r.id] = r;
-    if (!S.weights) adoptPolicy(res.results[0].verdict);
+    for (const r of res.results) {
+      S.results[r.id] = r.verdict ? r : {
+        id: r.id,
+        error: r.error || "Not screened. The batch stopped before this message.",
+        skipped: !!r.skipped,
+        status: r.status,
+      };
+    }
+    const firstOk = res.results.find((r) => r.verdict);
+    if (!S.weights && firstOk) adoptPolicy(firstOk.verdict);
     lastBatch = res;
     renderInbox();
     if (S.results[S.selected]) renderResult(S.results[S.selected]);
     renderBatch(res);
-    toast(`Screened ${res.results.length} messages in ${ms(res.wall_ms)} for ${usd(res.total_cost_usd)}`);
+    const failed = res.results.filter((r) => !r.verdict).length;
+    const done = res.results.length - failed;
+    toast(failed
+      ? `Screened ${done} of ${res.results.length} messages. ${failed} failed or were skipped.`
+      : `Screened ${done} messages in ${ms(res.wall_ms)} for ${usd(res.total_cost_usd)}`);
   } catch (e) { handleError(e); } finally {
     btn.disabled = false;
     mount("#scan-icon", icon("layers"));
@@ -274,17 +297,27 @@ function renderBatch(res) {
   const rows = res.results.map((r) => {
     const m = S.inbox.find((x) => x.id === r.id);
     const current = S.results[r.id];
+    if (!current?.verdict) {
+      return h("tr", { style: { cursor: "pointer" }, onclick: () => select(r.id) },
+        h("td", {}, h("b", {}, m.from_name), h("div", { class: "faint" }, m.subject)),
+        h("td", {}, resultBadge(current)),
+        h("td", { class: "num" }, "—"),
+        h("td", {}, h("span", { class: "faint" }, current?.error || r.error || "Not screened")),
+        h("td", { class: "num" }, "—"),
+        h("td", { class: "num" }, "—"));
+    }
     const expected = m.label?.shield || (m.label?.attack ? "quarantine" : "safe");
     const matched = current.verdict.level === expected;
+    const meta = current.meta;
     return h("tr", { style: { cursor: "pointer" }, onclick: () => select(r.id) },
       h("td", {}, h("b", {}, m.from_name), h("div", { class: "faint" }, m.subject)),
       h("td", {}, statusBadge(current.verdict.level)),
       h("td", { class: "num" }, pct(current.verdict.risk)),
       h("td", {}, h("span", { class: `badge ${matched ? "good" : "warning"}`, title: m.label?.expect || "" }, icon(matched ? "check" : "alert"), `expected ${expected}`)),
-      h("td", { class: "num" }, ms(r.meta.latency_ms)),
-      h("td", { class: "num" }, num(r.meta.input_tokens)));
+      h("td", { class: "num" }, meta ? ms(meta.latency_ms) : "—"),
+      h("td", { class: "num" }, meta ? num(meta.input_tokens) : "—"));
   });
-  const sumLatency = res.results.reduce((s, r) => s + r.meta.latency_ms, 0);
+  const sumLatency = res.results.reduce((s, r) => s + (r.meta?.latency_ms || 0), 0);
   mount(panel,
     h("div", { class: "panel-head" }, icon("layers"), h("h2", {}, "Whole inbox, screened in parallel"), h("div", { class: "spacer" }),
       h("div", { class: "stat-row" },

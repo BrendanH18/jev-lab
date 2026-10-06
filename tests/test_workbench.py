@@ -3,11 +3,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from helpers import FakeClient  # noqa: E402
 from jev import examples, workbench  # noqa: E402
+from jev.client import JevError  # noqa: E402
 
 Q = {
     "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "money", "tech": None}},
@@ -91,6 +93,28 @@ class BulkAndExportTests(unittest.TestCase):
         self.assertEqual([r["answers"]["dept"]["choice"] for r in report["results"]], ["tech", "billing"])
         self.assertEqual(client.calls[0][0], {"text": "bug in app"})
         self.assertGreater(report["cost_usd"], 0)
+
+    def test_bulk_stops_submitting_after_auth_or_budget_errors(self):
+        class StopClient(FakeClient):
+            def system_one(self, state, questions):
+                if state["text"] == "stop":
+                    raise JevError("budget", status=402)
+                if state["text"] == "limit":
+                    raise JevError("slow", status=429)
+                return super().system_one(state, questions)
+
+        with patch.object(workbench, "BULK_CONCURRENCY", 1):
+            stopped = workbench.run_bulk(StopClient(), ["stop", "later", "more"], Q)
+            limited = workbench.run_bulk(StopClient(), ["limit", "ok"], Q)
+        self.assertEqual(stopped["stopped"], "budget")
+        self.assertEqual(stopped["completed"], 0)
+        self.assertTrue(stopped["results"][0]["error"])
+        self.assertTrue(stopped["results"][1]["skipped"])
+        self.assertTrue(stopped["results"][2]["skipped"])
+        self.assertIsNone(limited["stopped"])
+        self.assertEqual(limited["completed"], 1)
+        self.assertIn("answers", limited["results"][1])
+        self.assertNotIn("skipped", limited["results"][1])
 
     def test_export_snippets(self):
         out = workbench.export({"text": "hi"}, Q, "jev-latest")

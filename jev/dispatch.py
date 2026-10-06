@@ -398,6 +398,28 @@ def decide(call: dict, check_list: List[dict]) -> dict:
                                                % (call["confidence"] * 100, meta["threshold"] * 100)]}
 
 
+def recheck(plan: dict, world_obj: World) -> Optional[str]:
+    """Re-apply deterministic policy to a plan this server already produced.
+
+    Block-level checks always stop the action. Approval-level checks stop it only when the
+    stored decision was an automatic execute; a confirm decision means the user is accepting those.
+    Returns an error string, or None when the action may run.
+    """
+    missing = plan.get("missing") or []
+    if missing:
+        return "Missing: %s" % ", ".join(missing)
+    call = {"tool": plan["tool"], "exec_args": plan.get("exec_args") or {}, "missing": []}
+    check_list = checks(call, world_obj, sender_email=None)
+    blocks = [c for c in check_list if c["level"] == "block"]
+    if blocks:
+        return blocks[0]["detail"]
+    if plan.get("decision") != "confirm":
+        approvals = [c for c in check_list if c["level"] == "approval"]
+        if approvals:
+            return approvals[0]["detail"]
+    return None
+
+
 def plan(answers: dict, cands: dict, world_obj: World, source: str, text: str,
          override: Optional[dict] = None, sender_email: Optional[str] = None,
          sender_checks: bool = True) -> dict:

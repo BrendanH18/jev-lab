@@ -41,6 +41,12 @@ server. They make no external API calls. For a focused run, use unittest discove
 uv run --locked python -m unittest discover -v tests -p 'test_security.py'
 ```
 
+Lint the Python sources with the same Ruff check CI runs (a dev dependency, not imported by the app):
+
+```sh
+uv run --locked ruff check
+```
+
 For JavaScript edits, Node.js 22 is used in CI to check module syntax:
 
 ```sh

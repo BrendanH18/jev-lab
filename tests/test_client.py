@@ -30,10 +30,22 @@ class SpendGuardTests(unittest.TestCase):
             guard.check()
         self.assertEqual(ctx.exception.status, 402)
         fast = SpendGuard(budget_usd=0, rpm=2)
-        fast.check(); fast.check()
+        fast.check()
+        fast.check()
         with self.assertRaises(JevError) as ctx:
             fast.check()
         self.assertEqual(ctx.exception.status, 429)
+
+    def test_reservation_blocks_a_second_call_before_either_is_billed(self):
+        guard = SpendGuard(budget_usd=0.00002, rpm=10)
+        guard.check(0.000015)
+        with self.assertRaises(JevError) as ctx:
+            guard.check(0.000015)
+        self.assertEqual(ctx.exception.status, 402)
+        self.assertEqual(guard.snapshot()["live_calls"], 0)
+        guard.release(0.000015)
+        guard.check(0.000015)
+        self.assertAlmostEqual(guard.snapshot()["reserved_usd"], 0.000015)
 
 
 class JevClientTests(unittest.TestCase):
@@ -67,6 +79,31 @@ class JevClientTests(unittest.TestCase):
         c._post_system_one = lambda payload: dict(RESPONSE)
         trace = json.dumps(c.system_one("hello", QUESTIONS).trace())
         self.assertNotIn("sk-test", trace)
+
+    def test_failed_call_releases_the_reservation(self):
+        c = JevClient(settings(JEV_LAB_BUDGET_USD="2"))
+
+        def fail(_payload):
+            raise JevError("down", status=503)
+
+        c._post_system_one = fail
+        with self.assertRaises(JevError):
+            c.system_one("hello", QUESTIONS)
+        snap = c.guard.snapshot()
+        self.assertEqual(snap["reserved_usd"], 0.0)
+        self.assertEqual(snap["live_calls"], 0)
+        c._post_system_one = lambda payload: dict(RESPONSE)
+        c.system_one("hello", QUESTIONS)
+        self.assertEqual(c.guard.snapshot()["live_calls"], 1)
+        self.assertEqual(c.guard.snapshot()["reserved_usd"], 0.0)
+
+    def test_price_follows_the_answered_model(self):
+        self.assertEqual(client_mod.price_per_input_token("jev-1.13.0"), client_mod.PRICE_PER_INPUT_TOKEN_USD)
+        self.assertEqual(client_mod.price_per_input_token("jev-latest"), client_mod.PRICE_PER_INPUT_TOKEN_USD)
+        self.assertEqual(client_mod.price_per_input_token("jev-9.0.0"), client_mod.PRICE_PER_INPUT_TOKEN_USD)
+        result = client_mod.JevResult(
+            {"model": "jev-latest", "questions": {}}, dict(RESPONSE, model="jev-1.13.0"), 1.0)
+        self.assertAlmostEqual(result.cost_usd, 500 * client_mod.PRICE_PER_INPUT_TOKEN_USD)
 
     def test_error_messages(self):
         self.assertIn("rejected the API key", client_mod._error_message(401, {"detail": {"message": "bad"}}))

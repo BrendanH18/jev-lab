@@ -14,15 +14,15 @@ import json
 import mimetypes
 import os
 import sys
+import threading
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import dispatch, envfile, examples, find, hello, security, shield, workbench
 from jev.autopilot import Autopilot, find_message
-from jev.client import PRICE_PER_INPUT_TOKEN_USD, JevClient, JevError
+from jev.client import JevClient, JevError, price_per_input_token
 from jev.config import PROJECT_ROOT, Settings
 from jev.play import Games
 from jev.scenarios import COMMANDS, INBOX
@@ -40,6 +40,8 @@ dispatch_world = World()
 autopilot = Autopilot(client)
 games = Games(client)
 SESSION_TOKEN = security.new_token()
+_approved_lock = threading.Lock()
+_approved_plans: dict = {}
 
 
 class BadRequest(Exception):
@@ -68,7 +70,7 @@ def api_status(_body):
         "key_source": client.key_source,
         "model": client.model,
         "backend": client.backend,
-        "price_per_mtok_input": PRICE_PER_INPUT_TOKEN_USD * 1_000_000,
+        "price_per_mtok_input": price_per_input_token(client.model) * 1_000_000,
         "spend": client.guard.snapshot(),
         "env": env_status(),
     }
@@ -78,8 +80,7 @@ def api_key(body):
     key = (body.get("key") or "").strip()
     if not key:
         raise BadRequest("Paste an API key first.")
-    previous = client._memory_key
-    client.set_api_key(key)
+    previous = client.set_api_key(key)
     try:
         models = client.models().get("models", [])
     except JevError:
@@ -155,12 +156,79 @@ def api_shield_rescore(body):
 def api_shield_batch(body):
     messages = (body.get("messages") or [dict(m) for m in INBOX])[:50]
     started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=min(16, len(messages))) as pool:
-        results = list(pool.map(lambda m: dict(api_shield({"message": m, "weights": body.get("weights")}),
-                                               id=m.get("id")), messages))
+    stop = threading.Event()
+    weights = body.get("weights")
+
+    def one(message):
+        try:
+            return dict(api_shield({"message": message, "weights": weights}), id=message.get("id"))
+        except JevError as err:
+            if err.status in (401, 402):
+                stop.set()
+            return {"id": message.get("id"), "error": str(err), "status": err.status}
+        except BadRequest as err:
+            return {"id": message.get("id"), "error": str(err), "status": 400}
+
+    def skipped(message):
+        return {"id": message.get("id"), "skipped": True}
+
+    results = workbench.map_until_stopped(one, messages, min(16, len(messages)) or 1, stop, skipped)
+    done = [r for r in results if "meta" in r]
+    stopped = next((r["error"] for r in results if r.get("status") in (401, 402)), None)
     return {"results": results, "wall_ms": round((time.perf_counter() - started) * 1000, 1),
-            "total_cost_usd": sum(r["meta"]["cost_usd"] for r in results),
-            "total_input_tokens": sum(r["meta"]["input_tokens"] for r in results)}
+            "completed": len(done), "stopped": stopped,
+            "total_cost_usd": sum(r["meta"]["cost_usd"] for r in done),
+            "total_input_tokens": sum(r["meta"]["input_tokens"] for r in done)}
+
+
+def _action_key(tool, exec_args) -> str:
+    """Stable identity for a call, so JSON numbers match the floats the plan stored."""
+    args = {}
+    for key in sorted(exec_args or {}):
+        value = exec_args[key]
+        if isinstance(value, bool) or value is None or isinstance(value, str):
+            args[key] = value
+        elif isinstance(value, (int, float)):
+            number = float(value)
+            args[key] = int(number) if number.is_integer() else round(number, 2)
+        else:
+            args[key] = value
+    return json.dumps({"tool": tool, "args": args}, sort_keys=True, separators=(",", ":"))
+
+
+def _remember_plan(plan: dict) -> None:
+    if plan.get("decision") not in ("execute", "confirm") or plan.get("tool") in (None, "none"):
+        return
+    key = _action_key(plan["tool"], plan.get("exec_args") or {})
+    with _approved_lock:
+        _approved_plans[key] = plan
+
+
+def _take_plan(tool, exec_args):
+    key = _action_key(tool, exec_args)
+    with _approved_lock:
+        return key, _approved_plans.pop(key, None)
+
+
+def _restore_plan(key, plan) -> None:
+    with _approved_lock:
+        _approved_plans.setdefault(key, plan)
+
+
+def _run_approved(tool, exec_args):
+    if not isinstance(tool, str) or not isinstance(exec_args, dict):
+        raise BadRequest("tool and exec_args are required")
+    key, plan = _take_plan(tool, exec_args)
+    if plan is None:
+        raise BadRequest("This action was not approved by a plan from this server. Run the command again.")
+    try:
+        reason = dispatch.recheck(plan, dispatch_world)
+        if reason:
+            raise BadRequest(reason)
+        return dispatch_world.execute(plan["tool"], plan["exec_args"], {"via": "dispatch"})
+    except Exception:
+        _restore_plan(key, plan)
+        raise
 
 
 def _dispatch_plan(text, answers, override=None):
@@ -176,10 +244,11 @@ def api_dispatch(body):
     result = client.system_one(dispatch.state_for_command(text),
                                dispatch.questions(dispatch_world.state, cands, source="command"))
     _, plan = _dispatch_plan(text, result.answers)
+    _remember_plan(plan)
     out = {"meta": result.meta(), "trace": result.trace(), "answers": result.answers, "candidates": cands,
            "plan": plan}
     if body.get("execute") and plan["decision"] == "execute":
-        out["executed"] = dispatch_world.execute(plan["tool"], plan["exec_args"], {"via": "dispatch"})
+        out["executed"] = _run_approved(plan["tool"], plan["exec_args"])
         out["world"] = dispatch_world.snapshot()
     return out
 
@@ -187,12 +256,13 @@ def api_dispatch(body):
 def api_dispatch_replan(body):
     """Re-plan from answers Jev already gave (e.g. after the user picks a clarification). No Jev call."""
     _, plan = _dispatch_plan(body["text"], body["answers"], body.get("override"))
+    _remember_plan(plan)
     return {"plan": plan}
 
 
 def api_dispatch_execute(body):
     try:
-        entry = dispatch_world.execute(body["tool"], body["exec_args"], {"via": "dispatch"})
+        entry = _run_approved(body.get("tool"), body.get("exec_args"))
     except (KeyError, ValueError) as err:
         raise BadRequest(str(err))
     return {"executed": entry, "world": dispatch_world.snapshot()}
@@ -204,6 +274,8 @@ def api_dispatch_world(_body):
 
 def api_dispatch_reset(_body):
     dispatch_world.reset()
+    with _approved_lock:
+        _approved_plans.clear()
     return dispatch_world.snapshot()
 
 

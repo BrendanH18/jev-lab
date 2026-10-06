@@ -68,9 +68,12 @@ The explicit benchmark makes five calls: two sequential, two parallel, and one m
 - Bundled sample documents and rows live in `data/samples/`. Screenshots live in `docs/screenshots/`.
 
 The HTTP server uses threads. Shield batch and Workbench evaluation use bounded thread pools;
-Workbench bulk concurrency is eight. The client synchronizes spend accounting and SDK creation,
-and worlds use locks for mutations. This is still a single-user demo, with no database, durable
-job queue, or multi-process coordination.
+Workbench bulk concurrency is eight. A 401 or 402 stops either batch from starting further calls,
+and a single Shield failure stays on that message instead of failing the whole batch. Dispatch
+will only run a call that this process has already planned, and it re-checks block rules against
+the current world first. The client synchronizes spend accounting (including in-flight budget
+holds) and SDK creation, and worlds use locks for mutations. This is still a single-user demo,
+with no database, durable job queue, or multi-process coordination.
 
 ## Test boundaries
 

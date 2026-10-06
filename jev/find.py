@@ -8,7 +8,7 @@ line-by-line search cookbook: https://docs.typesafe.ai/cookbooks/semantic_find
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from .client import JevClient, choice, noul
 from .config import SAMPLES_DIR

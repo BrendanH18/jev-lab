@@ -37,9 +37,39 @@ except ImportError:  # pragma: no cover - exercised on Python 3.9
     TypeSafeClient = None
     SDK_VERSION = None
 
-# jev-1.13 pricing from https://docs.typesafe.ai/models: input tokens only, output is free.
-PRICE_PER_INPUT_TOKEN_USD = 0.042 / 1_000_000
+# Published Jev 1.13 input price (https://docs.typesafe.ai/models). Output tokens are free.
+# GET /v1/models does not include a price, so unknown ids use this same rate: it is the
+# highest published one, and under-counting would let the local budget drift low.
+JEV_1_13_INPUT_USD = 0.042 / 1_000_000
+PRICE_PER_INPUT_TOKEN_USD = JEV_1_13_INPUT_USD
+_KNOWN_INPUT_USD = {
+    "jev-1.13.0": JEV_1_13_INPUT_USD,
+    "jev-1.13": JEV_1_13_INPUT_USD,
+    "jev-latest": JEV_1_13_INPUT_USD,  # alias; the docs currently point it at jev-1.13.0
+    "jev-preview": JEV_1_13_INPUT_USD,
+}
 RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504, 529}
+
+
+def price_per_input_token(model: str) -> float:
+    """USD per input token for a model id or alias. Unknown models use the highest known rate."""
+    model = model or ""
+    if model in _KNOWN_INPUT_USD:
+        return _KNOWN_INPUT_USD[model]
+    if model.startswith("jev-1.13"):
+        return JEV_1_13_INPUT_USD
+    return max(_KNOWN_INPUT_USD.values())
+
+
+def estimate_reserve_usd(payload: dict, model: str) -> float:
+    """A high estimate of what this request will cost, held until the call settles.
+
+    Two characters per token over-counts typical JSON. record() replaces the hold with the
+    billed token cost, and a failed call releases it.
+    """
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    tokens = max(64, (len(raw) + 1) // 2)
+    return tokens * price_per_input_token(model)
 
 
 class JevError(Exception):
@@ -67,7 +97,7 @@ class JevResult:
 
     @property
     def cost_usd(self) -> float:
-        return self.input_tokens * PRICE_PER_INPUT_TOKEN_USD
+        return self.input_tokens * price_per_input_token(self.model)
 
     def meta(self) -> dict:
         return {
@@ -85,23 +115,31 @@ class JevResult:
 
 
 class SpendGuard:
-    """Per-process budget and rate limit for live calls."""
+    """Per-process budget and rate limit for live calls.
+
+    check() holds reserve_usd against the budget until record() or release(). Concurrent calls
+    therefore see each other's reservations instead of all reading the same spent total.
+    """
 
     def __init__(self, budget_usd: float = 2.0, rpm: int = 120):
         self.budget_usd = budget_usd
         self.rpm = rpm
         self.spent_usd = 0.0
+        self.reserved_usd = 0.0
         self.live_calls = 0
         self.input_tokens = 0
         self._times: deque = deque()
         self._lock = threading.Lock()
 
-    def check(self) -> None:
+    def check(self, reserve_usd: float = 0.0) -> None:
+        reserve_usd = max(0.0, float(reserve_usd))
         with self._lock:
-            if self.budget_usd > 0 and self.spent_usd >= self.budget_usd:
+            committed = self.spent_usd + self.reserved_usd
+            if self.budget_usd > 0 and committed + reserve_usd > self.budget_usd:
                 raise JevError(
-                    "This server run has spent its $%.2f budget (%d live calls). Restart it with "
-                    "JEV_LAB_BUDGET_USD=<amount> to allow more." % (self.budget_usd, self.live_calls),
+                    "This server run has spent its $%.2f budget ($%.4f recorded, $%.4f held by calls "
+                    "still running, %d live calls). Restart it with JEV_LAB_BUDGET_USD=<amount> to allow more."
+                    % (self.budget_usd, self.spent_usd, self.reserved_usd, self.live_calls),
                     status=402)
             now = time.monotonic()
             while self._times and self._times[0] < now - 60:
@@ -110,17 +148,24 @@ class SpendGuard:
                 raise JevError("Local rate limit: more than %d live calls in the last minute. Wait a moment."
                                % self.rpm, status=429)
             self._times.append(now)
+            self.reserved_usd += reserve_usd
 
-    def record(self, result: JevResult) -> None:
+    def release(self, reserve_usd: float = 0.0) -> None:
+        """Drop a hold when the call failed and nothing should be billed."""
         with self._lock:
+            self.reserved_usd = max(0.0, self.reserved_usd - max(0.0, float(reserve_usd)))
+
+    def record(self, result: JevResult, reserve_usd: float = 0.0) -> None:
+        with self._lock:
+            self.reserved_usd = max(0.0, self.reserved_usd - max(0.0, float(reserve_usd)))
             self.live_calls += 1
             self.input_tokens += result.input_tokens
             self.spent_usd += result.cost_usd
 
     def snapshot(self) -> dict:
         with self._lock:
-            return {"budget_usd": self.budget_usd, "spent_usd": self.spent_usd, "live_calls": self.live_calls,
-                    "input_tokens": self.input_tokens, "rpm": self.rpm}
+            return {"budget_usd": self.budget_usd, "spent_usd": self.spent_usd, "reserved_usd": self.reserved_usd,
+                    "live_calls": self.live_calls, "input_tokens": self.input_tokens, "rpm": self.rpm}
 
 
 class JevClient:
@@ -162,8 +207,11 @@ class JevClient:
     def backend(self) -> str:
         return "typesafe-sdk %s" % SDK_VERSION if TypeSafeClient is not None else "stdlib fallback"
 
-    def set_api_key(self, key: Optional[str]) -> None:
+    def set_api_key(self, key: Optional[str]) -> Optional[str]:
+        """Install an in-memory key and return the previous one, so a failed check can roll back."""
+        previous = self._memory_key
         self._memory_key = (key or "").strip() or None
+        return previous
 
     def reload_settings(self) -> None:
         self.settings.reload_file()
@@ -175,12 +223,17 @@ class JevClient:
         if not self.api_key:
             raise JevError("No TypeSafe API key yet. Click “Connect API key” in the top-right, or add "
                            "TYPESAFE_API_KEY to .env.", status=401)
-        self.guard.check()
+        reserve = estimate_reserve_usd(payload, self.model)
+        self.guard.check(reserve)
         started = time.perf_counter()
-        response = self._post_system_one(payload)
+        try:
+            response = self._post_system_one(payload)
+        except BaseException:
+            self.guard.release(reserve)
+            raise
         latency_ms = (time.perf_counter() - started) * 1000
         result = JevResult(payload, response, latency_ms, backend=self.backend)
-        self.guard.record(result)
+        self.guard.record(result, reserve)
         return result
 
     def models(self) -> dict:

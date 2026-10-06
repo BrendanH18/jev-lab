@@ -123,10 +123,12 @@ For example, choose another port:
 PORT=8322 uv run --locked server.py
 ```
 
-Cost displays use returned input-token counts and the fixed pricing constant in
-[`jev/client.py`](jev/client.py). They are estimates, not billing records. The spend guard checks
-completed-call estimates before admitting another call; concurrent calls can exceed the threshold.
-Use your provider's billing controls for a hard spending limit. See [security and data handling](SECURITY.md).
+Cost displays use returned input-token counts and the model price table in
+[`jev/client.py`](jev/client.py). They are estimates, not billing records. The spend guard holds an
+over-estimate for each call still running, then replaces it with the billed cost. A call that fails
+releases the hold. One call can still settle above its hold if the provider counts more tokens than
+the estimate; the next admission sees the corrected total. Use your provider's billing controls for
+a hard spending limit. See [security and data handling](SECURITY.md).
 
 ## Development
 

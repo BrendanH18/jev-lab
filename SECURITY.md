@@ -66,11 +66,13 @@ The client checks a per-process estimated budget (`JEV_LAB_BUDGET_USD`, default 
 rate limit (`JEV_LAB_RPM`, default `120`) before admitting model calls. Values at or below zero
 disable the corresponding check.
 
-These are convenience guards, not hard billing caps. Spend is recorded after successful calls
-using returned input-token counts and a fixed price constant. Concurrent requests can pass the
-check before earlier calls finish; retries and unsuccessful requests are not separately accounted
-for. The limit resets when the process restarts. Provider-side billing controls should enforce
-any hard spending limit.
+These are convenience guards, not hard billing caps. Each admitted call holds an over-estimate of
+its cost until it finishes. The hold is then replaced by the cost of the returned input-token
+count at the price for the model id in the response (unknown ids use the highest known rate). A
+failed call releases its hold. One in-flight call can still settle above its hold when the
+provider counts more tokens than the estimate; later admissions see the corrected total. Retries
+inside the provider SDK are not separately visible. The limit resets when the process restarts.
+Provider-side billing controls should enforce any hard spending limit.
 
 Batch features limit input sizes: Shield accepts up to 50 messages; Workbench bulk accepts up to
 200 rows and question sets up to 100 questions. See the [Workbench guide](docs/workbench.md).
