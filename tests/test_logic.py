@@ -6,6 +6,7 @@ Run: python3 -m unittest discover tests
 """
 
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,41 @@ class FakeClient:
         answers = fake_answers(questions, picks)
         return JevResult({"state": state, "model": "fake", "questions": questions},
                          {"model": "fake", "answers": answers, "usage": {"input_tokens": 1000}}, 12.0)
+
+
+class WorldTests(unittest.TestCase):
+    def test_a_paid_invoice_cannot_be_paid_again(self):
+        world = World()
+        args = {"vendor": "packright", "amount": 860.0}
+        world.execute("pay_vendor", args, {})
+        balance = world.state["balance"]
+        with self.assertRaises(ValueError) as ctx:
+            world.execute("pay_vendor", args, {})
+        self.assertIn("already paid", str(ctx.exception).lower())
+        self.assertEqual(world.state["balance"], balance)
+        self.assertTrue(world.state["vendors"]["packright"]["invoices"]["PR-2210"]["paid"])
+        self.assertEqual(len(world.state["payments"]), 1)
+
+    def test_concurrent_payments_of_one_invoice_only_settle_once(self):
+        world = World()
+        args = {"vendor": "packright", "amount": 860.0}
+        errors = []
+
+        def pay():
+            try:
+                world.execute("pay_vendor", args, {})
+            except ValueError as err:
+                errors.append(str(err))
+
+        threads = [threading.Thread(target=pay) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(errors), 1)
+        self.assertIn("already paid", errors[0].lower())
+        self.assertEqual(len(world.state["payments"]), 1)
+        self.assertEqual(world.state["balance"], 18400.00 - 860.0)
 
 
 class CandidateTests(unittest.TestCase):

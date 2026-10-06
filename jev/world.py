@@ -189,6 +189,10 @@ class World:
         amount = float(args["amount"])
         if amount > self.state["balance"]:
             raise ValueError("Insufficient balance")
+        # execute() holds the world lock, so this sees a payment that raced past recheck().
+        paid = self.paid_invoice_for(args["vendor"], amount)
+        if paid:
+            raise ValueError("%s is already paid" % paid)
         invoice = self.open_invoice_for(args["vendor"], amount)
         if invoice and not vendor["invoices"][invoice]["paid"]:
             vendor["invoices"][invoice]["paid"] = True
