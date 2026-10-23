@@ -114,19 +114,29 @@ function removeImage(ref) {
   render();
 }
 
-// Which picture a Box question points at: one named by reference or by a backticked state field.
+// Follow a backticked state path such as `photo`, `after.photo` or `frames[2].frame`.
+function lookup(state, path) {
+  if (state && typeof state === "object" && Object.hasOwn(state, path)) return state[path]; // a key with dots
+  let node = state;
+  for (const part of path.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean)) {
+    if (node === null || typeof node !== "object" || !(part in node)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+// Which picture a Box question points at: one named by reference or by a backticked state path.
+// With several pictures and no match, return null rather than draw the box on a guessed picture.
 function imageFor(question, state, images) {
   const text = typeof question.instructions === "string" ? question.instructions : JSON.stringify(question.instructions);
   const byRef = images.find((i) => text.includes(i.ref));
   if (byRef) return byRef;
-  if (state && typeof state === "object" && !Array.isArray(state)) {
-    for (const [k, v] of Object.entries(state)) {
-      const img = images.find((i) => i.ref === v);
-      const field = new RegExp("`" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9_])");
-      if (img && field.test(text)) return img;
-    }
+  for (const [, path] of text.matchAll(/`([^`]+)`/g)) {
+    const value = lookup(state, path.trim());
+    const img = images.find((i) => i.ref === value);
+    if (img) return img;
   }
-  return images[0];
+  return images.length === 1 ? images[0] : null;
 }
 
 function loadInto(state, questions, { expect = {}, name = "", notes = "", id = null, example = null, images = {} } = {}) {
@@ -271,13 +281,17 @@ function renderBoxes() {
   const boxes = Object.entries(r.answers).filter(([, a]) => a.type === "box");
   if (!boxes.length || !r.images?.length) return null;
   const byImage = new Map();
+  const unplaced = [];
   for (const [qid, a] of boxes) {
     const img = imageFor(r.trace.request.questions[qid] || {}, r.trace.request.state, r.images);
+    if (!img) { unplaced.push(qid); continue; }
     if (!byImage.has(img)) byImage.set(img, []);
     byImage.get(img).push({ box: a.box, label: `${qid} · ${pct(a.confidence)}` });
   }
   return h("div", { class: "box-views" }, [...byImage].map(([img, list]) =>
-    photoView(img.url, list, { alt: "Image with Box answers", caption: `${list.length} Box answer${list.length > 1 ? "s" : ""} on ${img.ref}. A Box always returns edges, so check a presence Noul before trusting one.` })));
+    photoView(img.url, list, { alt: "Image with Box answers", caption: `${list.length} Box answer${list.length > 1 ? "s" : ""} on ${img.ref}. A Box always returns edges, so check a presence Noul before trusting one.` })),
+  unplaced.length ? h("p", { class: "faint", style: { fontSize: "12px" } },
+    `Not drawn: ${unplaced.join(", ")}. Name the picture in the instructions by reference or by its backticked state field to see the box.`) : null);
 }
 
 function renderRaw() {

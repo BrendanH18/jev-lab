@@ -15,12 +15,15 @@ from jev import claims, images  # noqa: E402
 from jev.world import World  # noqa: E402
 
 
-def png(width, height):
-    def chunk(kind, data):
-        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+
+def png(width, height, extra=b""):
+    """A PNG; `extra` holds chunks placed between IHDR and IDAT."""
     raw = b"".join(b"\x00" + b"\x80\x80\x80" * width for _ in range(height))
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+            + extra + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 def jpeg_header(width, height):
@@ -56,11 +59,21 @@ class ImageTests(unittest.TestCase):
         with self.assertRaises(images.ImageError):
             images.parse_upload({"data_base64": "not base64!"})
 
+    def test_animated_png_is_found_by_chunk_not_by_bytes(self):
+        text_mentioning_actl = chunk(b"tEXt", b"Comment\x00made with acTL-free tools")
+        self.assertEqual(images.dimensions(png(300, 300, text_mentioning_actl))[0], "png")
+        big_profile = chunk(b"iCCP", b"profile\x00\x00" + b"\x00" * 6000)  # pushes acTL past byte 4096
+        animated = png(300, 300, big_profile + chunk(b"acTL", struct.pack(">II", 2, 0)))
+        with self.assertRaises(images.ImageError):
+            images.dimensions(animated)
+
     def test_parse_images_checks_references_and_count(self):
         ok = images.parse_images({"photo-abcdef": {"sample": "torn-bag"}})
         self.assertIn("photo-abcdef", ok)
         with self.assertRaises(images.ImageError):
             images.parse_images({"x": {"sample": "torn-bag"}})
+        with self.assertRaises(images.ImageError):
+            images.parse_images({"photo-abcdef\n": {"sample": "torn-bag"}})
         with self.assertRaises(images.ImageError):
             images.parse_images({"img-%06d" % i: {"sample": "torn-bag"} for i in range(images.MAX_IMAGES + 1)})
 
@@ -120,6 +133,16 @@ class ClaimsTests(unittest.TestCase):
         out, _ = self.run_claim(dict(GOOD, severity=1.0))
         self.assertEqual(out["verdict"]["remedy"], "replacement_or_credit")
         self.assertEqual(out["verdict"]["amount"], 19.0)
+
+    def test_uncertain_damage_shows_a_tentative_box_for_the_reviewer(self):
+        out, _ = self.run_claim(dict(GOOD, damage_visible=0.5))
+        self.assertEqual(out["verdict"]["decision"], "review")
+        self.assertTrue(out["location"]["shown"])
+        self.assertTrue(out["location"]["tentative"])
+        self.assertIn("Tentative", out["location"]["reason"])
+        clear, _ = self.run_claim(GOOD)
+        self.assertFalse(clear["location"]["tentative"])
+        self.assertIsNone(clear["location"]["reason"])
 
     def test_low_box_confidence_pads_the_box(self):
         edges = {"left": 0.02, "top": 0.3, "right": 0.5, "bottom": 0.98, "confidence": 0.3}

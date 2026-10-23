@@ -102,6 +102,22 @@ class ItemTests(unittest.TestCase):
         workbench.WORKBENCH_DIR = self._orig
         shutil.rmtree(self.dir, ignore_errors=True)
 
+    def test_a_malformed_expectation_fails_its_question_not_the_suite(self):
+        q = {"urgent": {"type": "noul", "instructions": "Urgent?"},
+             "where": {"type": "box", "instructions": "the tear in `photo`"}}
+        bad = {"id": "bad", "name": "bad", "state": {"photo": "photo-abc123"}, "questions": q,
+               "images": {"photo-abc123": {"sample": "torn-bag"}},
+               "expect": {"where": {"box": {}}, "urgent": {"min": 10 ** 400}}}  # overflows float()
+        good = {"id": "good", "name": "good", "state": "x", "questions": {"urgent": q["urgent"]},
+                "expect": {"urgent": {"max": 0.5}}}
+        report = workbench.run_items(FakeClient(), [bad, good])
+        runs = {r["id"]: r for r in report["runs"]}
+        self.assertFalse(runs["bad"]["ok"])
+        self.assertIn("invalid expectation", runs["bad"]["results"]["where"]["checks"][0])
+        self.assertFalse(runs["bad"]["results"]["urgent"]["ok"])
+        self.assertTrue(runs["good"]["ok"], "the other test still runs and reports")
+        self.assertEqual((report["passed"], report["failed"]), (1, 1))
+
     def test_save_list_run_delete(self):
         item = workbench.save_item({"name": "Angry refund → billing!", "state": "I want my money back now",
                                     "questions": Q, "expect": {"dept": {"choice": "billing"}, "urgent": {"min": 0.5}}})
@@ -181,6 +197,17 @@ class BulkAndExportTests(unittest.TestCase):
     def test_bulk_refuses_box_questions(self):
         with self.assertRaises(workbench.WorkbenchError):
             workbench.run_bulk(FakeClient(), ["a row"], {"b": {"type": "box", "instructions": "x"}})
+
+    def test_export_refuses_unsafe_image_names(self):
+        q = {"bag": {"type": "noul", "instructions": "Is the bag in `photo` torn?"}}
+        for specs in ({"photo-abc123": {"sample": "torn-bag'; rm -rf ~ #"}},
+                      {"photo-abc123": {"format": "jpg' && curl evil #"}},
+                      {"photo-abc'123": {"sample": "torn-bag"}},
+                      {"photo-abc123\n": {"sample": "torn-bag"}}):
+            with self.subTest(specs=specs), self.assertRaises(workbench.WorkbenchError):
+                workbench.export({"photo": "photo-abc123"}, q, "jev-1.14.0", specs)
+        ok = workbench.export({"photo": "photo-abc123"}, q, "jev-1.14.0", {"photo-abc123": {"format": "png"}})
+        self.assertIn("-F 'image-0=@photo-abc123.png'", ok["curl"])
 
     def test_export_with_images_loads_files(self):
         q = {"bag": {"type": "noul", "instructions": "Is the bag in `photo` torn?"},

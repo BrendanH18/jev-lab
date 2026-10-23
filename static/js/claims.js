@@ -3,7 +3,7 @@ import {
   mount, money, openSettings, pct, photoView, prepareImage, statusBadge, toast,
 } from "./common.js";
 
-const S = { setup: null, order: "", note: "", image: null, result: null, policy: {}, running: false, note2: "" };
+const S = { setup: null, order: "", note: "", image: null, result: null, policy: {}, policyRev: 0, running: false, note2: "" };
 
 const DECISION_LABELS = { approve: "Approve automatically", review: "Send to a person", retake: "Ask for another photo", reject: "Reject claim" };
 const KIND_LABELS = {
@@ -91,6 +91,7 @@ async function useFile(f) {
 async function check() {
   if (!S.image) return toast("Choose a photo first.");
   const submitted = S.image; // the answers belong to this picture, whatever is picked while the call runs
+  const rev = S.policyRev;
   S.running = true;
   renderForm();
   try {
@@ -98,7 +99,9 @@ async function check() {
     S.result = await api("/api/claims/check", { order: S.order, note: S.note, image, policy: S.policy });
     S.resultImage = submitted;
     S.note2 = "";
-    renderResult();
+    // A slider moved while the call ran: decide again with the current policy before showing anything.
+    if (S.policyRev !== rev) await decideAgain();
+    else renderResult();
   } catch (e) { handleError(e); } finally {
     S.running = false;
     renderForm();
@@ -118,7 +121,9 @@ function renderResult() {
   const v = r.verdict;
   const ev = r.evidence;
   const loc = r.location;
-  const boxes = loc.shown ? [{ box: loc.box, dashed: loc.padded, label: `damage · ${pct(loc.confidence)}` }] : [];
+  const boxes = loc.shown
+    ? [{ box: loc.box, dashed: loc.padded || loc.tentative, label: `${loc.tentative ? "possible damage" : "damage"} · ${pct(loc.confidence)}` }]
+    : [];
   const caption = loc.shown ? (loc.reason || `Box confidence ${pct(loc.confidence)}. Edges are fractions of the image size.`) : loc.reason;
   const remedy = v.remedy === "full_refund" ? "Full refund" : "50% credit or a replacement";
   const severityLevel = Math.round(ev.severity);
@@ -173,6 +178,7 @@ function renderPolicy() {
     const input = h("input", { type: "range", min, max, step, value: S.policy[key], "aria-label": label });
     input.addEventListener("input", () => {
       S.policy[key] = Number(input.value);
+      S.policyRev++;
       out.textContent = fmt(S.policy[key]);
       redecide();
     });
@@ -189,18 +195,23 @@ function renderPolicy() {
     h("div", { class: "section-label" }, "Refund rules"),
     slider("full_refund_at", "Full refund at severity ≥", 0, 3, 0.1),
     slider("auto_limit_usd", "Automatic approval up to", 0, 400, 5, (v) => money(v)),
-    h("button", { class: "btn sm ghost", onclick: () => { S.policy = { ...S.setup.policy }; renderPolicy(); redecide(); } }, icon("reset"), "Reset to defaults"));
+    h("button", { class: "btn sm ghost", onclick: () => { S.policy = { ...S.setup.policy }; S.policyRev++; renderPolicy(); redecide(); } }, icon("reset"), "Reset to defaults"));
 }
 
-const redecide = debounce(async () => {
+// Apply the current policy to the current answers. A response is dropped when the policy or the
+// result changed while it was in flight; the newer change has its own request.
+async function decideAgain() {
   const r = S.result;
+  const rev = S.policyRev;
   if (!r) return;
   try {
     const out = await api("/api/claims/decide", { answers: r.answers, facts: r.facts, policy: S.policy });
+    if (S.result !== r || S.policyRev !== rev) return;
     Object.assign(r, { verdict: out.verdict, location: out.location, evidence: out.evidence, policy: out.policy });
     S.note2 = `Re-decided in ${out.compute_ms} ms · no Jev call`;
     renderResult();
   } catch (e) { handleError(e); }
-}, 120);
+}
+const redecide = debounce(decideAgain, 120);
 
 boot().catch(handleError);

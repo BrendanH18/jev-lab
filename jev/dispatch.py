@@ -316,10 +316,11 @@ def photo_check(evidence: Optional[dict]) -> dict:
         return _check("photo_evidence", False, "approval", "Photo shows the damage",
                       "No photo attached; damage refunds by email need one")
     policy = claims.DEFAULT_POLICY
-    ok = evidence["damage"] >= policy["damage_yes"] and evidence["matches_note"] >= policy["matches_note"]
+    ok = (evidence["shows_item"] >= policy["shows_order"] and evidence["damage"] >= policy["damage_yes"]
+          and evidence["matches_note"] >= policy["matches_note"])
     return _check("photo_evidence", ok, "approval", "Photo shows the damage",
-                  "Photo: %.0f%% damage visible, %.0f%% matches the email"
-                  % (evidence["damage"] * 100, evidence["matches_note"] * 100))
+                  "Photo: %.0f%% shows the product, %.0f%% damage visible, %.0f%% matches the email"
+                  % (evidence["shows_item"] * 100, evidence["damage"] * 100, evidence["matches_note"] * 100))
 
 
 def checks(call: dict, world_obj: World, sender_email: Optional[str] = None,

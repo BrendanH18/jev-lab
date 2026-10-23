@@ -36,7 +36,7 @@ SAMPLES = {
     "grinder-ok": "A burr grinder with an intact hopper",
 }
 
-REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{5,63}$")
+REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{5,63}")  # used with fullmatch
 
 
 class ImageError(ValueError):
@@ -48,8 +48,16 @@ def dimensions(data: bytes) -> Tuple[str, int, int]:
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         if len(data) < 24 or data[12:16] != b"IHDR":
             raise ImageError("The PNG file is damaged.")
-        if b"acTL" in data[:4096] and data.find(b"acTL") < data.find(b"IDAT"):
-            raise ImageError("Animated PNGs are not accepted.")
+        # APNG puts its acTL chunk before the first IDAT; walk the chunk list rather than search bytes.
+        i = 8
+        while i + 8 <= len(data):
+            (length,) = struct.unpack(">I", data[i:i + 4])
+            kind = data[i + 4:i + 8]
+            if kind == b"acTL":
+                raise ImageError("Animated PNGs are not accepted.")
+            if kind in (b"IDAT", b"IEND"):
+                break
+            i += 12 + length
         width, height = struct.unpack(">II", data[16:24])
         return "png", width, height
     if data[:2] == b"\xff\xd8":
@@ -131,7 +139,7 @@ def parse_images(images: Any) -> Dict[str, dict]:
         raise ImageError("At most %d images per request." % MAX_IMAGES)
     out = {}
     for ref, spec in images.items():
-        if not isinstance(ref, str) or not REF_RE.match(ref):
+        if not isinstance(ref, str) or not REF_RE.fullmatch(ref):
             raise ImageError("Image reference %r must be 6-64 letters, digits, '.', '_' or '-'." % (ref,))
         try:
             out[ref] = parse_upload(spec)

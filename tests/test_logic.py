@@ -254,6 +254,15 @@ class AutopilotTests(unittest.TestCase):
         self.assertIsNone(luis["integrated"]["executed"])
         self.assertIsNotNone(luis["naive"]["executed"], "Dispatch alone refunds without looking at the photo")
 
+    def test_photo_of_something_else_does_not_clear_a_damage_refund(self):
+        ok = {"shows_item": 0.9, "damage": 0.95, "matches_note": 0.9}
+        self.assertTrue(dispatch.photo_check(ok)["ok"])
+        unrelated = dict(ok, shows_item=0.1)  # a damaged item, but not the one ordered
+        check = dispatch.photo_check(unrelated)
+        self.assertFalse(check["ok"])
+        self.assertEqual(check["level"], "approval")
+        self.assertIn("10% shows the product", check["detail"])
+
     def test_emailed_damage_claim_without_a_photo_needs_approval(self):
         world = World()
         cands = dispatch.candidates("refund A-1041, it arrived damaged")

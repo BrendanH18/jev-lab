@@ -304,7 +304,10 @@ def run_item(client: JevClient, item: dict) -> dict:
     for qid, answer in result.answers.items():
         expect = (item.get("expect") or {}).get(qid)
         if expect:
-            verdict = check_expectation(answer, expect)
+            try:
+                verdict = check_expectation(answer, expect)
+            except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as err:
+                verdict = {"ok": False, "checks": ["invalid expectation %s: %r" % (json.dumps(expect)[:120], err)]}
             ok &= verdict["ok"]
         else:
             verdict = {"ok": None, "checks": ["no expectation"]}
@@ -524,8 +527,20 @@ def export(state: Any, questions: Any, model: str, image_specs: Any = None) -> d
     refs = {}
     if isinstance(image_specs, dict):
         for ref, spec in image_specs.items():
-            if isinstance(spec, dict):
-                refs[ref] = {"sample": spec.get("sample")} if spec.get("sample") else {"format": spec.get("format") or "jpg"}
+            if not isinstance(spec, dict):
+                continue
+            # These values become file names inside quoted shell and code strings, so only safe ones pass.
+            if not isinstance(ref, str) or not images.REF_RE.fullmatch(ref):
+                raise WorkbenchError("Invalid image reference %r" % (ref,))
+            if spec.get("sample"):
+                if spec["sample"] not in images.SAMPLES:
+                    raise WorkbenchError("Unknown sample image %r" % (spec["sample"],))
+                refs[ref] = {"sample": spec["sample"]}
+            else:
+                fmt = spec.get("format") or "jpg"
+                if fmt not in ("png", "jpg"):
+                    raise WorkbenchError("Image format must be png or jpg, not %r" % (fmt,))
+                refs[ref] = {"format": fmt}
     return {"python": export_python(state, questions, model, refs),
             "javascript": export_javascript(state, questions, model, refs),
             "curl": export_curl(state, questions, model, refs)}

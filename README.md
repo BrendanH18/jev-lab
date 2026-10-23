@@ -149,15 +149,15 @@ uv run --locked python -m unittest discover -v tests
 ```
 
 No API key or external API access is needed for the tests. SDK tests use an in-memory transport;
-HTTP tests start a temporary loopback server.
+HTTP tests start a temporary loopback server. CI tests the locked dependencies on Python
+3.10–3.14, the legacy standard-library fallback on Python 3.9, and JavaScript syntax.
 
 The sample pictures in `static/img/samples/` are drawn by a standard-library script. After changing
 a scene, regenerate them and commit the PNGs with the script:
 
 ```sh
 python3 scripts/draw_samples.py
-``` CI tests the locked dependencies on Python
-3.10–3.14, the legacy standard-library fallback on Python 3.9, and JavaScript syntax.
+```
 
 For optional live evaluation after changing question wording or model versions:
 

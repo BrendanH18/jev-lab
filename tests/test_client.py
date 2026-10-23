@@ -212,6 +212,7 @@ class SdkTransportTests(unittest.TestCase):
             seen["auth"] = request.headers.get("authorization")
             if request.url.path.endswith("/models"):
                 return httpx2.Response(200, json={"models": [{"name": "jev-latest", "description": "d", "release_date": "2026-01-01"}]})
+            seen["headers"] = request.headers
             seen["body"] = json.loads(request.content)
             return httpx2.Response(200, json=RESPONSE)
 
@@ -224,7 +225,7 @@ class SdkTransportTests(unittest.TestCase):
         self.assertEqual(result.input_tokens, 500)
         self.assertIn("typesafe-sdk", result.backend)
         self.assertEqual(c.models()["models"][0]["name"], "jev-latest")
-        self.assertNotIn("typesafe-danger-zone-images", seen)
+        self.assertIsNone(seen["headers"].get(images.IMAGES_HEADER), "plain calls skip the images header")
 
     def test_images_go_as_multipart_with_the_images_header(self):
         import httpx2

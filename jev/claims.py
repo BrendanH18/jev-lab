@@ -129,7 +129,10 @@ def evidence(answers: Dict[str, dict]) -> dict:
 
 
 def located(answers: Dict[str, dict], ev: dict, policy: Optional[dict] = None) -> dict:
-    """The Box answer, shown only when the photo shows damage. A Box always returns four edges."""
+    """The Box answer, hidden when the photo shows no damage. A Box always returns four edges.
+
+    Between `damage_no` and `damage_yes` the claim goes to a person, so the box is shown as a
+    tentative hint for them rather than as located damage."""
     answer = answers.get("damage_box")
     if not answer:
         return {"shown": False, "reason": "This model does not answer Box questions (Jev 1.14+ needed)."}
@@ -142,9 +145,16 @@ def located(answers: Dict[str, dict], ev: dict, policy: Optional[dict] = None) -
     if padded:
         edges = {"left": max(0.0, edges["left"] - BOX_PAD), "top": max(0.0, edges["top"] - BOX_PAD),
                  "right": min(1.0, edges["right"] + BOX_PAD), "bottom": min(1.0, edges["bottom"] + BOX_PAD)}
-    return {"shown": True, "box": edges, "confidence": confidence, "padded": padded,
-            "reason": ("Padded by %d%% on each side: confidence %.0f%% is below %.0f%%."
-                       % (BOX_PAD * 100, confidence * 100, _num(policy, "box_confidence") * 100)) if padded else None}
+    tentative = ev["damage"] < _num(policy, "damage_yes")
+    reasons = []
+    if tentative:
+        reasons.append("Tentative: damage is uncertain (%.0f%%), so this only shows a reviewer where to look."
+                       % (ev["damage"] * 100))
+    if padded:
+        reasons.append("Padded by %d%% on each side: confidence %.0f%% is below %.0f%%."
+                       % (BOX_PAD * 100, confidence * 100, _num(policy, "box_confidence") * 100))
+    return {"shown": True, "box": edges, "confidence": confidence, "padded": padded, "tentative": tentative,
+            "reason": " ".join(reasons) or None}
 
 
 def _check(cid: str, ok: bool, level: str, label: str, detail: str) -> dict:
