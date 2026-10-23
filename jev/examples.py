@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import List
 
-from .client import choice, noul, score
+from .client import box, choice, noul, score
 
 EXAMPLES: List[dict] = [
     {
@@ -236,6 +236,21 @@ EXAMPLES: List[dict] = [
             "would_recommend": noul("Would the reviewer likely recommend the product to a friend?"),
         },
         "expect": {"taste": {"min": 1.5}, "shipping": {"max": 0.5}, "service": {"min": 1.5}},
+    },
+    {
+        "id": "photo-locate",
+        "title": "Find it in a photo",
+        "pattern": "Images + Box: is it there, and where",
+        "blurb": "A picture goes in the state like any other field. A Noul says whether the target is present; a Box says where. Box needs Jev 1.14 and the images header, which the Workbench sends for you.",
+        "code": "ignore `spill_box` unless `beans_spilled.noul` ≥ 0.5 (a Box always returns four edges); crop the photo to the box for a human reviewer.",
+        "state": {"photo": "photo-torn-bag", "context": "A customer's photo of a delivered coffee order"},
+        "images": {"photo-torn-bag": {"sample": "torn-bag"}},
+        "questions": {
+            "beans_spilled": noul("Are coffee beans spilled outside the bag in `photo`?"),
+            "bag_torn": noul("Is the coffee bag in `photo` torn or open?"),
+            "spill_box": box("the spilled coffee beans in `photo`"),
+        },
+        "expect": {"beans_spilled": {"min": 0.6}},
     },
 ]
 

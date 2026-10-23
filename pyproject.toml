@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 license = "MIT"
 keywords = ["typesafe", "jev", "system-one", "ai", "demo"]
 dependencies = [
-  "typesafe-sdk>=0.6.0",
+  "typesafe-sdk>=0.7.5",
 ]
 
 [project.urls]

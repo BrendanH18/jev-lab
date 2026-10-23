@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import sys
 import threading
 import time
@@ -20,9 +21,9 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import dispatch, envfile, examples, find, hello, security, shield, workbench
+from jev import claims, dispatch, envfile, examples, find, hello, images, security, shield, workbench
 from jev.autopilot import Autopilot, find_message
-from jev.client import JevClient, JevError, price_per_input_token
+from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
 from jev.play import Games
 from jev.scenarios import COMMANDS, INBOX
@@ -31,8 +32,11 @@ from jev.world import TEMPLATES, World
 VERSION = "0.2.0"
 STATIC = PROJECT_ROOT / "static"
 PAGES = {"/": "index.html", "/shield": "shield.html", "/dispatch": "dispatch.html", "/autopilot": "autopilot.html",
-         "/find": "find.html", "/play": "play.html", "/workbench": "workbench.html"}
-MAX_BODY_BYTES = 4 * 1024 * 1024
+         "/claims": "claims.html", "/find": "find.html", "/play": "play.html", "/workbench": "workbench.html"}
+MAX_BODY_BYTES = 12 * 1024 * 1024  # room for a few base64 photos
+# GET /v1/models currently lists only the aliases; versioned ids are accepted whether or not they appear
+# in the list (https://docs.typesafe.ai/models#list-models).
+VERSIONED_MODEL = re.compile(r"jev-\d+\.\d+(\.\d+)?")
 
 settings = Settings()
 client = JevClient(settings)
@@ -69,6 +73,9 @@ def api_status(_body):
         "configured": client.configured,
         "key_source": client.key_source,
         "model": client.model,
+        "model_source": client.model_source,
+        "default_model": client.settings.model,
+        "supports_box": supports_box(client.model),
         "backend": client.backend,
         "price_per_mtok_input": price_per_input_token(client.model) * 1_000_000,
         "spend": client.guard.snapshot(),
@@ -118,6 +125,24 @@ def api_key_forget(_body):
 
 def api_models(_body):
     return client.models()
+
+
+def api_model(body):
+    """Choose the model for this server run. An empty value returns to TYPESAFE_DEFAULT_MODEL."""
+    model = str(body.get("model") or "").strip()
+    if model and model != client.settings.model and not VERSIONED_MODEL.fullmatch(model):
+        names = [m.get("name") for m in client.models().get("models", [])]
+        if model not in names:
+            raise BadRequest("%s is not available to this key. Choose one of: %s, or a versioned id such as "
+                             "jev-1.14.0." % (model, ", ".join(names)))
+    client.set_model(model if model != client.settings.model else None)
+    return api_status({})
+
+
+def api_image_samples(_body):
+    return {"samples": [{"name": name, "about": about, "url": "/img/samples/%s.png" % name}
+                        for name, about in images.SAMPLES.items()],
+            "limits": {"min_side": images.MIN_SIDE, "max_side": images.MAX_SIDE, "max_images": images.MAX_IMAGES}}
 
 
 # --- demos ---------------------------------------------------------------------------------
@@ -312,6 +337,29 @@ def api_autopilot_benchmark(body):
 # --- find / play / workbench ---------------------------------------------------------------
 
 
+def api_claims_setup(_body):
+    world = dispatch_world.snapshot()
+    orders = [dict(claims.order_facts(dispatch_world, oid), id=oid) for oid in world["orders"]]
+    return {"orders": orders, "policy": claims.DEFAULT_POLICY, "samples": api_image_samples({})["samples"],
+            "examples": claims.EXAMPLES}
+
+
+def api_claims_check(body):
+    order = str(body.get("order") or "")
+    if order not in dispatch_world.state["orders"]:
+        raise BadRequest("Choose an order.")
+    image = images.parse_upload(body.get("image") or {})
+    return claims.check(client, dispatch_world, order, str(body.get("note") or ""), image, body.get("policy"))
+
+
+def api_claims_decide(body):
+    """Re-apply a changed policy to existing answers. Pure code: no Jev call."""
+    started = time.perf_counter()
+    out = claims.redecide(body["answers"], body["facts"], body.get("policy"))
+    out["compute_ms"] = round((time.perf_counter() - started) * 1000, 3)
+    return out
+
+
 def api_find_sample(_body):
     return {"text": find.load_sample(), "queries": find.SAMPLE_QUERIES}
 
@@ -354,11 +402,11 @@ def api_wb_examples(_body):
 
 
 def api_wb_run(body):
-    return workbench.run(client, body.get("state"), body.get("questions"))
+    return workbench.run(client, body.get("state"), body.get("questions"), body.get("images"))
 
 
 def api_wb_export(body):
-    return workbench.export(body.get("state"), body.get("questions"), client.model)
+    return workbench.export(body.get("state"), body.get("questions"), client.model, body.get("images"))
 
 
 def api_wb_items(_body):
@@ -367,6 +415,10 @@ def api_wb_items(_body):
 
 def api_wb_save(body):
     return {"item": workbench.save_item(body)}
+
+
+def api_wb_item_images(body):
+    return {"images": workbench.item_images_for_browser(workbench.load_item(str(body.get("id", ""))))}
 
 
 def api_wb_delete(body):
@@ -403,6 +455,8 @@ ROUTES = {
     ("POST", "/api/key"): api_key,
     ("POST", "/api/key/forget"): api_key_forget,
     ("GET", "/api/models"): api_models,
+    ("POST", "/api/model"): api_model,
+    ("GET", "/api/images/samples"): api_image_samples,
     ("GET", "/api/scenarios"): api_scenarios,
     ("POST", "/api/hello"): api_hello,
     ("POST", "/api/shield"): api_shield,
@@ -418,6 +472,9 @@ ROUTES = {
     ("GET", "/api/autopilot/state"): api_autopilot_state,
     ("POST", "/api/autopilot/reset"): api_autopilot_reset,
     ("POST", "/api/autopilot/benchmark"): api_autopilot_benchmark,
+    ("GET", "/api/claims/setup"): api_claims_setup,
+    ("POST", "/api/claims/check"): api_claims_check,
+    ("POST", "/api/claims/decide"): api_claims_decide,
     ("GET", "/api/find/sample"): api_find_sample,
     ("POST", "/api/find"): api_find,
     ("POST", "/api/play/new"): api_play_new,
@@ -429,6 +486,7 @@ ROUTES = {
     ("GET", "/api/workbench/items"): api_wb_items,
     ("POST", "/api/workbench/items"): api_wb_save,
     ("POST", "/api/workbench/items/delete"): api_wb_delete,
+    ("POST", "/api/workbench/items/images"): api_wb_item_images,
     ("POST", "/api/workbench/items/run"): api_wb_run_items,
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
@@ -482,10 +540,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body, dict):
                     raise BadRequest("Body must be a JSON object")
                 self._send(200, route(body))
-            except (BadRequest, workbench.WorkbenchError, envfile.EnvFileError) as err:
+            except (BadRequest, workbench.WorkbenchError, envfile.EnvFileError, images.ImageError) as err:
                 self._send(400, {"error": str(err)})
             except JevError as err:
-                status = err.status if err.status in (401, 402, 403, 422, 429) else 502
+                status = err.status if err.status in (400, 401, 402, 403, 413, 422, 429) else 502
                 self._send(status, {"error": str(err), "jev_status": err.status})
             except (KeyError, ValueError, TypeError) as err:
                 traceback.print_exc()

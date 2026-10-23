@@ -47,7 +47,8 @@ The server binds to `127.0.0.1`. [`jev/security.py`](jev/security.py) and
 1. A loopback Host allow-list to reject requests addressed to unrelated hostnames.
 2. Fetch Metadata and Origin checks on state-changing requests.
 3. A random per-process `X-Jev-Token` required for POST requests, embedded in served pages.
-4. JSON content-type checks on nonempty POST bodies and a 4 MiB request-body limit.
+4. JSON content-type checks on nonempty POST bodies and a 12 MiB request-body limit, which leaves
+   room for a few base64-encoded photos.
 5. A Content Security Policy restricting scripts and API connections to the application's origin,
    plus `nosniff`, `no-store`, and a no-referrer policy.
 6. Static-file resolution confined to the `static/` directory, including resolved symlink targets.
@@ -67,25 +68,30 @@ rate limit (`JEV_LAB_RPM`, default `120`) before admitting model calls. Values a
 disable the corresponding check.
 
 These are convenience guards, not hard billing caps. Each admitted call holds an over-estimate of
-its cost until it finishes. The hold is then replaced by the cost of the returned input-token
-count at the price for the model id in the response (unknown ids use the highest known rate). A
-failed call releases its hold. One in-flight call can still settle above its hold when the
-provider counts more tokens than the estimate; later admissions see the corrected total. Retries
-inside the provider SDK are not separately visible. The limit resets when the process restarts.
-Provider-side billing controls should enforce any hard spending limit.
+its cost until it finishes. The hold is then replaced by the cost of the returned input-token count
+at the price for the model id in the response (unknown ids use the highest known rate). A failed
+call releases its hold. TypeSafe has not yet published how many tokens an image uses, so each image
+use holds a fixed, generous allowance until the call settles. One in-flight call can still settle
+above its hold when the provider counts more tokens than the estimate; later admissions see the
+corrected total. Retries inside the provider SDK are not separately visible. The limit resets when
+the process restarts. Provider-side billing controls should enforce any hard spending limit.
 
 Batch features limit input sizes: Shield accepts up to 50 messages; Workbench bulk accepts up to
 200 rows and question sets up to 100 questions. See the [Workbench guide](docs/workbench.md).
 
 ## Data handling and demo boundaries
 
-State and questions for live calls are sent to TypeSafe, or to your configured API root. Do not
-use confidential data unless you have assessed that provider's handling of it. The local request
+State, questions, and images for live calls are sent to TypeSafe, or to your configured API root.
+Do not use confidential data or photos unless you have assessed that provider's handling of them.
+The browser re-encodes uploaded photos as JPEG before sending them to the local server, which drops
+embedded metadata such as location. Request inspectors show a short placeholder instead of image
+bytes. The local request
 inspector, CSV exports, live validation reports, and saved Workbench tests can contain the inputs
 and model answers you supplied.
 
-Workbench tests persist as plaintext JSON under `data/workbench/`, which is intentionally eligible
-for version control. Review these files before committing. Other demo worlds and game sessions
+Workbench tests persist as plaintext JSON under `data/workbench/`, with uploaded pictures in
+`data/workbench/images/`; both are intentionally eligible for version control. Review these files
+before committing. Claims does not store photos. Other demo worlds and game sessions
 live in memory and reset on restart.
 
 Refunds, payments, email replies, and calendar changes only modify fictional local state. Shield

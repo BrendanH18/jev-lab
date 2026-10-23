@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jev import dispatch, examples, find, hello, play, shield, workbench  # noqa: E402
+from jev import claims, dispatch, examples, find, hello, images, play, shield, workbench  # noqa: E402
 from jev.autopilot import Autopilot  # noqa: E402
 from jev.client import JevClient, JevError  # noqa: E402
 from jev.scenarios import COMMANDS, INBOX  # noqa: E402
@@ -123,18 +123,41 @@ def run(client: JevClient, out: dict) -> None:
     print("(%d ms, %d tokens)" % (f["meta"]["latency_ms"], f["meta"]["input_tokens"]))
 
     section("Workbench examples · shipped expectations")
-    items = [{"id": e["id"], "name": e["title"], "state": e["state"], "questions": e["questions"], "expect": e["expect"]}
-             for e in examples.EXAMPLES]
+    items = [{"id": e["id"], "name": e["title"], "state": e["state"], "questions": e["questions"], "expect": e["expect"],
+              "images": e.get("images")} for e in examples.EXAMPLES]
     rep = workbench.run_items(client, items)
     out["examples"] = rep
     for r in rep["runs"]:
         print("%-22s %s" % (r["id"], "PASS" if r["ok"] else "FAIL" if not r.get("error") else "ERROR " + r["error"]))
         for qid, q in r.get("results", {}).items():
             a = q["answer"]
-            val = a.get("choice") if a["type"] == "choice" else ("%.2f" % a["score"] if a["type"] == "score" else pct(a["noul"]))
+            if a["type"] == "box":
+                val = "box %s" % " ".join("%.2f" % a["box"][k] for k in ("left", "top", "right", "bottom"))
+            else:
+                val = a.get("choice") if a["type"] == "choice" else (
+                    "%.2f" % a["score"] if a["type"] == "score" else pct(a["noul"]))
             flag = "" if q["ok"] is None else ("ok " if q["ok"] else "XX ")
             print("%24s %s%-18s %-14s %s" % ("", flag, qid, val, ", ".join(q["checks"])))
     print("passed %d / failed %d" % (rep["passed"], rep["failed"]))
+
+    section("Claims · sample photos (drawings), decision vs what a person would decide")
+    out["claims"] = []
+    world = World()
+    for ex in claims.EXAMPLES:
+        try:
+            r = claims.check(client, world, ex["order"], ex["note"], images.sample_asset(ex["sample"]))
+        except JevError as err:
+            print("%-12s error: %s" % (ex["label"], err))
+            continue
+        ev, v, loc = r["evidence"], r["verdict"], r["location"]
+        print("%-12s expect=%-8s -> %-8s %s shows=%s damage=%s matches=%s severity=%.2f kind=%s box=%s (%d ms)" % (
+            ex["label"], ex["expect"], v["decision"], "ok" if v["decision"] == ex["expect"] else "??",
+            pct(ev["shows_item"]), pct(ev["damage"]), pct(ev["matches_note"]), ev["severity"], ev["kind"],
+            ("%s conf=%s" % (" ".join("%.2f" % loc["box"][k] for k in ("left", "top", "right", "bottom")),
+                             pct(loc["confidence"]))) if loc.get("shown") else "hidden",
+            r["meta"]["latency_ms"]))
+        out["claims"].append({"label": ex["label"], "expect": ex["expect"], "decision": v["decision"],
+                              "evidence": ev, "location": loc, "meta": r["meta"]})
 
     section("Play · scripted game, secret = giraffe")
     games = play.Games(client, words=[{"word": "giraffe", "category": "animal"}])

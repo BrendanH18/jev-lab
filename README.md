@@ -8,7 +8,7 @@
 
 Jev Lab demonstrates how to build software with [TypeSafe's Jev](https://docs.typesafe.ai/introduction).
 Send a state and typed questions; receive choices, scores, and probabilities that your code can
-use directly. Explore five focused demos, a homepage playground, and a Workbench for your own data.
+use directly. Explore six focused demos, a homepage playground, and a Workbench for your own data.
 
 The application uses a Python standard-library web server, the official TypeSafe SDK, and vanilla
 JavaScript. There is no frontend build step, database, or embedding index.
@@ -66,7 +66,8 @@ issue real refunds, or transfer money.
 | **Playground** | Classify a message with four questions in one call. | Choice, Score, and Noul together |
 | **Shield** | Screen email for phishing, prompt injection, impersonation, and payment redirects; adjust weights without another model call. | Atomic judgments composed with weights and rules |
 | **Dispatch** | Turn a command into a typed action; inspect whether it runs, needs confirmation, or needs clarification. | Candidate extraction and confidence-based routing |
-| **Autopilot** | Process an inbox with Shield and Dispatch combined; compare with Dispatch alone and benchmark separate versus merged requests. | Composition and sender-aware policy checks |
+| **Autopilot** | Process an inbox with Shield and Dispatch combined; attached photos join the same call; compare with Dispatch alone and benchmark separate versus merged requests. | Composition and sender-aware policy checks |
+| **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
 | **Workbench** | Write questions, save expectations, run batches, and export code. | Experimentation and repeatable model evaluation |
@@ -74,6 +75,13 @@ issue real refunds, or transfer money.
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. Model judgments are live; reweighting, replanning, exports, and
 simulation updates run locally.
+
+Claims, Autopilot's photo check, and the Workbench's image support use TypeSafe's
+[images](https://docs.typesafe.ai/images) and [Box](https://docs.typesafe.ai/primitives/box)
+features, which TypeSafe labels dreamer-ready: suitable for prototypes, with formats and accuracy
+that may change. Box questions need Jev 1.14 or later, and the default `jev-latest` alias still points
+at Jev 1.13, so choose `jev-preview` from the key menu in the top bar or set `TYPESAFE_DEFAULT_MODEL`
+to `jev-1.14.0`. The bundled sample pictures are simple drawings, so try your own photos too.
 
 ![Autopilot comparing integrated handling with Dispatch alone](docs/screenshots/autopilot.png)
 
@@ -92,10 +100,12 @@ conditions.
 
 ## Build with the Workbench
 
-- **Build:** supply text or JSON state and edit Noul, Choice, and Score questions visually or as JSON.
+- **Build:** supply text or JSON state, attach up to four images, and edit Noul, Choice, Score, and
+  Box questions visually or as JSON.
 - **Test:** save a run with editable expectations, then rerun after changing questions or models.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
-- **Learn:** start from twelve examples covering triage, moderation, routing, extraction, and more.
+- **Learn:** start from thirteen examples covering triage, moderation, routing, extraction, images,
+  and more.
 - **Export:** generate Python, JavaScript, or curl requests for use outside Jev Lab.
 
 Saved tests are JSON files in `data/workbench/`. They persist across restarts and can be committed
@@ -111,7 +121,7 @@ values take precedence over `.env`; see [.env.example](.env.example).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `TYPESAFE_API_KEY` | Unset | Key used for live TypeSafe requests |
-| `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Model name or alias; pin a version for comparisons |
+| `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Model name or alias; pin a version for comparisons. The key menu can switch models for the current run |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | TypeSafe API root |
 | `JEV_LAB_BUDGET_USD` | `2.00` | Estimated spend threshold per process |
 | `JEV_LAB_RPM` | `120` | Local limit on admitted model calls per minute |
@@ -139,7 +149,14 @@ uv run --locked python -m unittest discover -v tests
 ```
 
 No API key or external API access is needed for the tests. SDK tests use an in-memory transport;
-HTTP tests start a temporary loopback server. CI tests the locked dependencies on Python
+HTTP tests start a temporary loopback server.
+
+The sample pictures in `static/img/samples/` are drawn by a standard-library script. After changing
+a scene, regenerate them and commit the PNGs with the script:
+
+```sh
+python3 scripts/draw_samples.py
+``` CI tests the locked dependencies on Python
 3.10–3.14, the legacy standard-library fallback on Python 3.9, and JavaScript syntax.
 
 For optional live evaluation after changing question wording or model versions:
@@ -164,6 +181,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and pull request guid
 | Session-token `403` after a restart | Reload the page to get the new session token. |
 | Budget `402` or rate-limit `429` | Inspect usage in the app. Wait for the rate window or restart with an appropriate budget. |
 | Port already in use | Set another `PORT` and open the corresponding loopback URL. |
+| Box questions fail, or Claims shows no box | Box needs Jev 1.14 or later, and `jev-latest` still points at Jev 1.13. Choose `jev-preview` in the key menu, or set `TYPESAFE_DEFAULT_MODEL=jev-1.14.0`. |
+| An image is rejected | Use a PNG or JPEG. The browser resizes uploads to 280–1568 pixels per side; very narrow panoramas cannot fit. |
 
 For reproducible bugs and feature proposals, [open an issue](https://github.com/BrendanH18/jev-lab/issues).
 Report vulnerabilities using the process in [SECURITY.md](SECURITY.md).

@@ -42,8 +42,10 @@ def fake_answers(questions, picks):
 class FakeClient:
     def __init__(self, picks_by_subject):
         self.picks_by_subject = picks_by_subject
+        self.assets = {}
 
-    def system_one(self, state, questions):
+    def system_one(self, state, questions, assets=None, model=None):
+        self.assets[state["message"]["subject"]] = assets
         picks = self.picks_by_subject[state["message"]["subject"]]
         answers = fake_answers(questions, picks)
         return JevResult({"state": state, "model": "fake", "questions": questions},
@@ -168,7 +170,13 @@ class DispatchTests(unittest.TestCase):
 SAFE = {"shield.claimed_identity": "customer_or_person", "shield.category": "customer_request"}
 PICKS = {
     "Order A-1041 arrived damaged": dict(SAFE, **{"dispatch.tool": "refund_order", "dispatch.refund.order": "A-1041",
-                                                  "dispatch.refund.reason": "damaged"}),
+                                                  "dispatch.refund.reason": "damaged", "photo.shows_item": 0.9,
+                                                  "photo.damage_visible": 0.95, "photo.matches_note": 0.9,
+                                                  "photo.severity": 2.4, "photo.damage_kind": "torn_or_open"}),
+    "Grinder arrived cracked": dict(SAFE, **{"dispatch.tool": "refund_order", "dispatch.refund.order": "A-1042",
+                                             "dispatch.refund.reason": "damaged", "photo.shows_item": 0.9,
+                                             "photo.damage_visible": 0.04, "photo.matches_note": 0.06,
+                                             "photo.damage_kind": "none_visible"}),
     "URGENT: updated remittance details for INV-7781": {
         "shield.claimed_identity": "bean_brokers", "shield.ai_instructions": 0.97, "shield.payment_change": 0.98,
         "shield.secrecy_or_bypass": 0.9, "shield.pressure": 2.0, "shield.harm_if_obeyed": 3.0,
@@ -224,6 +232,38 @@ class AutopilotTests(unittest.TestCase):
 
         resolved = pilot.resolve(stranger["id"], approve=False)
         self.assertTrue(resolved["integrated"]["dismissed"])
+
+    def test_photo_joins_the_request_and_gates_damage_refunds(self):
+        client = FakeClient(PICKS)
+        pilot = autopilot.Autopilot(client)
+        maya = pilot.process(next(m for m in INBOX if m["id"] == "maya-damaged"))
+        assets = client.assets["Order A-1041 arrived damaged"]
+        self.assertEqual(len(assets), 1)
+        ref = next(iter(assets))
+        self.assertEqual(maya["trace"]["request"]["state"]["photo"], ref)
+        self.assertEqual(assets[ref]["sample"], "torn-bag")
+        self.assertTrue(any(q.startswith("photo.") for q in maya["trace"]["request"]["questions"]))
+        self.assertNotIn("photo.damage_box", maya["trace"]["request"]["questions"], "Autopilot asks no Box question")
+        self.assertEqual(maya["integrated"]["lane"], "handled")
+        self.assertGreater(maya["photo"]["evidence"]["damage"], 0.9)
+
+        luis = pilot.process(next(m for m in INBOX if m["id"] == "luis-grinder"))
+        self.assertEqual(luis["integrated"]["lane"], "needs_you")
+        photo = next(c for c in luis["integrated"]["plan"]["checks"] if c["id"] == "photo_evidence")
+        self.assertFalse(photo["ok"])
+        self.assertIsNone(luis["integrated"]["executed"])
+        self.assertIsNotNone(luis["naive"]["executed"], "Dispatch alone refunds without looking at the photo")
+
+    def test_emailed_damage_claim_without_a_photo_needs_approval(self):
+        world = World()
+        cands = dispatch.candidates("refund A-1041, it arrived damaged")
+        answers = fake_answers(dispatch.questions(world.state, cands, source="email"),
+                               {"tool": "refund_order", "refund.order": "A-1041", "refund.reason": "damaged"})
+        p = dispatch.plan(answers, cands, world, "email", "", sender_email="maya.chen@example.com")
+        self.assertEqual(p["decision"], "confirm")
+        self.assertIn("No photo attached", " ".join(p["reasons"]))
+        command = dispatch.plan(answers, cands, world, "command", "")
+        self.assertNotIn("photo_evidence", [c["id"] for c in command["checks"]], "operator commands need no photo")
 
     def test_failed_approval_stays_in_needs_you(self):
         pilot = autopilot.Autopilot(FakeClient(PICKS))

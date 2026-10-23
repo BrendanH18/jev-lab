@@ -25,6 +25,7 @@
     .feature p { color: var(--muted); font-size: 13px; }
     .feature .ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
     .apps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .apps .app:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
     .app { display: grid; gap: 10px; padding: 22px; text-decoration: none; transition: border-color 0.2s, transform 0.2s; align-content: start; }
     .app:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); transform: translateY(-2px); }
     .app h3 { font-size: 19px; }
@@ -80,7 +81,7 @@
       <div class="panel feature"><div class="ic" data-i="bolt"></div><h3>Fast and cheap</h3><p>TypeSafe's docs say most queries take about 100 ms and cost <span class="mono">$0.042</span> per million input tokens, with output free. Every page here shows the latency and cost it actually measured.</p></div>
     </div>
 
-    <h2 class="section" id="apps">Six apps, one fictional business</h2>
+    <h2 class="section" id="apps">Seven apps, one fictional business</h2>
     <p class="section-lede">Harbor Coffee Co. is a small roaster with orders, suppliers, a calendar, a handbook, and an inbox. Each app puts Jev inside ordinary software in a different way. The Workbench is where you build your own.</p>
     <div class="grid apps">
       <a class="panel app" href="/shield">
@@ -116,8 +117,19 @@
         </ul>
         <span class="go">Open Autopilot →</span>
       </a>
+      <a class="panel app" href="/claims">
+        <div class="num">APP 4 · IMAGES</div>
+        <h3>📦 Claims</h3>
+        <p class="muted">Reads a customer's damage photo and locates the damage with a Box. Code decides the refund.</p>
+        <ul>
+          <li>Five photo questions and one Box in a single call</li>
+          <li>Order facts, the refund window, and limits stay in code</li>
+          <li>Upload your own photo; it is resized in the browser first</li>
+        </ul>
+        <span class="go">Open Claims →</span>
+      </a>
       <a class="panel app" href="/find">
-        <div class="num">APP 4</div>
+        <div class="num">APP 5</div>
         <h3>🔎 Find</h3>
         <p class="muted">Semantic search over a document with no embeddings and no index: one Choice over line IDs per question.</p>
         <ul>
@@ -128,7 +140,7 @@
         <span class="go">Open Find →</span>
       </a>
       <a class="panel app" href="/play">
-        <div class="num">APP 5</div>
+        <div class="num">APP 6</div>
         <h3>🎲 Play</h3>
         <p class="muted">20 Questions with Jev as the referee. Real-time yes/no judgments from calibrated probabilities.</p>
         <ul>
@@ -139,11 +151,11 @@
         <span class="go">Open Play →</span>
       </a>
       <a class="panel app" href="/workbench">
-        <div class="num">APP 6 · BUILD YOUR OWN</div>
+        <div class="num">APP 7 · BUILD YOUR OWN</div>
         <h3>🧰 Workbench</h3>
         <p class="muted">Your state, your questions. Run, save as tests, run over hundreds of rows, export SDK code.</p>
         <ul>
-          <li>12 example patterns: guardrails, verification, routing, extraction…</li>
+          <li>13 example patterns: guardrails, verification, routing, images…</li>
           <li>Tests with expectations, saved as JSON you can commit</li>
           <li>Bulk mode with sortable columns and CSV export</li>
         </ul>

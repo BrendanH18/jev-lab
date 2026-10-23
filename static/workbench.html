@@ -42,6 +42,11 @@
     .pill-num { display: inline-block; min-width: 42px; text-align: right; font-family: var(--mono); }
     .heat { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: var(--track); vertical-align: middle; margin-left: 6px; overflow: hidden; }
     .heat i { display: block; height: 100%; background: var(--series); }
+    .img-list { display: grid; gap: 8px; }
+    .img-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .img-row .ref { display: inline-flex; gap: 6px; align-items: center; justify-self: start; max-width: 100%; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-size: 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .img-row .ref svg { width: 13px; height: 13px; flex: none; }
+    .box-views { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
     @media (max-width: 1000px) { .wb-grid { grid-template-columns: 1fr; } .qcard .row { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>
@@ -49,7 +54,7 @@
   <main class="page">
     <div class="page-head">
       <div>
-        <div class="eyebrow">App 6 · Workbench</div>
+        <div class="eyebrow">App 7 · Workbench</div>
         <h1>Build your own: state in, typed answers out, code around it</h1>
         <p class="lede">Write a state and some questions, run them, and see the probabilities. Save what you agree with as a test, run your tests whenever you change wording or the model version, run one question set over hundreds of rows, and export working code for the official SDKs.</p>
       </div>

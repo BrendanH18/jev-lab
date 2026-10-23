@@ -25,9 +25,12 @@ adds that token to requests, builds shared UI elements, and renders model answer
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,
-estimates cost, and checks the local budget and rate window. It uses the official SDK when
-available and a standard-library transport otherwise. Python 3.10+ with locked dependencies is
-the primary setup; Python 3.9's dependency-free fallback is retained for compatibility.
+estimates cost, and checks the local budget and rate window. It uses the official SDK when available
+and a standard-library transport otherwise. Requests with images or Box questions carry TypeSafe's
+images header; the SDK uploads pictures as multipart file parts, and the fallback sends them as
+base64 JSON. Request traces replace image bytes with a short description. Python 3.10+ with locked
+dependencies is the primary setup; Python 3.9's dependency-free fallback is retained for
+compatibility.
 
 ## Judgments and policy
 
@@ -41,6 +44,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/shield.py`](../jev/shield.py) | Email questions, sender facts, weights, and verdict rules |
 | [`jev/dispatch.py`](../jev/dispatch.py) | Candidate extraction, typed action resolution, policy checks, and confidence thresholds |
 | [`jev/autopilot.py`](../jev/autopilot.py) | Combined Shield/Dispatch requests, comparison worlds, approvals, and call benchmark |
+| [`jev/claims.py`](../jev/claims.py) | Photo questions, a Box for the damage, order facts, and the refund decision |
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
 | [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, bulk calls, and code exports |
@@ -49,6 +53,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/scenarios.py`](../jev/scenarios.py) | Synthetic inbox messages, labels, and commands |
 | [`jev/config.py`](../jev/config.py) | Project paths and environment/`.env` configuration |
 | [`jev/envfile.py`](../jev/envfile.py) | Git safety checks and atomic key-file writes |
+| [`jev/images.py`](../jev/images.py) | Image validation against TypeSafe's limits, sample pictures, references, and trace placeholders |
 | [`jev/security.py`](../jev/security.py) | Loopback Host, Origin, Fetch Metadata, session-token, and content-type checks |
 
 Shield reweighting and Dispatch replanning reuse existing model answers without another API call.
@@ -56,6 +61,9 @@ Autopilot merges both sets of questions into a single request with prefixed IDs,
 answers, and evaluates integrated and Dispatch-alone paths against separate worlds. The
 Dispatch-alone comparison reuses those answers; it does not make an additional model call.
 The explicit benchmark makes five calls: two sequential, two parallel, and one merged.
+When an email has a photo attached, Claims' photo questions join the same merged request, and an
+emailed damage refund needs the photo to show the damage it describes. Claims changes its policy
+without another call, the same way Shield reweights.
 
 ## State and persistence
 
@@ -65,7 +73,10 @@ The explicit benchmark makes five calls: two sequential, two parallel, and one m
 - Workbench items are written to `data/workbench/<id>.json`. They persist across restarts and are
   intentionally available for version control. They contain input data and expectations.
 - `.env` stores optional local configuration and an API key; it must stay gitignored and untracked.
-- Bundled sample documents and rows live in `data/samples/`. Screenshots live in `docs/screenshots/`.
+- Workbench pictures are saved in `data/workbench/images/`, named by a hash of their bytes.
+- Bundled sample documents and rows live in `data/samples/`. Sample pictures live in
+  `static/img/samples/` and are drawn by [`scripts/draw_samples.py`](../scripts/draw_samples.py).
+  Screenshots live in `docs/screenshots/`.
 
 The HTTP server uses threads. Shield batch and Workbench evaluation use bounded thread pools;
 Workbench bulk concurrency is eight. A 401 or 402 stops either batch from starting further calls,

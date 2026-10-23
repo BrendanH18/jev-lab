@@ -206,3 +206,7 @@ ENV/**
 LICENSE*
 # Local output of scripts/validate.py (gitignored; may hold live model answers)
 reports/**
+# Sample pictures drawn by scripts/draw_samples.py (output only; the script itself stays reviewed)
+static/img/samples/**
+# Pictures saved with Workbench tests, named by a hash of their bytes
+data/workbench/images/**

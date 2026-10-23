@@ -4,7 +4,8 @@ The integration is where the value shows up:
   * one request instead of two (both question sets share the same state and run in parallel),
   * Shield's verdict gates Dispatch's actions,
   * the sender facts Shield computes feed Dispatch's authorization checks,
-  * the same answers also show what Dispatch alone would have done, at no extra cost.
+  * the same answers also show what Dispatch alone would have done, at no extra cost,
+  * an attached photo joins the same request, and a damage refund needs the photo to show damage.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional
 
-from . import dispatch, shield
+from . import claims, dispatch, images, shield
 from .client import JevClient
 from .world import World
 
@@ -27,6 +28,25 @@ def split(answers: Dict[str, dict]) -> tuple:
     s = {k[len("shield."):]: v for k, v in answers.items() if k.startswith("shield.")}
     d = {k[len("dispatch."):]: v for k, v in answers.items() if k.startswith("dispatch.")}
     return s, d
+
+
+def photo_answers(answers: Dict[str, dict]) -> Dict[str, dict]:
+    return {k[len("photo."):]: v for k, v in answers.items() if k.startswith("photo.")}
+
+
+def attached_photo(message: dict) -> Optional[tuple]:
+    """(reference, asset, attachment) for the email's first sample picture, or None."""
+    for attachment in message.get("attachments") or []:
+        if attachment.get("sample"):
+            entry = images.sample_asset(attachment["sample"])
+            return images.new_ref(entry["data"], "photo"), entry, attachment
+    return None
+
+
+def photo_questions() -> Dict[str, dict]:
+    qs = claims.questions(item="the product the email in `message` is about", note="the email in `message`",
+                          with_box=False)
+    return {"photo." + k: v for k, v in qs.items()}
 
 
 def merged_questions(world: World, cands: dict) -> Dict[str, dict]:
@@ -69,8 +89,17 @@ class Autopilot:
         text = _text(message)
         cands = dispatch.candidates(text)
         state = shield.state_for(message)
-        result = self.client.system_one(state, merged_questions(self.integrated, cands))
+        qs = merged_questions(self.integrated, cands)
+        photo = attached_photo(message)
+        assets = None
+        if photo:
+            ref, entry, attachment = photo
+            state["photo"] = ref
+            qs.update(photo_questions())
+            assets = {ref: entry}
+        result = self.client.system_one(state, qs, assets=assets)
         s_answers, d_answers = split(result.answers)
+        evidence = claims.evidence(photo_answers(result.answers)) if photo else None
 
         fact = shield.facts(message, s_answers, self.integrated.state["vendors"])
         verdict = shield.verdict(s_answers, fact)
@@ -80,7 +109,7 @@ class Autopilot:
         with self._lock:
             # Integrated pipeline: Shield gates, sender facts feed Dispatch's checks.
             plan_i = dispatch.plan(d_answers, cands, self.integrated, "email", message.get("body", ""),
-                                   sender_email=sender, sender_checks=True)
+                                   sender_email=sender, sender_checks=True, evidence=evidence)
             executed_i, error_i = None, None
             if verdict["level"] == "quarantine":
                 lane = "quarantine"
@@ -110,6 +139,7 @@ class Autopilot:
                 "meta": result.meta(),
                 "trace": result.trace(),
                 "shield": {"verdict": verdict, "fact": fact},
+                "photo": {"sample": photo[2]["sample"], "name": photo[2].get("name"), "evidence": evidence} if photo else None,
                 "integrated": {"lane": lane, "plan": plan_i, "executed": executed_i, "error": error_i,
                                "context": context, "resolved": bool(executed_i) or lane in ("quarantine", "ignored")},
                 "naive": {"plan": plan_n, "executed": executed_n, "error": error_n},

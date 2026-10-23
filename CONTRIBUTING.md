@@ -90,6 +90,8 @@ exercises the Python 3.9 fallback without installing the SDK.
 - Never commit keys, private messages, customer data, or unreviewed model traces.
 - Use fictional people and businesses in fixtures. Use reserved `.example` domains or
   `example.com` addresses for sample contacts.
+- Sample pictures are drawn by `scripts/draw_samples.py`. Do not commit third-party photos; add a
+  scene to the script and regenerate instead.
 - Review saved Workbench JSON before committing it: `data/workbench/` is intentionally tracked.
 - Preserve local-server request checks and keep scripts compatible with the documented runtime.
 - Match existing formatting. `.editorconfig` records indentation and newline conventions.
