@@ -26,6 +26,9 @@
     .row .from { font-weight: 600; font-size: 13px; }
     .row .subj { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row .addr { font: 11.5px var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .attachment { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 11.5px; }
+    .row .attachment img { width: 56px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+    .row .attachment .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sig { font: 500 12px var(--mono); color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .why { font-size: 12px; color: var(--muted); }
     .why li { margin: 1px 0; }
@@ -55,7 +58,7 @@
       <div>
         <div class="eyebrow">App 3 · Autopilot = Shield + Dispatch</div>
         <h1>An inbox that handles itself without getting scammed</h1>
-        <p class="lede">Every email gets <b>one</b> Jev call that asks Shield's questions and Dispatch's questions together. Shield's verdict decides whether an action is allowed, and Shield's sender checks feed Dispatch's permission rules. The right-hand column uses the same answers to show what Dispatch would have done alone, with no idea who sent the email, so the comparison costs nothing extra.</p>
+        <p class="lede">Every email gets <b>one</b> Jev call that asks Shield's questions and Dispatch's questions together. Shield's verdict decides whether an action is allowed, and Shield's sender checks feed Dispatch's permission rules. The right-hand column uses the same answers to show what Dispatch would have done alone, with no idea who sent the email, so the comparison costs nothing extra. When an email has a photo attached, Claims' photo questions join the same call, and a damage refund goes through only if the photo shows the damage.</p>
       </div>
       <div style="flex:1"></div>
       <div class="controls">

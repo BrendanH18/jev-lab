@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional
 
+from . import claims
 from .client import choice, chosen, ranked, score
 from .world import TEMPLATES, WEEKDAYS, World, REFUND_WINDOW_DAYS
 
@@ -309,8 +310,23 @@ def _check(cid: str, ok: bool, level_if_fail: str, label: str, detail: str) -> d
     return {"id": cid, "ok": ok, "level": "ok" if ok else level_if_fail, "label": label, "detail": detail}
 
 
-def checks(call: dict, world_obj: World, sender_email: Optional[str] = None) -> List[dict]:
-    """Deterministic rules. `sender_email` enables the checks that only make sense for email."""
+def photo_check(evidence: Optional[dict]) -> dict:
+    """An emailed damage claim needs a photo that shows the damage described (see jev/claims.py)."""
+    if evidence is None:
+        return _check("photo_evidence", False, "approval", "Photo shows the damage",
+                      "No photo attached; damage refunds by email need one")
+    policy = claims.DEFAULT_POLICY
+    ok = (evidence["shows_item"] >= policy["shows_order"] and evidence["damage"] >= policy["damage_yes"]
+          and evidence["matches_note"] >= policy["matches_note"])
+    return _check("photo_evidence", ok, "approval", "Photo shows the damage",
+                  "Photo: %.0f%% shows the product, %.0f%% damage visible, %.0f%% matches the email"
+                  % (evidence["shows_item"] * 100, evidence["damage"] * 100, evidence["matches_note"] * 100))
+
+
+def checks(call: dict, world_obj: World, sender_email: Optional[str] = None,
+           evidence: Optional[dict] = None) -> List[dict]:
+    """Deterministic rules. `sender_email` enables the checks that only make sense for email,
+    including the photo check for damage claims; `evidence` holds that email's photo judgments."""
     w = world_obj.state
     tool, a = call["tool"], call["exec_args"]
     out: List[dict] = []
@@ -340,6 +356,8 @@ def checks(call: dict, world_obj: World, sender_email: Optional[str] = None) -> 
         else:
             out.append(_check("refund_status", False, "approval", "Order has shipped",
                               "Order is still %s; cancel instead of refunding" % order["status"]))
+        if sender_email is not None and reason == "damaged":
+            out.append(photo_check(evidence))
         if sender_email is not None:
             owner_email = w["customers"][order["customer"]]["email"]
             ok = sender_email.lower() == owner_email.lower()
@@ -422,10 +440,10 @@ def recheck(plan: dict, world_obj: World) -> Optional[str]:
 
 def plan(answers: dict, cands: dict, world_obj: World, source: str, text: str,
          override: Optional[dict] = None, sender_email: Optional[str] = None,
-         sender_checks: bool = True) -> dict:
+         sender_checks: bool = True, evidence: Optional[dict] = None) -> dict:
     snapshot = world_obj.state
     call = resolve(answers, cands, snapshot, source, text, override, sender_email)
-    check_list = checks(call, world_obj, sender_email if sender_checks else None)
+    check_list = checks(call, world_obj, sender_email if sender_checks else None, evidence)
     call.update(decide(call, check_list))
     call["checks"] = check_list
     call["tool_meta"] = {k: {"label": v["label"], "risk": v["risk"], "threshold": v["threshold"]}

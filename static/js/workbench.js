@@ -1,14 +1,15 @@
 import {
   $, $$, answerCard, api, callStats, copyText, currentStatus, h, handleError, icon, initChrome, inspect, mount, ms, num,
-  pct, statusBadge, toast, usd,
+  pct, photoView, prepareImage, statusBadge, toast, usd,
 } from "./common.js";
 
 const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null },
-  loadedExample: null,
+  loadedExample: null, images: [], samples: [], maxImages: 4,
 };
+const TYPES = ["noul", "choice", "score", "box"];
 const TABS = [["build", "Build"], ["tests", "Tests"], ["bulk", "Bulk"], ["examples", "Examples"]];
 
 // ---------- data helpers ----------
@@ -27,7 +28,9 @@ function toQuestions(rows) {
     const id = (r.id || "").trim();
     if (!id) continue;
     const q = { type: r.type, instructions: parseMaybeJson(r.instructions || "") };
-    if (r.type === "choice") {
+    if (r.type === "box") {
+      // A Box takes no criteria: its answer is always four edges.
+    } else if (r.type === "choice") {
       q.criteria = Object.fromEntries(r.choice.filter(([k]) => k.trim()).map(([k, d]) => [k.trim(), d.trim() ? parseMaybeJson(d) : null]));
     } else if (r.type === "score") {
       q.criteria = r.score.filter((s) => s.trim()).map(parseMaybeJson);
@@ -55,13 +58,91 @@ const blankRow = (type) => ({
 
 function defaultExpect(answer) {
   if (answer.type === "choice") return { choice: answer.choice };
+  if (answer.type === "box") {
+    return { box: Object.fromEntries(["left", "top", "right", "bottom"].map((k) => [k, +answer.box[k].toFixed(3)])), iou_min: 0.5 };
+  }
   if (answer.type === "score") return { min: Math.max(0, +(answer.score - 0.5).toFixed(2)), max: +(answer.score + 0.5).toFixed(2) };
   return answer.noul >= 0.5 ? { min: 0.5 } : { max: 0.5 };
 }
 
-function loadInto(state, questions, { expect = {}, name = "", notes = "", id = null, example = null } = {}) {
+// ---------- images ----------
+// Each picture has a reference string; the API swaps the picture in wherever the reference appears.
+function newRef() {
+  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  return `photo-${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+const sampleUrl = (name) => `/img/samples/${name}.png`;
+
+function imagesFromSpecs(specs) {
+  return Object.entries(specs || {}).map(([ref, spec]) => spec.sample
+    ? { ref, sample: spec.sample, url: sampleUrl(spec.sample), about: W.samples.find((x) => x.name === spec.sample)?.about }
+    : { ref, format: spec.format, data_base64: spec.data_base64, url: `data:image/${spec.format === "png" ? "png" : "jpeg"};base64,${spec.data_base64}` });
+}
+const imagesPayload = () => Object.fromEntries(W.images.map((i) => [i.ref, i.sample ? { sample: i.sample } : { format: i.format, data_base64: i.data_base64 }]));
+const imageNames = () => Object.fromEntries(W.images.map((i) => [i.ref, i.sample ? { sample: i.sample } : { format: i.format }]));
+
+// Put a new picture somewhere a question can point at it: a `photo` field in an object state.
+function placeInState(ref) {
+  const state = parseState(W.stateText);
+  const isObject = state && typeof state === "object" && !Array.isArray(state);
+  if (Array.isArray(state)) return "Put its reference in the state or a question.";
+  const obj = isObject ? state : (String(state || "").trim() ? { text: state } : {});
+  let key = "photo";
+  for (let n = 2; key in obj; n++) key = `photo_${n}`;
+  obj[key] = ref;
+  W.stateText = JSON.stringify(obj, null, 2);
+  return isObject || !String(state || "").trim() ? `Added \`${key}\` to the state.` : `Moved the text into \`text\` and added \`${key}\`.`;
+}
+
+function addImage(img) {
+  if (W.images.length >= W.maxImages) return toast(`At most ${W.maxImages} images per request.`, "error");
+  const ref = newRef();
+  W.images.push({ ...img, ref });
+  toast(placeInState(ref));
+  W.result = null;
+  render();
+}
+
+function removeImage(ref) {
+  W.images = W.images.filter((i) => i.ref !== ref);
+  const state = parseState(W.stateText);
+  if (state && typeof state === "object" && !Array.isArray(state)) {
+    for (const [k, v] of Object.entries(state)) if (v === ref) delete state[k];
+    W.stateText = JSON.stringify(state, null, 2);
+  }
+  W.result = null;
+  render();
+}
+
+// Follow a backticked state path such as `photo`, `after.photo` or `frames[2].frame`.
+function lookup(state, path) {
+  if (state && typeof state === "object" && Object.hasOwn(state, path)) return state[path]; // a key with dots
+  let node = state;
+  for (const part of path.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean)) {
+    if (node === null || typeof node !== "object" || !(part in node)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+// Which picture a Box question points at: one named by reference or by a backticked state path.
+// With several pictures and no match, return null rather than draw the box on a guessed picture.
+function imageFor(question, state, images) {
+  const text = typeof question.instructions === "string" ? question.instructions : JSON.stringify(question.instructions);
+  const byRef = images.find((i) => text.includes(i.ref));
+  if (byRef) return byRef;
+  for (const [, path] of text.matchAll(/`([^`]+)`/g)) {
+    const value = lookup(state, path.trim());
+    const img = images.find((i) => i.ref === value);
+    if (img) return img;
+  }
+  return images.length === 1 ? images[0] : null;
+}
+
+function loadInto(state, questions, { expect = {}, name = "", notes = "", id = null, example = null, images = {} } = {}) {
   W.stateText = typeof state === "string" ? state : JSON.stringify(state, null, 2);
   W.questions = fromQuestions(questions);
+  W.images = imagesFromSpecs(images);
   W.expect = expect || {};
   W.saveName = name;
   W.saveNotes = notes;
@@ -79,13 +160,16 @@ function loadInto(state, questions, { expect = {}, name = "", notes = "", id = n
 // ---------- boot ----------
 async function boot() {
   await initChrome("/workbench");
-  const [ex, items, sample] = await Promise.all([api("/api/workbench/examples"), api("/api/workbench/items"), api("/api/workbench/bulk/sample")]);
+  const [ex, items, sample, pics] = await Promise.all([api("/api/workbench/examples"), api("/api/workbench/items"),
+    api("/api/workbench/bulk/sample"), api("/api/images/samples")]);
+  W.samples = pics.samples;
+  W.maxImages = pics.limits.max_images;
   W.examples = ex.examples;
   W.items = items.items;
   W.bulk.rowsText = sample.rows.join("\n");
   W.bulk.sampleQuestions = sample.questions;
   const first = W.examples[0];
-  loadInto(first.state, first.questions, { expect: first.expect, example: first.id });
+  loadInto(first.state, first.questions, { expect: first.expect, example: first.id, images: first.images });
   const hash = location.hash.replace("#", "");
   if (TABS.some(([k]) => k === hash)) { W.tab = hash; render(); }
 }
@@ -115,12 +199,13 @@ function renderBuild() {
       h("div", { class: "panel-head" }, h("h2", {}, "State"), h("div", { class: "spacer" }),
         h("span", { class: "faint", style: { fontSize: "12px" } }, W.loadedExample ? `from example: ${W.loadedExample}` : W.editingId ? `editing test: ${W.editingId}` : "")),
       h("div", { class: "panel-body state-box" }, stateArea)),
+    renderImages(),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, `Questions · ${W.questions.length}`), h("div", { class: "spacer" }),
         h("button", { class: `btn sm ${W.raw ? "" : "ghost"}`, onclick: () => { W.raw = !W.raw; render(); } }, icon("code"), W.raw ? "Editor" : "Raw JSON")),
       h("div", { class: "panel-body grid", style: { gap: "10px" } },
         W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) => renderQuestionCard(row, i))),
-        !W.raw ? h("div", { class: "chips" }, ["noul", "choice", "score"].map((t) =>
+        !W.raw ? h("div", { class: "chips" }, TYPES.map((t) =>
           h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); render(); } }, icon("plus"), `Add ${t}`))) : null)));
 
   const runBtn = h("button", { class: "btn primary", onclick: run }, icon("bolt"), "Run");
@@ -130,9 +215,11 @@ function renderBuild() {
         h("button", { class: "btn sm", onclick: exportCode }, icon("code"), "Export code"),
         h("button", { class: "btn sm", disabled: !W.result, onclick: () => { W.saveOpen = !W.saveOpen; if (W.saveOpen && !Object.keys(W.expect).length) W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)])); render(); } }, icon("save"), "Save as test"),
         runBtn),
+      boxWarning(),
       W.result
         ? h("div", { class: "panel-body grid", style: { gap: "12px" } },
           callStats(W.result.meta, () => inspect(W.result.trace, "Workbench · one Jev request")),
+          renderBoxes(),
           h("div", { class: "answers" }, Object.entries(W.result.answers).map(([qid, a]) => answerCard(qid, a, W.result.trace.request.questions[qid]))))
         : h("div", { class: "empty" }, "Press Run. Every question is evaluated in parallel against the state, in one request.")),
     W.saveOpen && W.result ? renderSaveForm() : null,
@@ -144,8 +231,67 @@ function renderBuild() {
         h("p", { class: "muted" }, "Say exactly what a yes means and what it does not mean; Jev reads instructions literally."),
         h("p", { class: "muted" }, "Keep math, dates, counting, and exact lookups in code. Ask Jev to pick from options, not to generate values."),
         h("p", { class: "muted" }, "Include a “none of these” option when nothing may fit, and read confidence before acting."),
+        h("p", { class: "muted" }, "A Box always returns four edges, even when the target is missing. Ask a Noul whether it is there, and ignore the box when that is low."),
         h("p", { class: "faint" }, "Docs: ", h("a", { href: "https://docs.typesafe.ai/concepts/how-to-build-with-system-one", target: "_blank", rel: "noopener" }, "How to build with TypeSafe"), " · ", h("a", { href: "https://docs.typesafe.ai/model-jaggedness/jev-1.13", target: "_blank", rel: "noopener" }, "Known jagged edges")))));
   return h("div", { class: "grid wb-grid" }, left, right);
+}
+
+function renderImages() {
+  const file = h("input", { type: "file", accept: "image/png,image/jpeg,image/*", class: "hidden" });
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    if (!f) return;
+    try {
+      const img = await prepareImage(f);
+      addImage({ format: img.format, data_base64: img.data_base64, url: img.url, name: img.name });
+    } catch (e) { toast(e.message || "Could not read that image.", "error"); }
+  });
+  const full = W.images.length >= W.maxImages;
+  return h("div", { class: "panel" },
+    h("div", { class: "panel-head" }, h("h2", {}, `Images · ${W.images.length}`),
+      h("span", { class: "dreamer", title: "TypeSafe marks images and Box as dreamer-ready: for prototypes, and subject to change" }, "Dreamer-ready"),
+      h("div", { class: "spacer" }),
+      h("button", { class: "btn sm", disabled: full, onclick: () => file.click() }, icon("upload"), "Upload"), file),
+    h("div", { class: "panel-body grid", style: { gap: "10px" } },
+      W.images.length ? h("div", { class: "img-list" }, W.images.map((img) => h("div", { class: "img-row" },
+        photoView(img.url, [], { alt: img.about || img.name || "Image" }),
+        h("div", { class: "grid", style: { gap: "4px", minWidth: 0 } },
+          h("button", { class: "ref mono", title: "Copy the reference", onclick: () => copyText(img.ref) }, img.ref, icon("copy")),
+          h("span", { class: "faint", style: { fontSize: "11.5px" } }, img.sample ? `Sample drawing: ${img.about || img.sample}` : `${img.name || "Upload"} · JPEG`)),
+        h("button", { class: "btn sm ghost", title: "Remove image", "aria-label": "Remove image", onclick: () => removeImage(img.ref) }, icon("trash"))))) : null,
+      h("div", { class: "thumbs" }, W.samples.map((sm) => h("button", {
+        class: "thumb", title: `Add sample: ${sm.about}`, "aria-label": `Add sample: ${sm.about}`, disabled: full,
+        onclick: () => addImage({ sample: sm.name, url: sm.url, about: sm.about }),
+      }, h("img", { src: sm.url, alt: "" })))),
+      h("p", { class: "faint", style: { fontSize: "12px" } },
+        "Each picture gets a reference. Wherever the reference appears in the state or a question, the model sees the picture. Point questions at it by field, such as ", h("code", {}, "`photo`"), ". Uploads are resized in your browser to 280–1568 px.")));
+}
+
+function boxWarning() {
+  const st = currentStatus();
+  const hasBox = W.questions.some((q) => q.type === "box");
+  if (!hasBox || !st.configured || st.supports_box) return null;
+  return h("div", { class: "panel-body", style: { paddingBottom: 0 } }, h("div", { class: "callout" }, icon("alert"),
+    h("div", {}, h("b", {}, `${st.model} cannot answer Box questions.`), h("div", { class: "muted" }, "Box needs Jev 1.14 or later. Change the model from the key menu in the top bar."))));
+}
+
+// Draw every Box answer on the picture its question points at.
+function renderBoxes() {
+  const r = W.result;
+  const boxes = Object.entries(r.answers).filter(([, a]) => a.type === "box");
+  if (!boxes.length || !r.images?.length) return null;
+  const byImage = new Map();
+  const unplaced = [];
+  for (const [qid, a] of boxes) {
+    const img = imageFor(r.trace.request.questions[qid] || {}, r.trace.request.state, r.images);
+    if (!img) { unplaced.push(qid); continue; }
+    if (!byImage.has(img)) byImage.set(img, []);
+    byImage.get(img).push({ box: a.box, label: `${qid} · ${pct(a.confidence)}` });
+  }
+  return h("div", { class: "box-views" }, [...byImage].map(([img, list]) =>
+    photoView(img.url, list, { alt: "Image with Box answers", caption: `${list.length} Box answer${list.length > 1 ? "s" : ""} on ${img.ref}. A Box always returns edges, so check a presence Noul before trusting one.` })),
+  unplaced.length ? h("p", { class: "faint", style: { fontSize: "12px" } },
+    `Not drawn: ${unplaced.join(", ")}. Name the picture in the instructions by reference or by its backticked state field to see the box.`) : null);
 }
 
 function renderRaw() {
@@ -162,13 +308,18 @@ function renderRaw() {
 function renderQuestionCard(row, i) {
   const idInput = h("input", { class: "input mono", value: row.id, placeholder: "question_id" });
   idInput.addEventListener("input", () => { row.id = idInput.value; });
-  const typeSel = h("select", { class: "input" }, ["noul", "choice", "score"].map((t) => h("option", { value: t, selected: row.type === t }, t)));
+  const typeSel = h("select", { class: "input" }, TYPES.map((t) => h("option", { value: t, selected: row.type === t }, t)));
   typeSel.addEventListener("change", () => { row.type = typeSel.value; render(); });
-  const instr = h("textarea", { class: "input", placeholder: "Instructions: the question, as a person would ask it. Refer to state fields with `backticks`." }, row.instructions);
+  const instr = h("textarea", { class: "input", placeholder: row.type === "box"
+    ? "What to find and in which picture, e.g. the coffee mug in `photo`."
+    : "Instructions: the question, as a person would ask it. Refer to state fields with `backticks`." }, row.instructions);
   instr.addEventListener("input", () => { row.instructions = instr.value; });
 
   let crit;
-  if (row.type === "choice") {
+  if (row.type === "box") {
+    crit = h("div", { class: "faint", style: { fontSize: "12px" } },
+      "A Box takes no criteria. The answer is the four edges of the target as fractions of the picture's width and height. Needs an image and Jev 1.14+.");
+  } else if (row.type === "choice") {
     crit = h("div", { class: "crit" },
       h("div", { class: "section-label", style: { margin: 0 } }, "Options (key → description, description optional)"),
       row.choice.map((pair, j) => {
@@ -206,7 +357,9 @@ async function run() {
   const btn = $(".btn.primary");
   btn.disabled = true;
   try {
-    W.result = await api("/api/workbench/run", { state: parseState(W.stateText), questions });
+    const images = W.images.map((i) => ({ ...i }));
+    W.result = await api("/api/workbench/run", { state: parseState(W.stateText), questions, images: imagesPayload() });
+    W.result.images = images;
     W.saveOpen = false;
     render();
   } catch (e) { handleError(e); btn.disabled = false; }
@@ -214,7 +367,7 @@ async function run() {
 
 async function exportCode() {
   try {
-    W.exported = await api("/api/workbench/export", { state: parseState(W.stateText), questions: toQuestions(W.questions) });
+    W.exported = await api("/api/workbench/export", { state: parseState(W.stateText), questions: toQuestions(W.questions), images: imageNames() });
     render();
     $("#export")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { handleError(e); }
@@ -232,7 +385,8 @@ function renderExport() {
       h("p", { class: "faint", style: { fontSize: "12px", marginTop: "8px" } },
         W.exportTab === "python" ? "pip install typesafe-sdk (Python 3.10+), then set TYPESAFE_API_KEY."
           : W.exportTab === "javascript" ? "npm install @typesafe-ai/sdk (Node 20+), then set TYPESAFE_API_KEY."
-            : "Set TYPESAFE_API_KEY in your shell first.")));
+            : "Set TYPESAFE_API_KEY in your shell first.",
+        W.images.length ? " The snippet loads each picture from a file named after it; save the pictures beside it first." : "")));
 }
 
 function renderSaveForm() {
@@ -252,6 +406,9 @@ function renderSaveForm() {
       sel.addEventListener("change", () => { e.choice = sel.value; });
       return h("div", { class: "exp" }, h("code", {}, qid), h("span", { class: "faint" }, "choice ="), sel, h("span", {}));
     }
+    if (a.type === "box") {
+      return h("div", { class: "exp" }, h("code", {}, qid), h("span", { class: "faint", title: "Overlap with the box saved from this run: 1 is identical, 0 is no overlap" }, "IoU with this box ≥"), numField("iou_min"), h("span", {}));
+    }
     return h("div", { class: "exp" }, h("code", {}, qid), h("span", { class: "faint" }, a.type === "score" ? "score in" : "P(yes) in"), numField("min"), numField("max"));
   });
   return h("div", { class: "panel pop" },
@@ -267,7 +424,7 @@ async function saveTest() {
   try {
     const { item } = await api("/api/workbench/items", {
       id: W.editingId || undefined, name: W.saveName, notes: W.saveNotes, state: parseState(W.stateText),
-      questions: toQuestions(W.questions), expect: W.expect,
+      questions: toQuestions(W.questions), expect: W.expect, images: imagesPayload(),
     });
     W.items = (await api("/api/workbench/items")).items;
     W.editingId = item.id;
@@ -295,7 +452,8 @@ function renderTests() {
           h("div", { class: "grid", style: { gap: "4px" } },
             h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
               r ? statusBadge(r.error ? "fail" : r.ok ? "pass" : "fail") : null, h("b", {}, it.name), h("code", { class: "faint" }, it.id),
-              h("span", { class: "faint", style: { fontSize: "12px" } }, `${Object.keys(it.questions).length} questions · ${Object.keys(it.expect || {}).length} expectations`)),
+              h("span", { class: "faint", style: { fontSize: "12px" } }, `${Object.keys(it.questions).length} questions · ${Object.keys(it.expect || {}).length} expectations`
+                + (it.images ? ` · ${Object.keys(it.images).length} image${Object.keys(it.images).length > 1 ? "s" : ""}` : ""))),
             it.notes ? h("div", { class: "muted", style: { fontSize: "12.5px" } }, it.notes) : null,
             r?.error ? h("div", { class: "checks", style: { color: "var(--critical-text)" } }, r.error) : null,
             r && !r.error ? h("div", { class: "checks" }, Object.entries(r.results).map(([qid, q]) =>
@@ -303,7 +461,7 @@ function renderTests() {
                 `${qid}: ${q.checks.join(", ")}`))) : null,
             r?.meta ? h("div", {}, callStats(r.meta, () => inspect(r.trace, `Test · ${it.name}`))) : null),
           h("div", { style: { display: "flex", gap: "6px" } },
-            h("button", { class: "btn sm", onclick: () => loadInto(it.state, it.questions, { expect: it.expect, name: it.name, notes: it.notes, id: it.id }) }, "Open"),
+            h("button", { class: "btn sm", onclick: () => openItem(it) }, "Open"),
             h("button", { class: "btn sm ghost", onclick: () => runTests([it.id]) }, icon("play")),
             h("button", { class: "btn sm ghost danger", onclick: () => deleteTest(it.id) }, icon("trash"))));
       }) : h("div", { class: "empty" }, "No saved tests yet. Run something in Build, then “Save as test”. Files land in data/workbench/ so they can be committed alongside your code.")),
@@ -313,6 +471,13 @@ function renderTests() {
         h("p", { class: "muted" }, "Question wording is code. When you reword an instruction, add an option, or move to a new model version (aliases like jev-latest move), run the suite and see what changed."),
         h("p", { class: "muted" }, "Expectations are ranges on probabilities, not exact numbers, because calibrated models are allowed to be a little different run to run."),
         h("p", { class: "muted" }, "Each test is one JSON file with the request and the expectations, so you can also load them in CI with the Python SDK."))));
+}
+
+async function openItem(it) {
+  try {
+    const images = it.images ? (await api("/api/workbench/items/images", { id: it.id })).images : {};
+    loadInto(it.state, it.questions, { expect: it.expect, name: it.name, notes: it.notes, id: it.id, images });
+  } catch (e) { handleError(e); }
 }
 
 async function runTests(ids = null) {
@@ -446,13 +611,13 @@ function bulkQuestionsForResult(res) {
 // ---------- Examples ----------
 function renderExamples() {
   return h("div", { class: "grid", style: { gap: "16px" } },
-    h("p", { class: "muted", style: { maxWidth: "760px" } }, "Twelve starting points, one per pattern. Open any of them in Build to see the exact state and questions, run it, then change the wording and watch the probabilities move."),
+    h("p", { class: "muted", style: { maxWidth: "760px" } }, `${W.examples.length} starting points, one per pattern. Open any of them in Build to see the exact state and questions, run it, then change the wording and watch the probabilities move.`),
     h("div", { class: "gallery" }, W.examples.map((ex) => h("div", { class: "panel ex" },
       h("div", { class: "pat" }, ex.pattern), h("h3", {}, ex.title), h("p", {}, ex.blurb),
       h("div", { class: "codenote" }, h("b", { style: { color: "var(--muted)" } }, "In code: "), ex.code),
       h("div", { style: { display: "flex", gap: "8px", alignItems: "center", marginTop: "4px" } },
-        h("button", { class: "btn sm primary", onclick: () => loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id }) }, "Open in Build"),
-        h("span", { class: "faint", style: { fontSize: "12px" } }, `${ex.question_count} questions`))))));
+        h("button", { class: "btn sm primary", onclick: () => loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id, images: ex.images }) }, "Open in Build"),
+        h("span", { class: "faint", style: { fontSize: "12px" } }, `${ex.question_count} questions${ex.images ? " · 1 image" : ""}`))))));
 }
 
 boot().catch(handleError);

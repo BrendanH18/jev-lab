@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import server
-from helpers import fake_answers
+from helpers import FakeClient, fake_answers
 from jev.client import JevError
 
 
@@ -214,6 +214,61 @@ class HttpTests(unittest.TestCase):
         with self.assertRaises(server.BadRequest) as blocked:
             server.api_dispatch_execute({"tool": plan["tool"], "exec_args": args})
         self.assertIn("paid", str(blocked.exception).lower())
+
+    def test_sample_pictures_are_served_as_png(self):
+        status, headers, body = self.request("GET", "/img/samples/torn-bag.png")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "image/png")
+        self.assertTrue(body.startswith(b"\x89PNG"))
+
+    def test_claims_check_over_http_sends_the_photo_once(self):
+        fake = FakeClient(lambda state, qs: {"shows_item": 0.9, "damage_visible": 0.9, "matches_note": 0.9,
+                                             "severity": 2.5, "damage_kind": "torn_or_open"})
+        server.dispatch_world.reset()
+        self.addCleanup(server.dispatch_world.reset)
+        payload = json.dumps({"order": "A-1041", "note": "Torn bag", "image": {"sample": "torn-bag"}})
+        with patch.object(server.client, "system_one", side_effect=fake.system_one):
+            status, _, body = self.request("POST", "/api/claims/check", payload, self.post_headers())
+        self.assertEqual(status, 200, body)
+        out = json.loads(body)
+        self.assertEqual(out["verdict"]["decision"], "approve")
+        self.assertEqual(len(fake.assets), 1)
+        self.assertEqual(next(iter(fake.assets.values()))["sample"], "torn-bag")
+
+    def test_bad_photo_is_refused_without_a_model_call(self):
+        payload = json.dumps({"order": "A-1041", "note": "", "image": {"data_base64": "R0lGODlhAQABAAAAACw="}})
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/claims/check", payload, self.post_headers())
+        self.assertEqual(status, 400)
+        self.assertIn("PNG or JPEG", json.loads(body)["error"])
+
+    def test_claims_decide_is_pure_code(self):
+        from jev import claims
+        answers = fake_answers(claims.questions(), {"shows_item": 0.9, "damage_visible": 0.9, "matches_note": 0.9,
+                                                    "severity": 2.5})
+        facts = claims.order_facts(server.dispatch_world, "A-1042")
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            low = server.api_claims_decide({"answers": answers, "facts": facts})
+            high = server.api_claims_decide({"answers": answers, "facts": facts, "policy": {"auto_limit_usd": 300}})
+        self.assertEqual((low["verdict"]["decision"], high["verdict"]["decision"]), ("review", "approve"))
+
+    def test_model_choice_is_checked_against_the_key(self):
+        self.addCleanup(server.client.set_model, None)
+        listed = {"models": [{"name": "jev-latest"}, {"name": "jev-preview"}]}  # the list currently holds aliases
+        with patch.object(server.client, "models", return_value=listed):
+            with self.assertRaises(server.BadRequest):
+                server.api_model({"model": "gpt-9"})
+            with self.assertRaises(server.BadRequest):
+                server.api_model({"model": "jev-1.14.0-rc1"})
+            preview = server.api_model({"model": "jev-preview"})
+            versioned = server.api_model({"model": "jev-1.14.0"})  # accepted even though it is not listed
+            status = server.api_model({"model": "jev-latest"})
+        self.assertEqual((preview["model"], preview["supports_box"]), ("jev-preview", True))
+        self.assertEqual((versioned["model"], versioned["supports_box"]), ("jev-1.14.0", True))
+        self.assertEqual((status["model"], status["supports_box"]), ("jev-latest", False))
+        # Choosing the configured default is not an override.
+        self.assertEqual(status["model_source"], "settings" if server.client.settings.model == "jev-latest" else "selected")
+        self.assertEqual(server.api_model({"model": ""})["model_source"], "settings")
 
 
 if __name__ == "__main__":

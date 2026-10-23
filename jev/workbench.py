@@ -2,7 +2,8 @@
 
 This is the part of Jev Lab that turns "cool demo" into "how do I build with this". A workbench
 item is plain JSON: a state, a map of questions, and optional expectations. Items are saved under
-data/workbench/ so they can be committed with a project like any other test fixture.
+data/workbench/ so they can be committed with a project like any other test fixture. Pictures an
+item uses are saved beside it in data/workbench/images/, named by a hash of their bytes.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
+from . import images
 from .client import JevClient, JevError
 from .config import SAMPLES_DIR, WORKBENCH_DIR
 
@@ -25,6 +27,8 @@ MAX_STATE_CHARS = 120_000
 MAX_BULK_ROWS = 200
 BULK_CONCURRENCY = 8
 SLUG = re.compile(r"[^a-z0-9]+")
+IMAGE_FILE = re.compile(r"[0-9a-f]{16}\.(png|jpg)")
+QUESTION_TYPES = ("noul", "choice", "score", "box")
 
 
 class WorkbenchError(ValueError):
@@ -46,8 +50,8 @@ def validate_questions(questions: Any) -> Dict[str, dict]:
         if not isinstance(q, dict):
             raise WorkbenchError("Question %r must be an object" % qid)
         qtype = q.get("type")
-        if qtype not in ("noul", "choice", "score"):
-            raise WorkbenchError("Question %r: type must be noul, choice, or score" % qid)
+        if qtype not in QUESTION_TYPES:
+            raise WorkbenchError("Question %r: type must be noul, choice, score, or box" % qid)
         clean: dict = {"type": qtype}
         if q.get("instructions") in (None, ""):
             raise WorkbenchError("Question %r needs instructions" % qid)
@@ -65,6 +69,9 @@ def validate_questions(questions: Any) -> Dict[str, dict]:
             if len(criteria) > MAX_SCORE_LEVELS:
                 raise WorkbenchError("Question %r: at most %d levels" % (qid, MAX_SCORE_LEVELS))
             clean["criteria"] = criteria
+        elif qtype == "box":
+            if criteria not in (None, {}, []):
+                raise WorkbenchError("Question %r: box questions take no criteria" % qid)
         else:
             if criteria not in (None, {}):
                 if not isinstance(criteria, dict) or not set(criteria) <= {"true", "false"}:
@@ -82,18 +89,60 @@ def validate_state(state: Any) -> Any:
     return state
 
 
-def run(client: JevClient, state: Any, questions: Any) -> dict:
-    result = client.system_one(validate_state(state), validate_questions(questions))
+def has_box(questions: Dict[str, dict]) -> bool:
+    return any(q["type"] == "box" for q in questions.values())
+
+
+def request_images(state: Any, questions: Dict[str, dict], specs: Any) -> Dict[str, dict]:
+    """Validated assets for a request. Every image must be referenced; a Box question needs one."""
+    try:
+        assets = images.parse_images(specs)
+    except images.ImageError as err:
+        raise WorkbenchError(str(err)) from err
+    unused = images.unreferenced(assets, state, questions)
+    if unused:
+        raise WorkbenchError("Image %s is not referenced. Put its reference in the state or a question, "
+                             "or remove it." % unused[0])
+    if has_box(questions) and not assets:
+        raise WorkbenchError("Box questions need an image. Add one under Images and reference it in the state.")
+    return assets
+
+
+def run(client: JevClient, state: Any, questions: Any, image_specs: Any = None) -> dict:
+    state, questions = validate_state(state), validate_questions(questions)
+    assets = request_images(state, questions, image_specs)
+    result = client.system_one(state, questions, assets=assets or None)
     return {"answers": result.answers, "meta": result.meta(), "trace": result.trace()}
 
 
 # --- expectations --------------------------------------------------------------------------
 
 
+EDGES = ("left", "top", "right", "bottom")
+
+
+def iou(a: dict, b: dict) -> float:
+    """Intersection over union of two boxes given as edge fractions: 1 is identical, 0 is disjoint."""
+    w = max(0.0, min(a["right"], b["right"]) - max(a["left"], b["left"]))
+    h = max(0.0, min(a["bottom"], b["bottom"]) - max(a["top"], b["top"]))
+    inter = w * h
+    area = lambda e: max(0.0, e["right"] - e["left"]) * max(0.0, e["bottom"] - e["top"])  # noqa: E731
+    union = area(a) + area(b) - inter
+    return inter / union if union > 0 else 0.0
+
+
 def check_expectation(answer: dict, expect: dict) -> dict:
-    """expect examples: {"choice": "billing"}, {"min": 0.7}, {"max": 0.3}, {"min": 1, "max": 2}."""
+    """expect examples: {"choice": "billing"}, {"min": 0.7}, {"max": 0.3}, {"min": 1, "max": 2},
+    and for a Box {"box": {"left": .., "top": .., "right": .., "bottom": ..}, "iou_min": 0.5}."""
     checks: List[str] = []
     ok = True
+    if answer["type"] == "box":
+        if "box" not in expect:
+            return {"ok": True, "checks": ["no box expected"]}
+        overlap = iou({k: float(answer["box"][k]) for k in EDGES}, {k: float(expect["box"][k]) for k in EDGES})
+        floor = float(expect.get("iou_min", 0.5))
+        hit = overlap >= floor
+        return {"ok": hit, "checks": ["IoU %.2f %s %.2f" % (overlap, "≥" if hit else "<", floor)]}
     if answer["type"] == "choice":
         value = answer["choice"]
         if "choice" in expect:
@@ -121,6 +170,8 @@ def default_expectation(answer: dict) -> dict:
     """A sensible expectation from an answer you have looked at and agree with."""
     if answer["type"] == "choice":
         return {"choice": answer["choice"]}
+    if answer["type"] == "box":
+        return {"box": {k: round(float(answer["box"][k]), 3) for k in EDGES}, "iou_min": 0.5}
     if answer["type"] == "score":
         s = float(answer["score"])
         return {"min": round(max(0.0, s - 0.5), 2), "max": round(s + 0.5, 2)}
@@ -143,19 +194,71 @@ def _path(item_id: str) -> Path:
     return WORKBENCH_DIR / (item_id + ".json")
 
 
+def images_dir() -> Path:
+    return WORKBENCH_DIR / "images"
+
+
+def _store_images(state: Any, questions: Dict[str, dict], specs: Any) -> Dict[str, dict]:
+    """Keep samples by name; write uploads to images/<hash>.<format> so the JSON stays small."""
+    stored = {}
+    for ref, entry in request_images(state, questions, specs).items():
+        if entry.get("sample"):
+            stored[ref] = {"sample": entry["sample"]}
+            continue
+        name = "%s.%s" % (entry["sha"], entry["format"])
+        images_dir().mkdir(parents=True, exist_ok=True)
+        path = images_dir() / name
+        if not path.exists():
+            path.write_bytes(entry["data"])
+        stored[ref] = {"file": name}
+    return stored
+
+
+def item_image(spec: dict) -> dict:
+    """An asset entry for one saved image reference."""
+    if spec.get("file"):
+        if not IMAGE_FILE.fullmatch(str(spec["file"])):
+            raise WorkbenchError("Invalid image file name")
+        try:
+            return images.asset((images_dir() / spec["file"]).read_bytes())
+        except FileNotFoundError:
+            raise WorkbenchError("Missing image data/workbench/images/%s" % spec["file"])
+    return images.parse_upload(spec)
+
+
+def item_images(item: dict) -> Dict[str, dict]:
+    return {ref: item_image(spec) for ref, spec in (item.get("images") or {}).items()}
+
+
+def item_images_for_browser(item: dict) -> Dict[str, dict]:
+    """What the Workbench needs to show and resend a saved item's pictures."""
+    out = {}
+    for ref, spec in (item.get("images") or {}).items():
+        if spec.get("sample"):
+            out[ref] = {"sample": spec["sample"]}
+        else:
+            entry = item_image(spec)
+            out[ref] = {"format": entry["format"], "data_base64": images.wire_asset(entry)["data_base64"]}
+    return out
+
+
 def save_item(spec: dict) -> dict:
     name = (spec.get("name") or "").strip()
+    state, questions = validate_state(spec.get("state")), validate_questions(spec.get("questions"))
     item = {
         "id": spec.get("id") or slugify(name),
         "name": name or spec.get("id"),
         "notes": (spec.get("notes") or "")[:2000],
-        "state": validate_state(spec.get("state")),
-        "questions": validate_questions(spec.get("questions")),
+        "state": state,
+        "questions": questions,
         "expect": spec.get("expect") or {},
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     if not isinstance(item["expect"], dict):
         raise WorkbenchError("expect must be an object keyed by question id")
+    stored = _store_images(state, questions, spec.get("images"))
+    if stored:
+        item["images"] = stored
     path = _path(item["id"])
     WORKBENCH_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(item, indent=2, ensure_ascii=False) + "\n")
@@ -191,8 +294,9 @@ def delete_item(item_id: str) -> bool:
 def run_item(client: JevClient, item: dict) -> dict:
     started = time.perf_counter()
     try:
-        result = client.system_one(item["state"], item["questions"])
-    except JevError as err:
+        assets = item_images(item)
+        result = client.system_one(item["state"], item["questions"], assets=assets or None)
+    except (JevError, WorkbenchError, images.ImageError) as err:
         return {"id": item.get("id"), "name": item.get("name"), "error": str(err), "ok": False,
                 "results": {}, "elapsed_ms": (time.perf_counter() - started) * 1000}
     results = {}
@@ -200,7 +304,10 @@ def run_item(client: JevClient, item: dict) -> dict:
     for qid, answer in result.answers.items():
         expect = (item.get("expect") or {}).get(qid)
         if expect:
-            verdict = check_expectation(answer, expect)
+            try:
+                verdict = check_expectation(answer, expect)
+            except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as err:
+                verdict = {"ok": False, "checks": ["invalid expectation %s: %r" % (json.dumps(expect)[:120], err)]}
             ok &= verdict["ok"]
         else:
             verdict = {"ok": None, "checks": ["no expectation"]}
@@ -232,6 +339,8 @@ def load_sample_rows() -> List[str]:
 
 def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text") -> dict:
     questions = validate_questions(questions)
+    if has_box(questions):
+        raise WorkbenchError("Bulk rows are text, and Box questions need an image. Remove the Box questions first.")
     rows = [r for r in rows if r not in (None, "")][:MAX_BULK_ROWS]
     if not rows:
         raise WorkbenchError("No rows to run")
@@ -310,10 +419,21 @@ def _py(value: Any, indent: int = 0) -> str:
     return repr(value)
 
 
-def export_python(state: Any, questions: Dict[str, dict]) -> str:
-    lines = ["from typesafe_sdk import Choice, Noul, NoulCriteria, Score, TypeSafeClient", "",
-             "client = TypeSafeClient()  # reads TYPESAFE_API_KEY from the environment", "",
-             "state = %s" % _py(state), "", "questions = {"]
+def image_file(ref: str, spec: dict) -> str:
+    """The file name an exported snippet loads a picture from."""
+    if spec.get("sample"):
+        return "%s.png" % spec["sample"]
+    return "%s.%s" % (ref, spec.get("format") or "jpg")
+
+
+def export_python(state: Any, questions: Dict[str, dict], model: str, refs: Dict[str, dict] = None) -> str:
+    refs = refs or {}
+    names = ["Choice", "Noul", "NoulCriteria", "Score", "TypeSafeClient"] + (["Box"] if has_box(questions) else [])
+    names += ["Image"] if refs else []
+    lines = (["from pathlib import Path", ""] if refs else []) + [
+        "from typesafe_sdk import %s" % ", ".join(sorted(names)), "",
+        "client = TypeSafeClient(model=%r)  # reads TYPESAFE_API_KEY from the environment" % model, "",
+        "state = %s" % _py(state), "", "questions = {"]
     for qid, q in questions.items():
         args = ["instructions=%s" % _py(q["instructions"], 8)]
         if q["type"] == "choice":
@@ -322,6 +442,8 @@ def export_python(state: Any, questions: Dict[str, dict]) -> str:
         elif q["type"] == "score":
             lines.append("    %r: Score(" % qid)
             args.append("criteria=%s" % _py(q["criteria"], 8))
+        elif q["type"] == "box":
+            lines.append("    %r: Box(" % qid)
         else:
             lines.append("    %r: Noul(" % qid)
             if q.get("criteria"):
@@ -329,9 +451,19 @@ def export_python(state: Any, questions: Dict[str, dict]) -> str:
                 args.append("criteria=NoulCriteria(true=%s, false=%s)" % (_py(c.get("true"), 8), _py(c.get("false"), 8)))
         lines.append("        " + ",\n        ".join(args) + ",")
         lines.append("    ),")
-    lines += ["}", "", "result = client.system_one(state, questions)", ""]
+    if refs:
+        lines += ["}", "", "# Each reference in the text is replaced by its picture. Save the pictures beside this file.",
+                  "assets = {"] + ["    %r: Image(Path(%r))," % (ref, image_file(ref, spec)) for ref, spec in refs.items()] + [
+            "}", "",
+            "# Images and Box questions are early TypeSafe features and need this header. Box needs Jev 1.14+.",
+            "result = client.system_one(state, questions, assets=assets,",
+            "                           extra_headers={\"TypeSafe-Danger-Zone-Images\": \"true\"})", ""]
+    else:
+        lines += ["}", "", "result = client.system_one(state, questions)", ""]
     for qid, q in questions.items():
-        if q["type"] == "choice":
+        if q["type"] == "box":
+            lines.append("%s = result.boxes[%r]     # .box.left/.top/.right/.bottom, .confidence" % (_ident(qid), qid))
+        elif q["type"] == "choice":
             lines.append("%s = result.choices[%r]   # .choice, .probabilities, .confidence" % (_ident(qid), qid))
         elif q["type"] == "score":
             lines.append("%s = result.scores[%r]    # .score, .probabilities, .confidence" % (_ident(qid), qid))
@@ -342,21 +474,46 @@ def export_python(state: Any, questions: Dict[str, dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def export_javascript(state: Any, questions: Dict[str, dict]) -> str:
-    body = json.dumps({"state": state, "questions": questions}, indent=2, ensure_ascii=False)
-    return ("import { TypeSafeClient } from \"@typesafe-ai/sdk\";\n\n"
-            "const client = new TypeSafeClient(); // reads TYPESAFE_API_KEY\n\n"
-            "const { state, questions } = %s;\n\n"
-            "const result = await client.systemOne({ state, questions });\n"
-            "console.log(result.answers);\n" % body)
-
-
-def export_curl(state: Any, questions: Dict[str, dict], model: str) -> str:
+def export_javascript(state: Any, questions: Dict[str, dict], model: str, refs: Dict[str, dict] = None) -> str:
     body = json.dumps({"state": state, "model": model, "questions": questions}, indent=2, ensure_ascii=False)
-    return ("curl -X POST https://api.typesafe.ai/v1/systemone \\\n"
+    if not refs:
+        return ("import { TypeSafeClient } from \"@typesafe-ai/sdk\";\n\n"
+                "const client = new TypeSafeClient(); // reads TYPESAFE_API_KEY\n\n"
+                "const { state, model, questions } = %s;\n\n"
+                "const result = await client.systemOne({ state, model, questions });\n"
+                "console.log(result.answers);\n" % body)
+    assets = "\n".join("  %s: image(await openAsBlob(%s))," % (json.dumps(ref), json.dumps(image_file(ref, spec)))
+                       for ref, spec in refs.items())
+    return ("import { openAsBlob } from \"node:fs\";\n"
+            "import { image, TypeSafeClient } from \"@typesafe-ai/sdk\";\n\n"
+            "const client = new TypeSafeClient(); // reads TYPESAFE_API_KEY\n\n"
+            "const { state, model, questions } = %s;\n\n"
+            "// Each reference in the text is replaced by its picture. Save the pictures beside this file.\n"
+            "const assets = {\n%s\n};\n\n"
+            "// Images and Box questions are early TypeSafe features and need this header. Box needs Jev 1.14+.\n"
+            "const result = await client.systemOne({ state, model, questions, assets },\n"
+            "  { headers: { \"TypeSafe-Danger-Zone-Images\": \"true\" } });\n"
+            "console.log(result.answers);\n" % (body, assets))
+
+
+def export_curl(state: Any, questions: Dict[str, dict], model: str, refs: Dict[str, dict] = None) -> str:
+    request = {"state": state, "model": model, "questions": questions}
+    if not refs:
+        body = json.dumps(request, indent=2, ensure_ascii=False)
+        return ("curl -X POST https://api.typesafe.ai/v1/systemone \\\n"
+                "  -H \"Authorization: Bearer $TYPESAFE_API_KEY\" \\\n"
+                "  -H \"Content-Type: application/json\" \\\n"
+                "  -d @- <<'EOF'\n%s\nEOF\n" % body)
+    parts = {ref: "image-%d" % i for i, ref in enumerate(refs)}
+    request["assets"] = {ref: {"type": "image", "part": part} for ref, part in parts.items()}
+    body = json.dumps(request, indent=2, ensure_ascii=False)
+    files = "".join(" \\\n  -F '%s=@%s'" % (part, image_file(ref, refs[ref])) for ref, part in parts.items())
+    return ("# Multipart: the JSON request first, then one file part per picture.\n"
+            "cat > request.json <<'EOF'\n%s\nEOF\n\n"
+            "curl https://api.typesafe.ai/v1/systemone \\\n"
             "  -H \"Authorization: Bearer $TYPESAFE_API_KEY\" \\\n"
-            "  -H \"Content-Type: application/json\" \\\n"
-            "  -d @- <<'EOF'\n%s\nEOF\n" % body)
+            "  -H \"TypeSafe-Danger-Zone-Images: true\" \\\n"
+            "  -F 'request=<request.json;type=application/json'%s\n" % (body, files))
 
 
 def _ident(qid: str) -> str:
@@ -364,7 +521,26 @@ def _ident(qid: str) -> str:
     return ident if ident and not ident[0].isdigit() else "q_" + ident
 
 
-def export(state: Any, questions: Any, model: str) -> dict:
+def export(state: Any, questions: Any, model: str, image_specs: Any = None) -> dict:
+    """Code for this request. Pictures are loaded from files named in the snippet; no bytes are inlined."""
     questions = validate_questions(questions)
-    return {"python": export_python(state, questions), "javascript": export_javascript(state, questions),
-            "curl": export_curl(state, questions, model)}
+    refs = {}
+    if isinstance(image_specs, dict):
+        for ref, spec in image_specs.items():
+            if not isinstance(spec, dict):
+                continue
+            # These values become file names inside quoted shell and code strings, so only safe ones pass.
+            if not isinstance(ref, str) or not images.REF_RE.fullmatch(ref):
+                raise WorkbenchError("Invalid image reference %r" % (ref,))
+            if spec.get("sample"):
+                if spec["sample"] not in images.SAMPLES:
+                    raise WorkbenchError("Unknown sample image %r" % (spec["sample"],))
+                refs[ref] = {"sample": spec["sample"]}
+            else:
+                fmt = spec.get("format") or "jpg"
+                if fmt not in ("png", "jpg"):
+                    raise WorkbenchError("Image format must be png or jpg, not %r" % (fmt,))
+                refs[ref] = {"format": fmt}
+    return {"python": export_python(state, questions, model, refs),
+            "javascript": export_javascript(state, questions, model, refs),
+            "curl": export_curl(state, questions, model, refs)}

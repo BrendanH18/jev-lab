@@ -20,11 +20,12 @@ import urllib.request
 from collections import deque
 from typing import Any, Dict, Optional
 
+from . import images
 from .config import Settings
 
 try:  # the official SDK needs Python >= 3.10
     import typesafe_sdk
-    from typesafe_sdk import (RetryPolicy, TypeSafeAPIConnectionError, TypeSafeAPIError, TypeSafeClient,
+    from typesafe_sdk import (Image, RetryPolicy, TypeSafeAPIConnectionError, TypeSafeAPIError, TypeSafeClient,
                               TypeSafeError)
     SDK_VERSION: Optional[str] = getattr(typesafe_sdk, "__version__", None)
     if SDK_VERSION is None:
@@ -37,17 +38,23 @@ except ImportError:  # pragma: no cover - exercised on Python 3.9
     TypeSafeClient = None
     SDK_VERSION = None
 
-# Published Jev 1.13 input price (https://docs.typesafe.ai/models). Output tokens are free.
-# GET /v1/models does not include a price, so unknown ids use this same rate: it is the
-# highest published one, and under-counting would let the local budget drift low.
+# Published input prices (https://docs.typesafe.ai/models). Output tokens are free. Jev 1.14 and
+# 1.13 both cost $0.042 per million input tokens. GET /v1/models does not include a price, so
+# unknown ids use the highest published rate: under-counting would let the local budget drift low.
+JEV_1_14_INPUT_USD = 0.042 / 1_000_000
 JEV_1_13_INPUT_USD = 0.042 / 1_000_000
-PRICE_PER_INPUT_TOKEN_USD = JEV_1_13_INPUT_USD
+PRICE_PER_INPUT_TOKEN_USD = JEV_1_14_INPUT_USD
 _KNOWN_INPUT_USD = {
+    "jev-1.14.0": JEV_1_14_INPUT_USD,
+    "jev-1.14": JEV_1_14_INPUT_USD,
     "jev-1.13.0": JEV_1_13_INPUT_USD,
     "jev-1.13": JEV_1_13_INPUT_USD,
-    "jev-latest": JEV_1_13_INPUT_USD,  # alias; the docs currently point it at jev-1.13.0
-    "jev-preview": JEV_1_13_INPUT_USD,
+    "jev-latest": JEV_1_13_INPUT_USD,
+    "jev-preview": JEV_1_14_INPUT_USD,
 }
+# Aliases move with releases (https://docs.typesafe.ai/models#aliases). jev-latest, the SDKs' default,
+# still points at Jev 1.13, which cannot answer Box questions. Update this when the alias moves.
+ALIASES = {"jev-latest": "jev-1.13.0", "jev-preview": "jev-1.14.0"}
 RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504, 529}
 
 
@@ -56,19 +63,33 @@ def price_per_input_token(model: str) -> float:
     model = model or ""
     if model in _KNOWN_INPUT_USD:
         return _KNOWN_INPUT_USD[model]
+    if model.startswith("jev-1.14"):
+        return JEV_1_14_INPUT_USD
     if model.startswith("jev-1.13"):
         return JEV_1_13_INPUT_USD
     return max(_KNOWN_INPUT_USD.values())
 
 
-def estimate_reserve_usd(payload: dict, model: str) -> float:
+def resolve_alias(model: str) -> str:
+    """The versioned id a known alias points at; other names are returned unchanged."""
+    return ALIASES.get(model or "", model or "")
+
+
+def supports_box(model: str) -> bool:
+    """Box questions need Jev 1.14 or later. Known aliases resolve per the docs; unknown ids are assumed current."""
+    return not resolve_alias(model).startswith(("jev-1.13", "jev-1.12", "jev-1.11", "jev-1.10"))
+
+
+def estimate_reserve_usd(payload: dict, model: str, image_uses: int = 0) -> float:
     """A high estimate of what this request will cost, held until the call settles.
 
-    Two characters per token over-counts typical JSON. record() replaces the hold with the
+    Two characters per token over-counts typical JSON. Images get a generous fixed allowance per
+    use, because their token counts are not published yet. record() replaces the hold with the
     billed token cost, and a failed call releases it.
     """
-    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    tokens = max(64, (len(raw) + 1) // 2)
+    text = {k: v for k, v in payload.items() if k != "assets"}
+    raw = json.dumps(text, separators=(",", ":"), ensure_ascii=False)
+    tokens = max(64, (len(raw) + 1) // 2) + image_uses * images.RESERVE_TOKENS_PER_IMAGE
     return tokens * price_per_input_token(model)
 
 
@@ -174,6 +195,7 @@ class JevClient:
         self.settings = settings or Settings()
         self.timeout = timeout
         self._memory_key = api_key
+        self._model_override: Optional[str] = None
         self.guard = guard or SpendGuard(self.settings.budget_usd, self.settings.rpm)
         self._sdk = None
         self._sdk_key: Optional[str] = None
@@ -183,7 +205,15 @@ class JevClient:
 
     @property
     def model(self) -> str:
-        return self.settings.model
+        return self._model_override or self.settings.model
+
+    @property
+    def model_source(self) -> str:
+        return "selected" if self._model_override else "settings"
+
+    def set_model(self, model: Optional[str]) -> None:
+        """Use another model for this server run; None returns to TYPESAFE_DEFAULT_MODEL."""
+        self._model_override = (model or "").strip() or None
 
     @property
     def base_url(self) -> str:
@@ -218,12 +248,21 @@ class JevClient:
 
     # --- calls ------------------------------------------------------------------------------
 
-    def system_one(self, state: Any, questions: Dict[str, dict]) -> JevResult:
-        payload = {"state": state, "model": self.model, "questions": questions}
+    def system_one(self, state: Any, questions: Dict[str, dict], assets: Optional[Dict[str, dict]] = None,
+                   model: Optional[str] = None) -> JevResult:
+        """One call. `assets` maps reference -> entry from jev.images.asset(); each reference must
+        appear in the state or questions. Images and Box questions send the images header."""
+        model = model or self.model
+        payload: dict = {"state": state, "model": model, "questions": questions}
+        if assets:
+            missing = images.unreferenced(assets, state, questions)
+            if missing:
+                raise images.ImageError("Image %s is not referenced in the state or questions." % missing[0])
+            payload["assets"] = assets
         if not self.api_key:
             raise JevError("No TypeSafe API key yet. Click “Connect API key” in the top-right, or add "
                            "TYPESAFE_API_KEY to .env.", status=401)
-        reserve = estimate_reserve_usd(payload, self.model)
+        reserve = estimate_reserve_usd(payload, model, images.count_uses(assets or {}, state, questions))
         self.guard.check(reserve)
         started = time.perf_counter()
         try:
@@ -232,7 +271,10 @@ class JevClient:
             self.guard.release(reserve)
             raise
         latency_ms = (time.perf_counter() - started) * 1000
-        result = JevResult(payload, response, latency_ms, backend=self.backend)
+        shown = dict(payload)
+        if assets:
+            shown["assets"] = {ref: images.trace_asset(entry) for ref, entry in assets.items()}
+        result = JevResult(shown, response, latency_ms, backend=self.backend)
         self.guard.record(result, reserve)
         return result
 
@@ -264,9 +306,15 @@ class JevClient:
             return self._sdk
 
     def _post_system_one(self, payload: dict) -> dict:
+        assets = payload.get("assets") or {}
+        headers = {images.IMAGES_HEADER: "true"} if images.needs_images_header(payload["questions"], assets) else None
         if TypeSafeClient is not None:
             try:
-                response = self._sdk_client().system_one(payload["state"], payload["questions"], model=payload["model"])
+                # The SDK uploads each image as a multipart file part, the transport TypeSafe recommends.
+                response = self._sdk_client().system_one(
+                    payload["state"], payload["questions"], model=payload["model"],
+                    assets={ref: Image(entry["data"]) for ref, entry in assets.items()} or None,
+                    extra_headers=headers)
                 return response.raw_http_response.json()
             except TypeSafeAPIError as err:
                 raise JevError(_error_message(err.status, err.body), status=err.status, body=err.body) from err
@@ -274,10 +322,14 @@ class JevClient:
                 raise JevError("Could not reach TypeSafe: %s" % err) from err
             except TypeSafeError as err:
                 raise JevError(str(err)) from err
-        response, _ = self._stdlib_request("POST", "/v1/systemone", payload)
+        body = dict(payload)
+        if assets:
+            body["assets"] = {ref: images.wire_asset(entry) for ref, entry in assets.items()}
+        response, _ = self._stdlib_request("POST", "/v1/systemone", body, headers=headers)
         return response
 
-    def _stdlib_request(self, method: str, path: str, body: Optional[dict], max_attempts: int = 4):
+    def _stdlib_request(self, method: str, path: str, body: Optional[dict], max_attempts: int = 4,
+                        headers: Optional[Dict[str, str]] = None):
         data = json.dumps(body).encode() if body is not None else None
         attempt = 0
         while True:
@@ -285,7 +337,7 @@ class JevClient:
             req = urllib.request.Request(
                 self.base_url + path, data=data, method=method,
                 headers={"Authorization": "Bearer " + (self.api_key or ""), "Content-Type": "application/json",
-                         "User-Agent": "jev-lab/1.0 (stdlib)"})
+                         "User-Agent": "jev-lab/1.0 (stdlib)", **(headers or {})})
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     return json.loads(resp.read().decode()), attempt
@@ -341,6 +393,11 @@ def choice(instructions: Any, criteria: Dict[str, Any]) -> dict:
 
 def score(instructions: Any, levels: list) -> dict:
     return {"type": "score", "instructions": instructions, "criteria": levels}
+
+
+def box(instructions: Any) -> dict:
+    """Where something is in an image: four edges as fractions of its width and height (Jev 1.14+)."""
+    return {"type": "box", "instructions": instructions}
 
 
 def chosen(answer: dict) -> tuple:

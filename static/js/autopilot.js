@@ -153,6 +153,11 @@ function renderRow(m) {
     h("div", { class: "from" }, m.from_name),
     h("div", { class: "addr" }, m.from_email),
     h("div", { class: "subj", title: m.body }, m.subject),
+    (m.attachments || []).map((att) => h("div", { class: "attachment" },
+      h("img", { src: `/img/samples/${att.sample}.png`, alt: `Attached photo ${att.name}` }),
+      h("div", {}, h("div", { class: "mono" }, att.name),
+        r?.photo ? h("div", { class: "faint" }, `damage ${pct(r.photo.evidence.damage)} · matches ${pct(r.photo.evidence.matches_note)}`)
+          : h("div", { class: "faint" }, "sent with the email")))),
     m.label?.attack ? h("span", { class: "badge critical", style: { justifySelf: "start", fontSize: "10.5px" }, title: "Scenario ground truth. Not sent to Jev." }, "scenario: attack") : null);
 
   if (!r) {

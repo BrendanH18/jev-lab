@@ -98,6 +98,9 @@ const ICONS = {
   copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2"/>',
   plus: '<path d="M10 4v12M4 10h12"/>',
   sparkle: '<path d="M10 2.5l1.8 5.2 5.2 1.8-5.2 1.8L10 16.5l-1.8-5.2L3 9.5l5.2-1.8z"/>',
+  image: '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><circle cx="7" cy="8" r="1.6"/><path d="M17.5 13l-4-4-8 7.5"/>',
+  upload: '<path d="M10 13V3.5M6 7.5l4-4 4 4M3.5 13v2.5a1 1 0 001 1h11a1 1 0 001-1V13"/>',
+  frame: '<path d="M3 7V4a1 1 0 011-1h3M13 3h3a1 1 0 011 1v3M17 13v3a1 1 0 01-1 1h-3M7 17H4a1 1 0 01-1-1v-3"/>',
 };
 export function icon(name, cls = "icon") {
   const span = document.createElement("span");
@@ -124,6 +127,8 @@ const STATUS = {
   pass: ["good", "check", "Pass"],
   fail: ["critical", "x", "Fail"],
   unchecked: ["", "minus", "No expectation"],
+  approve: ["good", "check", "Approve automatically"],
+  retake: ["info", "image", "Ask for another photo"],
 };
 export function statusBadge(kind, label, extra = "") {
   const [tone, ic, text] = STATUS[kind] || ["", "minus", kind];
@@ -161,6 +166,11 @@ export function answerCard(qid, answer, question = null) {
       const label = typeof text === "string" ? text.split(":")[0] : JSON.stringify(text);
       return barRow(label, answer.probabilities?.[lvl] ?? 0, { top: Math.round(answer.score) === Number(lvl), title: typeof text === "string" ? text : label });
     }));
+  } else if (type === "box") {
+    const b = answer.box || {};
+    big = `${pct(b.right - b.left)} × ${pct(b.bottom - b.top)}`;
+    body = h("div", { class: "box-edges mono" },
+      ["left", "top", "right", "bottom"].map((k) => h("span", {}, h("i", {}, k), (b[k] ?? 0).toFixed(3))));
   } else {
     big = pct(answer.noul, 1);
     body = h("div", { class: "bars" }, barRow("P(yes)", answer.noul, { top: true }));
@@ -171,6 +181,46 @@ export function answerCard(qid, answer, question = null) {
     h("div", { class: "big" }, big),
     body,
     type !== "noul" ? h("div", { class: "faint", style: { fontSize: "11.5px" } }, `confidence ${pct(answer.confidence)}`) : null);
+}
+
+// ---------- images ----------
+// TypeSafe accepts PNG or JPEG, 280 to 1568 pixels per side, rotated upright (https://docs.typesafe.ai/images).
+export const IMAGE_LIMITS = { min: 280, max: 1568 };
+
+// Resize a picked file into the accepted range and re-encode it as a baseline JPEG. Browsers apply
+// EXIF orientation when decoding, so the pixels that reach the model are upright.
+export async function prepareImage(file) {
+  if (!file.type.startsWith("image/")) throw new Error("Choose a PNG or JPEG image.");
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const { min, max } = IMAGE_LIMITS;
+  let scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  if (Math.min(bitmap.width, bitmap.height) * scale < min) scale = min / Math.min(bitmap.width, bitmap.height);
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+  if (width > max || height > max) throw new Error(`That image is too narrow: each side must fit between ${min} and ${max} pixels after resizing.`);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+  const url = canvas.toDataURL("image/jpeg", 0.88);
+  return { format: "jpg", data_base64: url.split(",")[1], width, height, url, name: file.name };
+}
+
+// A picture with optional boxes drawn over it. Box edges are fractions of width and height.
+export function photoView(url, boxes = [], { alt = "", caption = null } = {}) {
+  const frame = h("div", { class: "photo" }, h("img", { src: url, alt }));
+  for (const b of boxes.filter(Boolean)) {
+    const e = b.box;
+    frame.append(h("div", {
+      class: `photo-box${b.dashed ? " dashed" : ""}`,
+      style: { left: pct(e.left, 2), top: pct(e.top, 2), width: pct(e.right - e.left, 2), height: pct(e.bottom - e.top, 2) },
+    }, b.label ? h("span", {}, b.label) : null));
+  }
+  return caption ? h("figure", { class: "photo-fig" }, frame, h("figcaption", { class: "faint" }, caption)) : frame;
 }
 
 // ---------- JSON inspector ----------
@@ -308,10 +358,12 @@ export function openSettings(reason = "") {
     h("div", { class: "meter" }, h("i", { style: { width: pct(budgetPct, 1), background: budgetPct > 0.8 ? "var(--warning)" : "var(--series)" } })),
     h("div", { class: "muted", style: { fontSize: "12.5px" } }, `${usd(s.spent_usd)} of a ${money(s.budget_usd)} budget · ${num(s.live_calls)} live calls · ${num(s.input_tokens)} input tokens · local cap ${s.rpm}/min. Change with `, h("code", {}, "JEV_LAB_BUDGET_USD"), " and ", h("code", {}, "JEV_LAB_RPM"), "."));
 
+  const modelSection = status.configured ? modelPicker() : null;
+
   mount(wrap, h("div", { class: "panel modal pop", style: { width: "min(600px, 100%)", maxHeight: "92vh", overflow: "auto" } },
     h("div", { class: "panel-head" }, icon("key"), h("h3", {}, "API key & safety"), h("div", { class: "spacer" }),
       h("span", { class: "faint", style: { fontSize: "12px" } }, status.backend)),
-    h("div", { class: "panel-body grid", style: { gap: "18px" } }, keySection, spendSection)));
+    h("div", { class: "panel-body grid", style: { gap: "18px" } }, keySection, modelSection, spendSection)));
 
   function close() { wrap.remove(); modalOpen = false; }
   async function submit() {
@@ -347,9 +399,43 @@ export function openSettings(reason = "") {
 }
 export const openKeyModal = openSettings;
 
+// Choose the model for this server run. The list comes from GET /v1/models for the connected key.
+function modelPicker() {
+  const select = h("select", { class: "input", "aria-label": "Model" }, h("option", { value: status.model }, status.model));
+  const note = h("div", { class: "faint", style: { fontSize: "11.5px" } }, "Loading the models this key can use…");
+  const describe = () => {
+    const box = status.supports_box ? "Answers Box questions."
+      : "Box questions need Jev 1.14 or later: pick jev-preview, or set TYPESAFE_DEFAULT_MODEL to a versioned id.";
+    const source = status.model_source === "selected"
+      ? `Selected for this run; restarting returns to ${status.default_model}.`
+      : "From TYPESAFE_DEFAULT_MODEL (or the default).";
+    note.textContent = `${source} ${box}`;
+  };
+  api("/api/models").then((res) => {
+    const names = (res.models || []).map((m) => m.name);
+    if (!names.includes(status.model)) names.unshift(status.model);
+    mount(select, names.map((n) => {
+      const m = (res.models || []).find((x) => x.name === n);
+      return h("option", { value: n, selected: n === status.model }, m ? `${n} · ${m.release_date}` : n);
+    }));
+    describe();
+  }).catch((e) => { note.textContent = `Could not list models: ${e.message}`; });
+  select.addEventListener("change", async () => {
+    try {
+      status = await api("/api/model", { model: select.value });
+      renderPill();
+      describe();
+      toast(`Using ${status.model}`);
+      window.dispatchEvent(new CustomEvent("jev:status", { detail: status }));
+    } catch (e) { note.textContent = e.message; }
+  });
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("div", { class: "section-label" }, "Model · this server run"), select, note);
+}
+
 // ---------- nav ----------
 const LINKS = [["/", "Overview"], ["/shield", "Shield"], ["/dispatch", "Dispatch"], ["/autopilot", "Autopilot"],
-  ["/find", "Find"], ["/play", "Play"], ["/workbench", "Workbench"]];
+  ["/claims", "Claims"], ["/find", "Find"], ["/play", "Play"], ["/workbench", "Workbench"]];
 
 export async function initChrome(active) {
   const bar = h("header", { class: "topbar" },

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claims · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .claims-grid { grid-template-columns: 320px minmax(0, 1fr) 300px; align-items: start; }
+    .field { display: grid; gap: 6px; }
+    .field > span { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .field textarea { min-height: 76px; }
+    .order-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12.5px; padding: 10px 12px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); }
+    .order-facts dt { color: var(--faint); }
+    .order-facts dd { margin: 0; }
+    .result-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .decision { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .decision .amount { font: 600 26px/1 var(--mono); letter-spacing: -0.02em; }
+    .reasons { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: grid; gap: 3px; }
+    .checks { display: grid; gap: 6px; }
+    .check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
+    .check .icon { margin-top: 1px; }
+    .check .ok { color: var(--good-text); } .check .no { color: var(--warning-text); } .check .blk { color: var(--critical-text); } .check .info { color: var(--series); }
+    .slider { display: grid; grid-template-columns: 1fr 52px; gap: 2px 10px; align-items: center; font-size: 12.5px; }
+    .slider .name { color: var(--muted); grid-column: 1 / -1; }
+    .slider output { font: 500 12px var(--mono); text-align: right; }
+    .redecide-note { font-size: 12px; color: var(--accent-text); min-height: 18px; }
+    .picked { display: grid; gap: 6px; }
+    @media (max-width: 1220px) { .claims-grid { grid-template-columns: 300px minmax(0, 1fr); } .claims-policy { grid-column: 1 / -1; } }
+    @media (max-width: 900px) { .claims-grid, .result-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 4 · Claims <span class="dreamer" title="TypeSafe marks images and Box as dreamer-ready: for prototypes, and subject to change">Dreamer-ready</span></div>
+        <h1>Check a damage photo before refunding</h1>
+        <p class="lede">A customer sends a photo of a damaged delivery. One Jev call reads the picture: does it show the order, is damage visible, how bad is it, does it match what the customer wrote, and where is the damage? Code looks up the order, applies the refund window and dollar limit, and decides. Changing the policy re-decides without another call.</p>
+      </div>
+    </div>
+
+    <div class="grid claims-grid">
+      <section class="panel">
+        <div class="panel-head"><h2>Claim</h2></div>
+        <div class="panel-body grid" style="gap:14px" id="claim-form"></div>
+      </section>
+
+      <section class="grid" style="gap:16px">
+        <div id="model-note"></div>
+        <div class="panel" id="result"><div class="empty">Pick a photo and check the claim.</div></div>
+      </section>
+
+      <aside class="grid claims-policy" style="gap:16px">
+        <div class="panel">
+          <div class="panel-head"><h2>Policy (code you control)</h2></div>
+          <div class="panel-body grid" style="gap:14px" id="policy"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>How the decision is made</h2></div>
+          <div class="panel-body grid" style="gap:10px; font-size:12.5px">
+            <p class="muted">Order status, delivery date, the 30-day window, and the refund amount come from the shop's records. Jev never sees the policy.</p>
+            <p class="muted">A Box question always returns four edges, even when nothing is there. Code shows the box only when the damage Noul says damage is visible, and pads it when the Box confidence is low.</p>
+            <p class="muted">Images and Box are early TypeSafe features. These sample pictures are simple drawings; try photos of your own.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/js/claims.js"></script>
+</body>
+</html>
