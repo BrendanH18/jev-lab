@@ -168,15 +168,24 @@ def trace_asset(entry: dict) -> dict:
     return out
 
 
+def _uses(refs, values) -> list:
+    """Each reference occurrence, scanning left to right without overlaps and trying longer references
+    first, so `photo1` is not also counted inside `photo12`."""
+    refs = sorted(refs, key=len, reverse=True)
+    if not refs:
+        return []
+    pattern = re.compile("|".join(re.escape(ref) for ref in refs))
+    return [m.group(0) for v in values for m in pattern.finditer(_strings(v))]
+
+
 def count_uses(refs, *values: Any) -> int:
     """How many times the references occur in the request text. Each use adds the image again."""
-    text = "".join(_strings(v) for v in values)
-    return sum(text.count(ref) for ref in refs)
+    return len(_uses(refs, values))
 
 
 def unreferenced(refs, *values: Any) -> list:
-    text = "".join(_strings(v) for v in values)
-    return [ref for ref in refs if ref not in text]
+    used = set(_uses(refs, values))
+    return [ref for ref in refs if ref not in used]
 
 
 def _strings(value: Any) -> str:

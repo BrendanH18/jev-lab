@@ -38,8 +38,9 @@ function renderForm() {
   const select = h("select", { class: "input", "aria-label": "Order", disabled: S.running },
     orders.map((o) => h("option", { value: o.id, selected: o.id === order.id }, `${o.id} · ${o.customer} · ${money(o.total)}`)));
   select.addEventListener("change", () => { S.order = select.value; S.result = null; renderForm(); renderResult(); });
-  const note = h("textarea", { class: "input", placeholder: "What the customer wrote" }, S.note);
-  note.addEventListener("input", () => { S.note = note.value; });
+  const note = h("textarea", { class: "input", placeholder: "What the customer wrote", disabled: S.running }, S.note);
+  // The verdict belongs to the note it was checked with, so editing the note clears it.
+  note.addEventListener("input", () => { S.note = note.value; if (S.result) { S.result = null; renderResult(); } });
 
   const file = h("input", { type: "file", accept: "image/png,image/jpeg,image/*", class: "hidden" });
   file.addEventListener("change", () => file.files[0] && useFile(file.files[0]));

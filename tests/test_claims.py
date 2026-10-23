@@ -82,6 +82,10 @@ class ImageTests(unittest.TestCase):
         questions = {"q": {"type": "noul", "instructions": "Same as photo-aaa111?"}}
         self.assertEqual(images.count_uses(["photo-aaa111", "photo-bbb222"], state, questions), 3)
         self.assertEqual(images.unreferenced(["photo-aaa111", "photo-ccc333"], state, questions), ["photo-ccc333"])
+        # A reference that is a prefix of another is neither counted inside it nor taken as used by it.
+        nested = {"a": "photo-1234567", "b": "photo-1234567"}
+        self.assertEqual(images.count_uses(["photo-123456", "photo-1234567"], nested), 2)
+        self.assertEqual(images.unreferenced(["photo-123456", "photo-1234567"], nested), ["photo-123456"])
         self.assertTrue(images.needs_images_header({"b": {"type": "box"}}, None))
         self.assertFalse(images.needs_images_header({"n": {"type": "noul"}}, {}))
 
