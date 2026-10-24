@@ -1,0 +1,40 @@
+{"text": "My order arrived with the bag torn and beans everywhere. Can I get a replacement or a refund?", "_expect": {"department": "shipping", "is_urgent": false, "wants_refund": true, "frustration": 1}}
+{"text": "Do you sell decaf in whole bean? I only see ground on the site.", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "I was charged twice for order A-2210. Please fix this today, it overdrew my account.", "_expect": {"department": "billing", "is_urgent": true, "wants_refund": true, "frustration": 1}}
+{"text": "Love the new Ethiopia roast, best cup I've had all year. Thank you!", "_expect": {"department": "none", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "How do I pause my subscription for two months while I travel?", "_expect": {"department": "billing", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "The espresso machine I bought has a leaking steam wand after three days.", "_expect": {"department": "technical", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Is the house blend nut free? My kid has a severe allergy.", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Cancel my subscription immediately and confirm by email.", "_expect": {"department": "billing", "is_urgent": true, "wants_refund": false, "frustration": 1}}
+{"text": "Can you ship to Toronto and how long does it take?", "_expect": {"department": "shipping", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Your website won't let me apply the promo code FALL20 at checkout.", "_expect": {"department": "technical", "is_urgent": false, "wants_refund": false, "frustration": 1}}
+{"text": "I'd like to set up a wholesale account for my bakery, we go through about 15 lbs a week.", "_expect": {"department": "wholesale", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "The tracking number says delivered but nothing is here. Checked with neighbors already.", "_expect": {"department": "shipping", "is_urgent": true, "wants_refund": false, "frustration": 1}}
+{"text": "What grind setting do you recommend for a Chemex?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "This is the third month in a row my box came late. I'm getting pretty tired of this.", "_expect": {"department": "shipping", "is_urgent": false, "wants_refund": false, "frustration": 1}}
+{"text": "Can I change the delivery address on order A-2278 before it ships?", "_expect": {"department": "shipping", "is_urgent": true, "wants_refund": false, "frustration": 0}}
+{"text": "Do you offer gift subscriptions with a printed card?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Coffee tastes stale, roast date on the bag is from two months ago. Not okay.", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 1}}
+{"text": "Is there a discount for ordering 5 bags at once?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "I never received the receipt for my last order and need it for expenses.", "_expect": {"department": "billing", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Just wanted to say your barista at the Harbor Street shop was super kind today.", "_expect": {"department": "none", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Unsubscribe me from marketing emails please.", "_expect": {"department": "none", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Please send the invoice for the wholesale order to accounts@northsidebistro.example instead of me.", "_expect": {"department": "billing", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "My grinder makes a grinding noise even when empty. Is that normal?", "_expect": {"department": "technical", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Are the bags recyclable or compostable?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "I ordered a medium roast and got a dark roast. Order A-2301.", "_expect": {"department": "shipping", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "How much caffeine is in a cup of the cold brew concentrate?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "The cafe was out of oat milk two days in a row. Can you restock?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 1}}
+{"text": "I need to return an unopened kettle, it was a duplicate gift.", "_expect": {"department": "shipping", "is_urgent": false, "wants_refund": true, "frustration": 0}}
+{"text": "Can you recommend a coffee similar to the Guatemala you discontinued?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "The mobile site keeps logging me out when I add items to the cart.", "_expect": {"department": "technical", "is_urgent": false, "wants_refund": false, "frustration": 1}}
+{"text": "My package was left in the rain and the box was soaked through.", "_expect": {"department": "shipping", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Hi, do you roast on demand or ship from stock?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "I want a refund. Order A-2288. The whole box tasted burnt.", "_expect": {"department": "billing", "is_urgent": false, "wants_refund": true, "frustration": 1}}
+{"text": "Do you have a referral program? A friend wants to sign up.", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "We're a hotel and want 40 lbs a month with our own labels, who do I talk to?", "_expect": {"department": "wholesale", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Please stop sending me two boxes, I only signed up for one subscription.", "_expect": {"department": "billing", "is_urgent": false, "wants_refund": false, "frustration": 1}}
+{"text": "Can I pick up my online order at the store instead of shipping?", "_expect": {"department": "shipping", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Is your cold brew kit dishwasher safe?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "The espresso sampler was amazing, are you planning a holiday sampler too?", "_expect": {"department": "product", "is_urgent": false, "wants_refund": false, "frustration": 0}}
+{"text": "Someone used my card on your site, I don't recognize order A-2310. Please cancel it.", "_expect": {"department": "billing", "is_urgent": true, "wants_refund": false, "frustration": 1}}

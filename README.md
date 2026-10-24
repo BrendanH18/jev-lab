@@ -70,7 +70,7 @@ issue real refunds, or transfer money.
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, save expectations, run batches, and export code. | Experimentation and repeatable model evaluation |
+| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. Model judgments are live; reweighting, replanning, exports, and
@@ -104,6 +104,8 @@ conditions.
   Box questions visually or as JSON.
 - **Test:** save a run with editable expectations, then rerun after changing questions or models.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
+- **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
+  trades automation for accuracy. It reuses the Bulk answers, so it makes no extra calls.
 - **Learn:** start from thirteen examples covering triage, moderation, routing, extraction, images,
   and more.
 - **Export:** generate Python, JavaScript, or curl requests for use outside Jev Lab.

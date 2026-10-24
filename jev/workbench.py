@@ -29,6 +29,7 @@ BULK_CONCURRENCY = 8
 SLUG = re.compile(r"[^a-z0-9]+")
 IMAGE_FILE = re.compile(r"[0-9a-f]{16}\.(png|jpg)")
 QUESTION_TYPES = ("noul", "choice", "score", "box")
+LABEL_KEY = "_expect"  # a bulk row's labels: removed before the call, returned beside the answers
 
 
 class WorkbenchError(ValueError):
@@ -329,12 +330,45 @@ def run_items(client: JevClient, items: List[dict]) -> dict:
 # --- bulk ----------------------------------------------------------------------------------
 
 
-def load_sample_rows() -> List[str]:
-    rows = []
-    for line in (SAMPLES_DIR / "tickets.txt").read_text().splitlines():
-        if line.strip() and not line.startswith("#"):
-            rows.append(line.strip())
+def load_sample_rows() -> List[dict]:
+    """The labeled support tickets: one JSON object per line, labels under LABEL_KEY."""
+    return parse_rows((SAMPLES_DIR / "tickets.jsonl").read_text())
+
+
+def parse_rows(text: str) -> List[Any]:
+    """One row per nonempty line. A line that is a JSON object becomes that object; others stay text.
+
+    Lines end at "\n" only (a trailing "\r" is stripped), as the browser counts them; splitlines()
+    would also break inside a JSON string at characters such as U+2028 that JSON leaves unescaped.
+    """
+    rows: List[Any] = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("{"):
+            try:
+                value = json.loads(line)
+            except ValueError:
+                value = None
+            if isinstance(value, dict):
+                rows.append(value)
+                continue
+        rows.append(line)
     return rows
+
+
+def split_labels(row: Any, number: int) -> tuple:
+    """(state row, labels or None). Labels never reach the model."""
+    if not isinstance(row, dict) or LABEL_KEY not in row:
+        return row, None
+    labels = row[LABEL_KEY]
+    if not isinstance(labels, dict):
+        raise WorkbenchError("Row %d: %s must be an object keyed by question id" % (number, LABEL_KEY))
+    state = {k: v for k, v in row.items() if k != LABEL_KEY}
+    if not state:
+        raise WorkbenchError("Row %d has labels but no state" % number)
+    return state, labels
 
 
 def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text") -> dict:
@@ -344,33 +378,38 @@ def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "t
     rows = [r for r in rows if r not in (None, "")][:MAX_BULK_ROWS]
     if not rows:
         raise WorkbenchError("No rows to run")
+    split = [split_labels(row, i + 1) for i, row in enumerate(rows)]
     started = time.perf_counter()
     stop = threading.Event()
     stopped = {"error": None}
     lock = threading.Lock()
 
-    def one(index_row):
-        index, row = index_row
+    def base(index):
+        row, labels = split[index]
+        return {"index": index, "row": row, "expect": labels} if labels is not None else {"index": index, "row": row}
+
+    def one(index):
+        row = split[index][0]
         state = row if isinstance(row, (dict, list)) else {field: row}
         try:
             result = client.system_one(state, questions)
-            return {"index": index, "row": row, "answers": result.answers, "meta": result.meta()}
+            return dict(base(index), answers=result.answers, meta=result.meta())
         except JevError as err:
             if err.status in (401, 402):
                 with lock:
                     if stopped["error"] is None:
                         stopped["error"] = str(err)
                 stop.set()
-            return {"index": index, "row": row, "error": str(err)}
+            return dict(base(index), error=str(err))
 
-    def skipped(index_row):
-        index, row = index_row
-        return {"index": index, "row": row, "skipped": True}
+    def skipped(index):
+        return dict(base(index), skipped=True)
 
-    results = map_until_stopped(one, list(enumerate(rows)), BULK_CONCURRENCY, stop, skipped)
+    results = map_until_stopped(one, list(range(len(split))), BULK_CONCURRENCY, stop, skipped)
     done = [r for r in results if "answers" in r]
     return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
             "rows": len(rows), "completed": len(done), "stopped": stopped["error"],
+            "labeled": sum(1 for r in results if r.get("expect")),
             "cost_usd": sum(r["meta"]["cost_usd"] for r in done),
             "input_tokens": sum(r["meta"]["input_tokens"] for r in done)}
 

@@ -1,12 +1,13 @@
 import {
-  $, $$, answerCard, api, callStats, copyText, currentStatus, h, handleError, icon, initChrome, inspect, mount, ms, num,
-  pct, photoView, prepareImage, statusBadge, toast, usd,
+  $, $$, answerCard, api, callStats, copyText, currentStatus, debounce, h, handleError, icon, initChrome, inspect, mount, ms, num,
+  pct, photoView, prepareImage, stat, statusBadge, toast, usd,
 } from "./common.js";
 
 const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
-  bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null },
+  bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
+    cal: { qid: null, signal: "confidence", threshold: 0.5, report: null } },
   loadedExample: null, images: [], samples: [], maxImages: 4,
 };
 const TYPES = ["noul", "choice", "score", "box"];
@@ -166,7 +167,7 @@ async function boot() {
   W.maxImages = pics.limits.max_images;
   W.examples = ex.examples;
   W.items = items.items;
-  W.bulk.rowsText = sample.rows.join("\n");
+  W.bulk.rowsText = sample.rows.map(rowLine).join("\n");
   W.bulk.sampleQuestions = sample.questions;
   const first = W.examples[0];
   loadInto(first.state, first.questions, { expect: first.expect, example: first.id, images: first.images });
@@ -188,6 +189,7 @@ function render() {
   mount("#tabs", TABS.map(([k, label]) => h("button", { class: `tab${W.tab === k ? " active" : ""}`, onclick: () => { W.tab = k; location.hash = k; render(); } },
     label, k === "tests" && W.items.length ? ` (${W.items.length})` : "")));
   mount("#view", view);
+  if (W.tab === "bulk") updateCal();
 }
 
 // ---------- Build ----------
@@ -497,59 +499,75 @@ async function deleteTest(id) {
 }
 
 // ---------- Bulk ----------
+const rowLine = (row) => (typeof row === "string" ? row : JSON.stringify(row));
+
+function countRows(text) {
+  const t = text.trim();
+  if (t.startsWith("[")) { try { const v = JSON.parse(t); if (Array.isArray(v)) return v.length; } catch { /* count lines */ } }
+  return text.split("\n").filter((l) => l.trim()).length;
+}
+
 function bulkQuestions() {
   return W.bulk.source === "sample" ? W.bulk.sampleQuestions : toQuestions(W.questions);
 }
 
 function renderBulk() {
   const b = W.bulk;
-  const rows = h("textarea", { class: "input", spellcheck: "false", placeholder: "One item per line. Each line becomes the state {\"text\": line}. Or paste a JSON array of objects." }, b.rowsText);
+  const rows = h("textarea", { class: "input", spellcheck: "false", placeholder: "One item per line. A text line becomes the state {\"text\": line}; a JSON object line is sent as it is. Or paste a JSON array of objects." }, b.rowsText);
   rows.addEventListener("input", () => { b.rowsText = rows.value; });
-  const nRows = b.rowsText.split("\n").filter((l) => l.trim()).length;
+  const nRows = countRows(b.rowsText);
   const current = toQuestions(W.questions);
   const src = (value, label) => {
     const r = h("input", { type: "radio", name: "src", checked: b.source === value });
     r.addEventListener("change", () => { b.source = value; render(); });
     return h("label", { class: "toggle", style: { gap: "6px" } }, r, label);
   };
-  const runBtn = h("button", { class: "btn primary", onclick: runBulk }, icon("layers"), `Run ${Math.min(nRows, 200)} rows`);
+  const runBtn = h("button", { class: "btn primary", id: "bulk-run", onclick: runBulk }, icon("layers"), `Run ${Math.min(nRows, 200)} rows`);
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "grid wb-grid" },
       h("div", { class: "panel bulk" },
         h("div", { class: "panel-head" }, h("h2", {}, `Rows · ${nRows}`), h("div", { class: "spacer" }),
-          h("button", { class: "btn sm ghost", onclick: async () => { const s = await api("/api/workbench/bulk/sample"); b.rowsText = s.rows.join("\n"); render(); } }, "Load sample rows")),
-        h("div", { class: "panel-body" }, rows)),
+          h("button", { class: "btn sm ghost", onclick: async () => { const s = await api("/api/workbench/bulk/sample"); b.rowsText = s.rows.map(rowLine).join("\n"); render(); } }, "Load sample rows")),
+        h("div", { class: "panel-body" }, rows,
+          h("p", { class: "faint", style: { fontSize: "12px", marginTop: "8px" } }, "Put labels on a JSON row under ", h("code", {}, "\"_expect\""), ", keyed by question id: ",
+            h("code", {}, "{\"text\": \"…\", \"_expect\": {\"department\": \"billing\", \"wants_refund\": true}}"), ". Labels never reach the model; Calibrate scores the answers against them."))),
       h("div", { class: "grid", style: { gap: "16px" } },
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Questions to run on every row")),
           h("div", { class: "panel-body grid", style: { gap: "10px" } },
             src("current", `Current Build questions (${Object.keys(current).length})`),
             src("sample", `Sample: support triage (${Object.keys(b.sampleQuestions || {}).length})`),
-            h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run."),
+            h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run. The sample rows carry labels for the sample questions."),
             h("div", {}, runBtn))),
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Why this matters")),
           h("div", { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
             h("p", { class: "muted" }, "At $0.042 per million input tokens, a question set over a million short messages costs about ", h("b", {}, "$10"), ". That is why “classify everything, then sort” is finally practical."),
-            h("p", { class: "muted" }, "Sort the table by any column, then download the CSV. Those columns are features: feed them to a dashboard, a rule, or a classical ML model."))))),
+            h("p", { class: "muted" }, "With labeled rows, Calibrate shows how often each answer was right and where to set the confidence threshold: above it your code acts, below it a person reviews. Choose the threshold from your own data, not a default."))))),
+    b.result ? renderCalibrate() : null,
     b.result ? renderBulkTable() : null);
 }
 
 async function runBulk() {
   const questions = bulkQuestions();
   if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
-  const btn = $(".btn.primary");
+  const btn = $("#bulk-run");
   btn.disabled = true;
   mount(btn, h("span", { class: "spin" }), " Running…");
   try {
     let rows = W.bulk.rowsText;
     const t = rows.trim();
     if (/^\[/.test(t)) { try { rows = JSON.parse(t); } catch { /* keep text */ } }
-    W.bulk.result = await api("/api/workbench/bulk", { rows, questions });
-    W.bulk.sortKey = null;
-    if (W.bulk.result.stopped) toast(W.bulk.result.stopped, "error");
+    const b = W.bulk;
+    b.result = await api("/api/workbench/bulk", { rows, questions });
+    b.sortKey = null;
+    b.labels = {};
+    for (const r of b.result.results) if (r.expect) b.labels[r.index] = { ...r.expect };
+    b.cal.qid = chooseCalQuestion();
+    await recalibrate();
+    if (b.result.stopped) toast(b.result.stopped, "error");
     render();
-    $("#bulk-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#calibrate")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { handleError(e); render(); }
 }
 
@@ -561,10 +579,33 @@ function cellValue(answers, qid) {
   return { sort: a.noul, text: pct(a.noul), heat: a.noul };
 }
 
+function labelCell(r, qid) {
+  const b = W.bulk;
+  const answer = r.answers?.[qid];
+  if (!answer) return h("td", {});
+  const current = labelText(b.labels[r.index]?.[qid], answer.type);
+  const classes = answerClasses(answer);
+  const extra = current && !classes.includes(current) ? [h("option", { value: current, selected: true }, `${current} (invalid)`)] : [];
+  const sel = h("select", { class: "input label-sel", "aria-label": `Label for row ${r.index + 1}` },
+    h("option", { value: "", selected: !current }, "—"),
+    classes.map((c) => h("option", { value: c, selected: c === current }, answer.type === "score" ? `${c} · ${String(answer.legend?.[c] ?? "").slice(0, 32)}` : c)), extra);
+  sel.addEventListener("change", async () => {
+    const value = labelValue(sel.value, answer.type);
+    const labels = { ...(b.labels[r.index] || {}) };
+    if (value === null) delete labels[qid]; else labels[qid] = value;
+    b.labels[r.index] = labels;
+    await recalibrate();
+    render();
+  });
+  return h("td", {}, sel);
+}
+
 function renderBulkTable() {
   const b = W.bulk;
   const res = b.result;
   const qids = Object.keys(bulkQuestionsForResult(res));
+  const calQ = b.cal.qid;
+  const scored = new Map((b.cal.report?.rows || []).map((r) => [r.index, r]));
   let rows = res.results.slice();
   if (b.sortKey) {
     rows.sort((x, y) => {
@@ -577,8 +618,12 @@ function renderBulkTable() {
     label, b.sortKey === key ? (b.sortDir < 0 ? " ↓" : " ↑") : "");
   const csv = () => {
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const lines = [["row", ...qids].map(esc).join(",")];
-    for (const r of res.results) lines.push([typeof r.row === "string" ? r.row : JSON.stringify(r.row), ...qids.map((q) => cellValue(r.answers, q).text)].map(esc).join(","));
+    const labeled = qids.filter((q) => labeledQids(b).has(q));
+    const lines = [["row", ...qids, ...labeled.map((q) => `label:${q}`)].map(esc).join(",")];
+    for (const r of res.results) {
+      lines.push([typeof r.row === "string" ? r.row : JSON.stringify(r.row), ...qids.map((q) => cellValue(r.answers, q).text),
+        ...labeled.map((q) => labelText(b.labels[r.index]?.[q], r.answers?.[q]?.type))].map(esc).join(","));
+    }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const a = h("a", { href: URL.createObjectURL(blob), download: "jev-bulk.csv" });
     document.body.append(a); a.click(); a.remove();
@@ -589,23 +634,327 @@ function renderBulkTable() {
         h("span", { class: "stat accent" }, "wall", h("b", {}, ms(res.wall_ms))),
         h("span", { class: "stat" }, "tokens", h("b", {}, num(res.input_tokens))),
         h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd))),
+        h("button", { class: "btn sm", onclick: keepLabels, title: "Rewrite the rows box as JSON lines that carry these labels, so the next run keeps them" }, "Keep labels in rows"),
         h("button", { class: "btn sm", onclick: csv }, "Download CSV"))),
     h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
-      h("thead", {}, h("tr", {}, th("__row", "#"), h("th", {}, "row"), qids.map((q) => th(q, q)))),
-      h("tbody", {}, rows.map((r) => h("tr", {},
+      h("thead", {}, h("tr", {}, th("__row", "#"), h("th", {}, "row"), qids.map((q) => th(q, q)),
+        calQ ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), h("th", {}, "route")] : null)),
+      h("tbody", {}, rows.map((r) => h("tr", { "data-index": String(r.index) },
         h("td", { class: "num" }, String(r.index + 1)),
-        h("td", { class: "row" }, typeof r.row === "string" ? r.row : JSON.stringify(r.row), r.error ? h("div", { style: { color: "var(--critical-text)", fontSize: "12px" } }, r.error) : null),
+        h("td", { class: "row" }, rowText(r.row), r.error ? h("div", { style: { color: "var(--critical-text)", fontSize: "12px" } }, r.error) : null),
         qids.map((q) => {
           const v = cellValue(r.answers, q);
-          return h("td", {}, v.heat !== undefined
+          return h("td", { class: q === calQ ? "cal-col" : "" }, v.heat !== undefined
             ? h("span", {}, h("span", { class: "pill-num" }, v.text), h("span", { class: "heat" }, h("i", { style: { width: pct(v.heat, 1) } })))
             : h("span", {}, h("span", { class: "cell-choice" }, v.text), v.sub ? h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, v.sub) : null));
-        })))))));
+        }),
+        calQ ? [labelCell(r, calQ),
+          h("td", {}, scored.has(r.index) ? (scored.get(r.index).correct ? statusBadge("pass", "Right") : statusBadge("fail", "Wrong")) : null),
+          h("td", { class: "route" })] : null))))));
+}
+
+// A row that is only {"text": ...} reads as its text; anything else shows as JSON.
+function rowText(row) {
+  if (typeof row === "string") return row;
+  if (row && typeof row === "object" && !Array.isArray(row) && Object.keys(row).length === 1 && typeof row.text === "string") return row.text;
+  return JSON.stringify(row);
 }
 
 function bulkQuestionsForResult(res) {
   const first = res.results.find((r) => r.answers);
   return first ? first.answers : {};
+}
+
+function keepLabels() {
+  const b = W.bulk;
+  // One JSON line per row. Array states cannot hold "_expect" and would come back as text, so refuse.
+  if (b.result.results.some((r) => Array.isArray(r.row))) {
+    return toast("Rows that are JSON arrays cannot carry labels. Wrap each one in an object first.", "error");
+  }
+  b.rowsText = b.result.results.map((r) => {
+    const labels = b.labels[r.index];
+    const has = labels && Object.keys(labels).length;
+    if (typeof r.row === "string") {
+      // A text line that would split, lose whitespace, or parse as JSON is written as an object so it
+      // survives the trip (the server splits rows on "\n" and trims each line).
+      const plain = r.row === r.row.trim() && !/^[{[]/.test(r.row) && !/[\n\r]/.test(r.row);
+      if (!has && plain) return r.row;
+      return JSON.stringify(has ? { text: r.row, _expect: labels } : { text: r.row });
+    }
+    return JSON.stringify(has ? { ...r.row, _expect: labels } : r.row);
+  }).join("\n");
+  render();
+  toast("Rows now carry their labels as JSON lines");
+}
+
+// ---------- Calibrate ----------
+// Scores one question's Bulk answers against labels and sweeps a confidence threshold. The server
+// does the arithmetic (jev/calibrate.py); no model calls. The slider and chart update in place.
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}, ...children) {
+  const node = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
+  for (const c of children.flat(Infinity)) if (c !== null && c !== undefined && c !== false) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return node;
+}
+const SIGNALS = { confidence: "confidence", top_probability: "top probability" };
+
+function answerClasses(answer) {
+  if (answer.type === "noul") return ["yes", "no"];
+  const keys = Object.keys(answer.probabilities || {});
+  return answer.type === "score" ? keys.sort((a, c) => Number(a) - Number(c)) : keys;
+}
+function labelText(value, type) {
+  if (value === undefined || value === null || value === "") return "";
+  if (type === "noul") {
+    if (value === true || /^(yes|true|1|y)$/i.test(String(value))) return "yes";
+    if (value === false || /^(no|false|0|n)$/i.test(String(value))) return "no";
+  }
+  return String(value);
+}
+function labelValue(text, type) {
+  if (text === "") return null;
+  if (type === "noul") return text === "yes" ? true : text === "no" ? false : text;
+  if (type === "score" && /^\d+$/.test(text)) return Number(text);
+  return text;
+}
+function labeledQids(b) {
+  const qids = new Set();
+  for (const labels of Object.values(b.labels)) for (const q of Object.keys(labels)) qids.add(q);
+  return qids;
+}
+function chooseCalQuestion() {
+  const b = W.bulk;
+  const qids = Object.keys(bulkQuestionsForResult(b.result));
+  const labeled = labeledQids(b);
+  if (qids.includes(b.cal.qid) && (labeled.has(b.cal.qid) || !labeled.size)) return b.cal.qid;
+  return qids.find((q) => labeled.has(q)) || qids[0] || null;
+}
+let calSeq = 0;
+async function recalibrate() {
+  const b = W.bulk;
+  const qid = b.cal.qid;
+  const seq = ++calSeq;  // only the latest request may install its report
+  const rows = qid ? b.result.results.filter((r) => r.answers?.[qid])
+    .map((r) => ({ index: r.index, answer: r.answers[qid], label: b.labels[r.index]?.[qid] ?? null })) : [];
+  b.cal.report = null;
+  if (!rows.length) return;
+  try {
+    const report = await api("/api/workbench/calibrate", { rows, signal: b.cal.signal });
+    if (seq === calSeq) b.cal.report = report;
+  } catch (e) { if (seq === calSeq) handleError(e); }
+}
+
+function renderCalibrate() {
+  const b = W.bulk;
+  const c = b.cal;
+  const rep = c.report;
+  const qids = Object.keys(bulkQuestionsForResult(b.result));
+  if (!qids.length) return null;
+  const labeled = labeledQids(b);
+  const qSel = h("select", { class: "input", "aria-label": "Question to calibrate" },
+    qids.map((q) => h("option", { value: q, selected: q === c.qid }, labeled.has(q) ? q : `${q} (no labels)`)));
+  qSel.addEventListener("change", async () => { c.qid = qSel.value; await recalibrate(); render(); });
+  const sigSel = h("select", { class: "input", "aria-label": "Signal to gate on" },
+    Object.entries(SIGNALS).map(([k, label]) => h("option", { value: k, selected: k === c.signal }, `gate on ${label}`)));
+  sigSel.addEventListener("change", async () => { c.signal = sigSel.value; await recalibrate(); render(); });
+  const head = h("div", { class: "panel-head" }, icon("check"), h("h2", {}, "Calibrate"),
+    h("span", { class: "faint", style: { fontSize: "12px" } }, "computed from these answers, no extra calls"), h("div", { class: "spacer" }),
+    h("div", { class: "cal-controls" }, qSel, sigSel));
+  if (!rep || !rep.labeled) {
+    return h("div", { class: "panel", id: "calibrate" }, head,
+      h("div", { class: "panel-body grid", style: { gap: "8px", fontSize: "13px" } },
+        h("p", { class: "muted" }, `No labels for “${c.qid}” yet. Pick the correct answer in the label column of the table below, or include `, h("code", {}, "\"_expect\""), " in JSON rows and run again."),
+        rep?.invalid?.length ? invalidNote(rep) : null));
+  }
+  const slider = h("input", { type: "range", min: 0, max: 1, step: 0.01, value: c.threshold, id: "cal-slider", class: "cal-slider", "aria-label": `Minimum ${SIGNALS[c.signal]} to act automatically` });
+  slider.addEventListener("input", () => { c.threshold = Number(slider.value); updateCal(); });
+  const setThreshold = (t) => { c.threshold = t; updateCal(); };
+  const n = rep.labeled;
+  return h("div", { class: "panel", id: "calibrate" }, head,
+    h("div", { class: "panel-body grid", style: { gap: "14px" } },
+      h("div", { class: "stat-row" },
+        stat("labeled", `${n} rows`),
+        stat("accuracy, every row", pct(rep.accuracy), true),
+        stat("calibration gap (ECE)", rep.ece === null ? "—" : `${(rep.ece * 100).toFixed(1)} pts`)),
+      h("div", { class: "cal-gate" },
+        h("label", { for: "cal-slider" }, `Act automatically when ${SIGNALS[c.signal]} ≥ `, h("b", { id: "cal-value", class: "mono" })),
+        slider),
+      h("div", { id: "cal-stats", class: "stat-row" }),
+      h("div", { class: "chips" }, rep.targets.map((t) => t.threshold === null
+        ? h("button", { class: "chip", disabled: true }, `${pct(t.target)} accurate: not reached on these rows`)
+        : h("button", { class: "chip", onclick: () => setThreshold(t.threshold) },
+          `${pct(t.target)} accurate → ≥ ${t.threshold.toFixed(2)}, automates ${pct(t.coverage)}`))),
+      h("div", { class: "cal-chart-wrap" },
+        h("div", { class: "cal-legend" },
+          h("span", {}, h("i", { class: "cal-key cov" }), "Automated: share of labeled rows that clear the threshold"),
+          h("span", {}, h("i", { class: "cal-key acc" }), "Accuracy of those automated rows")),
+        h("div", { id: "cal-chart" }),
+        h("div", { class: "cal-tip", id: "cal-tip", hidden: true })),
+      h("details", {}, h("summary", { class: "faint", style: { fontSize: "12.5px", cursor: "pointer" } }, "Sweep as a table"),
+        h("div", { class: "scroll" }, h("table", { class: "table" },
+          h("thead", {}, h("tr", {}, h("th", {}, "threshold"), h("th", {}, "automated"), h("th", {}, "share"), h("th", {}, "accuracy"))),
+          h("tbody", {}, rep.sweep.filter((p) => Math.round(p.threshold * 100) % 5 === 0).map((p) => h("tr", {},
+            h("td", { class: "mono" }, p.threshold.toFixed(2)), h("td", {}, `${p.automated} of ${n}`), h("td", {}, pct(p.coverage)),
+            h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy)))))))),
+      h("div", { class: "cal-tables" }, confusionTable(rep), reliabilityTable(rep)),
+      h("div", { class: "code" }, h("pre", { id: "cal-code" }),
+        h("button", { class: "btn sm copy", onclick: () => copyText($("#cal-code").textContent) }, icon("copy"), "Copy")),
+      h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } },
+        n < 100 ? h("p", { class: "faint" }, `With ${n} labeled rows, one row moves accuracy by ${(100 / n).toFixed(1)} points. Treat these thresholds as a first look, and label more rows before you rely on one.`) : null,
+        rep.unlabeled ? h("p", { class: "faint" }, `${rep.unlabeled} answered rows have no label for “${c.qid}” and are not scored.`) : null,
+        rep.invalid.length ? invalidNote(rep) : null,
+        h("p", { class: "faint" }, rep.type === "noul"
+          ? "A Noul has no confidence field; Calibrate uses |2p − 1|, so 0.40 is the docs' starting band of P(yes) ≥ 0.7 or ≤ 0.3. Right means P(yes) ≥ 0.5 agrees with the label."
+          : rep.type === "score" ? "Right means the most likely level equals the labeled level." : "Right means the selected option equals the label."))));
+}
+
+function invalidNote(rep) {
+  return h("p", { style: { color: "var(--critical-text)", fontSize: "12.5px" } },
+    `${rep.invalid.length} labels ignored: `, rep.invalid.slice(0, 4).map((x) => `row ${x.index + 1}: ${x.reason}`).join("; "),
+    rep.invalid.length > 4 ? "…" : "");
+}
+
+function confusionTable(rep) {
+  const max = Math.max(1, ...rep.confusion.flat());
+  return h("div", { class: "scroll" },
+    h("h3", { class: "cal-h" }, "Confusion: label ↓, Jev's answer →"),
+    h("table", { class: "table confusion" },
+      h("thead", {}, h("tr", {}, h("th", {}), rep.classes.map((k) => h("th", {}, k)))),
+      h("tbody", {}, rep.classes.map((k, i) => h("tr", {}, h("th", {}, k), rep.confusion[i].map((count, j) => h("td", {
+        class: i === j ? "diag" : "",
+        title: `label ${k}, answered ${rep.classes[j]}: ${count}`,
+        style: count ? { background: `color-mix(in srgb, var(--series) ${Math.round(12 + (count / max) * 40)}%, transparent)` } : {},
+      }, count ? String(count) : "·")))))));
+}
+
+function reliabilityTable(rep) {
+  const noul = rep.type === "noul";
+  return h("div", { class: "scroll" },
+    h("h3", { class: "cal-h" }, noul ? "When Jev says P(yes) is…, the label is yes…" : "When Jev's top probability is…, it is right…"),
+    h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, noul ? "P(yes)" : "top probability"), h("th", {}, "rows"), h("th", {}, "average stated"), h("th", {}, noul ? "label yes" : "right"))),
+      h("tbody", {}, rep.reliability.map((bin) => h("tr", {},
+        h("td", { class: "mono" }, `${pct(bin.lo)}–${pct(bin.hi)}`), h("td", {}, String(bin.count)), h("td", {}, pct(bin.stated)),
+        h("td", {}, `${pct(bin.observed)} (${bin.hits}/${bin.count})`))))));
+}
+
+function calCode(rep, qid, signal, t) {
+  // Fixed local names: a question id such as "level" must not shadow the answer.
+  const key = JSON.stringify(qid);
+  if (rep.type === "noul") {
+    const hi = Math.max(0.5, signal === "confidence" ? (1 + t) / 2 : t);
+    return `p = result.nouls[${key}].noul\nif p >= ${hi.toFixed(3)}:\n    act_on_yes()\nelif p <= ${(1 - hi).toFixed(3)}:\n    act_on_no()\nelse:\n    send_to_review()\n`;
+  }
+  const field = rep.type === "choice" ? "choices" : "scores";
+  const gate = signal === "confidence" ? "answer.confidence"
+    : rep.type === "choice" ? "answer.probabilities[answer.choice]" : "max(answer.probabilities.values())";
+  if (rep.type === "choice") return `answer = result.${field}[${key}]\nif ${gate} >= ${t.toFixed(2)}:\n    act_on(answer.choice)\nelse:\n    send_to_review()\n`;
+  // Calibrate scored the most likely level, so the gate acts on that level, not the weighted .score.
+  return `answer = result.${field}[${key}]\nlevel = int(max(answer.probabilities, key=answer.probabilities.get))\nif ${gate} >= ${t.toFixed(2)}:\n    act_on(level)\nelse:\n    send_to_review()\n`;
+}
+
+// Refresh the parts that follow the threshold without rebuilding the slider under the pointer.
+function updateCal() {
+  const b = W.bulk;
+  const c = b.cal;
+  const rep = c.report;
+  if (!rep || !rep.labeled || !$("#cal-stats")) return;
+  const t = c.threshold;
+  const p = rep.sweep[Math.round(t * 100)];
+  const slider = $("#cal-slider");
+  if (slider && Number(slider.value) !== t) slider.value = t;
+  mount("#cal-value", t.toFixed(2));
+  const all = Object.values(rep.signals);
+  const autoAll = all.filter((v) => v + 1e-9 >= t).length;
+  mount("#cal-stats",
+    stat("automated", `${p.automated} of ${rep.labeled} · ${pct(p.coverage)}`, true),
+    stat("accuracy when automated", p.accuracy === null ? "—" : pct(p.accuracy, 1)),
+    stat("wrong but automated", String(p.automated - p.correct)),
+    stat("sent to review", String(rep.labeled - p.automated)),
+    stat("this run, all rows", `${autoAll} of ${all.length} automated`));
+  mount("#cal-chart", calChart(rep, t));
+  $("#cal-code").textContent = calCode(rep, c.qid, c.signal, t);
+  for (const tr of $$("#bulk-table tbody tr")) {
+    const signal = rep.signals[tr.dataset.index];
+    const cell = $("td.route", tr);
+    if (!cell) continue;
+    if (signal === undefined) { mount(cell); tr.classList.remove("below"); continue; }
+    const auto = signal + 1e-9 >= t;
+    tr.classList.toggle("below", !auto);
+    mount(cell, auto ? statusBadge("execute", "Auto") : statusBadge("review"), h("span", { class: "faint mono", style: { marginLeft: "6px", fontSize: "11px" } }, signal.toFixed(2)));
+  }
+}
+
+function calChart(rep, t) {
+  // Drawn at the container's pixel width so text and strokes stay their real size.
+  const W_ = Math.max(320, Math.round($("#cal-chart")?.clientWidth || 640)), H_ = 250, m = { l: 42, r: 14, t: 12, b: 40 };
+  const iw = W_ - m.l - m.r, ih = H_ - m.t - m.b;
+  const x = (v) => m.l + v * iw;
+  const y = (v) => m.t + (1 - v) * ih;
+  const line = (key) => {
+    let d = "", pen = false;
+    for (const p of rep.sweep) {
+      if (p[key] === null) { pen = false; continue; }
+      d += `${pen ? "L" : "M"}${x(p.threshold).toFixed(1)},${y(p[key]).toFixed(1)}`;
+      pen = true;
+    }
+    return d;
+  };
+  const p = rep.sweep[Math.round(t * 100)];
+  const grid = [0, 0.5, 1].map((v) => [
+    svg("line", { x1: m.l, x2: W_ - m.r, y1: y(v), y2: y(v), class: "cal-grid" }),
+    svg("text", { x: m.l - 8, y: y(v) + 3.5, "text-anchor": "end", class: "cal-axis" }, pct(v))]);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((v) => svg("text", { x: x(v), y: H_ - m.b + 16, "text-anchor": "middle", class: "cal-axis" }, v.toFixed(2)));
+  const marks = [];
+  const labels = [];
+  const right = t > 0.62;
+  const anchor = right ? "end" : "start";
+  const lx = x(t) + (right ? -10 : 10);
+  const yc = y(p.coverage);
+  const ya = p.accuracy === null ? null : y(p.accuracy);
+  let lyc = yc, lya = ya;
+  if (ya !== null && Math.abs(ya - yc) < 15) { const mid = (ya + yc) / 2; const up = ya <= yc; lya = mid + (up ? -8 : 8); lyc = mid + (up ? 8 : -8); }
+  marks.push(svg("circle", { cx: x(t), cy: yc, r: 4, class: "cal-dot cov" }));
+  labels.push(svg("text", { x: lx, y: lyc + 4, "text-anchor": anchor, class: "cal-label" }, `${pct(p.coverage)} automated`));
+  if (ya !== null) {
+    marks.push(svg("circle", { cx: x(t), cy: ya, r: 4, class: "cal-dot acc" }));
+    labels.push(svg("text", { x: lx, y: lya + 4, "text-anchor": anchor, class: "cal-label" }, `${pct(p.accuracy)} accurate`));
+  }
+  const hair = svg("line", { x1: 0, x2: 0, y1: m.t, y2: m.t + ih, class: "cal-hair", visibility: "hidden" });
+  const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: ih, class: "cal-hit" });
+  const root = svg("svg", { viewBox: `0 0 ${W_} ${H_}`, width: W_, height: H_, class: "cal-chart", role: "img",
+    "aria-label": `Automated share and accuracy by threshold. At ${t.toFixed(2)}: ${pct(p.coverage)} automated, ${p.accuracy === null ? "none" : pct(p.accuracy)} accurate.` },
+  grid, ticks,
+  svg("text", { x: m.l + iw / 2, y: H_ - 6, "text-anchor": "middle", class: "cal-axis" }, `${SIGNALS[W.bulk.cal.signal]} threshold`),
+  svg("line", { x1: x(t), x2: x(t), y1: m.t, y2: m.t + ih, class: "cal-marker" }),
+  svg("path", { d: line("coverage"), class: "cal-line cov" }),
+  svg("path", { d: line("accuracy"), class: "cal-line acc" }),
+  hair, marks, labels, hit);
+  const at = (e) => {
+    const box = root.getBoundingClientRect();
+    const px = ((e.clientX - box.left) / box.width) * W_;
+    return Math.min(1, Math.max(0, Math.round(((px - m.l) / iw) * 100) / 100));
+  };
+  hit.addEventListener("pointermove", (e) => {
+    const v = at(e);
+    const q = rep.sweep[Math.round(v * 100)];
+    hair.setAttribute("x1", x(v)); hair.setAttribute("x2", x(v)); hair.setAttribute("visibility", "visible");
+    const tip = $("#cal-tip");
+    const wrap = tip.parentElement.getBoundingClientRect();
+    mount(tip,
+      h("div", { class: "faint mono" }, `threshold ${v.toFixed(2)}`),
+      h("div", {}, h("i", { class: "cal-key cov" }), h("b", {}, pct(q.coverage)), ` automated (${q.automated})`),
+      h("div", {}, h("i", { class: "cal-key acc" }), h("b", {}, q.accuracy === null ? "—" : pct(q.accuracy)), " accurate"),
+      h("div", { class: "faint" }, "click to set"));
+    tip.hidden = false;
+    const left = e.clientX - wrap.left + 14;
+    tip.style.left = `${Math.min(left, wrap.width - 190)}px`;
+    tip.style.top = `${e.clientY - wrap.top + 10}px`;
+  });
+  hit.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); $("#cal-tip").hidden = true; });
+  hit.addEventListener("click", (e) => { W.bulk.cal.threshold = at(e); updateCal(); });
+  return root;
 }
 
 // ---------- Examples ----------
@@ -620,4 +969,5 @@ function renderExamples() {
         h("span", { class: "faint", style: { fontSize: "12px" } }, `${ex.question_count} questions${ex.images ? " · 1 image" : ""}`))))));
 }
 
+window.addEventListener("resize", debounce(() => { if (W.tab === "bulk") updateCal(); }, 150));
 boot().catch(handleError);

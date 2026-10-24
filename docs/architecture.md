@@ -48,6 +48,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
 | [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, bulk calls, and code exports |
+| [`jev/calibrate.py`](../jev/calibrate.py) | Accuracy, confusion, reliability, and threshold sweeps over labeled Bulk answers |
 | [`jev/examples.py`](../jev/examples.py) | Workbench example question sets |
 | [`jev/world.py`](../jev/world.py) | Fictional business state, deterministic action checks, and mutations |
 | [`jev/scenarios.py`](../jev/scenarios.py) | Synthetic inbox messages, labels, and commands |
@@ -56,7 +57,8 @@ arithmetic, lookups, or authorization checks.
 | [`jev/images.py`](../jev/images.py) | Image validation against TypeSafe's limits, sample pictures, references, and trace placeholders |
 | [`jev/security.py`](../jev/security.py) | Loopback Host, Origin, Fetch Metadata, session-token, and content-type checks |
 
-Shield reweighting and Dispatch replanning reuse existing model answers without another API call.
+Shield reweighting, Dispatch replanning, and Workbench calibration reuse existing model answers
+without another API call.
 Autopilot merges both sets of questions into a single request with prefixed IDs, splits the
 answers, and evaluates integrated and Dispatch-alone paths against separate worlds. The
 Dispatch-alone comparison reuses those answers; it does not make an additional model call.
@@ -74,9 +76,9 @@ without another call, the same way Shield reweights.
   intentionally available for version control. They contain input data and expectations.
 - `.env` stores optional local configuration and an API key; it must stay gitignored and untracked.
 - Workbench pictures are saved in `data/workbench/images/`, named by a hash of their bytes.
-- Bundled sample documents and rows live in `data/samples/`. Sample pictures live in
-  `static/img/samples/` and are drawn by [`scripts/draw_samples.py`](../scripts/draw_samples.py).
-  Screenshots live in `docs/screenshots/`.
+- Bundled sample documents and rows live in `data/samples/`; the Bulk tickets in `tickets.jsonl`
+  carry `_expect` labels for Calibrate. Sample pictures live in `static/img/samples/` and are drawn
+  by [`scripts/draw_samples.py`](../scripts/draw_samples.py). Screenshots live in `docs/screenshots/`.
 
 The HTTP server uses threads. Shield batch and Workbench evaluation use bounded thread pools;
 Workbench bulk concurrency is eight. A 401 or 402 stops either batch from starting further calls,

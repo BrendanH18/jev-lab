@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jev import claims, dispatch, examples, find, hello, images, play, shield, workbench  # noqa: E402
+from jev import calibrate, claims, dispatch, examples, find, hello, images, play, shield, workbench  # noqa: E402
 from jev.autopilot import Autopilot  # noqa: E402
 from jev.client import JevClient, JevError  # noqa: E402
 from jev.scenarios import COMMANDS, INBOX  # noqa: E402
@@ -183,9 +183,22 @@ def run(client: JevClient, out: dict) -> None:
             print("row %d error: %s" % (r["index"], r.get("error")))
             continue
         depts[a["department"]["choice"]] = depts.get(a["department"]["choice"], 0) + 1
-        print("%-64s %-10s fr=%.2f urg=%s refund=%s" % (r["row"][:64], a["department"]["choice"], a["frustration"]["score"],
-                                                        pct(a["is_urgent"]["noul"]), pct(a["wants_refund"]["noul"])))
+        print("%-64s %-10s fr=%.2f urg=%s refund=%s" % (r["row"]["text"][:64], a["department"]["choice"],
+                                                        a["frustration"]["score"], pct(a["is_urgent"]["noul"]),
+                                                        pct(a["wants_refund"]["noul"])))
     print("departments:", depts, "| wall %d ms, %d tokens, $%.5f" % (bulk["wall_ms"], bulk["input_tokens"], bulk["cost_usd"]))
+    out["calibrate"] = {}
+    answered = [r for r in bulk["results"] if r.get("answers")]
+    for qid in examples.BULK_QUESTIONS if answered else ():  # evaluate() refuses an empty run
+        report = calibrate.evaluate([{"index": r["index"], "answer": r["answers"][qid], "label": (r.get("expect") or {}).get(qid)}
+                                     for r in answered])
+        if not report["labeled"]:
+            continue
+        reach = ", ".join("%d%% at >=%.2f automates %s" % (t["target"] * 100, t["threshold"], pct(t["coverage"]))
+                          if t["threshold"] is not None else "%d%% unreachable" % (t["target"] * 100) for t in report["targets"])
+        print("%-13s accuracy %s on %d labeled, ECE %.3f | %s" % (qid, pct(report["accuracy"]), report["labeled"],
+                                                                 report["ece"], reach))
+        out["calibrate"][qid] = {k: report[k] for k in ("accuracy", "labeled", "ece", "targets", "confusion", "classes")}
 
 
 def main() -> int:

@@ -21,7 +21,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import claims, dispatch, envfile, examples, find, hello, images, security, shield, workbench
+from jev import calibrate, claims, dispatch, envfile, examples, find, hello, images, security, shield, workbench
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -440,10 +440,14 @@ def api_wb_run_items(body):
 def api_wb_bulk(body):
     rows = body.get("rows")
     if isinstance(rows, str):
-        rows = [ln.strip() for ln in rows.splitlines() if ln.strip()]
+        rows = workbench.parse_rows(rows)
     if not rows:
         rows = workbench.load_sample_rows()
     return workbench.run_bulk(client, rows, body.get("questions"), str(body.get("field") or "text"))
+
+
+def api_wb_calibrate(body):
+    return calibrate.evaluate(body.get("rows"), str(body.get("signal") or "confidence"))
 
 
 def api_wb_bulk_sample(_body):
@@ -490,6 +494,7 @@ ROUTES = {
     ("POST", "/api/workbench/items/run"): api_wb_run_items,
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
+    ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
 }
 
 CSP = ("default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "
@@ -540,7 +545,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body, dict):
                     raise BadRequest("Body must be a JSON object")
                 self._send(200, route(body))
-            except (BadRequest, workbench.WorkbenchError, envfile.EnvFileError, images.ImageError) as err:
+            except (BadRequest, workbench.WorkbenchError, calibrate.CalibrationError, envfile.EnvFileError,
+                    images.ImageError) as err:
                 self._send(400, {"error": str(err)})
             except JevError as err:
                 status = err.status if err.status in (400, 401, 402, 403, 413, 422, 429) else 502
