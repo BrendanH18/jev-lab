@@ -188,9 +188,10 @@ def run(client: JevClient, out: dict) -> None:
                                                         pct(a["wants_refund"]["noul"])))
     print("departments:", depts, "| wall %d ms, %d tokens, $%.5f" % (bulk["wall_ms"], bulk["input_tokens"], bulk["cost_usd"]))
     out["calibrate"] = {}
-    for qid in examples.BULK_QUESTIONS:
+    answered = [r for r in bulk["results"] if r.get("answers")]
+    for qid in examples.BULK_QUESTIONS if answered else ():  # evaluate() refuses an empty run
         report = calibrate.evaluate([{"index": r["index"], "answer": r["answers"][qid], "label": (r.get("expect") or {}).get(qid)}
-                                     for r in bulk["results"] if r.get("answers")])
+                                     for r in answered])
         if not report["labeled"]:
             continue
         reach = ", ".join("%d%% at >=%.2f automates %s" % (t["target"] * 100, t["threshold"], pct(t["coverage"]))
