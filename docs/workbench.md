@@ -109,15 +109,53 @@ synthetic data and review each fixture and picture first.
 
 ## Evaluate rows in bulk
 
-Supply one text row per line or a JSON array. Text rows become objects using the selected field
-name (default `text`); object and array rows are sent as their own state. The same question set
-is evaluated for every row, with eight concurrent calls. The results can be sorted and exported
-as CSV.
+Supply one row per line or a JSON array. A text line becomes an object using the selected field
+name (default `text`); a line that is a JSON object, and every object or array in a JSON array,
+is sent as its own state. The same question set is evaluated for every row, with eight concurrent
+calls. The results can be sorted and exported as CSV.
 
 Empty rows are removed, and only the first 200 remaining rows are processed. Each row uses a
 separate model call. Rows are text or JSON, so Box questions cannot run in bulk. A missing-key or
 budget error stops new work where possible; already admitted calls may complete. Per-row errors
 remain visible in the results.
+
+## Measure accuracy and choose a threshold
+
+A JSON row can carry labels under `_expect`, keyed by question ID. Jev Lab removes them before the
+call, so the model never sees them, and returns them beside the answers:
+
+```json
+{"text": "I was charged twice. Please fix this today.", "_expect": {"department": "billing", "is_urgent": true, "frustration": 1}}
+```
+
+| Question type | Label |
+| --- | --- |
+| Choice | An option key, such as `"billing"` |
+| Noul | `true`/`false`, or `"yes"`/`"no"` |
+| Score | A level number, starting at `0` |
+
+**Load sample rows** fills the box with 40 support tickets labeled for the sample questions. After
+a run, **Calibrate** scores one question against its labels. It makes no model calls: it reuses the
+answers already returned. It shows:
+
+- accuracy, and a confusion matrix of labels against answers;
+- a reliability table that compares stated probabilities with observed outcomes, and its average
+  gap (expected calibration error);
+- a threshold slider and chart. Rows at or above the threshold are automated and the rest go to
+  review. The chart shows the share automated and the accuracy of those rows, and the shortcuts
+  give the lowest threshold that reaches 90%, 95%, or 99% accuracy;
+- the Python gate for the chosen threshold.
+
+An answer counts as right when the selected Choice option equals the label, when P(yes) ≥ 0.5
+agrees with a Noul label, or when a Score's most likely level equals the labeled level. You can
+gate on `confidence` (the answer's own field; a Noul uses |2p − 1|, so 0.40 matches P(yes) ≥ 0.7
+or ≤ 0.3) or on the top probability. See TypeSafe's
+[confidence guide](https://docs.typesafe.ai/confidence) for both measures.
+
+To label rows in the browser, use the label column in the results table. **Keep labels in rows**
+rewrites the rows box as JSON lines that carry your labels, so the next run keeps them. Thresholds
+from a few dozen rows are a first look: each row of 40 moves accuracy by 2.5 points. Label more of
+your own data before relying on a threshold, and pin the model version when you compare runs.
 
 ## Export a request
 
@@ -141,6 +179,7 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
+| Calibrate rows | 1,000 answers per request |
 | Images per request | 4, PNG or JPEG, 280–1568 pixels per side |
 | HTTP request body | 12 MiB |
 

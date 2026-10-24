@@ -252,6 +252,28 @@ class HttpTests(unittest.TestCase):
             high = server.api_claims_decide({"answers": answers, "facts": facts, "policy": {"auto_limit_usd": 300}})
         self.assertEqual((low["verdict"]["decision"], high["verdict"]["decision"]), ("review", "approve"))
 
+    def test_calibrate_over_http_is_pure_code(self):
+        rows = [{"index": 0, "answer": {"type": "noul", "noul": 0.9}, "label": "yes"},
+                {"index": 1, "answer": {"type": "noul", "noul": 0.3}, "label": "yes"}]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/calibrate", json.dumps({"rows": rows}),
+                                           self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/calibrate", json.dumps({"rows": "x"}), self.post_headers())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["accuracy"], 0.5)
+        self.assertEqual(bad, 400)
+        self.assertIn("rows must be a list", json.loads(err)["error"])
+
+    def test_bulk_text_accepts_json_lines_with_labels(self):
+        fake = FakeClient()
+        rows = 'plain\n{"text": "labeled", "_expect": {"u": true}}'
+        payload = json.dumps({"rows": rows, "questions": {"u": {"type": "noul", "instructions": "Urgent?"}}})
+        with patch.object(server.client, "system_one", side_effect=fake.system_one):
+            status, _, body = self.request("POST", "/api/workbench/bulk", payload, self.post_headers())
+        self.assertEqual(status, 200, body)
+        self.assertEqual([c[0] for c in fake.calls if c[0]["text"] == "labeled"], [{"text": "labeled"}])
+        self.assertEqual(json.loads(body)["labeled"], 1)
+
     def test_model_choice_is_checked_against_the_key(self):
         self.addCleanup(server.client.set_model, None)
         listed = {"models": [{"name": "jev-latest"}, {"name": "jev-preview"}]}  # the list currently holds aliases
