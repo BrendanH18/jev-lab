@@ -110,7 +110,7 @@ class RunTests(unittest.TestCase):
         report = workbench.run_compare(client, ["ship it", {"text": "now", "_expect": {"urgent": True}}],
                                        [{"questions": Q}, {"questions": TERSE, "model": " jev-preview "}])
         self.assertEqual(len(client.calls), 4)
-        self.assertEqual(sorted(client.models, key=str), [None, None, "jev-preview", "jev-preview"])
+        self.assertEqual(sorted(client.models), ["jev-fake", "jev-fake", "jev-preview", "jev-preview"])
         self.assertEqual([v["model"] for v in report["variants"]], ["jev-fake", "jev-preview"])
         self.assertEqual([v["completed"] for v in report["variants"]], [2, 2])
         self.assertEqual(report["labeled"], 1)
@@ -120,6 +120,19 @@ class RunTests(unittest.TestCase):
         self.assertNotIn("_expect", client.calls[2][0])
         self.assertAlmostEqual(report["cost_usd"], sum(v["cost_usd"] for v in report["variants"]))
         self.assertEqual(report["variants"][0]["latency_ms_median"], 12.0)
+
+    def test_a_blank_model_is_resolved_once_for_the_whole_run(self):
+        class Switching(FakeClient):
+            def system_one(self, state, questions, assets=None, model=None):
+                result = super().system_one(state, questions, model=model)
+                self.model = "jev-switched"  # someone picks another model in Settings mid-run
+                return result
+
+        client = Switching()
+        with patch.object(workbench, "BULK_CONCURRENCY", 1):
+            report = workbench.run_compare(client, ["a", "b", "c"], [{"questions": Q}, {"questions": TERSE}])
+        self.assertEqual(client.models, ["jev-fake"] * 6)
+        self.assertEqual([v["model"] for v in report["variants"]], ["jev-fake", "jev-fake"])
 
     def test_a_budget_stop_leaves_both_variants_with_the_same_rows(self):
         class Budget(FakeClient):

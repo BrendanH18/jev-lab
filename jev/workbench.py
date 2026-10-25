@@ -462,9 +462,12 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     stopped by the budget leaves the variants with nearly the same rows. Scoring (compare.evaluate)
     uses only rows both variants answered."""
     variants = validate_variants(variants)
+    # Resolve a blank model once: the current model can change in Settings while the run is going,
+    # and every call of a variant must use the same model.
+    models = [v["model"] or client.model for v in variants]
     split = _split_rows(rows)
     started = time.perf_counter()
-    jobs = [(i, v["questions"], v["model"]) for i in range(len(split)) for v in variants]
+    jobs = [(i, v["questions"], model) for i in range(len(split)) for v, model in zip(variants, models)]
     outcomes, stopped = _run_jobs(client, split, jobs, field)
     width = len(variants)
     results = [dict(_row_base(split, i), runs=outcomes[i * width:(i + 1) * width]) for i in range(len(split))]
@@ -472,7 +475,7 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     for v, variant in enumerate(variants):
         done = [r["runs"][v] for r in results if "answers" in r["runs"][v]]
         latencies = [o["meta"]["latency_ms"] for o in done]
-        summaries.append({"name": compare.NAMES[v], "model": variant["model"] or client.model,
+        summaries.append({"name": compare.NAMES[v], "model": models[v],
                           "questions": variant["questions"], "completed": len(done),
                           "errors": sum(1 for r in results if "error" in r["runs"][v]),
                           "cost_usd": sum(o["meta"]["cost_usd"] for o in done),
