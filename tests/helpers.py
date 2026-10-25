@@ -43,10 +43,12 @@ class FakeClient:
         self.picker = picker or (lambda state, questions: {})
         self.input_tokens = input_tokens
         self.calls = []
+        self.models = []  # the model each call asked for; None means the current model
         self.model = "jev-fake"
 
     def system_one(self, state, questions, assets=None, model=None):
         self.calls.append((state, questions))
+        self.models.append(model)
         self.assets = assets
         answers = fake_answers(questions, self.picker(state, questions))
         return JevResult({"state": state, "model": model or self.model, "questions": questions},

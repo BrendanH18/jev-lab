@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
-from . import images
+from . import compare, images
 from .client import JevClient, JevError
 from .config import SAMPLES_DIR, WORKBENCH_DIR
 
@@ -371,47 +372,119 @@ def split_labels(row: Any, number: int) -> tuple:
     return state, labels
 
 
-def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text") -> dict:
+def bulk_questions(questions: Any) -> Dict[str, dict]:
     questions = validate_questions(questions)
     if has_box(questions):
         raise WorkbenchError("Bulk rows are text, and Box questions need an image. Remove the Box questions first.")
+    return questions
+
+
+def _split_rows(rows: List[Any]) -> List[tuple]:
+    """(state row, labels or None) for the first MAX_BULK_ROWS nonempty rows."""
     rows = [r for r in rows if r not in (None, "")][:MAX_BULK_ROWS]
     if not rows:
         raise WorkbenchError("No rows to run")
-    split = [split_labels(row, i + 1) for i, row in enumerate(rows)]
-    started = time.perf_counter()
+    return [split_labels(row, i + 1) for i, row in enumerate(rows)]
+
+
+def _row_base(split: List[tuple], index: int) -> dict:
+    row, labels = split[index]
+    return {"index": index, "row": row, "expect": labels} if labels is not None else {"index": index, "row": row}
+
+
+def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
+    """jobs: [(row index, questions, model or None)]. Returns (one outcome per job, first stopping error).
+
+    An outcome is {"answers", "meta"}, {"error"}, or {"skipped": True}. A missing key or exhausted
+    budget stops new calls; other errors stay with their row.
+    """
     stop = threading.Event()
     stopped = {"error": None}
     lock = threading.Lock()
 
-    def base(index):
-        row, labels = split[index]
-        return {"index": index, "row": row, "expect": labels} if labels is not None else {"index": index, "row": row}
-
-    def one(index):
+    def one(job):
+        index, questions, model = job
         row = split[index][0]
         state = row if isinstance(row, (dict, list)) else {field: row}
         try:
-            result = client.system_one(state, questions)
-            return dict(base(index), answers=result.answers, meta=result.meta())
+            result = client.system_one(state, questions, model=model)
+            return {"answers": result.answers, "meta": result.meta()}
         except JevError as err:
             if err.status in (401, 402):
                 with lock:
                     if stopped["error"] is None:
                         stopped["error"] = str(err)
                 stop.set()
-            return dict(base(index), error=str(err))
+            return {"error": str(err)}
 
-    def skipped(index):
-        return dict(base(index), skipped=True)
+    outcomes = map_until_stopped(one, jobs, BULK_CONCURRENCY, stop, lambda _job: {"skipped": True})
+    return outcomes, stopped["error"]
 
-    results = map_until_stopped(one, list(range(len(split))), BULK_CONCURRENCY, stop, skipped)
+
+def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text") -> dict:
+    questions = bulk_questions(questions)
+    split = _split_rows(rows)
+    started = time.perf_counter()
+    outcomes, stopped = _run_jobs(client, split, [(i, questions, None) for i in range(len(split))], field)
+    results = [dict(_row_base(split, i), **outcome) for i, outcome in enumerate(outcomes)]
     done = [r for r in results if "answers" in r]
     return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
-            "rows": len(rows), "completed": len(done), "stopped": stopped["error"],
+            "rows": len(split), "completed": len(done), "stopped": stopped,
             "labeled": sum(1 for r in results if r.get("expect")),
             "cost_usd": sum(r["meta"]["cost_usd"] for r in done),
             "input_tokens": sum(r["meta"]["input_tokens"] for r in done)}
+
+
+# --- compare -------------------------------------------------------------------------------
+
+
+def validate_variants(variants: Any) -> List[dict]:
+    """Two variants, each a Bulk question set and an optional model name (None uses the current model)."""
+    if not isinstance(variants, list) or len(variants) != len(compare.NAMES):
+        raise WorkbenchError("Compare needs exactly two variants")
+    out = []
+    for name, variant in zip(compare.NAMES, variants):
+        if not isinstance(variant, dict):
+            raise WorkbenchError("Variant %s must be an object with questions and a model" % name)
+        try:
+            questions = bulk_questions(variant.get("questions"))
+        except WorkbenchError as err:
+            raise WorkbenchError("Variant %s: %s" % (name, err)) from err
+        model = variant.get("model")
+        if model is not None and not isinstance(model, str):
+            raise WorkbenchError("Variant %s: model must be a string" % name)
+        out.append({"questions": questions, "model": (model or "").strip() or None})
+    return out
+
+
+def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
+    """Both variants over the same rows: one call per row and variant, interleaved row by row so a run
+    stopped by the budget leaves the variants with nearly the same rows. Scoring (compare.evaluate)
+    uses only rows both variants answered."""
+    variants = validate_variants(variants)
+    # Resolve a blank model once: the current model can change in Settings while the run is going,
+    # and every call of a variant must use the same model.
+    models = [v["model"] or client.model for v in variants]
+    split = _split_rows(rows)
+    started = time.perf_counter()
+    jobs = [(i, v["questions"], model) for i in range(len(split)) for v, model in zip(variants, models)]
+    outcomes, stopped = _run_jobs(client, split, jobs, field)
+    width = len(variants)
+    results = [dict(_row_base(split, i), runs=outcomes[i * width:(i + 1) * width]) for i in range(len(split))]
+    summaries = []
+    for v, variant in enumerate(variants):
+        done = [r["runs"][v] for r in results if "answers" in r["runs"][v]]
+        latencies = [o["meta"]["latency_ms"] for o in done]
+        summaries.append({"name": compare.NAMES[v], "model": models[v],
+                          "questions": variant["questions"], "completed": len(done),
+                          "errors": sum(1 for r in results if "error" in r["runs"][v]),
+                          "cost_usd": sum(o["meta"]["cost_usd"] for o in done),
+                          "input_tokens": sum(o["meta"]["input_tokens"] for o in done),
+                          "latency_ms_median": statistics.median(latencies) if latencies else None})
+    return {"variants": summaries, "results": results, "rows": len(split), "stopped": stopped,
+            "labeled": sum(1 for r in results if r.get("expect")),
+            "wall_ms": (time.perf_counter() - started) * 1000,
+            "cost_usd": sum(s["cost_usd"] for s in summaries)}
 
 
 def map_until_stopped(fn: Callable, items: list, max_workers: int, stop: threading.Event, skipped: Callable) -> list:

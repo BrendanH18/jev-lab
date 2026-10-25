@@ -157,6 +157,37 @@ rewrites the rows box as JSON lines that carry your labels, so the next run keep
 from a few dozen rows are a first look: each row of 40 moves accuracy by 2.5 points. Label more of
 your own data before relying on a threshold, and pin the model version when you compare runs.
 
+## Compare two variants
+
+**Compare** answers "did this change help?" A variant is a question set and a model. Variant A
+starts as the sample questions and variant B as the same questions with one-word options and
+short instructions (**Sample, terse**), so the first run shows how much the wording carries. Load
+the Build questions into either side, edit the JSON, or type a model name such as `jev-preview`
+or a pinned version such as `jev-1.14.0`. An empty model field uses the current model.
+
+Both variants answer the same rows, which are shared with the Bulk tab, including their `_expect`
+labels. Each row makes one call per variant, so 40 rows make 80 live calls. The report scores
+both variants only on rows that both answered, and leaves out a label that either variant cannot
+score, such as an option only one of them offers. A stopped run or a failed call therefore cannot
+tilt the comparison; the report says how many rows were left out. Only question IDs that both
+variants ask, with the same type, can be compared.
+
+For the question you pick, the report shows:
+
+- each variant's model, rows answered, median latency, input tokens, and cost;
+- each variant's accuracy, calibration gap, and the share of rows it automates at 90%, 95%, and
+  99% accuracy, using the same scoring as Calibrate;
+- a row-by-row count over labeled rows that both variants answered: both right, only A right, only
+  B right, both wrong. The exact McNemar test gives the chance of a split at least that uneven
+  if neither variant were better. A small sample rarely shows a reliable difference;
+- a chart of accuracy against the share automated as the threshold moves, one line per variant,
+  with a table view;
+- every row where the variants answer differently, with each answer's confidence and the label.
+
+Scoring reuses the answers, so changing the question or the gate makes no calls. **Use A in
+Build** or **Use B in Build** copies that variant's questions into the Build tab. Pin model
+versions when you compare wording, so an alias update cannot change one side of the comparison.
+
 ## Export a request
 
 Export generates Python using the official SDK, JavaScript using the official SDK, or curl.
@@ -179,7 +210,8 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
-| Calibrate rows | 1,000 answers per request |
+| Calibrate and Compare scoring rows | 1,000 per request |
+| Compare variants | 2, over the first 200 nonempty rows: up to 400 calls per run |
 | Images per request | 4, PNG or JPEG, 280–1568 pixels per side |
 | HTTP request body | 12 MiB |
 

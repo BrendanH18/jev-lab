@@ -21,7 +21,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import calibrate, claims, dispatch, envfile, examples, find, hello, images, security, shield, workbench
+from jev import calibrate, claims, compare, dispatch, envfile, examples, find, hello, images, security, shield, workbench
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -127,14 +127,20 @@ def api_models(_body):
     return client.models()
 
 
+def check_model(model: str) -> None:
+    """BadRequest unless this key can use `model`: the configured or current model, a listed name, or a versioned id."""
+    if not model or model in (client.settings.model, client.model) or VERSIONED_MODEL.fullmatch(model):
+        return
+    names = [m.get("name") for m in client.models().get("models", [])]
+    if model not in names:
+        raise BadRequest("%s is not available to this key. Choose one of: %s, or a versioned id such as "
+                         "jev-1.14.0." % (model, ", ".join(names)))
+
+
 def api_model(body):
     """Choose the model for this server run. An empty value returns to TYPESAFE_DEFAULT_MODEL."""
     model = str(body.get("model") or "").strip()
-    if model and model != client.settings.model and not VERSIONED_MODEL.fullmatch(model):
-        names = [m.get("name") for m in client.models().get("models", [])]
-        if model not in names:
-            raise BadRequest("%s is not available to this key. Choose one of: %s, or a versioned id such as "
-                             "jev-1.14.0." % (model, ", ".join(names)))
+    check_model(model)
     client.set_model(model if model != client.settings.model else None)
     return api_status({})
 
@@ -437,13 +443,26 @@ def api_wb_run_items(body):
     return workbench.run_items(client, items)
 
 
-def api_wb_bulk(body):
+def bulk_rows(body):
     rows = body.get("rows")
     if isinstance(rows, str):
         rows = workbench.parse_rows(rows)
-    if not rows:
-        rows = workbench.load_sample_rows()
-    return workbench.run_bulk(client, rows, body.get("questions"), str(body.get("field") or "text"))
+    return rows or workbench.load_sample_rows()
+
+
+def api_wb_bulk(body):
+    return workbench.run_bulk(client, bulk_rows(body), body.get("questions"), str(body.get("field") or "text"))
+
+
+def api_wb_compare(body):
+    variants = workbench.validate_variants(body.get("variants"))
+    for variant in variants:
+        check_model(variant["model"] or "")
+    return workbench.run_compare(client, bulk_rows(body), variants, str(body.get("field") or "text"))
+
+
+def api_wb_compare_score(body):
+    return compare.evaluate(body.get("rows"), str(body.get("signal") or "confidence"))
 
 
 def api_wb_calibrate(body):
@@ -451,7 +470,8 @@ def api_wb_calibrate(body):
 
 
 def api_wb_bulk_sample(_body):
-    return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS}
+    return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS,
+            "terse_questions": examples.TERSE_BULK_QUESTIONS}
 
 
 ROUTES = {
@@ -495,6 +515,8 @@ ROUTES = {
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
+    ("POST", "/api/workbench/compare"): api_wb_compare,
+    ("POST", "/api/workbench/compare/score"): api_wb_compare_score,
 }
 
 CSP = ("default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "
