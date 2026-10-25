@@ -82,8 +82,18 @@
     .bulk-table tr.below td.route { opacity: 1; }
     .bulk-table .label-sel { padding: 4px 6px; font-size: 12px; min-width: 96px; }
     .bulk-table td.route { white-space: nowrap; }
+    .cmp-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .cmp-key { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; flex: none; }
+    .cmp-key.a { background: var(--series); }
+    .cmp-key.b { background: var(--series-2); }
+    .cal-line.a { stroke: var(--series); }
+    .cal-line.b { stroke: var(--series-2); }
+    .cal-dot.a { fill: var(--series); }
+    .cal-dot.b { fill: var(--series-2); }
+    .cmp-table tbody th { text-align: left; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .cmp-table td { white-space: nowrap; }
     @media (max-width: 700px) { .cal-gate { grid-template-columns: 1fr; } }
-    @media (max-width: 1000px) { .wb-grid { grid-template-columns: 1fr; } .qcard .row { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 1000px) { .wb-grid, .cmp-grid { grid-template-columns: 1fr; } .qcard .row { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>
 <body>
@@ -92,7 +102,7 @@
       <div>
         <div class="eyebrow">App 7 · Workbench</div>
         <h1>Build your own: state in, typed answers out, code around it</h1>
-        <p class="lede">Write a state and some questions, run them, and see the probabilities. Save what you agree with as a test, run your tests whenever you change wording or the model version, run one question set over hundreds of rows, and export working code for the official SDKs.</p>
+        <p class="lede">Write a state and some questions, run them, and see the probabilities. Save what you agree with as a test, run your tests whenever you change wording or the model version, run one question set over hundreds of rows, compare two versions of it on labeled rows, and export working code for the official SDKs.</p>
       </div>
     </div>
     <div class="tabbar" id="tabs"></div>

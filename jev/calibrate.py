@@ -115,6 +115,15 @@ def _show(qtype: str, value: Any) -> str:
     return str(value)
 
 
+def read(answer: dict, signal: str = "confidence") -> Tuple[str, float]:
+    """(prediction as Calibrate shows it, gating signal) for one answer. ValueError if unreadable."""
+    qtype = answer.get("type")
+    if qtype not in ("choice", "noul", "score"):
+        raise ValueError("Calibrate works on Choice, Noul, and Score answers")
+    predicted, gate, _ = _read(qtype, answer, signal)
+    return _show(qtype, predicted), gate
+
+
 def _classes(qtype: str, answer: dict) -> List[str]:
     if qtype == "noul":
         return ["yes", "no"]

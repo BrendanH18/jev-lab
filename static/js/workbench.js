@@ -8,10 +8,12 @@ const W = {
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
     cal: { qid: null, signal: "confidence", threshold: 0.5, report: null } },
+  compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
+    running: false, result: null, qid: null, signal: "confidence", report: null, reportError: null },
   loadedExample: null, images: [], samples: [], maxImages: 4,
 };
 const TYPES = ["noul", "choice", "score", "box"];
-const TABS = [["build", "Build"], ["tests", "Tests"], ["bulk", "Bulk"], ["examples", "Examples"]];
+const TABS = [["build", "Build"], ["tests", "Tests"], ["bulk", "Bulk"], ["compare", "Compare"], ["examples", "Examples"]];
 
 // ---------- data helpers ----------
 const parseMaybeJson = (s) => {
@@ -169,6 +171,9 @@ async function boot() {
   W.items = items.items;
   W.bulk.rowsText = sample.rows.map(rowLine).join("\n");
   W.bulk.sampleQuestions = sample.questions;
+  W.compare.terse = sample.terse_questions;
+  W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);
+  W.compare.variants[1].text = JSON.stringify(sample.terse_questions, null, 2);
   const first = W.examples[0];
   loadInto(first.state, first.questions, { expect: first.expect, example: first.id, images: first.images });
   const hash = location.hash.replace("#", "");
@@ -181,6 +186,7 @@ function render() {
   switch (W.tab) {
     case "tests": view = renderTests(); break;
     case "bulk": view = renderBulk(); break;
+    case "compare": view = renderCompare(); break;
     case "examples": view = renderExamples(); break;
     default:
       W.tab = "build";
@@ -190,6 +196,7 @@ function render() {
     label, k === "tests" && W.items.length ? ` (${W.items.length})` : "")));
   mount("#view", view);
   if (W.tab === "bulk") updateCal();
+  if (W.tab === "compare") updateCmpChart();
 }
 
 // ---------- Build ----------
@@ -507,6 +514,13 @@ function countRows(text) {
   return text.split("\n").filter((l) => l.trim()).length;
 }
 
+// The rows box as the server takes it: a JSON array, or the text itself (one row per line).
+function rowsPayload() {
+  const rows = W.bulk.rowsText;
+  if (/^\[/.test(rows.trim())) { try { return JSON.parse(rows); } catch { /* keep text */ } }
+  return rows;
+}
+
 function bulkQuestions() {
   return W.bulk.source === "sample" ? W.bulk.sampleQuestions : toQuestions(W.questions);
 }
@@ -555,11 +569,8 @@ async function runBulk() {
   btn.disabled = true;
   mount(btn, h("span", { class: "spin" }), " Running…");
   try {
-    let rows = W.bulk.rowsText;
-    const t = rows.trim();
-    if (/^\[/.test(t)) { try { rows = JSON.parse(t); } catch { /* keep text */ } }
     const b = W.bulk;
-    b.result = await api("/api/workbench/bulk", { rows, questions });
+    b.result = await api("/api/workbench/bulk", { rows: rowsPayload(), questions });
     b.sortKey = null;
     b.labels = {};
     for (const r of b.result.results) if (r.expect) b.labels[r.index] = { ...r.expect };
@@ -957,6 +968,385 @@ function calChart(rep, t) {
   return root;
 }
 
+// ---------- Compare ----------
+// Two variants, each a question set and a model, over the Bulk rows. The server makes one call per
+// row and variant; scoring a question (jev/compare.py) reuses those answers and makes no calls.
+const VARIANTS = ["A", "B"];
+
+function parseVariant(i) {
+  const name = VARIANTS[i];
+  const text = W.compare.variants[i].text.trim();
+  if (!text) throw new Error(`Variant ${name} has no questions`);
+  let questions;
+  try { questions = JSON.parse(text); } catch (e) { throw new Error(`Variant ${name}: invalid JSON (${e.message})`); }
+  if (!questions || typeof questions !== "object" || Array.isArray(questions)) throw new Error(`Variant ${name}: questions must be an object keyed by question id`);
+  return questions;
+}
+
+function variantStatus(i) {
+  try {
+    const n = Object.keys(parseVariant(i)).length;
+    return h("span", { class: "faint" }, `${n} question${n === 1 ? "" : "s"}`);
+  } catch (e) { return h("span", { style: { color: "var(--critical-text)" } }, e.message); }
+}
+
+// Model suggestions come from GET /v1/models for the connected key; any name can still be typed.
+function loadModels() {
+  const c = W.compare;
+  if (c.models || c.modelsLoading || !currentStatus()?.configured) return;
+  c.modelsLoading = true;
+  api("/api/models").then((res) => {
+    c.models = (res.models || []).map((m) => m.name);
+    const list = $("#cmp-models");
+    if (list) mount(list, c.models.map((n) => h("option", { value: n })));
+  }).catch(() => { c.models = []; /* typing a name still works */ }).finally(() => { c.modelsLoading = false; });
+}
+
+function variantPanel(i) {
+  const v = W.compare.variants[i];
+  const name = VARIANTS[i];
+  const area = h("textarea", { class: "input", spellcheck: "false", "aria-label": `Variant ${name} questions as JSON` }, v.text);
+  const note = h("div", { style: { fontSize: "12px" } }, variantStatus(i));
+  area.addEventListener("input", () => { v.text = area.value; mount(note, variantStatus(i)); });
+  const model = h("input", { class: "input", list: "cmp-models", value: v.model, spellcheck: "false", "aria-label": `Variant ${name} model`,
+    placeholder: `Current model (${currentStatus()?.model || "jev-latest"})` });
+  model.addEventListener("input", () => { v.model = model.value; });
+  const set = (questions) => { v.text = JSON.stringify(questions, null, 2); render(); };
+  return h("div", { class: "panel raw" },
+    h("div", { class: "panel-head" }, h("i", { class: `cmp-key ${name.toLowerCase()}` }), h("h2", {}, `Variant ${name}`), h("div", { class: "spacer" }),
+      h("div", { class: "chips" },
+        h("button", { class: "btn sm ghost", onclick: () => set(toQuestions(W.questions)) }, "Build questions"),
+        h("button", { class: "btn sm ghost", onclick: () => set(W.bulk.sampleQuestions) }, "Sample"),
+        h("button", { class: "btn sm ghost", onclick: () => set(W.compare.terse) }, "Sample, terse"),
+        i === 1 ? h("button", { class: "btn sm ghost", onclick: () => { v.text = W.compare.variants[0].text; render(); } }, "Copy A") : null)),
+    h("div", { class: "panel-body grid", style: { gap: "10px" } },
+      h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Model"), model),
+      area, note));
+}
+
+const runLabel = (n) => [icon("layers"), `Run ${Math.min(n, 200)} rows × 2 variants`];
+
+function renderCompare() {
+  const c = W.compare;
+  const b = W.bulk;
+  loadModels();
+  const count = h("h2", {}, `Rows · ${countRows(b.rowsText)}`);
+  // Disabled from state, not on the button alone: a render during a run must not offer a second paid run.
+  const runBtn = h("button", { class: "btn primary", id: "cmp-run", onclick: runCompare, disabled: c.running },
+    c.running ? [h("span", { class: "spin" }), " Running both variants…"] : runLabel(countRows(b.rowsText)));
+  const rows = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Rows, shared with the Bulk tab" }, b.rowsText);
+  rows.addEventListener("input", () => {
+    b.rowsText = rows.value;
+    const n = countRows(b.rowsText);
+    count.textContent = `Rows · ${n}`;
+    if (!c.running) mount(runBtn, runLabel(n));
+  });
+  return h("div", { class: "grid", style: { gap: "16px" } },
+    h("p", { class: "muted", style: { maxWidth: "820px" } }, "Change one thing and measure it: reword a question, trim its criteria, or switch the model. Both variants answer the same labeled rows, and the report shows which one was right more often, how far to trust each one's confidence, and the rows where they disagree."),
+    h("div", { class: "grid cmp-grid" }, variantPanel(0), variantPanel(1)),
+    h("datalist", { id: "cmp-models" }, (c.models || []).map((n) => h("option", { value: n }))),
+    h("div", { class: "grid wb-grid" },
+      h("div", { class: "panel bulk" },
+        h("div", { class: "panel-head" }, count, h("span", { class: "faint", style: { fontSize: "12px" } }, "shared with Bulk"), h("div", { class: "spacer" }),
+          h("button", { class: "btn sm ghost", onclick: async () => { const s = await api("/api/workbench/bulk/sample"); b.rowsText = s.rows.map(rowLine).join("\n"); render(); } }, "Load sample rows")),
+        h("div", { class: "panel-body" }, rows)),
+      h("div", { class: "panel" },
+        h("div", { class: "panel-head" }, h("h2", {}, "Run both")),
+        h("div", { class: "panel-body grid", style: { gap: "10px", fontSize: "12.5px" } },
+          h("p", { class: "muted" }, "Each row is sent once per variant, so 40 rows make 80 live calls. They run 8 at a time and count against the session budget. The report scores both variants only on rows both answered, so a stopped run or a failed call cannot tilt the comparison."),
+          h("p", { class: "muted" }, "Labels come from ", h("code", {}, "\"_expect\""), " in the rows. To label in the browser, use the label column on the Bulk tab, then ", h("b", {}, "Keep labels in rows"), ". Only question ids that both variants share, with the same type, are compared."),
+          h("div", {}, runBtn)))),
+    c.result ? renderCompareReport() : null,
+    c.result && c.report ? renderCompareRows() : null);
+}
+
+async function runCompare() {
+  const c = W.compare;
+  let variants;
+  try { variants = VARIANTS.map((_, i) => ({ questions: parseVariant(i), model: c.variants[i].model.trim() })); }
+  catch (e) { return toast(e.message, "error"); }
+  if (c.running) return;
+  c.running = true;
+  render();
+  let done = false;
+  try {
+    c.result = await api("/api/workbench/compare", { rows: rowsPayload(), variants });
+    c.qid = chooseCmpQuestion();
+    await rescoreCompare();
+    if (c.result.stopped) toast(c.result.stopped, "error");
+    done = true;
+  } catch (e) { handleError(e); } finally {
+    c.running = false;
+    render();
+  }
+  if (done && W.tab === "compare") $("#compare-report")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Question ids both variants asked with the same type, in A's order.
+function cmpQuestions(res) {
+  const [qa, qb] = res.variants.map((v) => v.questions);
+  return Object.keys(qa).filter((q) => qb[q] && qb[q].type === qa[q].type);
+}
+function cmpLabeled(res) {
+  const qids = new Set();
+  for (const r of res.results) for (const q of Object.keys(r.expect || {})) qids.add(q);
+  return qids;
+}
+function chooseCmpQuestion() {
+  const c = W.compare;
+  const qids = cmpQuestions(c.result);
+  const labeled = cmpLabeled(c.result);
+  if (qids.includes(c.qid) && (labeled.has(c.qid) || !labeled.size)) return c.qid;
+  return qids.find((q) => labeled.has(q)) || qids[0] || null;
+}
+
+let cmpSeq = 0;
+async function rescoreCompare() {
+  const c = W.compare;
+  const qid = c.qid;
+  const seq = ++cmpSeq;  // only the latest request may install its report
+  c.report = null;
+  c.reportError = null;
+  if (!qid) return;
+  const rows = c.result.results.filter((r) => r.runs.some((run) => run.answers?.[qid]))
+    .map((r) => ({ index: r.index, label: r.expect?.[qid] ?? null, answers: r.runs.map((run) => run.answers?.[qid] ?? null) }));
+  if (!rows.length) return;
+  try {
+    const report = await api("/api/workbench/compare/score", { rows, signal: c.signal });
+    if (seq === cmpSeq) c.report = report;
+  } catch (e) { if (seq === cmpSeq) c.reportError = e.message; }
+}
+
+// Index of the better of two numbers, or -1 for a tie or a missing value.
+function better(values, higher = true) {
+  const [a, b] = values;
+  if (a === null || a === undefined || b === null || b === undefined || Math.abs(a - b) < 1e-9) return -1;
+  return (a > b) === higher ? 0 : 1;
+}
+
+function summaryRow(label, cells, values = null, higher = true) {
+  const win = values ? better(values, higher) : -1;
+  return h("tr", {}, h("th", {}, label), cells.map((cell, i) => h("td", {}, i === win ? [h("b", {}, cell), h("span", { class: "faint" }, " · better")] : cell)));
+}
+
+function summaryTable(res, rep) {
+  const vs = res.variants;
+  const rows = [
+    summaryRow("model", vs.map((v) => h("span", { class: "mono" }, v.model))),
+    summaryRow("questions", vs.map((v) => String(Object.keys(v.questions).length))),
+    summaryRow("rows answered", vs.map((v) => `${v.completed} of ${res.rows}${v.errors ? ` · ${v.errors} failed` : ""}`)),
+    summaryRow("median latency", vs.map((v) => (v.latency_ms_median === null ? "—" : ms(v.latency_ms_median))), vs.map((v) => v.latency_ms_median), false),
+    summaryRow("input tokens", vs.map((v) => num(v.input_tokens)), vs.map((v) => (v.completed ? v.input_tokens / v.completed : null)), false),
+    summaryRow("cost", vs.map((v) => usd(v.cost_usd)), vs.map((v) => (v.completed ? v.cost_usd / v.completed : null)), false),
+  ];
+  const sv = rep?.variants;
+  if (sv && sv.some((v) => v.labeled)) {
+    rows.push(
+      summaryRow(`accuracy · ${W.compare.qid}`, sv.map((v) => (v.accuracy === null ? "—" : `${pct(v.accuracy, 1)} (${v.correct}/${v.labeled})`)), sv.map((v) => v.accuracy)),
+      summaryRow("calibration gap (ECE)", sv.map((v) => (v.ece === null ? "—" : `${(v.ece * 100).toFixed(1)} pts`)), sv.map((v) => v.ece), false));
+    (sv[0].targets.length ? sv[0] : sv[1]).targets.forEach((t, k) => {
+      const hits = sv.map((v) => v.targets[k]);
+      rows.push(summaryRow(`automates at ${pct(t.target)} accuracy`,
+        hits.map((x) => (x?.threshold === null || !x ? "not reached" : `${pct(x.coverage)} (≥ ${x.threshold.toFixed(2)})`)),
+        hits.map((x) => (x ? x.coverage : null))));
+    });
+  }
+  return h("div", { class: "scroll" }, h("table", { class: "table cmp-table" },
+    h("thead", {}, h("tr", {}, h("th", {}), VARIANTS.map((name) => h("th", {}, h("i", { class: `cmp-key ${name.toLowerCase()}` }), `Variant ${name}`)))),
+    h("tbody", {}, rows)));
+}
+
+function pairedBlock(rep) {
+  const p = rep.paired;
+  const split = p.a_only + p.b_only;
+  let verdict;
+  if (!split) {
+    verdict = `A and B were right on exactly the same rows, so these labels cannot tell them apart.`;
+  } else {
+    const lead = p.a_only > p.b_only ? "A" : p.b_only > p.a_only ? "B" : null;
+    const chance = p.p_value < 0.001 ? "less than 0.1%" : pct(p.p_value, 1);
+    verdict = `On ${split} row${split === 1 ? "" : "s"} exactly one variant was right: A on ${p.a_only}, B on ${p.b_only}. ` +
+      `If neither were better, a split at least this uneven would happen ${chance} of the time (exact McNemar test). ` +
+      (!lead ? "Neither is ahead on these rows."
+        : p.p_value < 0.05 ? `${lead} is ahead, and chance is an unlikely explanation.`
+          : `${lead} is ahead, but that could be chance. Label more rows before you switch.`);
+  }
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("h3", { class: "cal-h" }, `Row by row: ${p.rows} labeled rows that both variants answered`),
+    h("div", { class: "stat-row" },
+      stat("both right", String(p.both_right)), stat("only A right", String(p.a_only), true),
+      stat("only B right", String(p.b_only), true), stat("both wrong", String(p.both_wrong))),
+    h("p", { class: "muted", style: { fontSize: "12.5px", maxWidth: "820px" } }, verdict));
+}
+
+function renderCompareReport() {
+  const c = W.compare;
+  const res = c.result;
+  const qids = cmpQuestions(res);
+  const labeled = cmpLabeled(res);
+  const qSel = h("select", { class: "input", "aria-label": "Question to compare" },
+    qids.map((q) => h("option", { value: q, selected: q === c.qid }, labeled.has(q) ? q : `${q} (no labels)`)));
+  qSel.addEventListener("change", async () => { c.qid = qSel.value; await rescoreCompare(); render(); });
+  const sigSel = h("select", { class: "input", "aria-label": "Signal to gate on" },
+    Object.entries(SIGNALS).map(([k, label]) => h("option", { value: k, selected: k === c.signal }, `gate on ${label}`)));
+  sigSel.addEventListener("change", async () => { c.signal = sigSel.value; await rescoreCompare(); render(); });
+  const rep = c.report;
+  const hasLabels = rep && rep.variants.some((v) => v.labeled);
+  const use = (i) => h("button", { class: "btn sm", onclick: () => {
+    W.questions = fromQuestions(res.variants[i].questions);
+    W.result = null;
+    W.raw = false;
+    W.tab = "build";
+    location.hash = "build";
+    render();
+    toast(`Build now has variant ${VARIANTS[i]}'s questions`);
+  } }, `Use ${VARIANTS[i]} in Build`);
+  const failures = res.results.flatMap((r) => r.runs.map((run, v) => (run.error ? `row ${r.index + 1} (${VARIANTS[v]}): ${run.error}` : null)).filter(Boolean));
+  const notes = [
+    failures.length ? h("p", { style: { color: "var(--critical-text)" } }, `${failures.length} calls failed: `, failures.slice(0, 3).join("; "), failures.length > 3 ? "…" : "") : null,
+    rep ? rep.variants.map((v, i) => (v.invalid.length ? h("p", { style: { color: "var(--critical-text)" } },
+      `${v.invalid.length} labels ignored for ${VARIANTS[i]}: `, v.invalid.slice(0, 3).map((x) => `row ${x.index + 1}: ${x.reason}`).join("; ")) : null)) : null,
+    rep && (rep.only_a || rep.only_b) ? h("p", { class: "faint" }, `${rep.only_a + rep.only_b} rows answered by only one variant (A ${rep.only_a}, B ${rep.only_b}) are left out, so both sides are scored on the same rows.`) : null,
+    rep?.excluded ? h("p", { class: "faint" }, `${rep.excluded} labels that one variant cannot score are left out of both.`) : null,
+    hasLabels && rep.paired.rows < 100 && rep.paired.rows ? h("p", { class: "faint" }, `With ${rep.paired.rows} paired rows, one row moves accuracy by ${(100 / rep.paired.rows).toFixed(1)} points. Pin model versions (for example jev-1.14.0) when you compare wording, so a model update does not change the result.`) : null,
+  ];
+  let body;
+  if (!qids.length) {
+    body = h("p", { class: "muted" }, "The variants share no question id with the same type, so there is nothing to compare. Use the same ids in both.");
+  } else if (c.reportError) {
+    body = h("p", { style: { color: "var(--critical-text)" } }, c.reportError);
+  } else {
+    body = [
+      summaryTable(res, rep),
+      !hasLabels ? h("p", { class: "muted" }, `No labels for “${c.qid}”. Add `, h("code", {}, "\"_expect\""), " to the rows to score accuracy; the disagreements below still show where the variants differ.") : null,
+      hasLabels ? pairedBlock(rep) : null,
+      hasLabels ? h("div", { class: "cal-chart-wrap" },
+        h("h3", { class: "cal-h" }, "Accuracy against the share automated, as the threshold moves"),
+        h("div", { class: "cal-legend" }, res.variants.map((v, i) => h("span", {}, h("i", { class: `cmp-key ${VARIANTS[i].toLowerCase()}` }), `Variant ${VARIANTS[i]} · ${v.model}`))),
+        h("div", { id: "cmp-chart" }),
+        h("div", { class: "cal-tip", id: "cmp-tip", hidden: true }),
+        h("p", { class: "faint", style: { fontSize: "12px" } }, "Each line starts at the strictest threshold (few rows automated, usually the most accurate) and ends with every row automated. A line that stays higher automates the same share more accurately."),
+        cmpSweepTable(rep)) : null,
+    ];
+  }
+  return h("div", { class: "panel", id: "compare-report" },
+    h("div", { class: "panel-head" }, icon("layers"), h("h2", {}, "Compare"),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "scored from these answers, no extra calls"), h("div", { class: "spacer" }),
+      qids.length ? h("div", { class: "cal-controls" }, qSel, sigSel) : null),
+    h("div", { class: "panel-body grid", style: { gap: "14px" } },
+      h("div", { class: "stat-row" },
+        stat("rows", String(res.rows)), stat("labeled", String(res.labeled)),
+        stat("wall", ms(res.wall_ms), true), stat("cost, both variants", usd(res.cost_usd))),
+      body,
+      h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes),
+      h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, use(0), use(1))));
+}
+
+function cmpSweepTable(rep) {
+  const [a, b] = rep.variants;
+  const cell = (p) => [h("td", {}, `${p.automated} · ${pct(p.coverage)}`), h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy, 1))];
+  return h("details", {}, h("summary", { class: "faint", style: { fontSize: "12.5px", cursor: "pointer" } }, "Curves as a table"),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "threshold"), h("th", {}, "A automated"), h("th", {}, "A accuracy"), h("th", {}, "B automated"), h("th", {}, "B accuracy"))),
+      h("tbody", {}, a.sweep.filter((p) => Math.round(p.threshold * 100) % 5 === 0).map((p) => h("tr", {},
+        h("td", { class: "mono" }, p.threshold.toFixed(2)), cell(p), cell(b.sweep[Math.round(p.threshold * 100)])))))));
+}
+
+function renderCompareRows() {
+  const c = W.compare;
+  const rep = c.report;
+  const res = c.result;
+  const verdicts = { a_only: ["pass", "A right"], b_only: ["pass", "B right"], both_wrong: ["fail", "Both wrong"] };
+  const answer = (x) => h("td", {}, h("span", { class: "cell-choice" }, x.predicted),
+    h("span", { class: "faint mono", style: { marginLeft: "6px", fontSize: "11px" } }, x.signal.toFixed(2)),
+    x.correct === null ? null : h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, x.correct ? "right" : "wrong"));
+  return h("div", { class: "panel", id: "compare-rows" },
+    h("div", { class: "panel-head" }, icon("list"), h("h2", {}, `Rows where A and B answer “${c.qid}” differently · ${rep.disagreements.length}`), h("div", { class: "spacer" }),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, `${rep.agree} of ${rep.answered_both} rows agree`)),
+    rep.disagreements.length
+      ? h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
+        h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "label"), h("th", {}, "A"), h("th", {}, "B"), h("th", {}, "result"))),
+        h("tbody", {}, rep.disagreements.map((d) => h("tr", {},
+          h("td", { class: "num" }, String(d.index + 1)),
+          h("td", { class: "row" }, rowText(res.results[d.index]?.row)),
+          h("td", {}, d.label ?? h("span", { class: "faint" }, "—")),
+          d.answers.map(answer),
+          h("td", {}, d.verdict && verdicts[d.verdict] ? statusBadge(...verdicts[d.verdict]) : h("span", { class: "faint" }, "no label")))))))
+      : h("div", { class: "panel-body muted" }, "A and B gave the same answer on every row they both answered."));
+}
+
+// Accuracy of the automated rows against the share automated: one line per variant, one point per
+// distinct automated set (thresholds that automate the same rows give the same point).
+function cmpCurve(sweep) {
+  const seen = new Map();
+  for (const p of sweep) if (p.accuracy !== null && !seen.has(p.automated)) seen.set(p.automated, p);  // lowest threshold first
+  return [...seen.values()].sort((x, y) => x.coverage - y.coverage);
+}
+
+function updateCmpChart() {
+  const rep = W.compare.report;
+  if (!rep || !$("#cmp-chart")) return;
+  mount("#cmp-chart", cmpChart(rep));
+}
+
+function cmpChart(rep) {
+  const curves = rep.variants.map((v) => cmpCurve(v.sweep));
+  const W_ = Math.max(320, Math.round($("#cmp-chart")?.clientWidth || 640)), H_ = 260, m = { l: 46, r: 30, t: 14, b: 40 };
+  const iw = W_ - m.l - m.r, ih = H_ - m.t - m.b;
+  const lowest = Math.min(1, ...curves.flat().map((p) => p.accuracy));
+  const y0 = Math.max(0, Math.min(0.5, Math.floor(lowest * 10) / 10));  // accuracy lives near the top; zoom to where it is
+  const x = (v) => m.l + v * iw;
+  const y = (v) => m.t + (1 - (v - y0) / (1 - y0)) * ih;
+  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${x(p.coverage).toFixed(1)},${y(p.accuracy).toFixed(1)}`).join("");
+  const grid = [y0, (y0 + 1) / 2, 1].map((v) => [
+    svg("line", { x1: m.l, x2: W_ - m.r, y1: y(v), y2: y(v), class: "cal-grid" }),
+    svg("text", { x: m.l - 8, y: y(v) + 3.5, "text-anchor": "end", class: "cal-axis" }, pct(v))]);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((v) => svg("text", { x: x(v), y: H_ - m.b + 16, "text-anchor": "middle", class: "cal-axis" }, pct(v)));
+  // Direct labels just past each line's end (every row automated), nudged apart when they would touch.
+  const ends = curves.map((pts) => pts[pts.length - 1]);
+  const ly = ends.map((p) => (p ? y(p.accuracy) : null));
+  if (ly[0] !== null && ly[1] !== null && Math.abs(ly[0] - ly[1]) < 14) {
+    const mid = (ly[0] + ly[1]) / 2, up = ly[0] <= ly[1];
+    ly[0] = mid + (up ? -7 : 7); ly[1] = mid + (up ? 7 : -7);
+  }
+  const labels = ends.map((p, i) => (p ? svg("text", { x: x(p.coverage) + 7, y: ly[i] + 4, class: "cal-label" }, VARIANTS[i]) : null));
+  const lines = curves.map((pts, i) => svg("path", { d: path(pts), class: `cal-line ${VARIANTS[i].toLowerCase()}` }));
+  const hair = svg("line", { x1: 0, x2: 0, y1: m.t, y2: m.t + ih, class: "cal-hair", visibility: "hidden" });
+  const dots = curves.map((_, i) => svg("circle", { r: 4, class: `cal-dot ${VARIANTS[i].toLowerCase()}`, visibility: "hidden" }));
+  const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: ih, class: "cal-hit" });
+  const summary = rep.variants.map((v, i) => `${VARIANTS[i]}: ${v.accuracy === null ? "no labeled rows" : `${pct(v.accuracy)} accurate with every row automated`}`).join("; ");
+  const root = svg("svg", { viewBox: `0 0 ${W_} ${H_}`, width: W_, height: H_, class: "cal-chart", role: "img",
+    "aria-label": `Accuracy of automated rows against the share automated, for each variant. ${summary}.` },
+  grid, ticks,
+  svg("text", { x: m.l + iw / 2, y: H_ - 6, "text-anchor": "middle", class: "cal-axis" }, "share of labeled rows automated"),
+  lines, hair, dots, labels, hit);
+  const nearest = (pts, v) => pts.reduce((best, p) => (!best || Math.abs(p.coverage - v) < Math.abs(best.coverage - v) ? p : best), null);
+  hit.addEventListener("pointermove", (e) => {
+    const box = root.getBoundingClientRect();
+    const v = Math.min(1, Math.max(0, ((((e.clientX - box.left) / box.width) * W_) - m.l) / iw));
+    hair.setAttribute("x1", x(v)); hair.setAttribute("x2", x(v)); hair.setAttribute("visibility", "visible");
+    const near = curves.map((pts) => nearest(pts, v));
+    near.forEach((p, i) => {
+      if (!p) return dots[i].setAttribute("visibility", "hidden");
+      dots[i].setAttribute("cx", x(p.coverage)); dots[i].setAttribute("cy", y(p.accuracy)); dots[i].setAttribute("visibility", "visible");
+    });
+    const tip = $("#cmp-tip");
+    const wrap = tip.parentElement.getBoundingClientRect();
+    mount(tip, h("div", { class: "faint mono" }, `about ${pct(v)} automated`),
+      near.map((p, i) => (p ? h("div", {}, h("i", { class: `cmp-key ${VARIANTS[i].toLowerCase()}` }), h("b", {}, VARIANTS[i]),
+        ` ${pct(p.accuracy, 1)} accurate · ${pct(p.coverage)} automated at ≥ ${p.threshold.toFixed(2)}`) : null)));
+    tip.hidden = false;
+    tip.style.left = `${Math.min(e.clientX - wrap.left + 14, wrap.width - 250)}px`;
+    tip.style.top = `${e.clientY - wrap.top + 10}px`;
+  });
+  hit.addEventListener("pointerleave", () => {
+    hair.setAttribute("visibility", "hidden");
+    dots.forEach((d) => d.setAttribute("visibility", "hidden"));
+    $("#cmp-tip").hidden = true;
+  });
+  return root;
+}
+
 // ---------- Examples ----------
 function renderExamples() {
   return h("div", { class: "grid", style: { gap: "16px" } },
@@ -969,5 +1359,5 @@ function renderExamples() {
         h("span", { class: "faint", style: { fontSize: "12px" } }, `${ex.question_count} questions${ex.images ? " · 1 image" : ""}`))))));
 }
 
-window.addEventListener("resize", debounce(() => { if (W.tab === "bulk") updateCal(); }, 150));
+window.addEventListener("resize", debounce(() => { if (W.tab === "bulk") updateCal(); if (W.tab === "compare") updateCmpChart(); }, 150));
 boot().catch(handleError);

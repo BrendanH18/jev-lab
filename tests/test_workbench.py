@@ -174,12 +174,12 @@ class BulkAndExportTests(unittest.TestCase):
 
     def test_bulk_stops_submitting_after_auth_or_budget_errors(self):
         class StopClient(FakeClient):
-            def system_one(self, state, questions):
+            def system_one(self, state, questions, assets=None, model=None):
                 if state["text"] == "stop":
                     raise JevError("budget", status=402)
                 if state["text"] == "limit":
                     raise JevError("slow", status=429)
-                return super().system_one(state, questions)
+                return super().system_one(state, questions, model=model)
 
         with patch.object(workbench, "BULK_CONCURRENCY", 1):
             stopped = workbench.run_bulk(StopClient(), ["stop", "later", "more"], Q)

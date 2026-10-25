@@ -274,6 +274,42 @@ class HttpTests(unittest.TestCase):
         self.assertEqual([c[0] for c in fake.calls if c[0]["text"] == "labeled"], [{"text": "labeled"}])
         self.assertEqual(json.loads(body)["labeled"], 1)
 
+    def test_compare_over_http_runs_both_variants_then_scores_without_calls(self):
+        fake = FakeClient(lambda s, q: {"u": 0.9 if q["u"]["instructions"] == "Urgent today?" else 0.2})
+        variants = [{"questions": {"u": {"type": "noul", "instructions": "Urgent today?"}}},
+                    {"questions": {"u": {"type": "noul", "instructions": "Urgent?"}}, "model": "jev-1.14.0"}]
+        rows = '{"text": "now", "_expect": {"u": true}}\nlater'
+        with patch.object(server.client, "system_one", side_effect=fake.system_one):
+            status, _, body = self.request("POST", "/api/workbench/compare", json.dumps({"rows": rows, "variants": variants}),
+                                           self.post_headers())
+        self.assertEqual(status, 200, body)
+        run = json.loads(body)
+        self.assertEqual((run["rows"], run["labeled"], len(fake.calls)), (2, 1, 4))
+        self.assertEqual(run["variants"][1]["model"], "jev-1.14.0")
+        scored_rows = [{"index": r["index"], "label": (r.get("expect") or {}).get("u"),
+                        "answers": [x["answers"]["u"] for x in r["runs"]]} for r in run["results"]]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/compare/score", json.dumps({"rows": scored_rows}),
+                                           self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual([v["accuracy"] for v in report["variants"]], [1.0, 0.0])
+        self.assertEqual(report["paired"]["a_only"], 1)
+
+    def test_compare_checks_models_before_any_call(self):
+        listed = {"models": [{"name": "jev-latest"}, {"name": "jev-preview"}]}
+        q = {"u": {"type": "noul", "instructions": "Urgent?"}}
+        payload = json.dumps({"rows": "a row", "variants": [{"questions": q}, {"questions": q, "model": "gpt-9"}]})
+        with patch.object(server.client, "models", return_value=listed), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/compare", payload, self.post_headers())
+            one, _, err = self.request("POST", "/api/workbench/compare", json.dumps({"variants": [{"questions": q}]}),
+                                       self.post_headers())
+        self.assertEqual(status, 400)
+        self.assertIn("gpt-9 is not available", json.loads(body)["error"])
+        self.assertEqual(one, 400)
+        self.assertIn("exactly two variants", json.loads(err)["error"])
+
     def test_model_choice_is_checked_against_the_key(self):
         self.addCleanup(server.client.set_model, None)
         listed = {"models": [{"name": "jev-latest"}, {"name": "jev-preview"}]}  # the list currently holds aliases

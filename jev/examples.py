@@ -270,6 +270,17 @@ BULK_QUESTIONS = {
     "wants_refund": noul("Does the writer ask for a refund, replacement, or money back?"),
 }
 
+# The same four questions with one-word options and shorter instructions. Compare runs this against
+# BULK_QUESTIONS on the labeled tickets to show how much the wording carries.
+TERSE_BULK_QUESTIONS = {
+    "department": choice("Which team?", {
+        "billing": "Billing", "shipping": "Shipping", "technical": "Technical",
+        "product": "Product", "wholesale": "Wholesale", "none": "None"}),
+    "frustration": score("Frustration?", ["Calm", "Frustrated", "Angry"]),
+    "is_urgent": noul("Is this urgent?"),
+    "wants_refund": noul("Refund?"),
+}
+
 
 def public_examples() -> List[dict]:
     return [dict(e, question_count=len(e["questions"])) for e in EXAMPLES]
