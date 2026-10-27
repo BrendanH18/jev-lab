@@ -100,6 +100,73 @@ class EvaluateTests(unittest.TestCase):
             compare.evaluate("rows")
 
 
+CHEAP = {"cost_usd": 0.001, "latency_ms": 100.0}
+DEAR = {"cost_usd": 0.01, "latency_ms": 300.0}
+
+
+def metered(*triples, meta=(CHEAP, DEAR)):
+    return [dict(row, meta=list(meta)) for row in rows(*triples)]
+
+
+class CascadeTests(unittest.TestCase):
+    # Confidence for a Noul is |2p - 1|. Labels are all yes.
+    ROWS = (
+        (noul(0.95), noul(0.9), "yes"),  # A sure and right
+        (noul(0.6), noul(0.8), "yes"),   # A unsure (0.2) and right; B right
+        (noul(0.4), noul(0.9), "yes"),   # A unsure (0.2) and wrong; B right
+        (noul(0.1), noul(0.2), "yes"),   # A sure and wrong; B wrong
+        (noul(0.3), noul(0.7), "yes"),   # A fairly unsure (0.4) and wrong; B right
+    )
+
+    def test_sweep_escalates_rows_below_the_threshold(self):
+        c = compare.evaluate(metered(*self.ROWS))["cascade"]
+        self.assertEqual((c["first"], c["second"], c["rows"], len(c["sweep"])), ("A", "B", 5, 101))
+        start, end = c["sweep"][0], c["sweep"][-1]
+        self.assertEqual((start["escalated"], start["correct"]), (0, 2))  # threshold 0: A alone
+        self.assertAlmostEqual(start["cost_usd"], 0.005)
+        self.assertEqual((end["escalated"], end["correct"]), (5, 4))  # threshold 1: B on every row
+        self.assertEqual(c["sweep"][20]["escalated"], 0)  # a signal equal to the threshold stays with A
+        self.assertEqual(c["sweep"][21]["escalated"], 2)
+
+    def test_match_is_the_cheapest_threshold_that_reaches_the_second_variant(self):
+        c = compare.evaluate(metered(*self.ROWS))["cascade"]
+        self.assertEqual((c["first_alone"]["accuracy"], c["second_alone"]["accuracy"]), (0.4, 0.8))
+        self.assertAlmostEqual(c["second_alone"]["cost_usd"], 0.05)
+        self.assertEqual(c["second_alone"]["latency_ms"], 300.0)
+        m = c["match"]
+        self.assertEqual((m["threshold"], m["escalated"], m["correct"]), (0.41, 3, 4))
+        self.assertAlmostEqual(m["cost_usd"], 0.005 + 3 * 0.01)  # every first call, plus three second calls
+        self.assertAlmostEqual(m["latency_ms"], (5 * 100 + 3 * 300) / 5)
+        self.assertEqual(c["best"]["threshold"], 0.41)
+
+    def test_a_cascade_can_beat_both_variants(self):
+        c = compare.evaluate(metered((noul(0.95), noul(0.2), "yes"), (noul(0.45), noul(0.9), "yes")))["cascade"]
+        self.assertEqual((c["first_alone"]["correct"], c["second_alone"]["correct"]), (1, 1))
+        self.assertEqual(c["match"]["threshold"], 0.0)
+        self.assertEqual((c["best"]["threshold"], c["best"]["correct"], c["best"]["escalated"]), (0.11, 2, 1))
+
+    def test_first_can_be_b(self):
+        c = compare.evaluate(metered(*self.ROWS), first="B")["cascade"]
+        self.assertEqual((c["first"], c["second"]), ("B", "A"))
+        self.assertEqual((c["first_alone"]["accuracy"], c["second_alone"]["accuracy"]), (0.8, 0.4))
+        self.assertAlmostEqual(c["first_alone"]["cost_usd"], 0.05)
+        self.assertEqual((c["match"]["threshold"], c["match"]["escalated"]), (0.0, 0))
+        with self.assertRaises(CalibrationError):
+            compare.evaluate(metered(*self.ROWS), first="C")
+
+    def test_cost_is_unknown_when_any_row_lacks_usage(self):
+        partial = metered(*self.ROWS)
+        partial[2]["meta"] = [CHEAP, {"cost_usd": float("nan"), "latency_ms": 1}]
+        for given in (rows(*self.ROWS), partial):
+            c = compare.evaluate(given)["cascade"]
+            self.assertIsNone(c["sweep"][50]["cost_usd"])
+            self.assertIsNone(c["second_alone"]["latency_ms"])
+            self.assertEqual(c["match"]["threshold"], 0.41)  # accuracy does not need usage
+
+    def test_no_labels_means_no_cascade(self):
+        self.assertIsNone(compare.evaluate(metered((noul(0.9), noul(0.2), None)))["cascade"])
+
+
 Q = {"urgent": {"type": "noul", "instructions": "Does this need attention today?"}}
 TERSE = {"urgent": {"type": "noul", "instructions": "Urgent?"}}
 

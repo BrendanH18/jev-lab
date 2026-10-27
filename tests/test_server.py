@@ -287,14 +287,18 @@ class HttpTests(unittest.TestCase):
         self.assertEqual((run["rows"], run["labeled"], len(fake.calls)), (2, 1, 4))
         self.assertEqual(run["variants"][1]["model"], "jev-1.14.0")
         scored_rows = [{"index": r["index"], "label": (r.get("expect") or {}).get("u"),
-                        "answers": [x["answers"]["u"] for x in r["runs"]]} for r in run["results"]]
+                        "answers": [x["answers"]["u"] for x in r["runs"]], "meta": [x["meta"] for x in r["runs"]]}
+                       for r in run["results"]]
         with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
-            status, _, body = self.request("POST", "/api/workbench/compare/score", json.dumps({"rows": scored_rows}),
-                                           self.post_headers())
+            status, _, body = self.request("POST", "/api/workbench/compare/score",
+                                           json.dumps({"rows": scored_rows, "first": "B"}), self.post_headers())
         self.assertEqual(status, 200, body)
         report = json.loads(body)
         self.assertEqual([v["accuracy"] for v in report["variants"]], [1.0, 0.0])
         self.assertEqual(report["paired"]["a_only"], 1)
+        cascade = report["cascade"]
+        self.assertEqual((cascade["first"], cascade["rows"]), ("B", 1))
+        self.assertAlmostEqual(cascade["second_alone"]["cost_usd"], run["results"][0]["runs"][0]["meta"]["cost_usd"])
 
     def test_compare_checks_models_before_any_call(self):
         listed = {"models": [{"name": "jev-latest"}, {"name": "jev-preview"}]}
