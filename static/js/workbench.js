@@ -1450,7 +1450,7 @@ function cascadeCode(rep, res, t) {
       : rep.type === "choice" ? "answer.probabilities[answer.choice]" : "max(answer.probabilities.values())";
   }
   return `# ${qs(fi)} and ${qs(si)} are variant ${cas.first}'s and ${cas.second}'s questions; Build's Export writes them as Python.\n` +
-    `first = ${call(fi)}\n${read}\nif ${gate} >= ${t.toFixed(2)}:\n    result = first\nelse:\n    result = ${call(si)}\n`;
+    `first = ${call(fi)}\n${read}\nif ${gate} + 1e-9 >= ${t.toFixed(2)}:  # the report's tolerance for float rounding\n    result = first\nelse:\n    result = ${call(si)}\n`;
 }
 
 // Refresh the parts that follow the cascade threshold without rebuilding the slider under the pointer.
