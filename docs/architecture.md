@@ -49,6 +49,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
 | [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, bulk calls, and code exports |
 | [`jev/calibrate.py`](../jev/calibrate.py) | Accuracy, confusion, reliability, and threshold sweeps over labeled Bulk answers |
+| [`jev/policy.py`](../jev/policy.py) | A gate over several questions at once: automation, joint accuracy, per-question holds and errors, and a threshold search for target accuracies |
 | [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, and a cascade sweep |
 | [`jev/examples.py`](../jev/examples.py) | Workbench example question sets |
 | [`jev/world.py`](../jev/world.py) | Fictional business state, deterministic action checks, and mutations |
@@ -58,8 +59,8 @@ arithmetic, lookups, or authorization checks.
 | [`jev/images.py`](../jev/images.py) | Image validation against TypeSafe's limits, sample pictures, references, and trace placeholders |
 | [`jev/security.py`](../jev/security.py) | Loopback Host, Origin, Fetch Metadata, session-token, and content-type checks |
 
-Shield reweighting, Dispatch replanning, and Workbench calibration and comparison scoring reuse
-existing model answers without another API call. A Workbench comparison run makes one call per row
+Shield reweighting, Dispatch replanning, and Workbench calibration, policy, and comparison scoring
+reuse existing model answers without another API call. A Workbench comparison run makes one call per row
 and variant, interleaved by row; scoring uses only rows that both variants answered. The cascade
 reads each threshold's accuracy, cost, and latency from those same answers and per-call usage.
 Autopilot merges both sets of questions into a single request with prefixed IDs, splits the

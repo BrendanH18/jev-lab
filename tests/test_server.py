@@ -264,6 +264,23 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("rows must be a list", json.loads(err)["error"])
 
+    def test_policy_over_http_is_pure_code(self):
+        rows = [{"index": 0, "answers": {"u": {"type": "noul", "noul": 0.9}}, "labels": {"u": "yes"}},
+                {"index": 1, "answers": {"u": {"type": "noul", "noul": 0.6}}, "labels": {"u": "no"}}]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/policy", json.dumps({"rows": rows, "gates": {"u": 0.5}}),
+                                           self.post_headers())
+            tuned, _, tbody = self.request("POST", "/api/workbench/policy/tune", json.dumps({"rows": rows, "questions": ["u"]}),
+                                           self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/policy", json.dumps({"rows": rows, "gates": {"u": 2}}),
+                                       self.post_headers())
+        self.assertEqual(status, 200, body)
+        self.assertEqual((json.loads(body)["automated"], json.loads(body)["accuracy"]), (1, 1.0))
+        self.assertEqual(tuned, 200, tbody)
+        self.assertEqual(json.loads(tbody)["targets"][0]["gates"], {"u": 0.21})
+        self.assertEqual(bad, 400)
+        self.assertIn("from 0 to 1", json.loads(err)["error"])
+
     def test_bulk_text_accepts_json_lines_with_labels(self):
         fake = FakeClient()
         rows = 'plain\n{"text": "labeled", "_expect": {"u": true}}'

@@ -70,7 +70,7 @@ issue real refunds, or transfer money.
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, compare two wordings or models, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, gate several questions at once, compare two wordings or models, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. Model judgments are live; reweighting, replanning, exports, and
@@ -106,6 +106,10 @@ conditions.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. It reuses the Bulk answers, so it makes no extra calls.
+- **Policy:** gate several questions at once, the way an application acts on an item only when every
+  answer it uses is confident. See what share of rows the combined gate automates and how accurate
+  they are, tune the thresholds for 90%, 95%, or 99% accuracy, and copy the Python gate. It also
+  reuses the Bulk answers.
 - **Compare:** run two variants, each a question set and a model, over the same labeled rows. See
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
   significance test, and the rows where the variants disagree. A cascade shows what asking one

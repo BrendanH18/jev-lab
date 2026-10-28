@@ -157,6 +157,32 @@ rewrites the rows box as JSON lines that carry your labels, so the next run keep
 from a few dozen rows are a first look: each row of 40 moves accuracy by 2.5 points. Label more of
 your own data before relying on a threshold, and pin the model version when you compare runs.
 
+## Gate several questions at once
+
+Calibrate chooses a threshold for one question. An application usually acts on an item only when
+every answer it uses is confident: route a ticket automatically when the department is clear and
+the refund intent is clear, and send it to a person otherwise. **Policy**, below Calibrate, scores
+that combined gate over the same Bulk answers, without model calls.
+
+Check the questions your code acts on, up to ten, and set a threshold for each. All gates read the
+same signal, confidence or top probability, as Calibrate defines them. A row is automated when every
+gated answer clears its threshold, and it counts as right only when every gated answer matches its
+label. Only rows labeled for every gated question are scored. The panel shows:
+
+- the share of scored rows automated, their accuracy, and how many are automated but wrong;
+- the accuracy with no gate, where every gated answer must be right on every row;
+- for each question, its own accuracy, how many rows its gate sends to review, how many only its
+  gate holds (lowering that threshold automates them), and how many automated rows it gets wrong;
+- the automated rows that are wrong, with each wrong answer, its label, and its signal;
+- a Python `held_by(result)` function that returns the gated questions that are unsure about a
+  result. An empty list means act on it.
+
+**Tune** searches for thresholds that automate the most scored rows at 90%, 95%, or 99% accuracy.
+It raises whichever threshold drops the largest share of wrong rows per row it drops, then lowers
+each threshold as far as the target allows. It is a search over 0.01 steps, not a guarantee that no
+better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
+more labeled rows before relying on them.
+
 ## Compare two variants
 
 **Compare** answers "did this change help?" A variant is a question set and a model. Variant A
@@ -235,7 +261,8 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
-| Calibrate and Compare scoring rows | 1,000 per request |
+| Calibrate, Policy, and Compare scoring rows | 1,000 per request |
+| Policy gated questions | 10 |
 | Compare variants | 2, over the first 200 nonempty rows: up to 400 calls per run |
 | Images per request | 4, PNG or JPEG, 280–1568 pixels per side |
 | HTTP request body | 12 MiB |
