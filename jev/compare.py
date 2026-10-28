@@ -10,12 +10,17 @@ comparison. The paired part counts those labeled rows: both right, only A right,
 both wrong. The exact McNemar
 test asks how often the rows where exactly one variant was right would split at least this
 unevenly if neither variant were better.
+
+The cascade asks one variant first and escalates to the other only when the first one's gating
+signal falls below a threshold. Both variants already answered every scored row, so its accuracy,
+cost, and latency at each threshold are read from those answers, again without calls.
 """
 
 from __future__ import annotations
 
 from math import comb
-from typing import Any, List, Optional
+from math import isfinite
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import calibrate
 from .calibrate import CalibrationError
@@ -47,10 +52,76 @@ def _verdict(a: Optional[dict], b: Optional[dict]) -> Optional[str]:
     return "b_only" if b["correct"] else "both_wrong"
 
 
-def evaluate(rows: Any, signal: str = "confidence") -> dict:
-    """rows: [{"index": int, "label": ..., "answers": [A's answer or None, B's answer or None]}] for one question."""
+def _usage(meta: Any) -> Optional[Tuple[float, float]]:
+    """(cost in USD, latency in ms) from one call's meta, or None when either is missing or malformed."""
+    if not isinstance(meta, dict):
+        return None
+    out = []
+    for key in ("cost_usd", "latency_ms"):
+        value = meta.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or value < 0:
+            return None
+        out.append(float(value))
+    return out[0], out[1]
+
+
+def cascade(scored: List[Dict[str, dict]], usage: Dict[str, list], first: int) -> Optional[dict]:
+    """Ask variant `first` on every row and keep its answer when its signal clears the threshold; otherwise
+    ask the other variant and use that answer. Scored on the labeled rows both variants scored.
+
+    Cost and latency count the first call on every row and the second call on each escalated row, as a
+    cascade would pay them. They are None when any of those rows lacks usage."""
+    second = 1 - first
+    rows = []
+    for key, f in scored[first].items():
+        s = scored[second].get(key)
+        if s is not None:
+            u = usage.get(key) or [None, None]
+            rows.append((f, s, u[first], u[second]))
+    if not rows:
+        return None
+    n = len(rows)
+    known = all(uf is not None and us is not None for _, _, uf, us in rows)
+
+    def alone(v: int) -> dict:
+        correct = sum(1 for r in rows if r[v]["correct"])
+        spent = [r[2 + v] for r in rows]
+        return {"correct": correct, "accuracy": correct / n,
+                "cost_usd": sum(u[0] for u in spent) if known else None,
+                "latency_ms": sum(u[1] for u in spent) / n if known else None}
+
+    points = []
+    for i in range(calibrate.STEPS + 1):
+        t = i / calibrate.STEPS
+        escalated = correct = 0
+        cost = latency = 0.0
+        for f, s, uf, us in rows:
+            keep = f["signal"] + calibrate._EPS >= t  # the same gate as Calibrate's sweep
+            escalated += not keep
+            correct += f["correct"] if keep else s["correct"]
+            if known:
+                cost += uf[0] + (0 if keep else us[0])
+                latency += uf[1] + (0 if keep else us[1])
+        points.append({"threshold": round(t, 2), "escalated": escalated, "share": escalated / n,
+                       "correct": correct, "accuracy": correct / n,
+                       "cost_usd": cost if known else None, "latency_ms": latency / n if known else None})
+    target = alone(1)["accuracy"]
+    # Thresholds rise with the escalated share, so the first point to reach a level is the cheapest.
+    match = next((p for p in points if p["accuracy"] + calibrate._EPS >= target), None)
+    best = max(points, key=lambda p: (p["accuracy"], -p["escalated"]))
+    return {"first": NAMES[first], "second": NAMES[second], "rows": n,
+            "first_alone": alone(0), "second_alone": alone(1),
+            "sweep": points, "match": match, "best": best}
+
+
+def evaluate(rows: Any, signal: str = "confidence", first: str = "A") -> dict:
+    """rows: [{"index": int, "label": ..., "answers": [A's answer or None, B's answer or None],
+    "meta": optional [A's call meta, B's call meta]}] for one question. `first` is the variant a cascade asks first."""
     if signal not in calibrate.SIGNALS:
         raise CalibrationError("signal must be one of %s" % ", ".join(calibrate.SIGNALS))
+    if first not in NAMES:
+        raise CalibrationError("first must be one of %s" % ", ".join(NAMES))
+    lead = NAMES.index(first)
     if not isinstance(rows, list):
         raise CalibrationError("rows must be a list")
     if len(rows) > calibrate.MAX_ROWS:
@@ -58,6 +129,7 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
     types: List[Optional[str]] = [None, None]
     pairs: List[tuple] = []
     only = [0, 0]  # rows answered by one variant alone: a failed or skipped call on the other side
+    usage: Dict[str, list] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -70,6 +142,8 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
                 types[v] = types[v] or answer.get("type")
         if all(present):
             pairs.append((row, answers))
+            meta = row.get("meta")
+            usage[str(row.get("index"))] = [_usage(m) for m in meta] if isinstance(meta, list) and len(meta) == 2 else [None, None]
         elif any(present):
             only[present.index(True)] += 1
     for v, name in enumerate(NAMES):
@@ -125,4 +199,5 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
         "answered_both": agree + len(disagreements), "agree": agree,
         "only_a": only[0], "only_b": only[1], "excluded": len(dropped),
         "disagreements": disagreements,
+        "cascade": cascade(scored, usage, lead),
     }

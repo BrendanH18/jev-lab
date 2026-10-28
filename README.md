@@ -108,7 +108,8 @@ conditions.
   trades automation for accuracy. It reuses the Bulk answers, so it makes no extra calls.
 - **Compare:** run two variants, each a question set and a model, over the same labeled rows. See
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
-  significance test, and the rows where the variants disagree.
+  significance test, and the rows where the variants disagree. A cascade shows what asking one
+  variant first, and the other only when it is unsure, would cost and how accurate it would be.
 - **Learn:** start from thirteen examples covering triage, moderation, routing, extraction, images,
   and more.
 - **Export:** generate Python, JavaScript, or curl requests for use outside Jev Lab.

@@ -182,11 +182,36 @@ For the question you pick, the report shows:
   if neither variant were better. A small sample rarely shows a reliable difference;
 - a chart of accuracy against the share automated as the threshold moves, one line per variant,
   with a table view;
-- every row where the variants answer differently, with each answer's confidence and the label.
+- every row where the variants answer differently, with each answer's confidence and the label;
+- a cascade, described below.
 
 Scoring reuses the answers, so changing the question or the gate makes no calls. **Use A in
 Build** or **Use B in Build** copies that variant's questions into the Build tab. Pin model
 versions when you compare wording, so an alias update cannot change one side of the comparison.
+
+### Cascade
+
+A cascade asks one variant first and asks the other only when the first is unsure: below a
+threshold on the selected gate. A common setup puts a cheaper or faster variant first and a
+stronger one second. Choose **A first, then B** or **B first, then A**. Both variants already
+answered every scored row, so the cascade's result at each threshold is read from those answers
+without new calls.
+
+For the chosen threshold, a table compares the first variant alone, the cascade, and the second
+variant alone: accuracy, the rows sent to the second variant, cost per 1,000 rows, and mean
+latency. The cascade's cost counts the first call on every row and the second call on each row it
+escalates. Its latency adds the two calls, because the second waits for the first. Each call asks
+all of its variant's questions, though the gate reads one question.
+
+The shortcuts set the lowest threshold that matches the second variant's accuracy, and the most
+accurate threshold. A cascade can beat both variants when each is right on rows where the other is
+unsure. A chart plots accuracy against the share of rows escalated, from the first variant alone
+to the second alone. The Python under it asks the first variant, checks the gate, and asks the
+second only when the gate fails.
+
+Cascade scores use the labeled rows that both variants answered, like the rest of the report. On a
+few dozen rows, one row moves accuracy by several points, so confirm a cascade on more labeled
+rows before you use it.
 
 ## Export a request
 
