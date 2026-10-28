@@ -95,7 +95,19 @@
     .cal-dot.cas { fill: var(--text); }
     .cmp-table tbody th { text-align: left; font-weight: 600; color: var(--muted); white-space: nowrap; }
     .cmp-table td { white-space: nowrap; }
-    @media (max-width: 700px) { .cal-gate { grid-template-columns: 1fr; } }
+    .pol-gates { display: grid; gap: 8px; }
+    .pol-gate { display: grid; grid-template-columns: minmax(180px, 260px) minmax(160px, 1fr) 44px; gap: 14px; align-items: center; font-size: 13px; }
+    .pol-check { display: inline-flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pol-check input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .pol-gate b { color: var(--accent-text); text-align: right; }
+    .pol-gate.off b, .pol-gate.off .mono { color: var(--faint); }
+    .pol-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--track); gap: 2px; }
+    .pol-seg { display: block; height: 100%; }
+    .pol-seg.right, .pol-key.right { background: var(--series); }
+    .pol-seg.wrong, .pol-key.wrong { background: var(--critical); }
+    .pol-seg.review, .pol-key.review { background: var(--line-strong); }
+    .pol-key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+    @media (max-width: 700px) { .cal-gate { grid-template-columns: 1fr; } .pol-gate { grid-template-columns: minmax(0, 1fr) 44px; gap: 4px 12px; } .pol-check { grid-column: 1 / -1; } }
     @media (max-width: 1000px) { .wb-grid, .cmp-grid { grid-template-columns: 1fr; } .qcard .row { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>

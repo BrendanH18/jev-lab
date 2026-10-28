@@ -21,7 +21,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import calibrate, claims, compare, dispatch, envfile, examples, find, hello, images, security, shield, workbench
+from jev import calibrate, claims, compare, dispatch, envfile, examples, find, hello, images, policy, security, shield, workbench
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -469,6 +469,14 @@ def api_wb_calibrate(body):
     return calibrate.evaluate(body.get("rows"), str(body.get("signal") or "confidence"))
 
 
+def api_wb_policy(body):
+    return policy.evaluate(body.get("rows"), body.get("gates"), str(body.get("signal") or "confidence"))
+
+
+def api_wb_policy_tune(body):
+    return policy.tune(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"))
+
+
 def api_wb_bulk_sample(_body):
     return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS,
             "terse_questions": examples.TERSE_BULK_QUESTIONS}
@@ -515,6 +523,8 @@ ROUTES = {
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
+    ("POST", "/api/workbench/policy"): api_wb_policy,
+    ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,
     ("POST", "/api/workbench/compare"): api_wb_compare,
     ("POST", "/api/workbench/compare/score"): api_wb_compare_score,
 }

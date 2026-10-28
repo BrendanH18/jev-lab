@@ -7,7 +7,8 @@ const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
-    cal: { qid: null, signal: "confidence", threshold: 0.5, report: null } },
+    cal: { qid: null, signal: "confidence", threshold: 0.5, report: null },
+    policy: { signal: "confidence", gates: {}, report: null, tunes: null } },
   compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
@@ -195,7 +196,7 @@ function render() {
   mount("#tabs", TABS.map(([k, label]) => h("button", { class: `tab${W.tab === k ? " active" : ""}`, onclick: () => { W.tab = k; location.hash = k; render(); } },
     label, k === "tests" && W.items.length ? ` (${W.items.length})` : "")));
   mount("#view", view);
-  if (W.tab === "bulk") updateCal();
+  if (W.tab === "bulk") { updateCal(); updatePolicy(); }
   if (W.tab === "compare") { updateCmpChart(); updateCascade(); }
 }
 
@@ -559,6 +560,7 @@ function renderBulk() {
             h("p", { class: "muted" }, "At $0.042 per million input tokens, a question set over a million short messages costs about ", h("b", {}, "$10"), ". That is why “classify everything, then sort” is finally practical."),
             h("p", { class: "muted" }, "With labeled rows, Calibrate shows how often each answer was right and where to set the confidence threshold: above it your code acts, below it a person reviews. Choose the threshold from your own data, not a default."))))),
     b.result ? renderCalibrate() : null,
+    b.result ? renderPolicy() : null,
     b.result ? renderBulkTable() : null);
 }
 
@@ -575,7 +577,8 @@ async function runBulk() {
     b.labels = {};
     for (const r of b.result.results) if (r.expect) b.labels[r.index] = { ...r.expect };
     b.cal.qid = chooseCalQuestion();
-    await recalibrate();
+    resetPolicy();
+    await Promise.all([recalibrate(), repolicy()]);
     if (b.result.stopped) toast(b.result.stopped, "error");
     render();
     $("#calibrate")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -605,7 +608,7 @@ function labelCell(r, qid) {
     const labels = { ...(b.labels[r.index] || {}) };
     if (value === null) delete labels[qid]; else labels[qid] = value;
     b.labels[r.index] = labels;
-    await recalibrate();
+    await Promise.all([recalibrate(), repolicy()]);
     render();
   });
   return h("td", {}, sel);
@@ -966,6 +969,220 @@ function calChart(rep, t) {
   hit.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); $("#cal-tip").hidden = true; });
   hit.addEventListener("click", (e) => { W.bulk.cal.threshold = at(e); updateCal(); });
   return root;
+}
+
+// ---------- Policy ----------
+// Gates several questions at once: a row is automated only when every gated answer clears its threshold, and
+// right only when every gated answer matches its label. The server scores it (jev/policy.py); no model calls.
+const MAX_GATES = 10;
+const GATEABLE = new Set(["choice", "noul", "score"]);
+
+function policyQids(res) {
+  return Object.entries(bulkQuestionsForResult(res)).filter(([, a]) => GATEABLE.has(a.type)).map(([q]) => q);
+}
+function resetPolicy() {
+  const b = W.bulk;
+  const qids = policyQids(b.result);
+  const labeled = labeledQids(b);
+  const pick = qids.filter((q) => labeled.has(q));
+  const on = new Set((pick.length ? pick : qids).slice(0, MAX_GATES));
+  b.policy = { ...b.policy, report: null, tunes: null,
+    gates: Object.fromEntries(qids.map((q) => [q, { on: on.has(q), t: b.policy.gates[q]?.t ?? 0.5 }])) };
+}
+function activeGates() {
+  return Object.fromEntries(Object.entries(W.bulk.policy.gates).filter(([, g]) => g.on).map(([q, g]) => [q, g.t]));
+}
+function policyRows(qids) {
+  const b = W.bulk;
+  return b.result.results.filter((r) => r.answers).map((r) => ({
+    index: r.index,
+    answers: Object.fromEntries(qids.filter((q) => r.answers[q]).map((q) => [q, r.answers[q]])),
+    labels: Object.fromEntries(qids.filter((q) => b.labels[r.index]?.[q] !== undefined).map((q) => [q, b.labels[r.index][q]])),
+  }));
+}
+let polSeq = 0;
+async function rescorePolicy() {
+  const p = W.bulk.policy;
+  const gates = activeGates();
+  const seq = ++polSeq;  // only the latest request may install its report
+  if (!Object.keys(gates).length) { p.report = null; return; }
+  try {
+    const report = await api("/api/workbench/policy", { rows: policyRows(Object.keys(gates)), gates, signal: p.signal });
+    if (seq === polSeq) p.report = report;
+  } catch (e) { if (seq === polSeq) { p.report = null; handleError(e); } }
+}
+let tuneSeq = 0;
+async function retunePolicy() {
+  const p = W.bulk.policy;
+  const qids = Object.keys(activeGates());
+  const seq = ++tuneSeq;
+  p.tunes = null;
+  if (!qids.length) return;
+  try {
+    const tunes = await api("/api/workbench/policy/tune", { rows: policyRows(qids), questions: qids, signal: p.signal });
+    if (seq === tuneSeq) p.tunes = tunes;
+  } catch (e) { if (seq === tuneSeq) handleError(e); }
+}
+// Gates, labels, or the signal changed: both the report and the tuned thresholds are stale. Tuning can take a
+// moment on many rows and gates, so its chips fill in when it finishes instead of holding up the report.
+async function repolicy() {
+  retunePolicy().then(updatePolicy);
+  await rescorePolicy();
+}
+const rescoreSoon = debounce(async () => { await rescorePolicy(); updatePolicy(); }, 120);
+
+function renderPolicy() {
+  const b = W.bulk;
+  const p = b.policy;
+  const qids = policyQids(b.result);
+  if (!qids.length) return null;
+  const labeled = labeledQids(b);
+  const types = bulkQuestionsForResult(b.result);
+  const nOn = Object.keys(activeGates()).length;
+  const sigSel = h("select", { class: "input", "aria-label": "Signal every gate reads" },
+    Object.entries(SIGNALS).map(([k, label]) => h("option", { value: k, selected: k === p.signal }, `gate on ${label}`)));
+  sigSel.addEventListener("change", async () => { p.signal = sigSel.value; await repolicy(); render(); });
+  const gateRow = (q, i) => {
+    const g = p.gates[q];
+    const box = h("input", { type: "checkbox", checked: g.on, disabled: !g.on && nOn >= MAX_GATES, id: `pol-on-${i}` });
+    box.addEventListener("change", async () => { g.on = box.checked; await repolicy(); render(); });
+    const slider = h("input", { type: "range", min: 0, max: 1, step: 0.01, value: g.t, class: "cal-slider", disabled: !g.on,
+      id: `pol-t-${i}`, "aria-label": `Minimum ${SIGNALS[p.signal]} for ${q}` });
+    slider.addEventListener("input", () => { g.t = Number(slider.value); mount(`#pol-v-${i}`, g.t.toFixed(2)); rescoreSoon(); });
+    return h("div", { class: `pol-gate${g.on ? "" : " off"}` },
+      h("label", { for: `pol-on-${i}`, class: "pol-check" }, box, h("span", { class: "mono" }, q),
+        h("span", { class: "faint" }, ` ${types[q].type}${labeled.has(q) ? "" : ", no labels"}`)),
+      slider, h("b", { class: "mono", id: `pol-v-${i}` }, g.t.toFixed(2)));
+  };
+  return h("div", { class: "panel", id: "policy" },
+    h("div", { class: "panel-head" }, icon("arrow"), h("h2", {}, "Policy"),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "every gated answer must clear its threshold, no extra calls"), h("div", { class: "spacer" }),
+      h("div", { class: "cal-controls" }, sigSel)),
+    h("div", { class: "panel-body grid", style: { gap: "14px" } },
+      h("p", { class: "muted", style: { fontSize: "13px" } }, "An application usually acts on an item only when every answer it uses is confident. Check the questions your code acts on and set a threshold for each. A row is automated when all of them clear, and it counts as right only when all of them match their labels."),
+      h("div", { class: "pol-gates" }, qids.map(gateRow)),
+      nOn ? null : h("p", { class: "muted" }, "Check at least one question to gate."),
+      h("div", { id: "pol-tunes", class: "chips" }),
+      h("div", { id: "pol-out", class: "grid", style: { gap: "14px" } })));
+}
+
+function policyCode(rep) {
+  const signal = rep.signal;
+  const lines = ["def held_by(result):", '    """The gated questions that are unsure about this result. An empty list means act on it."""',
+    "    # 1e-9 absorbs float rounding, so a signal equal to its threshold clears it, as in the Workbench.", "    held = []"];
+  for (const q of rep.questions) {
+    const key = JSON.stringify(q.qid);
+    let gate;
+    if (q.type === "noul") {
+      const p = `result.nouls[${key}].noul`;
+      gate = signal === "confidence" ? `abs(2 * ${p} - 1)` : `max(${p}, 1 - ${p})`;
+    } else if (q.type === "choice") {
+      gate = signal === "confidence" ? `result.choices[${key}].confidence` : `result.choices[${key}].probabilities[result.choices[${key}].choice]`;
+    } else {
+      gate = signal === "confidence" ? `result.scores[${key}].confidence` : `max(result.scores[${key}].probabilities.values())`;
+    }
+    lines.push(`    if ${gate} + 1e-9 < ${q.threshold.toFixed(2)}:`, `        held.append(${key})`);
+  }
+  lines.push("    return held", "", "", "held = held_by(result)", "if not held:", "    act_on(result)", "else:", "    send_to_review(result, held)");
+  return `${lines.join("\n")}\n`;
+}
+
+function policyBar(rep) {
+  const n = rep.labeled;
+  const seg = (count, cls, label) => (count ? h("i", { class: `pol-seg ${cls}`, style: { width: pct(count / n, 2) }, title: `${label}: ${count}` }) : null);
+  const wrong = rep.automated - rep.correct;
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("div", { class: "pol-bar", role: "img", "aria-label": `${rep.correct} automated and right, ${wrong} automated and wrong, ${rep.review} sent to review, of ${n} labeled rows` },
+      seg(rep.correct, "right", "automated, right"), seg(wrong, "wrong", "automated, wrong"), seg(rep.review, "review", "sent to review")),
+    h("div", { class: "cal-legend" },
+      h("span", {}, h("i", { class: "pol-key right" }), `Automated, right · ${rep.correct}`),
+      h("span", {}, h("i", { class: "pol-key wrong" }), `Automated, wrong · ${wrong}`),
+      h("span", {}, h("i", { class: "pol-key review" }), `Sent to review · ${rep.review}`)));
+}
+
+function policyTable(rep) {
+  return h("div", { class: "scroll" }, h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, h("th", {}, "question"), h("th", {}, "threshold"), h("th", {}, "right, every row"),
+      h("th", { title: "Labeled rows this gate sends to review" }, "holds for review"), h("th", { title: "Rows that only this gate holds: lowering it automates them" }, "holds alone"),
+      h("th", { title: "Automated rows where this answer is wrong" }, "wrong while automated"))),
+    h("tbody", {}, rep.questions.map((q) => h("tr", {},
+      h("td", { class: "mono" }, q.qid), h("td", { class: "mono" }, q.threshold.toFixed(2)),
+      h("td", {}, q.accuracy === null ? "—" : pct(q.accuracy)), h("td", {}, String(q.holds)), h("td", {}, String(q.only)),
+      h("td", {}, String(q.wrong_automated)))))));
+}
+
+function policyMistakes(rep) {
+  const wrong = rep.rows.filter((r) => r.automated && !r.correct);
+  if (!wrong.length) return null;
+  const rowsBy = new Map(W.bulk.result.results.map((r) => [r.index, r.row]));
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("h3", { class: "cal-h" }, `Automated but wrong · ${wrong.length}: your code would act on these with a wrong answer`),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "wrong answers"))),
+      h("tbody", {}, wrong.slice(0, 12).map((r) => h("tr", {},
+        h("td", { class: "num" }, String(r.index + 1)),
+        h("td", { class: "row", style: { maxWidth: "380px" } }, rowText(rowsBy.get(r.index))),
+        h("td", {}, r.wrong.map((q) => {
+          const a = r.answers[q];
+          return h("div", { style: { fontSize: "12.5px" } }, h("span", { class: "mono" }, q), `: answered ${a.answer}, label ${a.label} `,
+            h("span", { class: "faint mono" }, `(${a.signal.toFixed(2)})`));
+        }))))))),
+    wrong.length > 12 ? h("p", { class: "faint", style: { fontSize: "12px" } }, `…and ${wrong.length - 12} more.`) : null);
+}
+
+// Refresh everything that follows the thresholds without rebuilding the sliders under the pointer.
+function updatePolicy() {
+  const p = W.bulk.policy;
+  if (!$("#pol-out")) return;
+  const rep = p.report;
+  const tunes = p.tunes;
+  // Targets that tune to the same thresholds share one chip.
+  const groups = [];
+  for (const t of tunes && tunes.labeled ? tunes.targets : []) {
+    const key = JSON.stringify(t.gates);
+    const same = groups.find((g) => g.key === key);
+    if (same) same.targets.push(t.target); else groups.push({ key, targets: [t.target], tune: t });
+  }
+  mount("#pol-tunes", groups.map(({ targets, tune: t }) => {
+    const label = targets.map((x) => pct(x)).join(", ");
+    return t.gates === null
+      ? h("button", { class: "chip", disabled: true }, `${label} accurate: not reached on these rows`)
+      : h("button", { class: "chip", onclick: async () => {
+        for (const [q, v] of Object.entries(t.gates)) p.gates[q].t = v;
+        await rescorePolicy();
+        render();
+      } }, `Tune for ${label} → automates ${pct(t.coverage)}`);
+  }));
+  if (!rep) return mount("#pol-out");
+  const n = rep.labeled;
+  const notes = [
+    n && n < 100 ? h("p", { class: "faint" }, `With ${n} labeled rows, one row moves accuracy by ${(100 / n).toFixed(1)} points. Tuned thresholds fit these rows; confirm them on more labeled rows before you rely on them.`) : null,
+    rep.unlabeled ? h("p", { class: "faint" }, `${rep.unlabeled} answered rows lack a label for at least one gated question and are not scored.`) : null,
+    rep.skipped ? h("p", { class: "faint" }, `${rep.skipped} rows have no readable answer to a gated question and are left out.`) : null,
+    rep.invalid.length ? invalidNote(rep) : null,
+    h("p", { class: "faint" }, "Tuning raises whichever threshold drops the most wrong rows per row it drops, until the target holds, then lowers each threshold as far as the target allows. It is a search over these rows, not a guarantee that no better combination exists."),
+  ];
+  const code = h("div", { class: "code" }, h("pre", { id: "pol-code" }, policyCode(rep)),
+    h("button", { class: "btn sm copy", onclick: () => copyText($("#pol-code").textContent) }, icon("copy"), "Copy"));
+  if (!n) {
+    return mount("#pol-out",
+      h("div", { class: "stat-row" }, stat("this run, all rows", `${rep.routed_automated} of ${rep.routed} automated`, true)),
+      h("p", { class: "muted", style: { fontSize: "13px" } }, "No row is labeled for every gated question yet, so accuracy is unknown. Label rows in the table below or uncheck questions without labels."),
+      code,
+      h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes));
+  }
+  mount("#pol-out",
+    h("div", { class: "stat-row" },
+      stat("automated", `${rep.automated} of ${n} · ${pct(rep.coverage)}`, true),
+      stat("accuracy when automated", rep.accuracy === null ? "—" : pct(rep.accuracy, 1)),
+      stat("all gated answers right, every row", pct(rep.accuracy_all)),
+      stat("wrong but automated", String(rep.automated - rep.correct)),
+      stat("this run, all rows", `${rep.routed_automated} of ${rep.routed} automated`)),
+    policyBar(rep),
+    policyTable(rep),
+    policyMistakes(rep),
+    code,
+    h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes));
 }
 
 // ---------- Compare ----------
