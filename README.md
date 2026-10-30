@@ -105,7 +105,8 @@ conditions.
 - **Test:** save a run with editable expectations, then rerun after changing questions or models.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
-  trades automation for accuracy. It reuses the Bulk answers, so it makes no extra calls.
+  trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
+  that reach a target at 95% confidence. It reuses the Bulk answers, so it makes no extra calls.
 - **Policy:** gate several questions at once, the way an application acts on an item only when every
   answer it uses is confident. See what share of rows the combined gate automates and how accurate
   they are, tune the thresholds for 90%, 95%, or 99% accuracy, and copy the Python gate. It also

@@ -258,9 +258,14 @@ class HttpTests(unittest.TestCase):
         with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
             status, _, body = self.request("POST", "/api/workbench/calibrate", json.dumps({"rows": rows}),
                                            self.post_headers())
+            lower, _, lbody = self.request("POST", "/api/workbench/calibrate", json.dumps({"rows": rows, "bound": "lower"}),
+                                           self.post_headers())
             bad, _, err = self.request("POST", "/api/workbench/calibrate", json.dumps({"rows": "x"}), self.post_headers())
         self.assertEqual(status, 200, body)
         self.assertEqual(json.loads(body)["accuracy"], 0.5)
+        self.assertEqual(json.loads(body)["bound"], "estimate")
+        self.assertEqual(lower, 200, lbody)
+        self.assertEqual([t["threshold"] for t in json.loads(lbody)["targets"]], [None] * 3)
         self.assertEqual(bad, 400)
         self.assertIn("rows must be a list", json.loads(err)["error"])
 
@@ -272,12 +277,16 @@ class HttpTests(unittest.TestCase):
                                            self.post_headers())
             tuned, _, tbody = self.request("POST", "/api/workbench/policy/tune", json.dumps({"rows": rows, "questions": ["u"]}),
                                            self.post_headers())
+            ltuned, _, ltbody = self.request("POST", "/api/workbench/policy/tune",
+                                             json.dumps({"rows": rows, "questions": ["u"], "bound": "lower"}), self.post_headers())
             bad, _, err = self.request("POST", "/api/workbench/policy", json.dumps({"rows": rows, "gates": {"u": 2}}),
                                        self.post_headers())
         self.assertEqual(status, 200, body)
         self.assertEqual((json.loads(body)["automated"], json.loads(body)["accuracy"]), (1, 1.0))
         self.assertEqual(tuned, 200, tbody)
         self.assertEqual(json.loads(tbody)["targets"][0]["gates"], {"u": 0.21})
+        self.assertEqual(ltuned, 200, ltbody)
+        self.assertEqual(json.loads(ltbody)["targets"][0]["gates"], None)  # one right row cannot show 90%
         self.assertEqual(bad, 400)
         self.assertIn("from 0 to 1", json.loads(err)["error"])
 

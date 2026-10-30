@@ -8,7 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from helpers import FakeClient  # noqa: E402
-from jev import compare, examples, workbench  # noqa: E402
+from jev import calibrate, compare, examples, workbench  # noqa: E402
 from jev.calibrate import CalibrationError  # noqa: E402
 from jev.client import JevError  # noqa: E402
 
@@ -84,6 +84,20 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual((a["labeled"], a["correct"], b["labeled"], b["correct"]), (1, 1, 1, 1))
         self.assertEqual((report["excluded"], report["paired"]["rows"]), (1, 1))
         self.assertEqual(report["disagreements"][0]["verdict"], None)
+
+    def test_bound_passes_to_each_variant_and_accuracy_has_an_interval(self):
+        a, b = self.report["variants"]
+        self.assertEqual(self.report["bound"], "estimate")
+        self.assertEqual((a["accuracy_low"], a["accuracy_high"]), calibrate.wilson(3, 6))
+        data = rows(*[(noul(0.95), noul(0.95), "yes")] * 40)
+        est = compare.evaluate(data)["variants"][0]["targets"]
+        low = compare.evaluate(data, bound="lower")
+        self.assertEqual(low["bound"], "lower")
+        # 40 clean rows show 90% with 95% confidence (35 needed), but not 95% (73) or 99% (381).
+        self.assertEqual([t["threshold"] is not None for t in est], [True, True, True])
+        self.assertEqual([t["threshold"] is not None for t in low["variants"][0]["targets"]], [True, False, False])
+        with self.assertRaises(CalibrationError):
+            compare.evaluate(data, bound="vibes")
 
     def test_refusals(self):
         with self.assertRaises(CalibrationError):

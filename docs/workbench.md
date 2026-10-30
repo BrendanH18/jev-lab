@@ -142,8 +142,9 @@ answers already returned. It shows:
 - a reliability table that compares stated probabilities with observed outcomes, and its average
   gap (expected calibration error);
 - a threshold slider and chart. Rows at or above the threshold are automated and the rest go to
-  review. The chart shows the share automated and the accuracy of those rows, and the shortcuts
-  give the lowest threshold that reaches 90%, 95%, or 99% accuracy;
+  review. The chart shows the share automated, the accuracy of those rows, and a 95% interval
+  for that accuracy. The shortcuts give the lowest threshold that reaches 90%, 95%, or 99%
+  accuracy;
 - the Python gate for the chosen threshold.
 
 An answer counts as right when the selected Choice option equals the label, when P(yes) ≥ 0.5
@@ -157,6 +158,23 @@ rewrites the rows box as JSON lines that carry your labels, so the next run keep
 from a few dozen rows are a first look: each row of 40 moves accuracy by 2.5 points. Label more of
 your own data before relying on a threshold, and pin the model version when you compare runs.
 
+### Targets at 95% confidence
+
+Accuracy measured on a sample is itself uncertain. Every accuracy in Calibrate, Policy, and Compare
+shows a 95% Wilson score interval: the range of true accuracies these rows are consistent with.
+Twenty automated rows that are all right give an interval of 84%–100%, so they cannot show 95%.
+
+By default, a target such as "95% accurate" is met when the accuracy measured on these rows reaches
+it. Choose **targets at 95% confidence** to require the interval's lower bound to reach it instead.
+Calibrate's shortcuts, Policy's Tune, and Compare's "automates at" rows then name only thresholds
+that these rows support with 95% confidence. A threshold must automate enough rows for that: with
+every automated row right, 90% needs at least 35 rows, 95% needs 73, and 99% needs 381. When a
+target cannot be shown with the rows you have, its shortcut says how many it needs.
+
+The interval treats your labeled rows as a random sample of the items the gate will see. Choosing a
+threshold from the same rows still favors thresholds that happen to fit them, so confirm the
+threshold on rows you did not tune on before you rely on it.
+
 ## Gate several questions at once
 
 Calibrate chooses a threshold for one question. An application usually acts on an item only when
@@ -169,7 +187,8 @@ same signal, confidence or top probability, as Calibrate defines them. A row is 
 gated answer clears its threshold, and it counts as right only when every gated answer matches its
 label. Only rows labeled for every gated question are scored. The panel shows:
 
-- the share of scored rows automated, their accuracy, and how many are automated but wrong;
+- the share of scored rows automated, their accuracy with a 95% interval, and how many are automated
+  but wrong;
 - the accuracy with no gate, where every gated answer must be right on every row;
 - for each question, its own accuracy, how many rows its gate sends to review, how many only its
   gate holds (lowering that threshold automates them), and how many automated rows it gets wrong;
@@ -177,10 +196,12 @@ label. Only rows labeled for every gated question are scored. The panel shows:
 - a Python `held_by(result)` function that returns the gated questions that are unsure about a
   result. An empty list means act on it.
 
-**Tune** searches for thresholds that automate the most scored rows at 90%, 95%, or 99% accuracy.
-It raises whichever threshold drops the largest share of wrong rows per row it drops, then lowers
-each threshold as far as the target allows. It is a search over 0.01 steps, not a guarantee that no
-better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
+**Tune** searches for thresholds that automate the most scored rows at 90%, 95%, or 99% accuracy,
+measured or [at 95% confidence](#targets-at-95-confidence). It raises whichever threshold drops the
+largest share of wrong rows per row it drops, then lowers each threshold as far as the target
+allows, then re-chooses thresholds two at a time while that automates more rows. With one or two
+gated questions it finds the best thresholds on 0.01 steps. With more, it is a search, not a
+guarantee that no better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
 more labeled rows before relying on them.
 
 ## Compare two variants
@@ -201,8 +222,8 @@ variants ask, with the same type, can be compared.
 For the question you pick, the report shows:
 
 - each variant's model, rows answered, median latency, input tokens, and cost;
-- each variant's accuracy, calibration gap, and the share of rows it automates at 90%, 95%, and
-  99% accuracy, using the same scoring as Calibrate;
+- each variant's accuracy with a 95% interval, calibration gap, and the share of rows it automates
+  at 90%, 95%, and 99% accuracy, measured or at 95% confidence, using the same scoring as Calibrate;
 - a row-by-row count over labeled rows that both variants answered: both right, only A right, only
   B right, both wrong. The exact McNemar test gives the chance of a split at least that uneven
   if neither variant were better. A small sample rarely shows a reliable difference;

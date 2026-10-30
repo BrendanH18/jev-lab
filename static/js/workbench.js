@@ -7,10 +7,10 @@ const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
-    cal: { qid: null, signal: "confidence", threshold: 0.5, report: null },
-    policy: { signal: "confidence", gates: {}, report: null, tunes: null } },
+    cal: { qid: null, signal: "confidence", bound: "estimate", threshold: 0.5, report: null },
+    policy: { signal: "confidence", bound: "estimate", gates: {}, report: null, tunes: null } },
   compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
-    running: false, result: null, qid: null, signal: "confidence", report: null, reportError: null, first: "A", cascadeT: 0.5 },
+    running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
 };
 const TYPES = ["noul", "choice", "score", "box"];
@@ -712,6 +712,24 @@ function svg(tag, attrs = {}, ...children) {
   return node;
 }
 const SIGNALS = { confidence: "confidence", top_probability: "top probability" };
+// What must reach a target accuracy: the accuracy measured on these rows, or its 95% lower bound (jev/calibrate.py).
+const BOUNDS = { estimate: "targets on these rows", lower: "targets at 95% confidence" };
+
+function boundSelect(state, onChange) {
+  const sel = h("select", { class: "input", "aria-label": "What must reach a target accuracy" },
+    Object.entries(BOUNDS).map(([k, label]) => h("option", { value: k, selected: k === state.bound }, label)));
+  sel.addEventListener("change", async () => { state.bound = sel.value; await onChange(); render(); });
+  return sel;
+}
+// A 95% interval as "81–97%", or "" when there is nothing to measure.
+const interval = (lo, hi) => (lo === null || lo === undefined ? "" : `${pct(lo)}–${pct(hi)}`);
+const withCI = (value, lo, hi) => (lo === null || lo === undefined ? value : [value, h("span", { class: "ci", title: "95% interval" }, ` ${interval(lo, hi)}`)]);
+// The label of a target that was not reached, saying how many rows a 95% claim needs when that is the reason.
+function unreached(t, bound, labeled) {
+  if (bound === "lower" && labeled < t.needed) return `${pct(t.target)} at 95% confidence: needs ${t.needed}+ automated rows, all right (${labeled} labeled)`;
+  return `${pct(t.target)} accurate${bound === "lower" ? " at 95% confidence" : ""}: not reached on these rows`;
+}
+const targetName = (target, bound) => (bound === "lower" ? `${pct(target)} at 95% confidence` : `${pct(target)} accurate`);
 
 function answerClasses(answer) {
   if (answer.type === "noul") return ["yes", "no"];
@@ -754,7 +772,7 @@ async function recalibrate() {
   b.cal.report = null;
   if (!rows.length) return;
   try {
-    const report = await api("/api/workbench/calibrate", { rows, signal: b.cal.signal });
+    const report = await api("/api/workbench/calibrate", { rows, signal: b.cal.signal, bound: b.cal.bound });
     if (seq === calSeq) b.cal.report = report;
   } catch (e) { if (seq === calSeq) handleError(e); }
 }
@@ -774,7 +792,7 @@ function renderCalibrate() {
   sigSel.addEventListener("change", async () => { c.signal = sigSel.value; await recalibrate(); render(); });
   const head = h("div", { class: "panel-head" }, icon("check"), h("h2", {}, "Calibrate"),
     h("span", { class: "faint", style: { fontSize: "12px" } }, "computed from these answers, no extra calls"), h("div", { class: "spacer" }),
-    h("div", { class: "cal-controls" }, qSel, sigSel));
+    h("div", { class: "cal-controls" }, qSel, sigSel, boundSelect(c, recalibrate)));
   if (!rep || !rep.labeled) {
     return h("div", { class: "panel", id: "calibrate" }, head,
       h("div", { class: "panel-body grid", style: { gap: "8px", fontSize: "13px" } },
@@ -789,33 +807,37 @@ function renderCalibrate() {
     h("div", { class: "panel-body grid", style: { gap: "14px" } },
       h("div", { class: "stat-row" },
         stat("labeled", `${n} rows`),
-        stat("accuracy, every row", pct(rep.accuracy), true),
+        stat("accuracy, every row", withCI(pct(rep.accuracy), rep.accuracy_low, rep.accuracy_high), true),
         stat("calibration gap (ECE)", rep.ece === null ? "—" : `${(rep.ece * 100).toFixed(1)} pts`)),
       h("div", { class: "cal-gate" },
         h("label", { for: "cal-slider" }, `Act automatically when ${SIGNALS[c.signal]} ≥ `, h("b", { id: "cal-value", class: "mono" })),
         slider),
       h("div", { id: "cal-stats", class: "stat-row" }),
       h("div", { class: "chips" }, rep.targets.map((t) => t.threshold === null
-        ? h("button", { class: "chip", disabled: true }, `${pct(t.target)} accurate: not reached on these rows`)
-        : h("button", { class: "chip", onclick: () => setThreshold(t.threshold) },
-          `${pct(t.target)} accurate → ≥ ${t.threshold.toFixed(2)}, automates ${pct(t.coverage)}`))),
+        ? h("button", { class: "chip", disabled: true }, unreached(t, rep.bound, n))
+        : h("button", { class: "chip", onclick: () => setThreshold(t.threshold), title: `${pct(t.accuracy, 1)} accurate on ${t.automated} rows; 95% interval ${interval(t.low, t.high)}` },
+          `${targetName(t.target, rep.bound)} → ≥ ${t.threshold.toFixed(2)}, automates ${pct(t.coverage)}`))),
       h("div", { class: "cal-chart-wrap" },
         h("div", { class: "cal-legend" },
           h("span", {}, h("i", { class: "cal-key cov" }), "Automated: share of labeled rows that clear the threshold"),
-          h("span", {}, h("i", { class: "cal-key acc" }), "Accuracy of those automated rows")),
+          h("span", {}, h("i", { class: "cal-key acc" }), "Accuracy of those automated rows"),
+          h("span", {}, h("i", { class: "cal-key band" }), "95% interval for that accuracy")),
         h("div", { id: "cal-chart" }),
         h("div", { class: "cal-tip", id: "cal-tip", hidden: true })),
       h("details", {}, h("summary", { class: "faint", style: { fontSize: "12.5px", cursor: "pointer" } }, "Sweep as a table"),
         h("div", { class: "scroll" }, h("table", { class: "table" },
-          h("thead", {}, h("tr", {}, h("th", {}, "threshold"), h("th", {}, "automated"), h("th", {}, "share"), h("th", {}, "accuracy"))),
+          h("thead", {}, h("tr", {}, h("th", {}, "threshold"), h("th", {}, "automated"), h("th", {}, "share"), h("th", {}, "accuracy"), h("th", {}, "95% interval"))),
           h("tbody", {}, rep.sweep.filter((p) => Math.round(p.threshold * 100) % 5 === 0).map((p) => h("tr", {},
             h("td", { class: "mono" }, p.threshold.toFixed(2)), h("td", {}, `${p.automated} of ${n}`), h("td", {}, pct(p.coverage)),
-            h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy)))))))),
+            h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy)), h("td", {}, interval(p.low, p.high) || "—"))))))),
       h("div", { class: "cal-tables" }, confusionTable(rep), reliabilityTable(rep)),
       h("div", { class: "code" }, h("pre", { id: "cal-code" }),
         h("button", { class: "btn sm copy", onclick: () => copyText($("#cal-code").textContent) }, icon("copy"), "Copy")),
       h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } },
         n < 100 ? h("p", { class: "faint" }, `With ${n} labeled rows, one row moves accuracy by ${(100 / n).toFixed(1)} points. Treat these thresholds as a first look, and label more rows before you rely on one.`) : null,
+        h("p", { class: "faint" }, rep.bound === "lower"
+          ? "Targets at 95% confidence pick the lowest threshold whose interval starts at or above the target, so a few lucky rows cannot claim it. Showing 90%, 95%, or 99% this way takes at least 35, 73, or 381 automated rows."
+          : "The shaded band is a 95% interval (Wilson): the accuracies these rows are consistent with. Choose targets at 95% confidence to require the band's lower edge to reach the target."),
         rep.unlabeled ? h("p", { class: "faint" }, `${rep.unlabeled} answered rows have no label for “${c.qid}” and are not scored.`) : null,
         rep.invalid.length ? invalidNote(rep) : null,
         h("p", { class: "faint" }, rep.type === "noul"
@@ -883,7 +905,7 @@ function updateCal() {
   const autoAll = all.filter((v) => v + 1e-9 >= t).length;
   mount("#cal-stats",
     stat("automated", `${p.automated} of ${rep.labeled} · ${pct(p.coverage)}`, true),
-    stat("accuracy when automated", p.accuracy === null ? "—" : pct(p.accuracy, 1)),
+    stat("accuracy when automated", p.accuracy === null ? "—" : withCI(pct(p.accuracy, 1), p.low, p.high)),
     stat("wrong but automated", String(p.automated - p.correct)),
     stat("sent to review", String(rep.labeled - p.automated)),
     stat("this run, all rows", `${autoAll} of ${all.length} automated`));
@@ -915,6 +937,21 @@ function calChart(rep, t) {
     }
     return d;
   };
+  // The interval as one closed shape per run of thresholds that automate at least one row.
+  const band = () => {
+    let d = "";
+    let run = [];
+    const flush = () => {
+      if (run.length) {
+        d += run.map((q, i) => `${i ? "L" : "M"}${x(q.threshold).toFixed(1)},${y(q.high).toFixed(1)}`).join("");
+        d += run.slice().reverse().map((q) => `L${x(q.threshold).toFixed(1)},${y(q.low).toFixed(1)}`).join("") + "Z";
+      }
+      run = [];
+    };
+    for (const q of rep.sweep) { if (q.low === null) flush(); else run.push(q); }
+    flush();
+    return d;
+  };
   const p = rep.sweep[Math.round(t * 100)];
   const grid = [0, 0.5, 1].map((v) => [
     svg("line", { x1: m.l, x2: W_ - m.r, y1: y(v), y2: y(v), class: "cal-grid" }),
@@ -938,9 +975,10 @@ function calChart(rep, t) {
   const hair = svg("line", { x1: 0, x2: 0, y1: m.t, y2: m.t + ih, class: "cal-hair", visibility: "hidden" });
   const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: ih, class: "cal-hit" });
   const root = svg("svg", { viewBox: `0 0 ${W_} ${H_}`, width: W_, height: H_, class: "cal-chart", role: "img",
-    "aria-label": `Automated share and accuracy by threshold. At ${t.toFixed(2)}: ${pct(p.coverage)} automated, ${p.accuracy === null ? "none" : pct(p.accuracy)} accurate.` },
+    "aria-label": `Automated share and accuracy by threshold. At ${t.toFixed(2)}: ${pct(p.coverage)} automated, ${p.accuracy === null ? "none" : `${pct(p.accuracy)} accurate, 95% interval ${interval(p.low, p.high)}`}.` },
   grid, ticks,
   svg("text", { x: m.l + iw / 2, y: H_ - 6, "text-anchor": "middle", class: "cal-axis" }, `${SIGNALS[W.bulk.cal.signal]} threshold`),
+  svg("path", { d: band(), class: "cal-band" }),
   svg("line", { x1: x(t), x2: x(t), y1: m.t, y2: m.t + ih, class: "cal-marker" }),
   svg("path", { d: line("coverage"), class: "cal-line cov" }),
   svg("path", { d: line("accuracy"), class: "cal-line acc" }),
@@ -960,6 +998,7 @@ function calChart(rep, t) {
       h("div", { class: "faint mono" }, `threshold ${v.toFixed(2)}`),
       h("div", {}, h("i", { class: "cal-key cov" }), h("b", {}, pct(q.coverage)), ` automated (${q.automated})`),
       h("div", {}, h("i", { class: "cal-key acc" }), h("b", {}, q.accuracy === null ? "—" : pct(q.accuracy)), " accurate"),
+      q.low === null ? null : h("div", {}, h("i", { class: "cal-key band" }), `95% interval ${interval(q.low, q.high)}`),
       h("div", { class: "faint" }, "click to set"));
     tip.hidden = false;
     const left = e.clientX - wrap.left + 14;
@@ -1019,7 +1058,7 @@ async function retunePolicy() {
   p.tunes = null;
   if (!qids.length) return;
   try {
-    const tunes = await api("/api/workbench/policy/tune", { rows: policyRows(qids), questions: qids, signal: p.signal });
+    const tunes = await api("/api/workbench/policy/tune", { rows: policyRows(qids), questions: qids, signal: p.signal, bound: p.bound });
     if (seq === tuneSeq) p.tunes = tunes;
   } catch (e) { if (seq === tuneSeq) handleError(e); }
 }
@@ -1057,7 +1096,7 @@ function renderPolicy() {
   return h("div", { class: "panel", id: "policy" },
     h("div", { class: "panel-head" }, icon("arrow"), h("h2", {}, "Policy"),
       h("span", { class: "faint", style: { fontSize: "12px" } }, "every gated answer must clear its threshold, no extra calls"), h("div", { class: "spacer" }),
-      h("div", { class: "cal-controls" }, sigSel)),
+      h("div", { class: "cal-controls" }, sigSel, boundSelect(p, () => retunePolicy().then(updatePolicy)))),
     h("div", { class: "panel-body grid", style: { gap: "14px" } },
       h("p", { class: "muted", style: { fontSize: "13px" } }, "An application usually acts on an item only when every answer it uses is confident. Check the questions your code acts on and set a threshold for each. A row is automated when all of them clear, and it counts as right only when all of them match their labels."),
       h("div", { class: "pol-gates" }, qids.map(gateRow)),
@@ -1136,22 +1175,23 @@ function updatePolicy() {
   if (!$("#pol-out")) return;
   const rep = p.report;
   const tunes = p.tunes;
-  // Targets that tune to the same thresholds share one chip.
+  // Targets that tune to the same thresholds share one chip. Unreached targets keep their own, since each needs different rows.
   const groups = [];
   for (const t of tunes && tunes.labeled ? tunes.targets : []) {
-    const key = JSON.stringify(t.gates);
+    const key = t.gates === null ? `none-${t.target}` : JSON.stringify(t.gates);
     const same = groups.find((g) => g.key === key);
     if (same) same.targets.push(t.target); else groups.push({ key, targets: [t.target], tune: t });
   }
+  const lower = tunes?.bound === "lower";
   mount("#pol-tunes", groups.map(({ targets, tune: t }) => {
     const label = targets.map((x) => pct(x)).join(", ");
     return t.gates === null
-      ? h("button", { class: "chip", disabled: true }, `${label} accurate: not reached on these rows`)
-      : h("button", { class: "chip", onclick: async () => {
+      ? h("button", { class: "chip", disabled: true }, unreached(t, tunes.bound, tunes.labeled))
+      : h("button", { class: "chip", title: `${pct(t.accuracy, 1)} accurate on ${t.automated} rows; 95% interval ${interval(t.low, t.high)}`, onclick: async () => {
         for (const [q, v] of Object.entries(t.gates)) p.gates[q].t = v;
         await rescorePolicy();
         render();
-      } }, `Tune for ${label} → automates ${pct(t.coverage)}`);
+      } }, `Tune for ${label}${lower ? " at 95% confidence" : ""} → automates ${pct(t.coverage)}`);
   }));
   if (!rep) return mount("#pol-out");
   const n = rep.labeled;
@@ -1160,7 +1200,7 @@ function updatePolicy() {
     rep.unlabeled ? h("p", { class: "faint" }, `${rep.unlabeled} answered rows lack a label for at least one gated question and are not scored.`) : null,
     rep.skipped ? h("p", { class: "faint" }, `${rep.skipped} rows have no readable answer to a gated question and are left out.`) : null,
     rep.invalid.length ? invalidNote(rep) : null,
-    h("p", { class: "faint" }, "Tuning raises whichever threshold drops the most wrong rows per row it drops, until the target holds, then lowers each threshold as far as the target allows. It is a search over these rows, not a guarantee that no better combination exists."),
+    h("p", { class: "faint" }, `Tuning raises whichever threshold drops the most wrong rows per row it drops, until the target holds${p.bound === "lower" ? " at 95% confidence" : ""}, then re-chooses thresholds two at a time while that automates more rows. With one or two gated questions it finds the best thresholds on 0.01 steps; with more it is a search, not a guarantee.`),
   ];
   const code = h("div", { class: "code" }, h("pre", { id: "pol-code" }, policyCode(rep)),
     h("button", { class: "btn sm copy", onclick: () => copyText($("#pol-code").textContent) }, icon("copy"), "Copy"));
@@ -1174,7 +1214,7 @@ function updatePolicy() {
   mount("#pol-out",
     h("div", { class: "stat-row" },
       stat("automated", `${rep.automated} of ${n} · ${pct(rep.coverage)}`, true),
-      stat("accuracy when automated", rep.accuracy === null ? "—" : pct(rep.accuracy, 1)),
+      stat("accuracy when automated", rep.accuracy === null ? "—" : withCI(pct(rep.accuracy, 1), rep.accuracy_low, rep.accuracy_high)),
       stat("all gated answers right, every row", pct(rep.accuracy_all)),
       stat("wrong but automated", String(rep.automated - rep.correct)),
       stat("this run, all rows", `${rep.routed_automated} of ${rep.routed} automated`)),
@@ -1330,7 +1370,7 @@ async function rescoreCompare() {
       meta: r.runs.map((run) => (run.meta ? { cost_usd: run.meta.cost_usd, latency_ms: run.meta.latency_ms } : null)) }));
   if (!rows.length) return;
   try {
-    const report = await api("/api/workbench/compare/score", { rows, signal: c.signal, first: c.first });
+    const report = await api("/api/workbench/compare/score", { rows, signal: c.signal, first: c.first, bound: c.bound });
     if (seq === cmpSeq) {
       c.report = report;
       // Start where the cascade first matches the second variant. When the first variant matches it
@@ -1366,12 +1406,13 @@ function summaryTable(res, rep) {
   const sv = rep?.variants;
   if (sv && sv.some((v) => v.labeled)) {
     rows.push(
-      summaryRow(`accuracy · ${W.compare.qid}`, sv.map((v) => (v.accuracy === null ? "—" : `${pct(v.accuracy, 1)} (${v.correct}/${v.labeled})`)), sv.map((v) => v.accuracy)),
+      summaryRow(`accuracy · ${W.compare.qid}`, sv.map((v) => (v.accuracy === null ? "—" : withCI(`${pct(v.accuracy, 1)} (${v.correct}/${v.labeled})`, v.accuracy_low, v.accuracy_high))), sv.map((v) => v.accuracy)),
       summaryRow("calibration gap (ECE)", sv.map((v) => (v.ece === null ? "—" : `${(v.ece * 100).toFixed(1)} pts`)), sv.map((v) => v.ece), false));
     (sv[0].targets.length ? sv[0] : sv[1]).targets.forEach((t, k) => {
       const hits = sv.map((v) => v.targets[k]);
-      rows.push(summaryRow(`automates at ${pct(t.target)} accuracy`,
-        hits.map((x) => (x?.threshold === null || !x ? "not reached" : `${pct(x.coverage)} (≥ ${x.threshold.toFixed(2)})`)),
+      const lower = rep.bound === "lower";
+      rows.push(summaryRow(`automates at ${pct(t.target)} accuracy${lower ? ", 95% confidence" : ""}`,
+        hits.map((x, i) => (x?.threshold === null || !x ? (lower && sv[i].labeled < t.needed ? `not shown: needs ${t.needed}+ rows` : "not reached") : `${pct(x.coverage)} (≥ ${x.threshold.toFixed(2)})`)),
         hits.map((x) => (x ? x.coverage : null))));
     });
   }
@@ -1457,7 +1498,11 @@ function renderCompareReport() {
   return h("div", { class: "panel", id: "compare-report" },
     h("div", { class: "panel-head" }, icon("layers"), h("h2", {}, "Compare"),
       h("span", { class: "faint", style: { fontSize: "12px" } }, "scored from these answers, no extra calls"), h("div", { class: "spacer" }),
-      qids.length ? h("div", { class: "cal-controls" }, qSel, sigSel) : null),
+      qids.length ? h("div", { class: "cal-controls" }, qSel, sigSel, boundSelect(c, async () => {
+        const keep = c.cascadeT;  // the basis changes only the targets, so the cascade keeps its threshold
+        await rescoreCompare();
+        c.cascadeT = keep;
+      })) : null),
     h("div", { class: "panel-body grid", style: { gap: "14px" } },
       h("div", { class: "stat-row" },
         stat("rows", String(res.rows)), stat("labeled", String(res.labeled)),
