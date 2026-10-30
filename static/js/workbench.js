@@ -1310,7 +1310,7 @@ function holdoutView(state, id, qids) {
       h("thead", {}, h("tr", {}, h("th", {}, "target"),
         h("th", { title: "Thresholds tuned on every labeled row, measured on those same rows" }, "tuned on these rows"),
         h("th", { title: "Each row routed by thresholds tuned without it, pooled over the folds" }, "on unseen rows"),
-        h("th", { title: "Accuracy on these rows minus accuracy on unseen rows" }, "change"),
+        h("th", { title: "From accuracy on these rows to accuracy on unseen rows; a drop is negative" }, "change"),
         h("th", { title: "The thresholds each fold's tuning chose" }, "thresholds across folds"))),
       h("tbody", {}, rep.targets.map(row)))),
     h("p", { class: "faint", style: { fontSize: "12.5px" } },
