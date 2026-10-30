@@ -7,8 +7,8 @@ const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
-    cal: { qid: null, signal: "confidence", bound: "estimate", threshold: 0.5, report: null },
-    policy: { signal: "confidence", bound: "estimate", gates: {}, report: null, tunes: null } },
+    cal: { qid: null, signal: "confidence", bound: "estimate", threshold: 0.5, report: null, holdout: null, holdoutSeq: 0 },
+    policy: { signal: "confidence", bound: "estimate", gates: {}, report: null, tunes: null, holdout: null, holdoutSeq: 0 } },
   compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
@@ -767,6 +767,7 @@ async function recalibrate() {
   const b = W.bulk;
   const qid = b.cal.qid;
   const seq = ++calSeq;  // only the latest request may install its report
+  clearHoldout(b.cal);
   const rows = qid ? b.result.results.filter((r) => r.answers?.[qid])
     .map((r) => ({ index: r.index, answer: r.answers[qid], label: b.labels[r.index]?.[qid] ?? null })) : [];
   b.cal.report = null;
@@ -830,6 +831,7 @@ function renderCalibrate() {
           h("tbody", {}, rep.sweep.filter((p) => Math.round(p.threshold * 100) % 5 === 0).map((p) => h("tr", {},
             h("td", { class: "mono" }, p.threshold.toFixed(2)), h("td", {}, `${p.automated} of ${n}`), h("td", {}, pct(p.coverage)),
             h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy)), h("td", {}, interval(p.low, p.high) || "—"))))))),
+      holdoutPanel(c, "cal-holdout", () => [c.qid]),
       h("div", { class: "cal-tables" }, confusionTable(rep), reliabilityTable(rep)),
       h("div", { class: "code" }, h("pre", { id: "cal-code" }),
         h("button", { class: "btn sm copy", onclick: () => copyText($("#cal-code").textContent) }, icon("copy"), "Copy")),
@@ -1025,6 +1027,7 @@ function resetPolicy() {
   const labeled = labeledQids(b);
   const pick = qids.filter((q) => labeled.has(q));
   const on = new Set((pick.length ? pick : qids).slice(0, MAX_GATES));
+  clearHoldout(b.policy);  // a check still running for the previous Bulk run must not install its report
   b.policy = { ...b.policy, report: null, tunes: null,
     gates: Object.fromEntries(qids.map((q) => [q, { on: on.has(q), t: b.policy.gates[q]?.t ?? 0.5 }])) };
 }
@@ -1035,6 +1038,7 @@ function policyRows(qids) {
   const b = W.bulk;
   return b.result.results.filter((r) => r.answers).map((r) => ({
     index: r.index,
+    key: rowText(r.row),  // the row's input names it for Holdout's folds, so a rerun or reorder keeps the split
     answers: Object.fromEntries(qids.filter((q) => r.answers[q]).map((q) => [q, r.answers[q]])),
     labels: Object.fromEntries(qids.filter((q) => b.labels[r.index]?.[q] !== undefined).map((q) => [q, b.labels[r.index][q]])),
   }));
@@ -1065,6 +1069,7 @@ async function retunePolicy() {
 // Gates, labels, or the signal changed: both the report and the tuned thresholds are stale. Tuning can take a
 // moment on many rows and gates, so its chips fill in when it finishes instead of holding up the report.
 async function repolicy() {
+  clearHoldout(W.bulk.policy);
   retunePolicy().then(updatePolicy);
   await rescorePolicy();
 }
@@ -1096,13 +1101,14 @@ function renderPolicy() {
   return h("div", { class: "panel", id: "policy" },
     h("div", { class: "panel-head" }, icon("arrow"), h("h2", {}, "Policy"),
       h("span", { class: "faint", style: { fontSize: "12px" } }, "every gated answer must clear its threshold, no extra calls"), h("div", { class: "spacer" }),
-      h("div", { class: "cal-controls" }, sigSel, boundSelect(p, () => retunePolicy().then(updatePolicy)))),
+      h("div", { class: "cal-controls" }, sigSel, boundSelect(p, () => { clearHoldout(p); return retunePolicy().then(updatePolicy); }))),
     h("div", { class: "panel-body grid", style: { gap: "14px" } },
       h("p", { class: "muted", style: { fontSize: "13px" } }, "An application usually acts on an item only when every answer it uses is confident. Check the questions your code acts on and set a threshold for each. A row is automated when all of them clear, and it counts as right only when all of them match their labels."),
       h("div", { class: "pol-gates" }, qids.map(gateRow)),
       nOn ? null : h("p", { class: "muted" }, "Check at least one question to gate."),
       h("div", { id: "pol-tunes", class: "chips" }),
-      h("div", { id: "pol-out", class: "grid", style: { gap: "14px" } })));
+      h("div", { id: "pol-out", class: "grid", style: { gap: "14px" } }),
+      nOn ? holdoutPanel(p, "pol-holdout", () => Object.keys(activeGates())) : null));
 }
 
 function policyCode(rep) {
@@ -1223,6 +1229,94 @@ function updatePolicy() {
     policyMistakes(rep),
     code,
     h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes));
+}
+
+// ---------- Holdout ----------
+// Calibrate's shortcuts and Policy's Tune choose thresholds from the rows they then report on. Holdout
+// (jev/holdout.py) cross-validates that choice: each fifth of the labeled rows is routed by thresholds tuned on
+// the other four fifths. No model calls. It runs on request, because many gates over many rows take seconds,
+// and clears whenever the question, gates, labels, signal, or target basis change.
+function clearHoldout(state) {
+  state.holdout = null;
+  state.holdoutSeq += 1;  // a check still running for the old inputs must not install its report
+}
+
+function holdoutPanel(state, id, qids) {
+  const box = h("div", { id, class: "holdout" });
+  box.append(...holdoutView(state, id, qids));
+  return box;
+}
+
+// Reads the question, signal, and target basis when the check starts: a control can change before the panel re-renders.
+async function runHoldout(state, id, qids) {
+  const seq = ++state.holdoutSeq;
+  const questions = qids();
+  state.holdout = { running: true };
+  mount(`#${id}`, ...holdoutView(state, id, qids));
+  try {
+    const report = await api("/api/workbench/holdout", { rows: policyRows(questions), questions, signal: state.signal, bound: state.bound });
+    if (seq !== state.holdoutSeq) return;
+    state.holdout = report;
+  } catch (e) {
+    if (seq !== state.holdoutSeq) return;
+    state.holdout = null;
+    handleError(e);
+  }
+  mount(`#${id}`, ...holdoutView(state, id, qids));
+}
+
+// "≥ 0.72" for one question; "dept ≥ 0.60 · refund ≥ 0.40" for several.
+function gatesText(gates) {
+  const entries = Object.entries(gates);
+  return entries.length === 1 ? `≥ ${entries[0][1].toFixed(2)}` : entries.map(([q, t]) => `${q} ≥ ${t.toFixed(2)}`).join(" · ");
+}
+function spreadText(spread) {
+  const entries = Object.entries(spread);
+  const one = ([lo, hi]) => (lo === hi ? lo.toFixed(2) : `${lo.toFixed(2)}–${hi.toFixed(2)}`);
+  return entries.length === 1 ? one(entries[0][1]) : entries.map(([q, r]) => `${q} ${one(r)}`).join(" · ");
+}
+
+function holdoutView(state, id, qids) {
+  const rep = state.holdout;
+  const title = h("h3", { class: "cal-h" }, "Check on unseen rows");
+  if (!rep || rep.running) {
+    const btn = h("button", { class: "btn sm", disabled: Boolean(rep?.running), onclick: () => runHoldout(state, id, qids) },
+      rep?.running ? [h("span", { class: "spin" }), " Checking…"] : "Check on unseen rows");
+    return [h("div", { class: "holdout-head" }, btn,
+      h("span", { class: "faint" }, "Tunes on four fifths of the labeled rows and routes the fifth it never saw, five times. Shows what these targets deliver on new rows. No extra calls."))];
+  }
+  if (!rep.targets.length) {
+    return [title, h("p", { class: "muted", style: { fontSize: "13px" } },
+      `Needs at least ${rep.minimum} labeled rows to hold some out (${rep.labeled} labeled).`)];
+  }
+  const lower = rep.bound === "lower";
+  const row = (t) => {
+    const u = t.unseen;
+    return h("tr", {},
+      h("td", {}, targetName(t.target, rep.bound)),
+      h("td", {}, t.tuned
+        ? [h("span", { class: "mono" }, gatesText(t.tuned.gates)), h("div", { class: "faint" }, `automates ${pct(t.tuned.coverage)} · ${pct(t.tuned.accuracy, 1)} accurate`)]
+        : h("span", { class: "faint" }, "not reached")),
+      h("td", {}, u.accuracy === null
+        ? h("span", { class: "faint" }, "automates none")
+        : [withCI(`${pct(u.accuracy, 1)} accurate`, u.low, u.high), h("div", { class: "faint" }, `automates ${pct(u.coverage)} (${u.automated} of ${rep.labeled})`)],
+        t.below ? h("div", {}, statusBadge("review", "Below target")) : null),
+      h("td", { class: "mono" }, t.gap === null ? "—" : `${t.gap > 0 ? "−" : t.gap < 0 ? "+" : ""}${Math.abs(t.gap * 100).toFixed(1)} pts`),
+      h("td", {}, t.spread ? h("span", { class: "mono" }, spreadText(t.spread)) : "—",
+        t.unreached ? h("div", { class: "faint" }, `${t.unreached} of ${rep.folds} folds could not reach it`) : null));
+  };
+  return [title,
+    h("div", { class: "scroll" }, h("table", { class: "table holdout-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "target"),
+        h("th", { title: "Thresholds tuned on every labeled row, measured on those same rows" }, "tuned on these rows"),
+        h("th", { title: "Each row routed by thresholds tuned without it, pooled over the folds" }, "on unseen rows"),
+        h("th", { title: "From accuracy on these rows to accuracy on unseen rows; a drop is negative" }, "change"),
+        h("th", { title: "The thresholds each fold's tuning chose" }, "thresholds across folds"))),
+      h("tbody", {}, rep.targets.map(row)))),
+    h("p", { class: "faint", style: { fontSize: "12.5px" } },
+      `Each of ${rep.folds} folds was tuned${lower ? " at 95% confidence" : ""} on the other labeled rows, then routed its own rows, which its thresholds never saw. `,
+      "Accuracy that drops on unseen rows, or thresholds that swing between folds, mean the tuned thresholds fit these rows more than the question: label more rows before you rely on them. ",
+      "The interval treats the held-out rows as independent, which cross-validation only approximates.")];
 }
 
 // ---------- Compare ----------

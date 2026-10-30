@@ -290,6 +290,25 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("from 0 to 1", json.loads(err)["error"])
 
+    def test_holdout_over_http_is_pure_code(self):
+        rows = [{"index": i, "answers": {"u": {"type": "noul", "noul": 0.55 + 0.04 * i}}, "labels": {"u": i % 4 != 0},
+                 "key": "row %d" % i} for i in range(12)]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/holdout", json.dumps({"rows": rows, "questions": ["u"]}),
+                                           self.post_headers())
+            few, _, fbody = self.request("POST", "/api/workbench/holdout",
+                                         json.dumps({"rows": rows[:5], "questions": ["u"], "folds": 3}), self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/holdout",
+                                       json.dumps({"rows": rows, "questions": ["u"], "folds": 1}), self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual((report["labeled"], report["folds"], report["bound"]), (12, 5, "estimate"))
+        self.assertEqual(sum(p["rows"] for p in report["targets"][0]["parts"]), 12)
+        self.assertEqual(few, 200, fbody)
+        self.assertEqual((json.loads(fbody)["targets"], json.loads(fbody)["minimum"]), ([], 6))
+        self.assertEqual(bad, 400)
+        self.assertIn("folds", json.loads(err)["error"])
+
     def test_bulk_text_accepts_json_lines_with_labels(self):
         fake = FakeClient()
         rows = 'plain\n{"text": "labeled", "_expect": {"u": true}}'
