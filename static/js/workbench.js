@@ -1027,6 +1027,7 @@ function resetPolicy() {
   const labeled = labeledQids(b);
   const pick = qids.filter((q) => labeled.has(q));
   const on = new Set((pick.length ? pick : qids).slice(0, MAX_GATES));
+  clearHoldout(b.policy);  // a check still running for the previous Bulk run must not install its report
   b.policy = { ...b.policy, report: null, tunes: null,
     gates: Object.fromEntries(qids.map((q) => [q, { on: on.has(q), t: b.policy.gates[q]?.t ?? 0.5 }])) };
 }
