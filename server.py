@@ -462,11 +462,12 @@ def api_wb_compare(body):
 
 
 def api_wb_compare_score(body):
-    return compare.evaluate(body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("first") or "A"))
+    return compare.evaluate(body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("first") or "A"),
+                            str(body.get("bound") or "estimate"))
 
 
 def api_wb_calibrate(body):
-    return calibrate.evaluate(body.get("rows"), str(body.get("signal") or "confidence"))
+    return calibrate.evaluate(body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("bound") or "estimate"))
 
 
 def api_wb_policy(body):
@@ -474,7 +475,8 @@ def api_wb_policy(body):
 
 
 def api_wb_policy_tune(body):
-    return policy.tune(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"))
+    return policy.tune(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
+                       str(body.get("bound") or "estimate"))
 
 
 def api_wb_bulk_sample(_body):

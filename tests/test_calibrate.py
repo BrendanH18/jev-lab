@@ -191,5 +191,57 @@ class BulkLabelTests(unittest.TestCase):
             self.assertEqual((cal["labeled"], cal["invalid"]), (40, []), qid)
 
 
+class IntervalTests(unittest.TestCase):
+    def test_wilson_matches_reference_values(self):
+        self.assertEqual(calibrate.wilson(0, 0), (None, None))
+        low, high = calibrate.wilson(38, 40)
+        self.assertAlmostEqual(low, 0.8350, places=4)
+        self.assertAlmostEqual(high, 0.9862, places=4)
+        self.assertEqual(calibrate.wilson(10, 10)[1], 1.0)
+        self.assertEqual(calibrate.wilson(0, 10)[0], 0.0)
+        self.assertAlmostEqual(calibrate.wilson(10, 10)[0], 10 / (10 + calibrate.Z ** 2))
+
+    def test_rows_needed_is_the_fewest_all_right_rows_that_show_the_target(self):
+        self.assertEqual([calibrate.rows_needed(t) for t in calibrate.TARGETS], [35, 73, 381])
+        for target in calibrate.TARGETS:
+            n = calibrate.rows_needed(target)
+            self.assertTrue(calibrate.meets(n, n, target, "lower"))
+            self.assertFalse(calibrate.meets(n - 1, n - 1, target, "lower"))
+
+    def test_sweep_and_report_carry_intervals(self):
+        report = calibrate.evaluate(rows(*[(choice("billing", 0.9, 0.9), "billing")] * 19 + [(choice("none", 0.5, 0.2), "billing")]))
+        self.assertEqual(report["bound"], "estimate")
+        self.assertEqual((report["accuracy_low"], report["accuracy_high"]), calibrate.wilson(19, 20))
+        p = report["sweep"][50]
+        self.assertEqual((p["automated"], p["correct"]), (19, 19))
+        self.assertEqual((p["low"], p["high"]), calibrate.wilson(19, 19))
+        self.assertEqual((report["sweep"][100]["low"], report["sweep"][100]["high"]), (None, None))
+
+    def test_a_lower_bound_target_needs_enough_rows_not_only_a_clean_sample(self):
+        # Twenty right rows at 0.9 and one wrong row at 0.2. Measured, threshold 0 is 95.2% accurate,
+        # and 0.21 is 100% accurate on 20 rows. Twenty clean rows only show 83.9% with 95% confidence.
+        data = rows(*[(choice("billing", 0.9, 0.9), "billing")] * 20 + [(choice("none", 0.5, 0.2), "billing")])
+        estimate = {t["target"]: t for t in calibrate.evaluate(data)["targets"]}
+        lower = {t["target"]: t for t in calibrate.evaluate(data, bound="lower")["targets"]}
+        self.assertEqual([estimate[t]["threshold"] for t in calibrate.TARGETS], [0.0, 0.0, 0.21])
+        self.assertAlmostEqual(estimate[0.99]["low"], 20 / (20 + calibrate.Z ** 2))
+        for target in calibrate.TARGETS:
+            self.assertIsNone(lower[target]["threshold"])
+            self.assertEqual(lower[target]["needed"], calibrate.rows_needed(target))
+
+    def test_a_lower_bound_target_can_include_a_wrong_row_when_there_are_enough_rows(self):
+        # 60 right rows and one wrong row: 98.4% measured, and the 95% lower bound is 91.3%.
+        data = rows(*[(choice("billing", 0.9, 0.9), "billing")] * 60 + [(choice("none", 0.6, 0.5), "billing")])
+        lower = {t["target"]: t for t in calibrate.evaluate(data, bound="lower")["targets"]}
+        self.assertEqual((lower[0.9]["threshold"], lower[0.9]["automated"]), (0.0, 61))
+        self.assertGreaterEqual(lower[0.9]["low"], 0.9)
+        # 95% would need 73 clean rows; dropping the wrong row leaves 60, so it is not reached.
+        self.assertIsNone(lower[0.95]["threshold"])
+
+    def test_bad_bound_is_refused(self):
+        with self.assertRaises(calibrate.CalibrationError):
+            calibrate.evaluate(rows((choice("billing", 0.9), "billing")), bound="vibes")
+
+
 if __name__ == "__main__":
     unittest.main()

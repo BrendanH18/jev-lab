@@ -48,8 +48,8 @@ arithmetic, lookups, or authorization checks.
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
 | [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, bulk calls, and code exports |
-| [`jev/calibrate.py`](../jev/calibrate.py) | Accuracy, confusion, reliability, and threshold sweeps over labeled Bulk answers |
-| [`jev/policy.py`](../jev/policy.py) | A gate over several questions at once: automation, joint accuracy, per-question holds and errors, and a threshold search for target accuracies |
+| [`jev/calibrate.py`](../jev/calibrate.py) | Accuracy, confusion, reliability, threshold sweeps, and 95% Wilson intervals over labeled Bulk answers |
+| [`jev/policy.py`](../jev/policy.py) | A gate over several questions at once: automation, joint accuracy, per-question holds and errors, and a threshold search for target accuracies, measured or at 95% confidence |
 | [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, and a cascade sweep |
 | [`jev/examples.py`](../jev/examples.py) | Workbench example question sets |
 | [`jev/world.py`](../jev/world.py) | Fictional business state, deterministic action checks, and mutations |

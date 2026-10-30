@@ -38,7 +38,7 @@ def mcnemar(a_only: int, b_only: int) -> float:
 
 
 def _summary(report: dict) -> dict:
-    keys = ("labeled", "unlabeled", "invalid", "correct", "accuracy", "ece", "sweep", "targets")
+    keys = ("labeled", "unlabeled", "invalid", "correct", "accuracy", "accuracy_low", "accuracy_high", "ece", "sweep", "targets")
     return {k: report[k] for k in keys}
 
 
@@ -114,11 +114,13 @@ def cascade(scored: List[Dict[str, dict]], usage: Dict[str, list], first: int) -
             "sweep": points, "match": match, "best": best}
 
 
-def evaluate(rows: Any, signal: str = "confidence", first: str = "A") -> dict:
+def evaluate(rows: Any, signal: str = "confidence", first: str = "A", bound: str = "estimate") -> dict:
     """rows: [{"index": int, "label": ..., "answers": [A's answer or None, B's answer or None],
-    "meta": optional [A's call meta, B's call meta]}] for one question. `first` is the variant a cascade asks first."""
+    "meta": optional [A's call meta, B's call meta]}] for one question. `first` is the variant a cascade asks first.
+    `bound` is what must reach each target accuracy, as in calibrate.evaluate."""
     if signal not in calibrate.SIGNALS:
         raise CalibrationError("signal must be one of %s" % ", ".join(calibrate.SIGNALS))
+    calibrate.check_bound(bound)
     if first not in NAMES:
         raise CalibrationError("first must be one of %s" % ", ".join(NAMES))
     lead = NAMES.index(first)
@@ -162,9 +164,9 @@ def evaluate(rows: Any, signal: str = "confidence", first: str = "A") -> dict:
         return [{"index": row.get("index"), "answer": answers[v],
                  "label": None if str(row.get("index")) in dropped else row.get("label")} for row, answers in pairs]
 
-    first = [calibrate.evaluate(scorable(v, set()), signal) for v in (0, 1)]
+    first = [calibrate.evaluate(scorable(v, set()), signal, bound) for v in (0, 1)]
     dropped = {str(x["index"]) for rep in first for x in rep["invalid"]}
-    reports = [calibrate.evaluate(scorable(v, dropped), signal) for v in (0, 1)] if dropped else first
+    reports = [calibrate.evaluate(scorable(v, dropped), signal, bound) for v in (0, 1)] if dropped else first
     for rep, seen in zip(reports, first):
         rep["invalid"], rep["unlabeled"] = seen["invalid"], seen["unlabeled"]
     scored = [{str(r["index"]): r for r in rep["rows"]} for rep in reports]
@@ -193,7 +195,7 @@ def evaluate(rows: Any, signal: str = "confidence", first: str = "A") -> dict:
                         for (p, s), h in zip(reads, hits)],
         })
     return {
-        "type": types[0], "signal": signal,
+        "type": types[0], "signal": signal, "bound": bound,
         "variants": [_summary(rep) for rep in reports],
         "paired": dict(counts, rows=sum(counts.values()), p_value=mcnemar(counts["a_only"], counts["b_only"])),
         "answered_both": agree + len(disagreements), "agree": agree,

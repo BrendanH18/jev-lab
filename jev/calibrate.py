@@ -9,13 +9,21 @@ Correctness per type:
   * Choice: the selected option equals the label.
   * Noul: P(yes) >= 0.5 agrees with a yes/no label.
   * Score: the most likely level equals the labeled level.
+
+Accuracy measured on a few dozen rows is itself uncertain, so each accuracy carries a 95% Wilson
+score interval. Targets can be met by the measured accuracy ("estimate") or, more cautiously, by the
+interval's lower bound ("lower"): then a threshold counts only when these rows show, with 95%
+confidence, that the gate is at least that accurate.
 """
 
 from __future__ import annotations
 
+from math import ceil, sqrt
 from typing import Any, Dict, List, Optional, Tuple
 
 SIGNALS = ("confidence", "top_probability")
+BOUNDS = ("estimate", "lower")  # what must reach a target accuracy: the measured accuracy, or its 95% lower bound
+Z = 1.959964  # two-sided 95% normal quantile
 TARGETS = (0.90, 0.95, 0.99)
 STEPS = 100  # threshold resolution: 0.00, 0.01, ... 1.00
 BINS = 10
@@ -26,6 +34,44 @@ _EPS = 1e-9
 
 class CalibrationError(ValueError):
     pass
+
+
+def wilson(correct: int, n: int) -> Tuple[Optional[float], Optional[float]]:
+    """95% Wilson score interval for a proportion of correct / n. (None, None) when n is 0."""
+    if not n:
+        return None, None
+    p = correct / n
+    z2 = Z * Z
+    centre = p + z2 / (2 * n)
+    spread = Z * sqrt(p * (1 - p) / n + z2 / (4 * n * n))
+    denom = 1 + z2 / n
+    low = 0.0 if correct == 0 else max(0.0, (centre - spread) / denom)
+    high = 1.0 if correct == n else min(1.0, (centre + spread) / denom)
+    return low, high
+
+
+def rows_needed(target: float) -> int:
+    """The fewest automated rows, every one right, whose Wilson lower bound reaches the target.
+
+    With all n right the lower bound is n / (n + Z^2), so n must be at least Z^2 * target / (1 - target)."""
+    n = max(1, ceil(Z * Z * target / (1 - target) - _EPS))
+    while wilson(n, n)[0] + _EPS < target:  # guard the closed form against float rounding
+        n += 1
+    return n
+
+
+def check_bound(bound: str) -> str:
+    if bound not in BOUNDS:
+        raise CalibrationError("bound must be one of %s" % ", ".join(BOUNDS))
+    return bound
+
+
+def meets(correct: int, n: int, target: float, bound: str = "estimate") -> bool:
+    """Whether correct / n reaches the target, by the measured accuracy or by its 95% lower bound."""
+    if not n:
+        return False
+    value = correct / n if bound == "estimate" else wilson(correct, n)[0]
+    return value + _EPS >= target
 
 
 def _unit(value: Any, what: str) -> float:
@@ -138,23 +184,29 @@ def sweep(rows: List[dict]) -> List[dict]:
         t = i / STEPS
         auto = [r for r in rows if r["signal"] + _EPS >= t]
         correct = sum(1 for r in auto if r["correct"])
+        low, high = wilson(correct, len(auto))
         points.append({
             "threshold": round(t, 2),
             "automated": len(auto),
             "correct": correct,
             "coverage": len(auto) / len(rows) if rows else 0.0,
             "accuracy": correct / len(auto) if auto else None,
+            "low": low, "high": high,
         })
     return points
 
 
-def targets(points: List[dict]) -> List[dict]:
-    """The lowest threshold whose automated rows reach each target accuracy, and what it automates."""
+def targets(points: List[dict], bound: str = "estimate") -> List[dict]:
+    """The lowest threshold whose automated rows reach each target accuracy, and what it automates.
+
+    `needed` is the fewest automated rows, all right, that could show the target at 95% confidence."""
     out = []
     for target in TARGETS:
-        hit = next((p for p in points if p["automated"] and p["accuracy"] + _EPS >= target), None)
+        hit = next((p for p in points if meets(p["correct"], p["automated"], target, bound)), None)
         out.append({"target": target, "threshold": hit and hit["threshold"],
-                    "coverage": hit["coverage"] if hit else 0.0, "automated": hit["automated"] if hit else 0})
+                    "coverage": hit["coverage"] if hit else 0.0, "automated": hit["automated"] if hit else 0,
+                    "accuracy": hit and hit["accuracy"], "low": hit and hit["low"], "high": hit and hit["high"],
+                    "needed": rows_needed(target)})
     return out
 
 
@@ -176,10 +228,12 @@ def reliability(pairs: List[Tuple[float, bool]]) -> Tuple[List[dict], Optional[f
     return out, (ece if pairs else None)
 
 
-def evaluate(rows: Any, signal: str = "confidence") -> dict:
-    """rows: [{"index": int, "answer": {...}, "label": ...}] for one question. Unlabeled rows are counted, not scored."""
+def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> dict:
+    """rows: [{"index": int, "answer": {...}, "label": ...}] for one question. Unlabeled rows are counted, not scored.
+    bound: what must reach each target accuracy, the measured accuracy or its 95% lower bound."""
     if signal not in SIGNALS:
         raise CalibrationError("signal must be one of %s" % ", ".join(SIGNALS))
+    check_bound(bound)
     if not isinstance(rows, list):
         raise CalibrationError("rows must be a list")
     if len(rows) > MAX_ROWS:
@@ -231,12 +285,14 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
     bins, ece = reliability([r.pop("pair") for r in scored])
     points = sweep(scored)
     correct = sum(1 for r in scored if r["correct"])
+    low, high = wilson(correct, len(scored))
     return {
-        "type": qtype, "signal": signal,
+        "type": qtype, "signal": signal, "bound": bound,
         "labeled": len(scored), "unlabeled": unlabeled, "invalid": invalid,
         "correct": correct, "accuracy": correct / len(scored) if scored else None,
+        "accuracy_low": low, "accuracy_high": high,
         "classes": classes, "confusion": counts,
         "reliability": bins, "ece": ece,
-        "sweep": points, "targets": targets(points) if scored else [],
+        "sweep": points, "targets": targets(points, bound) if scored else [],
         "rows": scored, "signals": signals,
     }

@@ -1,5 +1,6 @@
 """Policy gates several questions at once over answers Bulk already returned; these tests pin its arithmetic."""
 
+import random
 import sys
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from helpers import FakeClient  # noqa: E402
 from jev import examples, policy, workbench  # noqa: E402
+from jev.calibrate import STEPS, TARGETS  # noqa: E402
 
 
 def dept(pick, confidence, p=0.8):
@@ -131,6 +133,61 @@ class TuneTests(unittest.TestCase):
             self.assertEqual((t["gates"], t["automated"]), (None, 0))
         unlabeled = policy.tune([row(0, {"q": noul(0.9)}, {})], ["q"])
         self.assertEqual((unlabeled["labeled"], [t["gates"] for t in unlabeled["targets"]]), (0, [None] * 3))
+
+    def test_lower_bound_tuning_needs_enough_automated_rows(self):
+        # 70 clean rows (q1 0.9, q2 0.9), and 5 rows where q2 is wrong at q2 0.3. q1 alone cannot drop them.
+        clean = [row(i, {"q1": noul(0.95), "q2": noul(0.95)}, {"q1": True, "q2": True}) for i in range(70)]
+        bad = [row(70 + i, {"q1": noul(0.95), "q2": noul(0.65)}, {"q1": True, "q2": False}) for i in range(5)]
+        estimate = {t["target"]: t for t in policy.tune(clean + bad, ["q1", "q2"])["targets"]}
+        lower = policy.tune(clean + bad, ["q1", "q2"], bound="lower")
+        self.assertEqual(lower["bound"], "lower")
+        by = {t["target"]: t for t in lower["targets"]}
+        # Measured: 70 of 75 is 93.3%, so 90% holds with every row; 95% and 99% drop the five.
+        self.assertEqual((estimate[0.9]["gates"], estimate[0.9]["automated"]), ({"q1": 0.0, "q2": 0.0}, 75))
+        self.assertEqual((estimate[0.95]["gates"], estimate[0.95]["automated"]), ({"q1": 0.0, "q2": 0.31}, 70))
+        # With 95% confidence: 70 of 75 has a lower bound of 85%, so 90% must drop the five; 70 clean rows
+        # show 94.9%, short of 95% (73 needed) and far from 99% (381 needed).
+        self.assertEqual((by[0.9]["gates"], by[0.9]["automated"]), ({"q1": 0.0, "q2": 0.31}, 70))
+        self.assertGreaterEqual(by[0.9]["low"], 0.9)
+        for target in (0.95, 0.99):
+            self.assertIsNone(by[target]["gates"])
+            self.assertEqual(by[target]["needed"], policy.calibrate.rows_needed(target))
+        with self.assertRaises(policy.CalibrationError):
+            policy.tune(clean, ["q1"], bound="vibes")
+
+    def test_two_questions_match_an_exhaustive_search(self):
+        # For two questions the pair search is exhaustive, so it must find the largest automated set on the grid,
+        # including sets the greedy path jumps past (one threshold higher, the other lower).
+        rng = random.Random(7)
+        for trial in range(3):
+            rows = []
+            for i in range(150):
+                signals = [rng.random() for _ in range(2)]
+                rows.append(row(i, {q: noul((1 + c) / 2) for q, c in zip("ab", signals)},
+                                {q: rng.random() < 0.7 + 0.3 * c ** 0.5 for q, c in zip("ab", signals)}))
+            levels = [[policy._level(abs(2 * r["answers"][q]["noul"] - 1)) for q in "ab"] for r in rows]
+            right = [all(r["labels"].values()) for r in rows]
+            for bound in policy.calibrate.BOUNDS:
+                tuned = {t["target"]: t["automated"] for t in policy.tune(rows, ["a", "b"], bound=bound)["targets"]}
+                for target in TARGETS:
+                    best = 0
+                    for sa in range(STEPS + 1):
+                        kept = [(lv[1], hit) for lv, hit in zip(levels, right) if lv[0] >= sa]
+                        for sb in range(STEPS + 1):
+                            auto = [hit for level, hit in kept if level >= sb]
+                            if len(auto) > best and policy.calibrate.meets(sum(auto), len(auto), target, bound):
+                                best = len(auto)
+                    with self.subTest(trial=trial, bound=bound, target=target):
+                        self.assertEqual(tuned[target], best)
+
+    def test_evaluate_reports_an_interval_on_automated_accuracy(self):
+        r = policy.evaluate(ROWS, {"dept": 0.5, "refund": 0.5})
+        self.assertEqual((r["accuracy_low"], r["accuracy_high"]), policy.calibrate.wilson(3, 3))
+        self.assertEqual((r["accuracy_all_low"], r["accuracy_all_high"]), policy.calibrate.wilson(3, 5))
+        dept = r["questions"][0]
+        self.assertEqual((dept["accuracy_low"], dept["accuracy_high"]), policy.calibrate.wilson(dept["correct"], 5))
+        none = policy.evaluate(ROWS, {"dept": 1.0, "refund": 1.0})
+        self.assertEqual((none["automated"], none["accuracy_low"], none["accuracy_high"]), (0, None, None))
 
     def test_refusals(self):
         for qids in (None, [], ["dept", "dept"], [1], ["q%d" % i for i in range(policy.MAX_GATES + 1)]):
