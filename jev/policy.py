@@ -115,7 +115,7 @@ def _prepare(rows: List[dict], qids: List[str], signal: str) -> dict:
         if len(signals) < len(qids):
             skipped += 1
             continue
-        item = {"index": index, "signals": signals}
+        item = {"index": index, "signals": signals, "key": row.get("key")}  # key: the row's input, for Holdout's folds
         routed.append(item)
         if reason:
             invalid.append({"index": index, "reason": reason})
@@ -317,17 +317,15 @@ def _pairs(levels: List[List[int]], right: List[bool], steps: List[int], target:
     return best
 
 
-def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate") -> dict:
-    """For each target accuracy, thresholds on `qids` that automate the most labeled rows the search finds.
-    bound: what must reach the target, the automated rows' measured accuracy or its 95% lower bound."""
-    calibrate.check_bound(bound)
-    qids = _qids(qids)
-    data = _prepare(_rows(rows), qids, signal)
-    scored = data["scored"]
-    levels = [[_level(item["signals"][q]) for q in qids] for item in scored]
-    right = [all(item["right"].values()) for item in scored]
-    path = _greedy(levels, right, len(qids)) if scored else []
-    out = []
+def search(levels: List[List[int]], right: List[bool], bound: str = "estimate") -> List[Optional[List[int]]]:
+    """For each target accuracy, the grid steps (threshold * STEPS per question) that automate the most rows the
+    search finds, or None when no thresholds reach the target. levels[i][q] is _level() of row i's signal on
+    question q; right[i] says whether every gated answer on row i is right."""
+    if not levels:
+        return [None] * len(TARGETS)
+    k = len(levels[0])
+    path = _greedy(levels, right, k)
+    out: List[Optional[List[int]]] = []
     for target in TARGETS:
         # Relax every state on the path that reaches the target, not only the first: a later move can drop the
         # rows an earlier one was raised for, and relaxing then gives the earlier threshold back.
@@ -336,22 +334,45 @@ def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimat
             if not calibrate.meets(good, auto, target, bound):
                 continue
             steps = _relax(levels, right, steps, target, bound)
-            auto = [i for i, lv in enumerate(levels) if all(lv[q] >= steps[q] for q in range(len(qids)))]
-            if best is None or len(auto) > len(best[1]):
+            auto = sum(1 for lv in levels if all(lv[q] >= steps[q] for q in range(k)))
+            if best is None or auto > best[1]:
                 best = (steps, auto)
         # The greedy path can jump past the region a target needs, especially a lower-bound target, which needs
         # many rows. Re-choosing pairs of thresholds exactly recovers it, starting from the best found.
-        steps = _pairs(levels, right, best[0] if best else [0] * len(qids), target, bound) if scored else None
-        if steps is not None:
-            best = (steps, [i for i, lv in enumerate(levels) if all(lv[q] >= steps[q] for q in range(len(qids)))])
-        if best is None:
+        steps = _pairs(levels, right, best[0] if best else [0] * k, target, bound)
+        out.append(steps if steps is not None else (best[0] if best else None))
+    return out
+
+
+def admitted(levels: List[List[int]], steps: List[int]) -> List[int]:
+    """Indices of the rows that clear every threshold."""
+    return [i for i, lv in enumerate(levels) if all(v >= s for v, s in zip(lv, steps))]
+
+
+def prepared(rows: Any, qids: Any, signal: str) -> Tuple[List[str], dict, List[List[int]], List[bool]]:
+    """(question ids, _prepare's result, grid levels per scored row, whether every gated answer is right)."""
+    qids = _qids(qids)
+    data = _prepare(_rows(rows), qids, signal)
+    levels = [[_level(item["signals"][q]) for q in qids] for item in data["scored"]]
+    right = [all(item["right"].values()) for item in data["scored"]]
+    return qids, data, levels, right
+
+
+def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate") -> dict:
+    """For each target accuracy, thresholds on `qids` that automate the most labeled rows the search finds.
+    bound: what must reach the target, the automated rows' measured accuracy or its 95% lower bound."""
+    calibrate.check_bound(bound)
+    qids, _, levels, right = prepared(rows, qids, signal)
+    out = []
+    for target, steps in zip(TARGETS, search(levels, right, bound)):
+        if steps is None:
             out.append({"target": target, "gates": None, "automated": 0, "coverage": 0.0, "accuracy": None,
                         "low": None, "high": None, "needed": calibrate.rows_needed(target)})
             continue
-        steps, auto = best
+        auto = admitted(levels, steps)
         good = sum(right[i] for i in auto)
         low, high = calibrate.wilson(good, len(auto))
         out.append({"target": target, "gates": {q: steps[j] / STEPS for j, q in enumerate(qids)},
-                    "automated": len(auto), "coverage": len(auto) / len(scored), "accuracy": good / len(auto),
+                    "automated": len(auto), "coverage": len(auto) / len(levels), "accuracy": good / len(auto),
                     "low": low, "high": high, "needed": calibrate.rows_needed(target)})
-    return {"signal": signal, "bound": bound, "labeled": len(scored), "targets": out}
+    return {"signal": signal, "bound": bound, "labeled": len(levels), "targets": out}

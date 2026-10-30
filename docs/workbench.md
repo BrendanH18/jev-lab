@@ -204,6 +204,45 @@ gated questions it finds the best thresholds on 0.01 steps. With more, it is a s
 guarantee that no better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
 more labeled rows before relying on them.
 
+## Check on unseen rows
+
+Calibrate's shortcuts and Policy's **Tune** choose thresholds from the same labeled rows they report
+accuracy on, so that accuracy favors thresholds that happen to fit those rows. **Check on unseen
+rows**, at the end of each panel, measures what the tuning delivers on rows it did not see. It uses
+five-fold cross-validation and makes no model calls:
+
+1. The labeled rows are split into five parts of nearly equal size.
+2. For each part, thresholds are tuned for each target on the other four parts alone, the way the
+   shortcuts or Tune choose them, on the selected signal and target basis.
+3. Those thresholds route the held-out part. Every labeled row is routed exactly once, by thresholds
+   that never saw it.
+
+For each target, the table shows:
+
+- the thresholds tuned on every labeled row, with the share automated and accuracy on those rows;
+- on unseen rows, the pooled accuracy with a 95% interval and the share automated. **Below target**
+  marks a target whose accuracy on unseen rows falls short of it;
+- the change from accuracy on the tuning rows to accuracy on unseen rows;
+- the range of thresholds the five folds chose, and how many folds could not reach the target.
+
+A large drop, or thresholds that swing between folds, means the tuned thresholds fit these rows more
+than the question does. Label more rows, or choose a lower target, before you rely on them. With
+targets [at 95% confidence](#targets-at-95-confidence), each fold has only four fifths of the rows
+to show the target with, so a target the full set barely reaches may be unreachable in every fold.
+
+Folds follow the rows' inputs, not their order: labeled rows are sorted by a hash of their text or
+JSON and dealt in turn. The same labeled rows always split the same way, whatever their order or the
+values of their labels. Labeling another row, or clearing a label, deals the folds again. The check needs at least two labeled rows per fold, so ten rows. It runs on request,
+because tuning many gates over many rows takes a few seconds, and it clears when the question,
+gates, labels, signal, or target basis change. Moving a threshold slider does not clear it. The
+interval treats the held-out rows as independent; cross-validation only approximates that, so read
+it as a guide, not a guarantee.
+
+`POST /api/workbench/holdout` takes Policy's rows, each with an optional `key` that names its input,
+plus `questions`, `signal`, `bound`, and `folds` (2–10, default 5). For each target it returns
+`tuned` (gates, automated, accuracy, and interval on every labeled row), `unseen` (pooled over the
+held-out folds), `gap`, `below`, `spread`, `unreached`, and the per-fold `parts`.
+
 ## Compare two variants
 
 **Compare** answers "did this change help?" A variant is a question set and a model. Variant A
@@ -282,8 +321,9 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
-| Calibrate, Policy, and Compare scoring rows | 1,000 per request |
+| Calibrate, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Policy gated questions | 10 |
+| Holdout folds | 2–10 through the API, 5 in the Workbench; at least 2 labeled rows per fold |
 | Compare variants | 2, over the first 200 nonempty rows: up to 400 calls per run |
 | Images per request | 4, PNG or JPEG, 280–1568 pixels per side |
 | HTTP request body | 12 MiB |
