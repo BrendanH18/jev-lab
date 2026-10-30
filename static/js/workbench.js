@@ -1146,7 +1146,7 @@ function policyTable(rep) {
       h("th", { title: "Automated rows where this answer is wrong" }, "wrong while automated"))),
     h("tbody", {}, rep.questions.map((q) => h("tr", {},
       h("td", { class: "mono" }, q.qid), h("td", { class: "mono" }, q.threshold.toFixed(2)),
-      h("td", {}, q.accuracy === null ? "—" : pct(q.accuracy)), h("td", {}, String(q.holds)), h("td", {}, String(q.only)),
+      h("td", {}, q.accuracy === null ? "—" : withCI(pct(q.accuracy), q.accuracy_low, q.accuracy_high)), h("td", {}, String(q.holds)), h("td", {}, String(q.only)),
       h("td", {}, String(q.wrong_automated)))))));
 }
 
@@ -1215,7 +1215,7 @@ function updatePolicy() {
     h("div", { class: "stat-row" },
       stat("automated", `${rep.automated} of ${n} · ${pct(rep.coverage)}`, true),
       stat("accuracy when automated", rep.accuracy === null ? "—" : withCI(pct(rep.accuracy, 1), rep.accuracy_low, rep.accuracy_high)),
-      stat("all gated answers right, every row", pct(rep.accuracy_all)),
+      stat("all gated answers right, every row", withCI(pct(rep.accuracy_all), rep.accuracy_all_low, rep.accuracy_all_high)),
       stat("wrong but automated", String(rep.automated - rep.correct)),
       stat("this run, all rows", `${rep.routed_automated} of ${rep.routed} automated`)),
     policyBar(rep),
@@ -1514,7 +1514,7 @@ function renderCompareReport() {
 
 function cmpSweepTable(rep) {
   const [a, b] = rep.variants;
-  const cell = (p) => [h("td", {}, `${p.automated} · ${pct(p.coverage)}`), h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy, 1))];
+  const cell = (p) => [h("td", {}, `${p.automated} · ${pct(p.coverage)}`), h("td", {}, p.accuracy === null ? "—" : withCI(pct(p.accuracy, 1), p.low, p.high))];
   return h("details", {}, h("summary", { class: "faint", style: { fontSize: "12.5px", cursor: "pointer" } }, "Curves as a table"),
     h("div", { class: "scroll" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, "threshold"), h("th", {}, "A automated"), h("th", {}, "A accuracy"), h("th", {}, "B automated"), h("th", {}, "B accuracy"))),
@@ -1604,7 +1604,7 @@ function cmpChart(rep) {
     const wrap = tip.parentElement.getBoundingClientRect();
     mount(tip, h("div", { class: "faint mono" }, `about ${pct(v)} automated`),
       near.map((p, i) => (p ? h("div", {}, h("i", { class: `cmp-key ${VARIANTS[i].toLowerCase()}` }), h("b", {}, VARIANTS[i]),
-        ` ${pct(p.accuracy, 1)} accurate · ${pct(p.coverage)} automated at ≥ ${p.threshold.toFixed(2)}`) : null)));
+        ` ${pct(p.accuracy, 1)} accurate (${interval(p.low, p.high)}) · ${pct(p.coverage)} automated at ≥ ${p.threshold.toFixed(2)}`) : null)));
     tip.hidden = false;
     tip.style.left = `${Math.min(e.clientX - wrap.left + 14, wrap.width - 250)}px`;
     tip.style.top = `${e.clientY - wrap.top + 10}px`;

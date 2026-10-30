@@ -164,13 +164,15 @@ def evaluate(rows: Any, gates: Any, signal: str = "confidence") -> dict:
                                          "signal": item["signals"][q]} for q in qids}})
     n = len(scored)
     low, high = calibrate.wilson(correct, automated)
+    all_low, all_high = calibrate.wilson(all_right, n)
     for p in per.values():
         p["accuracy"] = p["correct"] / n if n else None
+        p["accuracy_low"], p["accuracy_high"] = calibrate.wilson(p["correct"], n)
     routed_auto = sum(1 for item in data["routed"] if _clears(item, gates))
     return {
         "signal": signal, "gates": gates, "questions": [per[q] for q in qids],
         "labeled": n, "unlabeled": data["unlabeled"], "invalid": data["invalid"], "skipped": data["skipped"],
-        "accuracy_all": all_right / n if n else None,
+        "accuracy_all": all_right / n if n else None, "accuracy_all_low": all_low, "accuracy_all_high": all_high,
         "automated": automated, "correct": correct, "review": n - automated,
         "coverage": automated / n if n else 0.0, "accuracy": correct / automated if automated else None,
         "accuracy_low": low, "accuracy_high": high,

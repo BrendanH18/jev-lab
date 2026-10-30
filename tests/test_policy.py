@@ -183,6 +183,9 @@ class TuneTests(unittest.TestCase):
     def test_evaluate_reports_an_interval_on_automated_accuracy(self):
         r = policy.evaluate(ROWS, {"dept": 0.5, "refund": 0.5})
         self.assertEqual((r["accuracy_low"], r["accuracy_high"]), policy.calibrate.wilson(3, 3))
+        self.assertEqual((r["accuracy_all_low"], r["accuracy_all_high"]), policy.calibrate.wilson(3, 5))
+        dept = r["questions"][0]
+        self.assertEqual((dept["accuracy_low"], dept["accuracy_high"]), policy.calibrate.wilson(dept["correct"], 5))
         none = policy.evaluate(ROWS, {"dept": 1.0, "refund": 1.0})
         self.assertEqual((none["automated"], none["accuracy_low"], none["accuracy_high"]), (0, None, None))
 
