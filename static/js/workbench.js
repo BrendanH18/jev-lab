@@ -831,7 +831,7 @@ function renderCalibrate() {
           h("tbody", {}, rep.sweep.filter((p) => Math.round(p.threshold * 100) % 5 === 0).map((p) => h("tr", {},
             h("td", { class: "mono" }, p.threshold.toFixed(2)), h("td", {}, `${p.automated} of ${n}`), h("td", {}, pct(p.coverage)),
             h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy)), h("td", {}, interval(p.low, p.high) || "—"))))))),
-      holdoutPanel(c, "cal-holdout", () => [c.qid], c.signal, c.bound),
+      holdoutPanel(c, "cal-holdout", () => [c.qid]),
       h("div", { class: "cal-tables" }, confusionTable(rep), reliabilityTable(rep)),
       h("div", { class: "code" }, h("pre", { id: "cal-code" }),
         h("button", { class: "btn sm copy", onclick: () => copyText($("#cal-code").textContent) }, icon("copy"), "Copy")),
@@ -1108,7 +1108,7 @@ function renderPolicy() {
       nOn ? null : h("p", { class: "muted" }, "Check at least one question to gate."),
       h("div", { id: "pol-tunes", class: "chips" }),
       h("div", { id: "pol-out", class: "grid", style: { gap: "14px" } }),
-      nOn ? holdoutPanel(p, "pol-holdout", () => Object.keys(activeGates()), p.signal, p.bound) : null));
+      nOn ? holdoutPanel(p, "pol-holdout", () => Object.keys(activeGates())) : null));
 }
 
 function policyCode(rep) {
@@ -1241,19 +1241,20 @@ function clearHoldout(state) {
   state.holdoutSeq += 1;  // a check still running for the old inputs must not install its report
 }
 
-function holdoutPanel(state, id, qids, signal, bound) {
+function holdoutPanel(state, id, qids) {
   const box = h("div", { id, class: "holdout" });
-  box.append(...holdoutView(state, id, qids, signal, bound));
+  box.append(...holdoutView(state, id, qids));
   return box;
 }
 
-async function runHoldout(state, id, qids, signal, bound) {
+// Reads the question, signal, and target basis when the check starts: a control can change before the panel re-renders.
+async function runHoldout(state, id, qids) {
   const seq = ++state.holdoutSeq;
   const questions = qids();
   state.holdout = { running: true };
-  mount(`#${id}`, ...holdoutView(state, id, qids, signal, bound));
+  mount(`#${id}`, ...holdoutView(state, id, qids));
   try {
-    const report = await api("/api/workbench/holdout", { rows: policyRows(questions), questions, signal, bound });
+    const report = await api("/api/workbench/holdout", { rows: policyRows(questions), questions, signal: state.signal, bound: state.bound });
     if (seq !== state.holdoutSeq) return;
     state.holdout = report;
   } catch (e) {
@@ -1261,7 +1262,7 @@ async function runHoldout(state, id, qids, signal, bound) {
     state.holdout = null;
     handleError(e);
   }
-  mount(`#${id}`, ...holdoutView(state, id, qids, signal, bound));
+  mount(`#${id}`, ...holdoutView(state, id, qids));
 }
 
 // "≥ 0.72" for one question; "dept ≥ 0.60 · refund ≥ 0.40" for several.
@@ -1275,11 +1276,11 @@ function spreadText(spread) {
   return entries.length === 1 ? one(entries[0][1]) : entries.map(([q, r]) => `${q} ${one(r)}`).join(" · ");
 }
 
-function holdoutView(state, id, qids, signal, bound) {
+function holdoutView(state, id, qids) {
   const rep = state.holdout;
   const title = h("h3", { class: "cal-h" }, "Check on unseen rows");
   if (!rep || rep.running) {
-    const btn = h("button", { class: "btn sm", disabled: Boolean(rep?.running), onclick: () => runHoldout(state, id, qids, signal, bound) },
+    const btn = h("button", { class: "btn sm", disabled: Boolean(rep?.running), onclick: () => runHoldout(state, id, qids) },
       rep?.running ? [h("span", { class: "spin" }), " Checking…"] : "Check on unseen rows");
     return [h("div", { class: "holdout-head" }, btn,
       h("span", { class: "faint" }, "Tunes on four fifths of the labeled rows and routes the fifth it never saw, five times. Shows what these targets deliver on new rows. No extra calls."))];
