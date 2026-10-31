@@ -269,6 +269,33 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("rows must be a list", json.loads(err)["error"])
 
+    def test_datasets_over_http(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            rows = '{"text": "Charged twice", "_expect": {"dept": "billing"}}\nplain row'
+            status, _, body = self.request("POST", "/api/workbench/datasets", json.dumps({"name": "Tickets", "rows": rows}),
+                                           self.post_headers())
+            self.assertEqual(status, 200, body)
+            self.assertEqual(json.loads(body)["dataset"], {"id": "tickets", "name": "Tickets", "notes": "",
+                                                           "saved_at": json.loads(body)["dataset"]["saved_at"], "rows": 2,
+                                                           "labeled": 1, "labels": {"dept": 1}, "questions": 0})
+            status, _, body = self.request("GET", "/api/workbench/datasets")
+            self.assertEqual([d["id"] for d in json.loads(body)["datasets"]], ["tickets"])
+            status, _, body = self.request("POST", "/api/workbench/datasets/load", json.dumps({"id": "tickets"}),
+                                           self.post_headers())
+            self.assertEqual(json.loads(body)["dataset"]["rows"][1], "plain row")
+            bad, _, err = self.request("POST", "/api/workbench/datasets/load", json.dumps({"id": "../.env"}),
+                                       self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("Invalid dataset id", json.loads(err)["error"])
+            forged, _, _ = self.request("POST", "/api/workbench/datasets", json.dumps({"name": "x", "rows": "y"}),
+                                        {"Content-Type": "application/json"})
+            self.assertEqual(forged, 403, "saving needs the session token")
+            status, _, body = self.request("POST", "/api/workbench/datasets/delete", json.dumps({"id": "tickets"}),
+                                           self.post_headers())
+            self.assertTrue(json.loads(body)["deleted"])
+            self.assertEqual(list(Path(folder, "datasets").iterdir()), [])
+
     def test_policy_over_http_is_pure_code(self):
         rows = [{"index": 0, "answers": {"u": {"type": "noul", "noul": 0.9}}, "labels": {"u": "yes"}},
                 {"index": 1, "answers": {"u": {"type": "noul", "noul": 0.6}}, "labels": {"u": "no"}}]

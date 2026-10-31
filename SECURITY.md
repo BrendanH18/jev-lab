@@ -90,7 +90,8 @@ inspector, CSV exports, live validation reports, and saved Workbench tests can c
 and model answers you supplied.
 
 Workbench tests persist as plaintext JSON under `data/workbench/`, with uploaded pictures in
-`data/workbench/images/`; both are intentionally eligible for version control. Review these files
+`data/workbench/images/` and saved Bulk datasets (rows and labels) in `data/workbench/datasets/`; all
+are intentionally eligible for version control. Review these files
 before committing. Claims does not store photos. Other demo worlds and game sessions
 live in memory and reset on restart.
 
