@@ -234,6 +234,45 @@ gated questions it finds the best thresholds on 0.01 steps. With more, it is a s
 guarantee that no better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
 more labeled rows before relying on them.
 
+## Choose a threshold by cost
+
+An accuracy target says how often the automated answers are right. An application pays for two things instead:
+a person reviewing an item, and code acting on a wrong answer. **Costs**, above Calibrate, takes both prices. The
+example prices are $2 for a review and $20 for a mistake; replace them with yours. Calibrate, Policy, and Check on
+unseen rows then show what each threshold costs. Costs make no model calls.
+
+Each labeled row costs:
+
+- the review price when the gate sends it to a person;
+- nothing when it is automated and every gated answer is right;
+- the mistake price when it is automated and an answer is wrong.
+
+Automating a row pays when it is right more often than the break-even accuracy, 1 − review ÷ mistake. At $2 and
+$20 that is 90%. The cheapest threshold is the one where the reviews it saves outweigh the mistakes it makes.
+
+Some mistakes cost more than others: refunding a billing ticket routed to shipping may cost more than the reverse.
+Under **Price specific mistakes**, choose a question, the label, the wrong answer, and its price. A wrong answer
+without its own price costs the default. A Policy row with several wrong answers costs its most expensive one.
+
+Calibrate adds the cost per 1,000 rows at the slider's threshold, beside the cost of reviewing every row and of
+automating every row. It also adds a chart of cost against threshold, with reviewing every row as a dashed line,
+and a table view. The **Lowest cost** shortcut sets the cheapest threshold. Policy adds the cost of its current
+thresholds and a **Lowest cost** shortcut that sets every gate at once.
+
+The search maximizes the reviews saved minus the mistakes made, on 0.01 steps. It re-chooses one or two thresholds
+at a time while that lowers the cost. For one or two gated questions it finds the cheapest thresholds; with more,
+it is a search, not a guarantee. Ties go to automating more rows, then to lower thresholds. When every threshold
+costs more than reviewing every row, the shortcut says to review every row. A cost measured on a few dozen rows
+moves a lot with one mistake, so check it on unseen rows.
+
+`POST /api/workbench/cost` takes Policy's rows, `questions`, `signal`, `costs`, optional `gates` (a threshold for
+each question), and `tune` (default `true`). `costs` is `{"review": 2, "error": 20, "mistakes": [{"question":
+"department", "label": "billing", "answer": "shipping", "cost": 40}]}`. Labels and answers are written as the
+Workbench shows them: an option key, `yes` or `no`, or a level number as text. The response holds
+`review_all`, `automate_all`, `best` (with its `gates`, or `null` gates to review every row), `current` for
+`gates`, and, for one question, a `sweep` with the cost at every threshold. Each carries `automated`, `wrong`,
+`cost` over the labeled rows, and `per_1000`.
+
 ## Check on unseen rows
 
 Calibrate's shortcuts and Policy's **Tune** choose thresholds from the same labeled rows they report
@@ -268,10 +307,18 @@ gates, labels, signal, or target basis change. Moving a threshold slider does no
 interval treats the held-out rows as independent; cross-validation only approximates that, so read
 it as a guide, not a guarantee.
 
+With valid [costs](#choose-a-threshold-by-cost), the table adds a **lowest cost** row. Each fold searches the other
+folds for its cheapest thresholds, then those thresholds route the held-out fold. The row shows the cost per 1,000
+rows on every labeled row and on unseen rows, and the change between them; a rise is worse. **Costs more than
+reviewing every row** marks cheapest thresholds that lose money on rows they never saw. Changing a price clears
+the check.
+
 `POST /api/workbench/holdout` takes Policy's rows, each with an optional `key` that names its input,
-plus `questions`, `signal`, `bound`, and `folds` (2–10, default 5). For each target it returns
+plus `questions`, `signal`, `bound`, `folds` (2–10, default 5), and optional `costs`. For each target it returns
 `tuned` (gates, automated, accuracy, and interval on every labeled row), `unseen` (pooled over the
-held-out folds), `gap`, `below`, `spread`, `unreached`, and the per-fold `parts`.
+held-out folds), `gap`, `below`, `spread`, `unreached`, and the per-fold `parts`. With `costs`, `cost` holds `tuned`, `unseen`,
+`gap` in cost per 1,000 rows, `worse`, `review_folds` (folds whose cheapest choice is to review every row),
+`spread`, and `parts`.
 
 ## Compare two variants
 
@@ -351,7 +398,8 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
-| Calibrate, Review, Policy, Holdout, and Compare scoring rows | 1,000 per request |
+| Calibrate, Costs, Review, Policy, Holdout, and Compare scoring rows | 1,000 per request |
+| Prices | $0 to $1,000,000 each; up to 100 priced mistakes |
 | Policy gated questions | 10 |
 | Holdout folds | 2–10 through the API, 5 in the Workbench; at least 2 labeled rows per fold |
 | Compare variants | 2, over the first 200 nonempty rows: up to 400 calls per run |

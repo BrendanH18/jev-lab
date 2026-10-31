@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, List, Optional
 
-from . import calibrate, policy
+from . import calibrate, cost, policy
 from .calibrate import STEPS, TARGETS, CalibrationError
 
 FOLDS = 5
@@ -58,12 +58,15 @@ def _measure(right: List[bool], auto: List[int], n: int) -> dict:
             "accuracy": good / len(auto) if auto else None, "low": low, "high": high}
 
 
-def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate", folds: Any = FOLDS) -> dict:
+def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate", folds: Any = FOLDS,
+             costs: Any = None) -> dict:
     """rows: Policy's rows, each optionally with "key", a string naming its input. For each target accuracy:
     the thresholds tuned on every labeled row and what they automate there, and what thresholds tuned without a
-    row automate when they route it, pooled over the folds."""
+    row automate when they route it, pooled over the folds. With `costs` (as jev/cost.py takes them), the same for
+    the cheapest thresholds, under "cost"."""
     calibrate.check_bound(bound)
     folds = _folds(folds)
+    prices = cost.parse(costs) if costs is not None else None
     qids, data, levels, right = policy.prepared(rows, qids, signal)
     n = len(levels)
     base = {"signal": signal, "bound": bound, "folds": folds, "questions": qids, "labeled": n,
@@ -104,4 +107,8 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
             "gap": gap, "below": held["accuracy"] is not None and held["accuracy"] + calibrate._EPS < target,
             "unreached": sum(1 for p in parts if p["gates"] is None), "spread": spread, "parts": parts,
             "needed": calibrate.rows_needed(target)})
+    if prices is not None:
+        priced = cost.row_costs(scored, qids, prices)
+        base["cost"] = dict(cost.holdout(levels, right, priced, prices["review"], qids, members),
+                            review_cost=prices["review"], error=prices["error"])
     return base
