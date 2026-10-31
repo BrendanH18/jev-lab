@@ -2,7 +2,7 @@
 
 ## What this is
 
-Jev Lab: six small demo apps (Shield, Dispatch, Autopilot, Find, Play, Workbench) plus a
+Jev Lab: six small demo apps (Shield, Dispatch, Autopilot, Claims, Find, Play) plus a
 Workbench for building your own, all showing what TypeSafe's Jev model (a "System One" model —
 typed questions in, typed answers + calibrated probabilities out, no generated prose) can do
 inside ordinary software. A stdlib Python HTTP server (`server.py`) serves vanilla JS/CSS pages
@@ -31,7 +31,8 @@ uv run scripts/validate.py                    # run every built-in scenario agai
                                                # whether Jev's real answers still make sense.
 ```
 
-No lint/format tooling is configured; match the existing style (see "Conventions" below).
+Lint with `uv run --locked ruff check` (configured in `pyproject.toml`; CI runs it). No formatter is
+configured; match the existing style (see "Conventions" below).
 
 `tests/test_server.py` binds a loopback port and `uv` writes to `~/.cache/uv`, so run the suite
 and `uv` commands outside a sandbox; inside one, the server tests fail with `PermissionError`.
@@ -40,7 +41,8 @@ The system `python3` is 3.9 without the SDK, which exercises CI's stdlib-fallbac
 Needs a `TYPESAFE_API_KEY` (get one at console.typesafe.ai) to make live calls; the offline test
 suite does not need one. The official `typesafe-sdk` is used on Python ≥3.10; a hand-rolled stdlib
 `urllib` client in `jev/client.py` is the fallback on 3.9 — CI (`.github/workflows/test.yml`) runs
-the suite on 3.9, 3.12, and 3.13 plus a `uv sync` job, so both code paths must keep working.
+the locked-SDK suite on 3.10–3.14, the stdlib fallback on 3.9, and separate Ruff and JavaScript
+jobs, so both code paths must keep working.
 
 ## Architecture
 
@@ -50,15 +52,17 @@ live call goes through `guard.check()`/`guard.record()`), and wraps every respon
 `JevResult` that carries `meta()` (model, latency, tokens, cost) and `trace()` (exact request +
 response) for the UI's "Inspect JSON" drawer. No other module should reach the network directly.
 
-**Pattern used by every app: build `state` + a `questions` dict of `noul`/`choice`/`score`
+**Pattern used by every app: build `state` + a `questions` dict of `noul`/`choice`/`score`/`box`
 primitives (helpers in `jev/client.py`), send them in one `system_one()` call, then let plain
 Python turn the typed answers into a decision.** Math, dates, regex extraction, and business rules
 always stay in code — Jev is only ever asked for a judgment. Each app's module
-(`jev/shield.py`, `jev/dispatch.py`, `jev/find.py`, `jev/play.py`) follows this same shape:
+(`jev/shield.py`, `jev/dispatch.py`, `jev/claims.py`, `jev/find.py`, `jev/play.py`; Claims also uses
+the `box` primitive) follows this same shape:
 `questions(...)` builds the request, then a separate pure function (e.g. `shield.verdict()`,
 `dispatch.plan()`) turns already-fetched answers into the decision — that separation is what lets
-`jev/workbench.py`'s "Tests" feature and `/api/shield/rescore` re-score saved answers with new
-weights/thresholds without spending another API call.
+`/api/shield/rescore` re-score saved answers with new weights/thresholds without spending another
+API call. Workbench test runs (`/api/workbench/items/run`) are different: they send each saved item
+to the model again and spend API budget.
 
 **`jev/autopilot.py` is the integration story**: `merged_questions()` concatenates Shield's and
 Dispatch's questions with `shield.`/`dispatch.` key prefixes into a *single* request, `split()`
@@ -114,8 +118,9 @@ question set over many rows in parallel (`run_bulk`, capped and rate-limited by 
 - Python: no type-checker is configured, but signatures are typed; `from __future__ import
   annotations` at the top of every `jev/*.py` module; f-strings/`%`-formatting mixed, follow
   the surrounding function.
-- No hard-coded real domains/emails anywhere (code, sample data, tests) — Harbor Coffee Co. and
-  all vendors/customers use the reserved `.example` TLD. This is enforced by nothing but review;
+- No real domains or emails in fictional data (sample data, scenarios, tests): Harbor Coffee Co. and
+  all vendors/customers use the reserved `.example` TLD. Official service endpoints and docs links
+  such as `api.typesafe.ai` are fine. This is enforced by nothing but review;
   keep it that way if you add scenario data.
 - Every built-in scenario/example must run against the live model cleanly (`scripts/validate.py`)
   before it's considered correct — the offline `tests/` only check that composition code (weights,
