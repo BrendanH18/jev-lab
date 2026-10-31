@@ -309,6 +309,21 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("folds", json.loads(err)["error"])
 
+    def test_review_over_http_is_pure_code(self):
+        rows = [{"index": 0, "answers": {"u": {"type": "noul", "noul": 0.97}}, "labels": {"u": False}},
+                {"index": 1, "answers": {"u": {"type": "noul", "noul": 0.6}}, "labels": {}}]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/review",
+                                           json.dumps({"rows": rows, "question": "u", "threshold": 0.4}), self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/review",
+                                       json.dumps({"rows": rows, "question": "u", "threshold": "high"}), self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual([(s["index"], s["strong"]) for s in report["suspects"]], [(0, True)])
+        self.assertEqual([r["index"] for r in report["next"]], [1])
+        self.assertEqual(bad, 400)
+        self.assertIn("threshold", json.loads(err)["error"])
+
     def test_bulk_text_accepts_json_lines_with_labels(self):
         fake = FakeClient()
         rows = 'plain\n{"text": "labeled", "_expect": {"u": true}}'

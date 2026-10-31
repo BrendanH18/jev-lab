@@ -70,7 +70,7 @@ issue real refunds, or transfer money.
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, gate several questions at once, check tuned thresholds on rows they never saw, compare two wordings or models, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, compare two wordings or models, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. Model judgments are live; reweighting, replanning, exports, and
@@ -107,6 +107,10 @@ conditions.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. It reuses the Bulk answers, so it makes no extra calls.
+- **Review labels:** see the labeled answers that disagree with their labels, the most confident
+  disagreements first, since those are often labeling mistakes, and the unlabeled rows nearest
+  Calibrate's threshold, whose labels decide whether it can move. Fix or label them in place. It also
+  reuses the Bulk answers.
 - **Policy:** gate several questions at once, the way an application acts on an item only when every
   answer it uses is confident. See what share of rows the combined gate automates and how accurate
   they are, tune the thresholds for 90%, 95%, or 99% accuracy, and copy the Python gate. It also

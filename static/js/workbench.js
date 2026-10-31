@@ -8,7 +8,8 @@ const W = {
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
     cal: { qid: null, signal: "confidence", bound: "estimate", threshold: 0.5, report: null, holdout: null, holdoutSeq: 0 },
-    policy: { signal: "confidence", bound: "estimate", gates: {}, report: null, tunes: null, holdout: null, holdoutSeq: 0 } },
+    policy: { signal: "confidence", bound: "estimate", gates: {}, report: null, tunes: null, holdout: null, holdoutSeq: 0 },
+    review: { report: null, kept: new Set(), all: { suspects: false, next: false } } },
   compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
@@ -560,6 +561,7 @@ function renderBulk() {
             h("p", { class: "muted" }, "At $0.042 per million input tokens, a question set over a million short messages costs about ", h("b", {}, "$10"), ". That is why “classify everything, then sort” is finally practical."),
             h("p", { class: "muted" }, "With labeled rows, Calibrate shows how often each answer was right and where to set the confidence threshold: above it your code acts, below it a person reviews. Choose the threshold from your own data, not a default."))))),
     b.result ? renderCalibrate() : null,
+    b.result ? renderReview() : null,
     b.result ? renderPolicy() : null,
     b.result ? renderBulkTable() : null);
 }
@@ -576,6 +578,7 @@ async function runBulk() {
     b.sortKey = null;
     b.labels = {};
     for (const r of b.result.results) if (r.expect) b.labels[r.index] = { ...r.expect };
+    b.review = { report: null, kept: new Set(), all: { suspects: false, next: false } };
     b.cal.qid = chooseCalQuestion();
     resetPolicy();
     await Promise.all([recalibrate(), repolicy()]);
@@ -594,9 +597,14 @@ function cellValue(answers, qid) {
 }
 
 function labelCell(r, qid) {
+  return h("td", {}, labelSelect(r, qid));
+}
+
+// A label picker for one row and question. Changing it rescores everything that reads labels.
+function labelSelect(r, qid) {
   const b = W.bulk;
   const answer = r.answers?.[qid];
-  if (!answer) return h("td", {});
+  if (!answer) return null;
   const current = labelText(b.labels[r.index]?.[qid], answer.type);
   const classes = answerClasses(answer);
   const extra = current && !classes.includes(current) ? [h("option", { value: current, selected: true }, `${current} (invalid)`)] : [];
@@ -608,10 +616,11 @@ function labelCell(r, qid) {
     const labels = { ...(b.labels[r.index] || {}) };
     if (value === null) delete labels[qid]; else labels[qid] = value;
     b.labels[r.index] = labels;
+    b.review.kept.delete(`${r.index}:${qid}`);  // a changed label is checked afresh
     await Promise.all([recalibrate(), repolicy()]);
     render();
   });
-  return h("td", {}, sel);
+  return sel;
 }
 
 function renderBulkTable() {
@@ -762,8 +771,12 @@ function chooseCalQuestion() {
   if (qids.includes(b.cal.qid) && (labeled.has(b.cal.qid) || !labeled.size)) return b.cal.qid;
   return qids.find((q) => labeled.has(q)) || qids[0] || null;
 }
-let calSeq = 0;
+// Labels or Calibrate's question or signal changed: rescore it, and re-review labels, which follow both.
 async function recalibrate() {
+  await Promise.all([calibrateQuestion(), rereview()]);
+}
+let calSeq = 0;
+async function calibrateQuestion() {
   const b = W.bulk;
   const qid = b.cal.qid;
   const seq = ++calSeq;  // only the latest request may install its report
@@ -913,6 +926,7 @@ function updateCal() {
     stat("this run, all rows", `${autoAll} of ${all.length} automated`));
   mount("#cal-chart", calChart(rep, t));
   $("#cal-code").textContent = calCode(rep, c.qid, c.signal, t);
+  if (b.review.report && b.review.asked !== t) reviewSoon();  // Label next ranks rows by their distance to t
   for (const tr of $$("#bulk-table tbody tr")) {
     const signal = rep.signals[tr.dataset.index];
     const cell = $("td.route", tr);
@@ -1010,6 +1024,117 @@ function calChart(rep, t) {
   hit.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); $("#cal-tip").hidden = true; });
   hit.addEventListener("click", (e) => { W.bulk.cal.threshold = at(e); updateCal(); });
   return root;
+}
+
+// ---------- Review labels ----------
+// Every accuracy above rests on the labels. This panel lists the labels worth a second look, across every
+// question, and the unlabeled rows worth labeling next for Calibrate's question at its threshold. The server
+// ranks them (jev/review.py); no model calls. "Label is right" hides a disagreement until its label changes.
+const REVIEW_SHOWN = 8;
+let reviewSeq = 0;
+async function rereview() {
+  const b = W.bulk;
+  const qids = policyQids(b.result);
+  const seq = ++reviewSeq;  // only the latest request may install its report
+  if (!qids.length) { b.review.report = null; return; }
+  const question = qids.includes(b.cal.qid) ? b.cal.qid : null;
+  b.review.asked = b.cal.threshold;  // the latest request's threshold, so a slider move back to an older one still re-ranks
+  try {
+    const report = await api("/api/workbench/review", { rows: policyRows(qids), question, threshold: b.cal.threshold, signal: b.cal.signal });
+    if (seq === reviewSeq) b.review.report = report;
+  } catch (e) { if (seq === reviewSeq) { b.review.report = null; handleError(e); } }
+}
+// The threshold moved: re-rank Label next in place, without rebuilding the slider under the pointer.
+const reviewSoon = debounce(async () => { await rereview(); if ($("#review")) mount("#review", ...reviewBody()); }, 250);
+
+function renderReview() {
+  if (!policyQids(W.bulk.result).length) return null;
+  return h("div", { class: "panel", id: "review-panel" },
+    h("div", { class: "panel-head" }, icon("eye"), h("h2", {}, "Review labels"),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "computed from these answers, no extra calls")),
+    h("div", { class: "panel-body grid", id: "review", style: { gap: "16px" } }, ...reviewBody()));
+}
+
+function reviewBody() {
+  const b = W.bulk;
+  const rep = b.review.report;
+  if (!rep) return [h("p", { class: "faint", style: { fontSize: "13px" } }, "Review appears once the answers can be read.")];
+  return [checkLabels(rep), labelNext(rep)];
+}
+
+// Show the first few rows of a ranked list, with a toggle for the rest.
+function moreToggle(key, total) {
+  const all = W.bulk.review.all;
+  if (total <= REVIEW_SHOWN) return null;
+  return h("button", { class: "btn sm ghost", onclick: () => { all[key] = !all[key]; mount("#review", ...reviewBody()); } },
+    all[key] ? `Show the first ${REVIEW_SHOWN}` : `Show all ${total}`);
+}
+
+function checkLabels(rep) {
+  const b = W.bulk;
+  const rowsBy = new Map(b.result.results.map((r) => [r.index, r]));
+  const counts = Object.values(rep.questions);
+  const labeled = counts.reduce((n, q) => n + q.labeled, 0);
+  const invalid = counts.reduce((n, q) => n + q.invalid, 0);
+  const kept = rep.suspects.filter((s) => b.review.kept.has(`${s.index}:${s.question}`)).length;
+  const open = rep.suspects.filter((s) => !b.review.kept.has(`${s.index}:${s.question}`));
+  const strong = open.filter((s) => s.strong).length;
+  const head = h("h3", { class: "cal-h" }, `Check labels · ${open.length} ${open.length === 1 ? "disagreement" : "disagreements"}`,
+    strong ? h("span", { class: "badge warning", style: { marginLeft: "8px" } }, `${strong} likely label ${strong === 1 ? "error" : "errors"}`) : null);
+  const note = (text) => h("p", { class: "muted", style: { fontSize: "13px" } }, text);
+  if (!labeled) return h("div", { class: "grid", style: { gap: "6px" } }, head, note("No labels yet. Label rows in the table below, or include \"_expect\" in JSON rows, and the answers that disagree with their labels appear here."));
+  const summary = h("p", { class: "faint", style: { fontSize: "12.5px" } },
+    `Checked ${labeled} ${labeled === 1 ? "label" : "labels"} across ${counts.filter((q) => q.labeled).length} of ${counts.length} questions`,
+    kept ? `; you kept ${kept} as right` : "", invalid ? `; ${invalid} ${invalid === 1 ? "label is" : "labels are"} not valid answers and ${invalid === 1 ? "was" : "were"} skipped` : "", ".");
+  if (!open.length) return h("div", { class: "grid", style: { gap: "6px" } }, head, note(rep.suspects.length ? "Every remaining labeled answer agrees with its label." : "Every labeled answer agrees with its label."), summary);
+  const shown = b.review.all.suspects ? open : open.slice(0, REVIEW_SHOWN);
+  return h("div", { class: "grid", style: { gap: "6px" } }, head,
+    note(`Answers that disagree with their label, lowest probability on the label first. When Jev gave the label ${pct(rep.strong_at)} or less, the label is often the mistake, or the question reads differently to Jev than to you. One wrong label on a confident answer counts against accuracy at every threshold. Fix the label, or keep it if it is right.`),
+    h("div", { class: "scroll" }, h("table", { class: "table review-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "question"), h("th", {}, "Jev's answer"),
+        h("th", { title: "The probability Jev gave the label" }, "P(label)"), h("th", { title: `Jev's ${SIGNALS[rep.signal]} in its own answer` }, SIGNALS[rep.signal]),
+        h("th", {}, "label"), h("th", {}))),
+      h("tbody", {}, shown.map((s) => {
+        const r = rowsBy.get(s.index);
+        return h("tr", {},
+          h("td", { class: "num" }, String(s.index + 1)),
+          h("td", { class: "row" }, rowText(r.row)),
+          h("td", { class: "mono" }, s.question),
+          h("td", {}, h("span", { class: "cell-choice" }, s.answer)),
+          h("td", { class: "mono" }, pct(s.label_probability, 1), s.strong ? h("span", { class: "badge warning", style: { marginLeft: "6px" }, title: `Jev gave this label ${pct(rep.strong_at)} or less` }, "check first") : null),
+          h("td", { class: "mono" }, s.signal.toFixed(2)),
+          h("td", {}, labelSelect(r, s.question)),
+          h("td", {}, h("button", { class: "btn sm ghost", title: "Hide this disagreement until its label changes",
+            onclick: () => { b.review.kept.add(`${s.index}:${s.question}`); mount("#review", ...reviewBody()); } }, "Label is right")));
+      })))),
+    h("div", {}, moreToggle("suspects", open.length)), summary);
+}
+
+function labelNext(rep) {
+  const b = W.bulk;
+  const qid = rep.question;
+  const head = h("h3", { class: "cal-h" }, qid ? `Label next · ${qid}` : "Label next");
+  const note = (text) => h("p", { class: "muted", style: { fontSize: "13px" } }, text);
+  if (!qid) return h("div", { class: "grid", style: { gap: "6px" } }, head, note("Choose a Choice, Noul, or Score question in Calibrate to rank its unlabeled rows."));
+  if (!rep.next.length) return h("div", { class: "grid", style: { gap: "6px" } }, head, note(`Every answered row has a label for “${qid}”.`));
+  const rowsBy = new Map(b.result.results.map((r) => [r.index, r]));
+  const shown = b.review.all.next ? rep.next : rep.next.slice(0, REVIEW_SHOWN);
+  const t = rep.threshold.toFixed(2);
+  return h("div", { class: "grid", style: { gap: "6px" } }, head,
+    note(`${rep.next.length} answered ${rep.next.length === 1 ? "row has" : "rows have"} no label for “${qid}”. Those nearest Calibrate's threshold, ${SIGNALS[rep.signal]} ≥ ${t}, come first: just above it they are automated now, and just below it they would be if the threshold dropped, so their labels decide whether it can move. Moving the slider re-ranks them.`),
+    h("div", { class: "scroll" }, h("table", { class: "table review-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "Jev's answer"), h("th", {}, SIGNALS[rep.signal]), h("th", {}, `at ≥ ${t}`), h("th", {}, "label"))),
+      h("tbody", {}, shown.map((x) => {
+        const r = rowsBy.get(x.index);
+        return h("tr", {},
+          h("td", { class: "num" }, String(x.index + 1)),
+          h("td", { class: "row" }, rowText(r.row)),
+          h("td", {}, h("span", { class: "cell-choice" }, x.answer), h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, pct(x.top))),
+          h("td", { class: "mono" }, x.signal.toFixed(2)),
+          h("td", {}, x.above ? statusBadge("execute", "Auto") : statusBadge("review")),
+          h("td", {}, labelSelect(r, qid)));
+      })))),
+    h("div", {}, moreToggle("next", rep.next.length)));
 }
 
 // ---------- Policy ----------

@@ -175,6 +175,36 @@ The interval treats your labeled rows as a random sample of the items the gate w
 threshold from the same rows still favors thresholds that happen to fit them, so confirm the
 threshold on rows you did not tune on before you rely on it.
 
+## Review labels
+
+Every accuracy, threshold, and tuned gate rests on the labels, and labels written by people contain
+mistakes. **Review labels**, below Calibrate, points at the labels worth a second look and the rows
+worth labeling next. It reuses the Bulk answers and makes no model calls.
+
+**Check labels** lists every labeled Choice, Noul, and Score answer that disagrees with its label,
+across all questions. The list is ordered by the probability the model gave the label, lowest first,
+then by the answer's signal, highest first. Disagreements where the label got 10% or less are marked
+**check first**. When the model gives the label almost no probability, either the label is wrong or the
+question reads differently to the model than to the person labeling; both are worth fixing. One wrong
+label on a confident answer counts against accuracy at every threshold, so a few of them can rule out
+a threshold that would otherwise reach its target.
+
+Change the label in the list to fix it. Calibrate, Policy, and the list update together. **Label is
+right** hides a disagreement for this Bulk run, until its label changes. A label that is not a valid
+answer for its question is counted and skipped, as Calibrate does.
+
+**Label next** ranks the rows that answered Calibrate's question but have no label for it, nearest
+Calibrate's threshold first, on Calibrate's signal. Ties go to the lower signal. Rows just above the
+threshold are automated now and rows just below it would be automated if it dropped, so their labels
+decide whether the threshold can move. Moving the slider re-ranks the list. Label rows from the list;
+each label joins Calibrate's scored rows.
+
+`POST /api/workbench/review` takes Policy's rows, `question` (optional: without it, `next` is empty),
+`threshold` (default `0.5`), and `signal`. It returns `suspects`, each with its `question`, `label`,
+`answer`, `label_probability`, `signal`, and `strong`; `next`, each with its `answer`, `signal`,
+`distance` to the threshold, and whether it is `above` it; and per-question counts of labeled,
+disagreeing, strong, and invalid labels.
+
 ## Gate several questions at once
 
 Calibrate chooses a threshold for one question. An application usually acts on an item only when
@@ -321,7 +351,7 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
-| Calibrate, Policy, Holdout, and Compare scoring rows | 1,000 per request |
+| Calibrate, Review, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Policy gated questions | 10 |
 | Holdout folds | 2–10 through the API, 5 in the Workbench; at least 2 labeled rows per fold |
 | Compare variants | 2, over the first 200 nonempty rows: up to 400 calls per run |
