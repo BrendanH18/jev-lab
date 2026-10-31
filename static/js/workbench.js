@@ -592,7 +592,9 @@ async function saveDataset() {
     b.labelsDirty = false;
     d.id = dataset.id;
     d.name = dataset.name;
-    if (questions && Object.keys(questions).length) d.questions = questions;
+    // Match the file: a dataset saved without questions offers none, as when it is loaded.
+    d.questions = questions && Object.keys(questions).length ? questions : null;
+    if (!d.questions && b.source === "dataset") b.source = "current";
     b.datasets = (await api("/api/workbench/datasets")).datasets;
     toast(`Saved ${dataset.rows} rows (${dataset.labeled} labeled) to data/workbench/datasets/${dataset.id}.json`);
     render();

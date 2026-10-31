@@ -331,8 +331,6 @@ def validate_rows(rows: Any) -> List[Any]:
             validate_state(state)
         except WorkbenchError as err:
             raise WorkbenchError("Row %d: %s" % (number, err))
-    if len(json.dumps(rows)) > MAX_DATASET_CHARS:
-        raise WorkbenchError("The rows are too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
     return rows
 
 
@@ -370,10 +368,13 @@ def save_dataset(spec: dict) -> dict:
     if spec.get("questions"):
         dataset["questions"] = bulk_questions(spec["questions"])
     dataset["rows"] = validate_rows(spec.get("rows"))
+    text = _dataset_text(dataset)
+    if len(text) > MAX_DATASET_CHARS:
+        raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
     path = _dataset_path(dataset["id"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(path.name + ".partial")
-    partial.write_text(_dataset_text(dataset), encoding="utf-8")
+    partial = path.with_name("%s.%d.partial" % (path.name, threading.get_ident()))  # one per concurrent save
+    partial.write_text(text, encoding="utf-8")
     partial.replace(path)
     return dataset
 
@@ -387,7 +388,10 @@ def list_datasets() -> List[dict]:
             except ValueError:
                 continue
             if isinstance(dataset, dict) and isinstance(dataset.get("rows"), list):
-                out.append(dataset_summary(dict(dataset, id=path.stem)))
+                try:
+                    out.append(dataset_summary(dict(dataset, id=path.stem)))
+                except (TypeError, AttributeError):  # a hand-edited file with odd fields; skip it, keep the list
+                    continue
     return out
 
 

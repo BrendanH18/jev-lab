@@ -234,9 +234,11 @@ class DatasetTests(unittest.TestCase):
                 with self.assertRaises(workbench.WorkbenchError) as ctx:
                     workbench.save_dataset(spec)
                 self.assertIn(message, str(ctx.exception))
-        with patch.object(workbench, "MAX_DATASET_CHARS", 10):
-            with self.assertRaises(workbench.WorkbenchError):
-                workbench.save_dataset({"name": "x", "rows": ["long enough to pass the cap"]})
+        with patch.object(workbench, "MAX_DATASET_CHARS", 400):
+            long_question = {"q": {"type": "noul", "instructions": "x" * 400}}
+            with self.assertRaises(workbench.WorkbenchError) as ctx:
+                workbench.save_dataset({"name": "x", "rows": ["short"], "questions": long_question})
+            self.assertIn("too large", str(ctx.exception), "the cap covers the questions too")
         self.assertFalse((self.dir / "datasets").exists(), "nothing is written for a refused dataset")
         for bad in ("../x", "A B", "", "x/y"):
             with self.assertRaises(workbench.WorkbenchError):
@@ -251,6 +253,7 @@ class DatasetTests(unittest.TestCase):
         folder.mkdir(parents=True)
         (folder / "broken.json").write_text("{not json")
         (folder / "norows.json").write_text("{}")
+        (folder / "oddfields.json").write_text('{"rows": ["x"], "questions": 1}')
         workbench.save_dataset({"name": "good", "rows": ["x"]})
         self.assertEqual([d["id"] for d in workbench.list_datasets()], ["good"])
         with self.assertRaises(workbench.WorkbenchError):
