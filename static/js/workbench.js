@@ -634,7 +634,7 @@ function renderDatasets() {
       h("span", { class: "badge warning", id: "ds-unsaved", style: { display: bulkUnsaved() ? "" : "none" }, title: "A reload would lose these rows or labels" }, "Unsaved rows or labels")),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
       h("div", { class: "grid", style: { gap: "6px" } }, name, notes,
-        h("label", { class: "toggle", style: { gap: "6px" } }, withQ, "Save the selected questions with the rows"),
+        h("label", { class: "toggle", style: { gap: "6px" } }, withQ, h("span", { class: "track" }), "Save the selected questions with the rows"),
         h("div", {}, h("button", { class: "btn sm", onclick: saveDataset }, icon("check"), "Save rows and labels"))),
       h("p", { class: "faint", style: { fontSize: "12px" } }, "Saves the rows box, with the labels you chose in the results table, as one JSON file you can commit. Only rows and labels are saved, never answers: run a loaded dataset to get answers."),
       b.datasets.length ? b.datasets.map((x) => h("div", { class: "item" },
@@ -677,7 +677,7 @@ function renderBulk() {
   const src = (value, label) => {
     const r = h("input", { type: "radio", name: "src", checked: b.source === value });
     r.addEventListener("change", () => { b.source = value; render(); });
-    return h("label", { class: "toggle", style: { gap: "6px" } }, r, label);
+    return h("label", { class: "toggle", style: { gap: "6px" } }, r, h("span", { class: "track" }), label);
   };
   const runBtn = h("button", { class: "btn primary", id: "bulk-run", onclick: runBulk }, icon("layers"), `Run ${Math.min(nRows, 200)} rows`);
   return h("div", { class: "grid", style: { gap: "16px" } },
