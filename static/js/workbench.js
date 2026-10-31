@@ -1057,6 +1057,7 @@ function costsPayload() {
   for (const m of c.mistakes) {
     const v = price(m.cost);
     if (v === null) return { costs: null, problem: "Enter each mistake's price as a number from 0 to 1,000,000." };
+    if (m.label === m.answer) return { costs: null, problem: `${m.question}: a mistake's answer must differ from its label.` };
     const key = JSON.stringify([m.question, m.label, m.answer]);
     if (seen.has(key)) return { costs: null, problem: `${m.question}: label ${m.label} answered ${m.answer} is priced twice.` };
     seen.add(key);
