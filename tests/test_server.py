@@ -309,6 +309,30 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("folds", json.loads(err)["error"])
 
+    def test_cost_over_http_is_pure_code(self):
+        rows = [{"index": i, "answers": {"u": {"type": "noul", "noul": p}}, "labels": {"u": label}, "key": "row %d" % i}
+                for i, (p, label) in enumerate([(0.95, True), (0.9, False), (0.8, True), (0.7, True), (0.6, False), (0.55, True)]
+                                               * 2)]
+        costs = {"review": 1, "error": 3}
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/cost", json.dumps(
+                {"rows": rows, "questions": ["u"], "costs": costs, "gates": {"u": 0.5}, "tune": False}), self.post_headers())
+            tuned, _, tbody = self.request("POST", "/api/workbench/cost", json.dumps(
+                {"rows": rows, "questions": ["u"], "costs": costs}), self.post_headers())
+            held, _, hbody = self.request("POST", "/api/workbench/holdout", json.dumps(
+                {"rows": rows, "questions": ["u"], "costs": costs}), self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/cost", json.dumps(
+                {"rows": rows, "questions": ["u"], "costs": {"review": -1, "error": 3}}), self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual((report["best"], report["current"]["cost"], report["review_all"]["cost"]), (None, 12.0, 12.0))
+        self.assertEqual(tuned, 200, tbody)
+        self.assertEqual(json.loads(tbody)["best"]["gates"], {"u": 0.21})
+        self.assertEqual(held, 200, hbody)
+        self.assertEqual(sum(p["rows"] for p in json.loads(hbody)["cost"]["parts"]), 12)
+        self.assertEqual(bad, 400)
+        self.assertIn("review cost", json.loads(err)["error"])
+
     def test_review_over_http_is_pure_code(self):
         rows = [{"index": 0, "answers": {"u": {"type": "noul", "noul": 0.97}}, "labels": {"u": False}},
                 {"index": 1, "answers": {"u": {"type": "noul", "noul": 0.6}}, "labels": {}}]

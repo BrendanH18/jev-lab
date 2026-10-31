@@ -21,7 +21,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, claims, compare, dispatch, envfile, examples, find, hello, holdout, images, policy, review,
+from jev import (calibrate, claims, compare, cost, dispatch, envfile, examples, find, hello, holdout, images, policy, review,
                  security, shield, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
@@ -482,7 +482,12 @@ def api_wb_policy_tune(body):
 
 def api_wb_holdout(body):
     return holdout.evaluate(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                            str(body.get("bound") or "estimate"), body.get("folds", holdout.FOLDS))
+                            str(body.get("bound") or "estimate"), body.get("folds", holdout.FOLDS), body.get("costs"))
+
+
+def api_wb_cost(body):
+    return cost.evaluate(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
+                         body.get("costs"), body.get("gates"), body.get("tune") is not False)
 
 
 def api_wb_review(body):
@@ -540,6 +545,7 @@ ROUTES = {
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,
     ("POST", "/api/workbench/holdout"): api_wb_holdout,
     ("POST", "/api/workbench/review"): api_wb_review,
+    ("POST", "/api/workbench/cost"): api_wb_cost,
     ("POST", "/api/workbench/compare"): api_wb_compare,
     ("POST", "/api/workbench/compare/score"): api_wb_compare_score,
 }
