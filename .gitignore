@@ -16,6 +16,6 @@ __pycache__/
 /report.json
 /reports/
 
-# Claude Code local settings
-.claude/
-CLAUDE.md
+# Claude Code machine-local files
+.claude/settings.local.json
+.claude/worktrees/
