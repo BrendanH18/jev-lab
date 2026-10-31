@@ -129,3 +129,11 @@ question set over many rows in parallel (`run_bulk`, capped and rate-limited by 
 - Nothing in the UI may show a canned/replayed answer; every number the app displays must come
   from a call the current user actually triggered (there is no cache — an earlier version had
   one and it was deliberately removed).
+
+## Context maintenance
+
+- Keep project rules and durable project knowledge in tracked `AGENTS.md` and
+  repository docs; do not store them in agent auto-memory or machine-local notes.
+- `CLAUDE.md` contains only `@AGENTS.md`. Shared hooks, scripts and settings
+  belong in tracked files. Do not ignore instruction files or shared settings;
+  ignore only machine-local settings and agent worktrees.
