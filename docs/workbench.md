@@ -154,7 +154,8 @@ or ≤ 0.3) or on the top probability. See TypeSafe's
 [confidence guide](https://docs.typesafe.ai/confidence) for both measures.
 
 To label rows in the browser, use the label column in the results table. **Keep labels in rows**
-rewrites the rows box as JSON lines that carry your labels, so the next run keeps them. Thresholds
+rewrites the rows box as JSON lines that carry your labels, so the next run keeps them. To keep
+labels past a reload, [save the rows as a dataset](#save-rows-and-labels). Thresholds
 from a few dozen rows are a first look: each row of 40 moves accuracy by 2.5 points. Label more of
 your own data before relying on a threshold, and pin the model version when you compare runs.
 
@@ -174,6 +175,60 @@ target cannot be shown with the rows you have, its shortcut says how many it nee
 The interval treats your labeled rows as a random sample of the items the gate will see. Choosing a
 threshold from the same rows still favors thresholds that happen to fit them, so confirm the
 threshold on rows you did not tune on before you rely on it.
+
+## Save rows and labels
+
+The rows box and the labels you choose in the results table live only in the browser, so a reload
+loses them; the page asks before it does. **Datasets**, on the Bulk tab, saves them as a file:
+
+1. Name the dataset, and add notes if you like.
+2. Leave **Save the selected questions with the rows** checked to keep the question set the labels
+   are for. Labels are keyed by question ID, so they mean little without it.
+3. Select **Save rows and labels**.
+
+The dataset is written to `data/workbench/datasets/<id>.json`, where the ID comes from the name. A
+dataset with the same name is replaced, after a confirmation. When you have chosen labels in the
+results table since the run, saving or running again first puts them in the rows, as **Keep labels
+in rows** does. If you edited the rows box after the run, those labels no longer line up with its
+rows, so the page asks whether to go on without them; **Keep labels in rows** asks before it
+replaces the edited box with the rows that were run.
+
+**Load** puts a dataset's rows in the rows box. A dataset saved with questions adds them as a
+choice under **Questions to run on every row** and selects it. Loading does not run anything: a
+dataset holds rows and labels only, never answers, so run it to get answers and scores.
+
+A dataset holds up to 200 rows, the most one Bulk run takes, and up to 2,000,000 characters as
+JSON. Each row is text, a JSON object, or a JSON array, with labels under `_expect` on an object
+row. The file is ordinary JSON with one row per line, so a changed label is a one-line diff:
+
+```json
+{
+  "id": "support-tickets-march",
+  "name": "Support tickets, March",
+  "notes": "",
+  "saved_at": "2026-10-31T12:00:00Z",
+  "questions": {
+    "wants_refund": {
+      "type": "noul",
+      "instructions": "Does the customer explicitly ask for a refund?"
+    }
+  },
+  "rows": [
+    {"text": "I was charged twice. Please refund one.", "_expect": {"wants_refund": true}},
+    {"text": "Where is my parcel?"}
+  ]
+}
+```
+
+Datasets are meant to be committed, like saved tests, so use synthetic data or review the rows
+before you commit them.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `GET /api/workbench/datasets` | | `datasets`: `id`, `name`, `notes`, `saved_at`, and counts of `rows`, `labeled` rows, `labels` per question, and `questions` |
+| `POST /api/workbench/datasets` | `name`, `rows` (text or a list), optional `notes` and `questions` | `dataset`: the same summary |
+| `POST /api/workbench/datasets/load` | `id` | `dataset`: the saved file |
+| `POST /api/workbench/datasets/delete` | `id` | `deleted`: whether a file was removed |
 
 ## Review labels
 
@@ -398,6 +453,7 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
+| Saved dataset | 200 nonempty rows and 2,000,000 characters as JSON |
 | Calibrate, Costs, Review, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Prices | $0 to $1,000,000 each; up to 100 priced mistakes |
 | Policy gated questions | 10 |

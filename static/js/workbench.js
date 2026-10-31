@@ -7,6 +7,10 @@ const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
+    // Saved datasets (data/workbench/datasets/): rows and labels only, never answers. savedText is the rows box as
+    // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
+    datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
+    savedText: "", runText: null, labelsDirty: false,
     // Prices as typed (strings), shared by Calibrate, Policy, and Holdout. jev/cost.py does the arithmetic.
     costs: { review: "2", error: "20", mistakes: [] },
     cal: { qid: null, signal: "confidence", bound: "estimate", threshold: 0.5, report: null, cost: null, holdout: null, holdoutSeq: 0 },
@@ -167,13 +171,15 @@ function loadInto(state, questions, { expect = {}, name = "", notes = "", id = n
 // ---------- boot ----------
 async function boot() {
   await initChrome("/workbench");
-  const [ex, items, sample, pics] = await Promise.all([api("/api/workbench/examples"), api("/api/workbench/items"),
-    api("/api/workbench/bulk/sample"), api("/api/images/samples")]);
+  const [ex, items, sample, pics, sets] = await Promise.all([api("/api/workbench/examples"), api("/api/workbench/items"),
+    api("/api/workbench/bulk/sample"), api("/api/images/samples"), api("/api/workbench/datasets")]);
   W.samples = pics.samples;
   W.maxImages = pics.limits.max_images;
   W.examples = ex.examples;
   W.items = items.items;
-  W.bulk.rowsText = sample.rows.map(rowLine).join("\n");
+  W.bulk.rowsText = W.bulk.savedText = rowsText(sample.rows);
+  W.bulk.datasets = sets.datasets;
+  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
   W.bulk.sampleQuestions = sample.questions;
   W.compare.terse = sample.terse_questions;
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);
@@ -510,7 +516,145 @@ async function deleteTest(id) {
 }
 
 // ---------- Bulk ----------
-const rowLine = (row) => (typeof row === "string" ? row : JSON.stringify(row));
+// One row as a line of the rows box, carrying `labels` if given. A text line that would split, lose
+// whitespace, or parse as JSON is written as an object so it survives the trip (the server splits rows
+// on "\n" and trims each line).
+function rowLineFor(row, labels = null) {
+  const has = labels && Object.keys(labels).length;
+  if (typeof row === "string") {
+    const plain = row === row.trim() && !/^[{[]/.test(row) && !/[\n\r]/.test(row);
+    if (!has && plain) return row;
+    return JSON.stringify(has ? { text: row, _expect: labels } : { text: row });
+  }
+  return JSON.stringify(has ? { ...row, _expect: labels } : row);
+}
+
+// Rows as the rows box shows them: one per line, or a JSON array when a row is itself an array, since
+// an array line would come back as text.
+function rowsText(rows) {
+  if (rows.some(Array.isArray)) return `[\n${rows.map((r) => JSON.stringify(r)).join(",\n")}\n]`;
+  return rows.map((r) => rowLineFor(r)).join("\n");
+}
+
+// Rows or labels that a reload would lose: the box differs from the last save or load, or labels were
+// typed in the results table and not yet put in the rows.
+const bulkUnsaved = () => W.bulk.rowsText !== W.bulk.savedText || W.bulk.labelsDirty;
+
+function markUnsaved() {
+  const el = $("#ds-unsaved");
+  if (el) el.style.display = bulkUnsaved() ? "" : "none";
+}
+
+// Replace the rows box, after a confirm when that would lose unsaved rows or labels.
+function replaceRows(text, what) {
+  const b = W.bulk;
+  if (bulkUnsaved() && !confirm(`Replace the rows box with ${what}? Rows and labels you have not saved will be lost.`)) return false;
+  b.rowsText = b.savedText = text;
+  b.labelsDirty = false;
+  return true;
+}
+
+async function loadSampleRows() {
+  try {
+    const s = await api("/api/workbench/bulk/sample");
+    if (!replaceRows(rowsText(s.rows), "the sample rows")) return;
+    W.bulk.dataset.id = null;
+    render();
+  } catch (e) { handleError(e); }
+}
+
+// Put labels chosen in the results table into the rows box before the box is saved or run, so they are
+// not lost. They fit only the rows that were run; when the box has changed since, ask before dropping them.
+function settleLabels(action) {
+  const b = W.bulk;
+  if (!b.labelsDirty || !b.result) return true;
+  if (b.rowsText === b.runText) return keepLabels(true);
+  return confirm(`The rows box has changed since the run, so the labels chosen in the results table cannot be put back in it. ${action} without them?`);
+}
+
+// The server's file name for a dataset name (jev/workbench.py slugify), to warn before replacing one.
+const slugOf = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+
+async function saveDataset() {
+  const b = W.bulk;
+  const d = b.dataset;
+  const name = d.name.trim();
+  const id = slugOf(name);
+  if (!id) return toast("Give the dataset a name", "error");
+  if (id !== d.id && b.datasets.some((x) => x.id === id) && !confirm(`Replace the saved dataset “${id}”?`)) return;
+  if (!settleLabels("Save the rows box")) return;
+  const questions = d.withQuestions ? bulkQuestions() : null;
+  try {
+    const { dataset } = await api("/api/workbench/datasets", {
+      name, notes: d.notes, rows: rowsPayload(), questions: questions && Object.keys(questions).length ? questions : undefined,
+    });
+    b.savedText = b.rowsText;
+    b.labelsDirty = false;
+    d.id = dataset.id;
+    d.name = dataset.name;
+    // Match the file: a dataset saved without questions offers none, as when it is loaded.
+    d.questions = questions && Object.keys(questions).length ? questions : null;
+    if (!d.questions && b.source === "dataset") b.source = "current";
+    b.datasets = (await api("/api/workbench/datasets")).datasets;
+    toast(`Saved ${dataset.rows} rows (${dataset.labeled} labeled) to data/workbench/datasets/${dataset.id}.json`);
+    render();
+  } catch (e) { handleError(e); render(); }
+}
+
+async function loadDataset(id) {
+  const b = W.bulk;
+  try {
+    const { dataset } = await api("/api/workbench/datasets/load", { id });
+    if (!replaceRows(rowsText(dataset.rows), `“${dataset.name || id}”`)) return;
+    b.dataset = { id, name: dataset.name || id, notes: dataset.notes || "", withQuestions: !!dataset.questions, questions: dataset.questions || null };
+    if (dataset.questions) b.source = "dataset";
+    else if (b.source === "dataset") b.source = "current";
+    toast(`Loaded ${dataset.rows.length} rows. Run them to get answers.`);
+    render();
+  } catch (e) { handleError(e); }
+}
+
+async function deleteDataset(id) {
+  const b = W.bulk;
+  if (!confirm(`Delete the dataset “${id}”? This removes data/workbench/datasets/${id}.json.`)) return;
+  try {
+    await api("/api/workbench/datasets/delete", { id });
+    if (b.dataset.id === id) b.dataset.id = null;
+    b.datasets = (await api("/api/workbench/datasets")).datasets;
+    render();
+  } catch (e) { handleError(e); }
+}
+
+function renderDatasets() {
+  const b = W.bulk;
+  const d = b.dataset;
+  const name = h("input", { class: "input", placeholder: "Dataset name, e.g. Support tickets, March", value: d.name, "aria-label": "Dataset name" });
+  name.addEventListener("input", () => { d.name = name.value; });
+  const notes = h("input", { class: "input", placeholder: "Notes (optional)", value: d.notes, "aria-label": "Dataset notes" });
+  notes.addEventListener("input", () => { d.notes = notes.value; });
+  const withQ = h("input", { type: "checkbox", checked: d.withQuestions });
+  withQ.addEventListener("change", () => { d.withQuestions = withQ.checked; });
+  const labeledText = (x) => `${x.rows} row${x.rows === 1 ? "" : "s"} · ${x.labeled} labeled`
+    + (x.questions ? ` · ${x.questions} question${x.questions === 1 ? "" : "s"}` : "");
+  return h("div", { class: "panel datasets" },
+    h("div", { class: "panel-head" }, h("h2", {}, "Datasets · data/workbench/datasets/"), h("div", { class: "spacer" }),
+      h("span", { class: "badge warning", id: "ds-unsaved", style: { display: bulkUnsaved() ? "" : "none" }, title: "A reload would lose these rows or labels" }, "Unsaved rows or labels")),
+    h("div", { class: "panel-body grid", style: { gap: "10px" } },
+      h("div", { class: "grid", style: { gap: "6px" } }, name, notes,
+        h("label", { class: "toggle", style: { gap: "6px" } }, withQ, h("span", { class: "track" }), "Save the selected questions with the rows"),
+        h("div", {}, h("button", { class: "btn sm", onclick: saveDataset }, icon("check"), "Save rows and labels"))),
+      h("p", { class: "faint", style: { fontSize: "12px" } }, "Saves the rows box, with the labels you chose in the results table, as one JSON file you can commit. Only rows and labels are saved, never answers: run a loaded dataset to get answers."),
+      b.datasets.length ? b.datasets.map((x) => h("div", { class: "item" },
+        h("div", { class: "grid", style: { gap: "2px" } },
+          h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+            h("b", {}, x.name || x.id), h("code", { class: "faint" }, x.id), x.id === d.id ? h("span", { class: "badge" }, "loaded") : null),
+          h("span", { class: "faint", style: { fontSize: "12px" } }, labeledText(x) + (x.saved_at ? ` · saved ${x.saved_at.slice(0, 10)}` : "")),
+          x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
+        h("div", { style: { display: "flex", gap: "6px" } },
+          h("button", { class: "btn sm", onclick: () => loadDataset(x.id) }, "Load"),
+          h("button", { class: "btn sm ghost danger", "aria-label": `Delete ${x.id}`, onclick: () => deleteDataset(x.id) }, icon("trash")))))
+        : h("div", { class: "empty" }, "No saved datasets yet. Label some rows, name them, and save.")));
+}
 
 function countRows(text) {
   const t = text.trim();
@@ -526,35 +670,39 @@ function rowsPayload() {
 }
 
 function bulkQuestions() {
-  return W.bulk.source === "sample" ? W.bulk.sampleQuestions : toQuestions(W.questions);
+  const b = W.bulk;
+  if (b.source === "dataset" && b.dataset.questions) return b.dataset.questions;
+  return b.source === "sample" ? b.sampleQuestions : toQuestions(W.questions);
 }
 
 function renderBulk() {
   const b = W.bulk;
   const rows = h("textarea", { class: "input", spellcheck: "false", placeholder: "One item per line. A text line becomes the state {\"text\": line}; a JSON object line is sent as it is. Or paste a JSON array of objects." }, b.rowsText);
-  rows.addEventListener("input", () => { b.rowsText = rows.value; });
+  rows.addEventListener("input", () => { b.rowsText = rows.value; markUnsaved(); });
   const nRows = countRows(b.rowsText);
   const current = toQuestions(W.questions);
   const src = (value, label) => {
     const r = h("input", { type: "radio", name: "src", checked: b.source === value });
     r.addEventListener("change", () => { b.source = value; render(); });
-    return h("label", { class: "toggle", style: { gap: "6px" } }, r, label);
+    return h("label", { class: "toggle", style: { gap: "6px" } }, r, h("span", { class: "track" }), label);
   };
   const runBtn = h("button", { class: "btn primary", id: "bulk-run", onclick: runBulk }, icon("layers"), `Run ${Math.min(nRows, 200)} rows`);
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "grid wb-grid" },
       h("div", { class: "panel bulk" },
         h("div", { class: "panel-head" }, h("h2", {}, `Rows · ${nRows}`), h("div", { class: "spacer" }),
-          h("button", { class: "btn sm ghost", onclick: async () => { const s = await api("/api/workbench/bulk/sample"); b.rowsText = s.rows.map(rowLine).join("\n"); render(); } }, "Load sample rows")),
+          h("button", { class: "btn sm ghost", onclick: loadSampleRows }, "Load sample rows")),
         h("div", { class: "panel-body" }, rows,
           h("p", { class: "faint", style: { fontSize: "12px", marginTop: "8px" } }, "Put labels on a JSON row under ", h("code", {}, "\"_expect\""), ", keyed by question id: ",
             h("code", {}, "{\"text\": \"…\", \"_expect\": {\"department\": \"billing\", \"wants_refund\": true}}"), ". Labels never reach the model; Calibrate scores the answers against them."))),
       h("div", { class: "grid", style: { gap: "16px" } },
+        renderDatasets(),
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Questions to run on every row")),
           h("div", { class: "panel-body grid", style: { gap: "10px" } },
             src("current", `Current Build questions (${Object.keys(current).length})`),
             src("sample", `Sample: support triage (${Object.keys(b.sampleQuestions || {}).length})`),
+            b.dataset.questions ? src("dataset", `Saved with “${b.dataset.name}” (${Object.keys(b.dataset.questions).length})`) : null,
             h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run. The sample rows carry labels for the sample questions."),
             h("div", {}, runBtn))),
         h("div", { class: "panel" },
@@ -572,12 +720,16 @@ function renderBulk() {
 async function runBulk() {
   const questions = bulkQuestions();
   if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
+  if (!settleLabels("Run the rows box")) return;
   const btn = $("#bulk-run");
   btn.disabled = true;
   mount(btn, h("span", { class: "spin" }), " Running…");
   try {
     const b = W.bulk;
+    const ranText = b.rowsText;
     b.result = await api("/api/workbench/bulk", { rows: rowsPayload(), questions });
+    b.runText = ranText;
+    b.labelsDirty = false;
     b.sortKey = null;
     b.labels = {};
     for (const r of b.result.results) if (r.expect) b.labels[r.index] = { ...r.expect };
@@ -624,6 +776,7 @@ function labelSelect(r, qid) {
     if (value === null) delete labels[qid]; else labels[qid] = value;
     b.labels[r.index] = labels;
     b.review.kept.delete(`${r.index}:${qid}`);  // a changed label is checked afresh
+    b.labelsDirty = true;
     await Promise.all([recalibrate(), repolicy()]);
     render();
   });
@@ -664,7 +817,7 @@ function renderBulkTable() {
         h("span", { class: "stat accent" }, "wall", h("b", {}, ms(res.wall_ms))),
         h("span", { class: "stat" }, "tokens", h("b", {}, num(res.input_tokens))),
         h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd))),
-        h("button", { class: "btn sm", onclick: keepLabels, title: "Rewrite the rows box as JSON lines that carry these labels, so the next run keeps them" }, "Keep labels in rows"),
+        h("button", { class: "btn sm", onclick: () => keepLabels(), title: "Rewrite the rows box as JSON lines that carry these labels, so the next run keeps them" }, "Keep labels in rows"),
         h("button", { class: "btn sm", onclick: csv }, "Download CSV"))),
     h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
       h("thead", {}, h("tr", {}, th("__row", "#"), h("th", {}, "row"), qids.map((q) => th(q, q)),
@@ -695,26 +848,22 @@ function bulkQuestionsForResult(res) {
   return first ? first.answers : {};
 }
 
-function keepLabels() {
+function keepLabels(quiet = false) {
   const b = W.bulk;
   // One JSON line per row. Array states cannot hold "_expect" and would come back as text, so refuse.
   if (b.result.results.some((r) => Array.isArray(r.row))) {
-    return toast("Rows that are JSON arrays cannot carry labels. Wrap each one in an object first.", "error");
+    toast("Rows that are JSON arrays cannot carry labels. Wrap each one in an object first.", "error");
+    return false;
   }
-  b.rowsText = b.result.results.map((r) => {
-    const labels = b.labels[r.index];
-    const has = labels && Object.keys(labels).length;
-    if (typeof r.row === "string") {
-      // A text line that would split, lose whitespace, or parse as JSON is written as an object so it
-      // survives the trip (the server splits rows on "\n" and trims each line).
-      const plain = r.row === r.row.trim() && !/^[{[]/.test(r.row) && !/[\n\r]/.test(r.row);
-      if (!has && plain) return r.row;
-      return JSON.stringify(has ? { text: r.row, _expect: labels } : { text: r.row });
-    }
-    return JSON.stringify(has ? { ...r.row, _expect: labels } : r.row);
-  }).join("\n");
-  render();
-  toast("Rows now carry their labels as JSON lines");
+  if (!quiet && b.rowsText !== b.runText
+    && !confirm("The rows box has changed since the run. Replace it with the rows that were run, carrying these labels?")) return false;
+  b.rowsText = b.runText = b.result.results.map((r) => rowLineFor(r.row, b.labels[r.index])).join("\n");
+  b.labelsDirty = false;
+  if (!quiet) {
+    render();
+    toast("Rows now carry their labels as JSON lines");
+  }
+  return true;
 }
 
 // ---------- Calibrate ----------
@@ -1803,7 +1952,7 @@ function renderCompare() {
     h("div", { class: "grid wb-grid" },
       h("div", { class: "panel bulk" },
         h("div", { class: "panel-head" }, count, h("span", { class: "faint", style: { fontSize: "12px" } }, "shared with Bulk"), h("div", { class: "spacer" }),
-          h("button", { class: "btn sm ghost", onclick: async () => { const s = await api("/api/workbench/bulk/sample"); b.rowsText = s.rows.map(rowLine).join("\n"); render(); } }, "Load sample rows")),
+          h("button", { class: "btn sm ghost", onclick: loadSampleRows }, "Load sample rows")),
         h("div", { class: "panel-body" }, rows)),
       h("div", { class: "panel" },
         h("div", { class: "panel-head" }, h("h2", {}, "Run both")),
