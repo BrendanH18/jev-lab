@@ -96,6 +96,7 @@ class LabelNextTests(unittest.TestCase):
     def test_bad_requests_raise(self):
         rows = [row(0, {"u": noul(0.9)})]
         for kwargs, message in [({"threshold": 1.5}, "threshold"), ({"threshold": True}, "threshold"),
+                                ({"threshold": 10 ** 400}, "threshold"), ({"threshold": float("nan")}, "threshold"),
                                 ({"signal": "vibes"}, "signal"), ({"question": "missing"}, "Run Bulk"),
                                 ({"question": 3}, "question id")]:
             with self.subTest(kwargs=kwargs), self.assertRaises(CalibrationError) as caught:

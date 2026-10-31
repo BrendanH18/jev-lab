@@ -1082,7 +1082,9 @@ function checkLabels(rep) {
   const head = h("h3", { class: "cal-h" }, `Check labels · ${open.length} ${open.length === 1 ? "disagreement" : "disagreements"}`,
     strong ? h("span", { class: "badge warning", style: { marginLeft: "8px" } }, `${strong} likely label ${strong === 1 ? "error" : "errors"}`) : null);
   const note = (text) => h("p", { class: "muted", style: { fontSize: "13px" } }, text);
-  if (!labeled) return h("div", { class: "grid", style: { gap: "6px" } }, head, note("No labels yet. Label rows in the table below, or include \"_expect\" in JSON rows, and the answers that disagree with their labels appear here."));
+  if (!labeled) return h("div", { class: "grid", style: { gap: "6px" } }, head, note(invalid
+    ? `${invalid === 1 ? "The one label is not" : `None of the ${invalid} labels is`} a valid answer for its question, so nothing can be checked. Calibrate lists the reasons; fix the labels in the table below.`
+    : "No labels yet. Label rows in the table below, or include \"_expect\" in JSON rows, and the answers that disagree with their labels appear here."));
   const summary = h("p", { class: "faint", style: { fontSize: "12.5px" } },
     `Checked ${labeled} ${labeled === 1 ? "label" : "labels"} across ${counts.filter((q) => q.labeled).length} of ${counts.length} questions`,
     kept ? `; you kept ${kept} as right` : "", invalid ? `; ${invalid} ${invalid === 1 ? "label is" : "labels are"} not valid answers and ${invalid === 1 ? "was" : "were"} skipped` : "", ".");

@@ -16,7 +16,6 @@ they are automated if it drops. Ties go to the lower signal, then to the row ind
 
 from __future__ import annotations
 
-from math import isfinite
 from typing import Any, Dict, List, Optional
 
 from . import calibrate
@@ -36,7 +35,8 @@ def _rows(rows: Any) -> List[dict]:
 
 
 def _threshold(value: Any) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or not 0 <= value <= 1:
+    # Bounds alone: they reject NaN and infinities, and a huge int cannot overflow a comparison.
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
         raise CalibrationError("threshold must be a number from 0 to 1")
     return float(value)
 
