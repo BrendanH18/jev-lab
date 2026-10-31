@@ -188,9 +188,10 @@ loses them; the page asks before it does. **Datasets**, on the Bulk tab, saves t
 
 The dataset is written to `data/workbench/datasets/<id>.json`, where the ID comes from the name. A
 dataset with the same name is replaced, after a confirmation. When you have chosen labels in the
-results table since the run, saving first puts them in the rows, as **Keep labels in rows** does.
-If you edited the rows box after the run, those labels no longer line up with its rows, so the
-page asks whether to save the box without them.
+results table since the run, saving or running again first puts them in the rows, as **Keep labels
+in rows** does. If you edited the rows box after the run, those labels no longer line up with its
+rows, so the page asks whether to go on without them; **Keep labels in rows** asks before it
+replaces the edited box with the rows that were run.
 
 **Load** puts a dataset's rows in the rows box. A dataset saved with questions adds them as a
 choice under **Questions to run on every row** and selects it. Loading does not run anything: a

@@ -563,6 +563,15 @@ async function loadSampleRows() {
   } catch (e) { handleError(e); }
 }
 
+// Put labels chosen in the results table into the rows box before the box is saved or run, so they are
+// not lost. They fit only the rows that were run; when the box has changed since, ask before dropping them.
+function settleLabels(action) {
+  const b = W.bulk;
+  if (!b.labelsDirty || !b.result) return true;
+  if (b.rowsText === b.runText) return keepLabels(true);
+  return confirm(`The rows box has changed since the run, so the labels chosen in the results table cannot be put back in it. ${action} without them?`);
+}
+
 // The server's file name for a dataset name (jev/workbench.py slugify), to warn before replacing one.
 const slugOf = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 
@@ -573,11 +582,7 @@ async function saveDataset() {
   const id = slugOf(name);
   if (!id) return toast("Give the dataset a name", "error");
   if (id !== d.id && b.datasets.some((x) => x.id === id) && !confirm(`Replace the saved dataset “${id}”?`)) return;
-  if (b.labelsDirty && b.result) {
-    if (b.rowsText === b.runText) {
-      if (!keepLabels(true)) return;
-    } else if (!confirm("The rows box has changed since the run, so the labels typed in the results table cannot be put back in it. Save the rows box without them?")) return;
-  }
+  if (!settleLabels("Save the rows box")) return;
   const questions = d.withQuestions ? bulkQuestions() : null;
   try {
     const { dataset } = await api("/api/workbench/datasets", {
@@ -713,6 +718,7 @@ function renderBulk() {
 async function runBulk() {
   const questions = bulkQuestions();
   if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
+  if (!settleLabels("Run the rows box")) return;
   const btn = $("#bulk-run");
   btn.disabled = true;
   mount(btn, h("span", { class: "spin" }), " Running…");
@@ -847,6 +853,8 @@ function keepLabels(quiet = false) {
     toast("Rows that are JSON arrays cannot carry labels. Wrap each one in an object first.", "error");
     return false;
   }
+  if (!quiet && b.rowsText !== b.runText
+    && !confirm("The rows box has changed since the run. Replace it with the rows that were run, carrying these labels?")) return false;
   b.rowsText = b.runText = b.result.results.map((r) => rowLineFor(r.row, b.labels[r.index])).join("\n");
   b.labelsDirty = false;
   if (!quiet) {
