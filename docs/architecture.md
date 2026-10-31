@@ -47,7 +47,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/claims.py`](../jev/claims.py) | Photo questions, a Box for the damage, order facts, and the refund decision |
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
-| [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, bulk calls, and code exports |
+| [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, saved datasets of labeled rows, bulk calls, and code exports |
 | [`jev/calibrate.py`](../jev/calibrate.py) | Accuracy, confusion, reliability, threshold sweeps, and 95% Wilson intervals over labeled Bulk answers |
 | [`jev/policy.py`](../jev/policy.py) | A gate over several questions at once: automation, joint accuracy, per-question holds and errors, and a threshold search for target accuracies, measured or at 95% confidence |
 | [`jev/holdout.py`](../jev/holdout.py) | Five-fold cross-validation of tuned thresholds: deterministic folds by row, tuning on the other folds, and pooled accuracy on held-out rows |
@@ -83,6 +83,8 @@ without another call, the same way Shield reweights.
   intentionally available for version control. They contain input data and expectations.
 - `.env` stores optional local configuration and an API key; it must stay gitignored and untracked.
 - Workbench pictures are saved in `data/workbench/images/`, named by a hash of their bytes.
+- Workbench datasets are written to `data/workbench/datasets/<id>.json`: Bulk rows, their `_expect`
+  labels, and optionally the question set. They hold no answers, and are also meant for version control.
 - Bundled sample documents and rows live in `data/samples/`; the Bulk tickets in `tickets.jsonl`
   carry `_expect` labels for Calibrate. Sample pictures live in `static/img/samples/` and are drawn
   by [`scripts/draw_samples.py`](../scripts/draw_samples.py). Screenshots live in `docs/screenshots/`.

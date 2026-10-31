@@ -3,7 +3,8 @@
 This is the part of Jev Lab that turns "cool demo" into "how do I build with this". A workbench
 item is plain JSON: a state, a map of questions, and optional expectations. Items are saved under
 data/workbench/ so they can be committed with a project like any other test fixture. Pictures an
-item uses are saved beside it in data/workbench/images/, named by a hash of their bytes.
+item uses are saved beside it in data/workbench/images/, named by a hash of their bytes. Bulk rows and
+their labels can be saved as datasets in data/workbench/datasets/.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 25
 MAX_STATE_CHARS = 120_000
 MAX_BULK_ROWS = 200
+MAX_DATASET_CHARS = 2_000_000
 BULK_CONCURRENCY = 8
 SLUG = re.compile(r"[^a-z0-9]+")
 IMAGE_FILE = re.compile(r"[0-9a-f]{16}\.(png|jpg)")
@@ -287,6 +289,123 @@ def load_item(item_id: str) -> dict:
 
 def delete_item(item_id: str) -> bool:
     path = _path(item_id)
+    if path.exists():
+        path.unlink()
+        return True
+    return False
+
+
+# --- saved datasets ------------------------------------------------------------------------
+# A dataset is Bulk rows and their `_expect` labels, and optionally the question set the labels are for,
+# saved as data/workbench/datasets/<id>.json so labels outlast a reload and can be committed. It holds
+# inputs and labels only: answers are never saved, so every answer the Bulk tab shows comes from a run.
+
+
+def datasets_dir() -> Path:
+    return WORKBENCH_DIR / "datasets"
+
+
+def _dataset_path(dataset_id: str) -> Path:
+    if not re.fullmatch(r"[a-z0-9-]{1,60}", dataset_id or ""):
+        raise WorkbenchError("Invalid dataset id")
+    return datasets_dir() / (dataset_id + ".json")
+
+
+def validate_rows(rows: Any) -> List[Any]:
+    """Rows as Bulk takes them: text (one row per line) or a list. Empty rows are dropped."""
+    if isinstance(rows, str):
+        rows = parse_rows(rows)
+    if not isinstance(rows, list):
+        raise WorkbenchError("rows must be text or a list")
+    rows = [r for r in rows if r not in (None, "")]
+    if not rows:
+        raise WorkbenchError("No rows to save")
+    if len(rows) > MAX_BULK_ROWS:
+        raise WorkbenchError("A dataset holds up to %d rows, the most one Bulk run takes; this has %d. "
+                             "Split the rows into several datasets." % (MAX_BULK_ROWS, len(rows)))
+    for number, row in enumerate(rows, 1):
+        if not isinstance(row, (str, dict, list)):
+            raise WorkbenchError("Row %d must be text, a JSON object, or a JSON array" % number)
+        state, _labels = split_labels(row, number)
+        try:
+            validate_state(state)
+        except WorkbenchError as err:
+            raise WorkbenchError("Row %d: %s" % (number, err))
+    if len(json.dumps(rows)) > MAX_DATASET_CHARS:
+        raise WorkbenchError("The rows are too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
+    return rows
+
+
+def dataset_summary(dataset: dict) -> dict:
+    """What the dataset list shows: the counts, without the rows."""
+    rows = dataset.get("rows") or []
+    labeled: Dict[str, int] = {}
+    labeled_rows = 0
+    for row in rows:
+        labels = row.get(LABEL_KEY) if isinstance(row, dict) else None
+        if isinstance(labels, dict) and any(v is not None for v in labels.values()):
+            labeled_rows += 1
+            for qid, value in labels.items():
+                if value is not None:
+                    labeled[qid] = labeled.get(qid, 0) + 1
+    return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
+            "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
+            "questions": len(dataset.get("questions") or {})}
+
+
+def _dataset_text(dataset: dict) -> str:
+    """Pretty JSON with one row per line, so a labeling change is a one-line diff."""
+    head = json.dumps({k: v for k, v in dataset.items() if k != "rows"}, indent=2, ensure_ascii=False)
+    rows = ",\n".join("    " + json.dumps(row, ensure_ascii=False) for row in dataset["rows"])
+    return head[:-2] + ',\n  "rows": [\n' + rows + "\n  ]\n}\n"
+
+
+def save_dataset(spec: dict) -> dict:
+    """Write a dataset named spec["name"]; a dataset with the same id is replaced."""
+    name = str(spec.get("name") or "").strip()[:120]
+    if not SLUG.sub("", name.lower()):
+        raise WorkbenchError("Give the dataset a name")
+    dataset = {"id": slugify(name), "name": name, "notes": str(spec.get("notes") or "")[:2000],
+               "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if spec.get("questions"):
+        dataset["questions"] = bulk_questions(spec["questions"])
+    dataset["rows"] = validate_rows(spec.get("rows"))
+    path = _dataset_path(dataset["id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(path.name + ".partial")
+    partial.write_text(_dataset_text(dataset), encoding="utf-8")
+    partial.replace(path)
+    return dataset
+
+
+def list_datasets() -> List[dict]:
+    out = []
+    if datasets_dir().exists():
+        for path in sorted(datasets_dir().glob("*.json")):
+            try:
+                dataset = json.loads(path.read_text(encoding="utf-8"))
+            except ValueError:
+                continue
+            if isinstance(dataset, dict) and isinstance(dataset.get("rows"), list):
+                out.append(dataset_summary(dict(dataset, id=path.stem)))
+    return out
+
+
+def load_dataset(dataset_id: str) -> dict:
+    path = _dataset_path(dataset_id)  # outside the try: WorkbenchError is a ValueError
+    try:
+        dataset = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise WorkbenchError("No saved dataset %r" % dataset_id)
+    except ValueError:
+        raise WorkbenchError("data/workbench/datasets/%s.json is not valid JSON" % dataset_id)
+    if not isinstance(dataset, dict) or not isinstance(dataset.get("rows"), list):
+        raise WorkbenchError("data/workbench/datasets/%s.json has no rows list" % dataset_id)
+    return dict(dataset, id=dataset_id)
+
+
+def delete_dataset(dataset_id: str) -> bool:
+    path = _dataset_path(dataset_id)
     if path.exists():
         path.unlink()
         return True

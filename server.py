@@ -495,6 +495,22 @@ def api_wb_review(body):
                            str(body.get("signal") or "confidence"))
 
 
+def api_wb_datasets(_body):
+    return {"datasets": workbench.list_datasets()}
+
+
+def api_wb_dataset_save(body):
+    return {"dataset": workbench.dataset_summary(workbench.save_dataset(body))}
+
+
+def api_wb_dataset_load(body):
+    return {"dataset": workbench.load_dataset(str(body.get("id", "")))}
+
+
+def api_wb_dataset_delete(body):
+    return {"deleted": workbench.delete_dataset(str(body.get("id", "")))}
+
+
 def api_wb_bulk_sample(_body):
     return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS,
             "terse_questions": examples.TERSE_BULK_QUESTIONS}
@@ -540,6 +556,10 @@ ROUTES = {
     ("POST", "/api/workbench/items/run"): api_wb_run_items,
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
+    ("GET", "/api/workbench/datasets"): api_wb_datasets,
+    ("POST", "/api/workbench/datasets"): api_wb_dataset_save,
+    ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
+    ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,

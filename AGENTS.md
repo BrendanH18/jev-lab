@@ -107,7 +107,9 @@ then deleted the real `.env` this way; do not repeat it.
 **`jev/workbench.py`** is the generic layer the whole thing is trying to demonstrate: it
 validates arbitrary `state`/`questions` from the UI (`validate_questions`/`validate_state`), runs
 them, checks probability answers against user-authored `expect` ranges, persists runs as JSON
-files under `data/workbench/` (one file per saved test — these are meant to be committed), runs a
+files under `data/workbench/` (one file per saved test — these are meant to be committed), saves
+Bulk rows and their `_expect` labels as datasets under `data/workbench/datasets/` (inputs and labels
+only — never answers, per the no-replay rule below), runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
 `SpendGuard`), and exports the exact request as runnable Python/JavaScript/curl.
 

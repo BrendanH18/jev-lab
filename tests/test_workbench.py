@@ -162,6 +162,103 @@ class ItemTests(unittest.TestCase):
             workbench.item_image({"file": "../../.env"})
 
 
+class DatasetTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self._orig = workbench.WORKBENCH_DIR
+        workbench.WORKBENCH_DIR = self.dir
+
+    def tearDown(self):
+        workbench.WORKBENCH_DIR = self._orig
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_save_list_load_delete(self):
+        text = "\n".join([
+            json.dumps({"text": "Charged twice", "_expect": {"dept": "billing", "urgent": True}}),
+            "plain text row",
+            "",
+            json.dumps({"text": "Login broken", "_expect": {"dept": "tech", "urgent": None}}),
+        ])
+        saved = workbench.save_dataset({"name": "Tickets, March!", "notes": "first pass", "rows": text, "questions": Q})
+        self.assertEqual(saved["id"], "tickets-march")
+        self.assertEqual(len(saved["rows"]), 3, "the empty line is dropped")
+        path = self.dir / "datasets" / "tickets-march.json"
+        self.assertTrue(path.exists())
+        self.assertNotIn("items", [p.name for p in self.dir.iterdir()])
+        self.assertEqual(workbench.list_items(), [], "datasets are not saved tests")
+        lines = path.read_text().splitlines()
+        self.assertIn('    "plain text row",', lines, "one row per line")
+        self.assertEqual(json.loads(path.read_text())["rows"], saved["rows"])
+        [summary] = workbench.list_datasets()
+        self.assertEqual((summary["rows"], summary["labeled"], summary["questions"]), (3, 2, 3))
+        self.assertEqual(summary["labels"], {"dept": 2, "urgent": 1})
+        loaded = workbench.load_dataset("tickets-march")
+        self.assertEqual((loaded["rows"], loaded["questions"], loaded["notes"]), (saved["rows"], Q, "first pass"))
+        self.assertNotIn("answers", json.dumps(loaded))
+        workbench.save_dataset({"name": "tickets march", "rows": ["only row"]})
+        replaced = workbench.load_dataset("tickets-march")
+        self.assertEqual(replaced["rows"], ["only row"])
+        self.assertNotIn("questions", replaced, "a dataset saved without questions has none")
+        self.assertEqual(list((self.dir / "datasets").iterdir()), [path], "no partial file is left behind")
+        self.assertTrue(workbench.delete_dataset("tickets-march"))
+        self.assertFalse(workbench.delete_dataset("tickets-march"))
+        self.assertEqual(workbench.list_datasets(), [])
+
+    def test_rows_round_trip_through_bulk(self):
+        rows = [{"text": "a", "_expect": {"urgent": True}}, ["an", "array"], "text with\nnewline"]
+        workbench.save_dataset({"name": "mixed", "rows": rows})
+        loaded = workbench.load_dataset("mixed")["rows"]
+        self.assertEqual(loaded, rows)
+        client = FakeClient(lambda s, q: {"urgent": 0.9})
+        out = workbench.run_bulk(client, loaded, {"urgent": Q["urgent"]})
+        self.assertEqual(out["completed"], 3)
+        self.assertEqual(out["labeled"], 1)
+        self.assertEqual(out["results"][0]["expect"], {"urgent": True})
+
+    def test_rejects_bad_datasets(self):
+        cases = [
+            ({"name": "", "rows": ["x"]}, "name"),
+            ({"name": "!!!", "rows": ["x"]}, "name"),
+            ({"name": "x", "rows": []}, "No rows"),
+            ({"name": "x", "rows": "\n\n"}, "No rows"),
+            ({"name": "x", "rows": {"text": "x"}}, "text or a list"),
+            ({"name": "x", "rows": [1]}, "Row 1 must be"),
+            ({"name": "x", "rows": ["ok", {"_expect": {"a": 1}}]}, "Row 2 has labels but no state"),
+            ({"name": "x", "rows": [{"text": "x", "_expect": "billing"}]}, "must be an object"),
+            ({"name": "x", "rows": ["r"] * (workbench.MAX_BULK_ROWS + 1)}, "up to 200 rows"),
+            ({"name": "x", "rows": ["x" * (workbench.MAX_STATE_CHARS + 1)]}, "Row 1: state is too large"),
+            ({"name": "x", "rows": ["x"], "questions": {"where": {"type": "box", "instructions": "the mug"}}}, "Box"),
+        ]
+        for spec, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaises(workbench.WorkbenchError) as ctx:
+                    workbench.save_dataset(spec)
+                self.assertIn(message, str(ctx.exception))
+        with patch.object(workbench, "MAX_DATASET_CHARS", 10):
+            with self.assertRaises(workbench.WorkbenchError):
+                workbench.save_dataset({"name": "x", "rows": ["long enough to pass the cap"]})
+        self.assertFalse((self.dir / "datasets").exists(), "nothing is written for a refused dataset")
+        for bad in ("../x", "A B", "", "x/y"):
+            with self.assertRaises(workbench.WorkbenchError):
+                workbench.load_dataset(bad)
+            with self.assertRaises(workbench.WorkbenchError):
+                workbench.delete_dataset(bad)
+        with self.assertRaises(workbench.WorkbenchError):
+            workbench.load_dataset("missing")
+
+    def test_unreadable_files_are_skipped_in_the_list(self):
+        folder = self.dir / "datasets"
+        folder.mkdir(parents=True)
+        (folder / "broken.json").write_text("{not json")
+        (folder / "norows.json").write_text("{}")
+        workbench.save_dataset({"name": "good", "rows": ["x"]})
+        self.assertEqual([d["id"] for d in workbench.list_datasets()], ["good"])
+        with self.assertRaises(workbench.WorkbenchError):
+            workbench.load_dataset("broken")
+        with self.assertRaises(workbench.WorkbenchError):
+            workbench.load_dataset("norows")
+
+
 class BulkAndExportTests(unittest.TestCase):
     def test_bulk_runs_every_row(self):
         client = FakeClient(lambda s, q: {"dept": "tech" if "bug" in s["text"] else "billing", "urgent": 0.6})

@@ -107,6 +107,9 @@ conditions.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. It reuses the Bulk answers, so it makes no extra calls.
+- **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
+  in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
+  answers.
 - **Review labels:** see the labeled answers that disagree with their labels, the most confident
   disagreements first, since those are often labeling mistakes, and the unlabeled rows nearest
   Calibrate's threshold, whose labels decide whether it can move. Fix or label them in place. It also
@@ -126,7 +129,7 @@ conditions.
   and more.
 - **Export:** generate Python, JavaScript, or curl requests for use outside Jev Lab.
 
-Saved tests are JSON files in `data/workbench/`. They persist across restarts and can be committed
+Saved tests are JSON files in `data/workbench/`, and saved datasets are in `data/workbench/datasets/`. They persist across restarts and can be committed
 deliberately as fixtures. Review their input data before sharing them.
 
 See the [Workbench guide](docs/workbench.md) for a complete request, expectation format, and limits.
