@@ -21,8 +21,8 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, claims, compare, dispatch, envfile, examples, find, hello, holdout, images, policy, security,
-                 shield, workbench)
+from jev import (calibrate, claims, compare, dispatch, envfile, examples, find, hello, holdout, images, policy, review,
+                 security, shield, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -485,6 +485,11 @@ def api_wb_holdout(body):
                             str(body.get("bound") or "estimate"), body.get("folds", holdout.FOLDS))
 
 
+def api_wb_review(body):
+    return review.evaluate(body.get("rows"), body.get("question"), body.get("threshold", 0.5),
+                           str(body.get("signal") or "confidence"))
+
+
 def api_wb_bulk_sample(_body):
     return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS,
             "terse_questions": examples.TERSE_BULK_QUESTIONS}
@@ -534,6 +539,7 @@ ROUTES = {
     ("POST", "/api/workbench/policy"): api_wb_policy,
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,
     ("POST", "/api/workbench/holdout"): api_wb_holdout,
+    ("POST", "/api/workbench/review"): api_wb_review,
     ("POST", "/api/workbench/compare"): api_wb_compare,
     ("POST", "/api/workbench/compare/score"): api_wb_compare_score,
 }
