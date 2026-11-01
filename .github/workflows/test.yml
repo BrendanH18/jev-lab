@@ -59,7 +59,7 @@ jobs:
         run: uv run --locked ruff check
 
   javascript:
-    name: JavaScript module syntax
+    name: JavaScript modules and tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -72,3 +72,5 @@ jobs:
           for file in static/js/*.js; do
             node --input-type=module --check < "$file" || exit 1
           done
+      - name: Test browser modules
+        run: node --test tests/js/*.test.mjs

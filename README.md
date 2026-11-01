@@ -73,7 +73,9 @@ issue real refunds, or transfer money.
 | **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, compare two wordings or models, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
-token usage, and estimated cost. Model judgments are live; reweighting, replanning, exports, and
+token usage, and estimated cost. **Open in Workbench**, in the same drawer, puts that exact request in
+the Workbench, pictures included, so you can reword a demo's questions, save them as a test, or run
+them over your own rows. Model judgments are live; reweighting, replanning, exports, and
 simulation updates run locally.
 
 Claims, Autopilot's photo check, and the Workbench's image support use TypeSafe's
@@ -135,6 +137,9 @@ conditions.
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
   significance test, and the rows where the variants disagree. A cascade shows what asking one
   variant first, and the other only when it is unsure, would cost and how accurate it would be.
+- **Open a demo's request:** **Open in Workbench**, in any demo's **Inspect JSON** drawer, opens the
+  exact request that demo sent in a new Workbench tab, with its pictures. Its answers stay behind;
+  **Run** asks the model again.
 - **Learn:** start from thirteen examples covering triage, moderation, routing, extraction, images,
   and more.
 - **Export:** generate Python, JavaScript, or curl requests for use outside Jev Lab.
@@ -181,7 +186,8 @@ uv run --locked python -m unittest discover -v tests
 
 No API key or external API access is needed for the tests. SDK tests use an in-memory transport;
 HTTP tests start a temporary loopback server. CI tests the locked dependencies on Python
-3.10–3.14, the legacy standard-library fallback on Python 3.9, and JavaScript syntax.
+3.10–3.14, the legacy standard-library fallback on Python 3.9, and JavaScript syntax and module tests
+(`node --test tests/js/*.test.mjs`).
 
 The sample pictures in `static/img/samples/` are drawn by a standard-library script. After changing
 a scene, regenerate them and commit the PNGs with the script:

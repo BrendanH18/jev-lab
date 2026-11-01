@@ -47,12 +47,14 @@ Lint the Python sources with the same Ruff check CI runs (a dev dependency, not 
 uv run --locked ruff check
 ```
 
-For JavaScript edits, Node.js 22 is used in CI to check module syntax:
+For JavaScript edits, Node.js 22 is used in CI to check module syntax and to run the tests for the
+browser modules that need no DOM:
 
 ```sh
 for file in static/js/*.js; do
   node --input-type=module --check < "$file" || exit 1
 done
+node --test tests/js/*.test.mjs
 ```
 
 For interface changes, also inspect the affected pages in a browser at desktop and narrow widths.

@@ -132,7 +132,8 @@ function renderResult() {
 
   mount("#result",
     h("div", { class: "panel-head" }, icon("eye"), h("h2", {}, "Claim decision"), h("div", { class: "spacer" }),
-      callStats(r.meta, () => inspect(r.trace, "Claims · one Jev request"))),
+      callStats(r.meta, () => inspect(r.trace, "Claims · one Jev request",
+        { uploads: S.resultImage?.data_base64 ? [S.resultImage.data_base64] : [] }))),
     h("div", { class: "panel-body grid", style: { gap: "16px" } },
       h("div", { class: "decision" },
         statusBadge(v.decision, DECISION_LABELS[v.decision], "lg"),

@@ -76,6 +76,25 @@ the top bar. Jev Lab sends the `TypeSafe-Danger-Zone-Images: true` header for yo
 Answers panel draws each Box on the picture its question names. The **Find it in a photo** example
 shows the pattern.
 
+## Start from a demo's request
+
+Every demo shows its request in **Inspect JSON**. **Open in Workbench**, at the top of that drawer,
+opens the Workbench in a new tab with that request in Build: the state and questions exactly as the
+demo sent them, and its pictures. A sample picture comes by name. An uploaded photo, such as one you
+checked in Claims, comes from the page that uploaded it, so open it before you reload that page. The
+demo's answers do not come along: **Run** asks the model again, with the model chosen in the top bar.
+
+From there, everything in this guide applies to the demo's own questions. Reword one and compare,
+save the run as a test, copy the questions into Bulk to run them over your own rows, or export them.
+Autopilot's request combines Shield's and Dispatch's questions, with `shield.` and `dispatch.`
+prefixes on their IDs. Play's request includes the secret word, so its drawer only opens once the game
+is over.
+
+The request moves between the tabs through your browser's local storage and never reaches the
+server. The Workbench reads it once when it loads, then removes it; a request not opened within two
+minutes is ignored. A request too large to store, usually because of a large photo, shows an error.
+In that case, open the Workbench and add the photo there.
+
 ## Save expectations
 
 Save a run as a test, name it, and edit its expectations to the behavior you intend. Defaults
