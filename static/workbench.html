@@ -11,6 +11,10 @@
     .qcard { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
     .qcard .row { display: grid; grid-template-columns: minmax(120px, 1fr) 110px auto; gap: 8px; align-items: center; }
     .qcard textarea { min-height: 54px; }
+    .lint-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .lint { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; }
+    .lint > div { display: grid; gap: 3px; min-width: 0; }
+    .lint a { font-size: 12px; }
     .crit { display: grid; gap: 6px; }
     .crit .cr { display: grid; grid-template-columns: 130px 1fr auto; gap: 6px; align-items: center; }
     .crit .cr.score { grid-template-columns: 34px 1fr auto; }
