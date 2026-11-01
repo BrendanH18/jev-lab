@@ -267,8 +267,8 @@ before you commit them.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
-| `GET /api/workbench/datasets` | | `datasets`: `id`, `name`, `notes`, `saved_at`, and counts of `rows`, `labeled` rows, `labels` per question, and `questions` |
-| `POST /api/workbench/datasets` | `name`, `rows` (text or a list), optional `notes` and `questions` | `dataset`: the same summary |
+| `GET /api/workbench/datasets` | | `datasets`: `id`, `name`, `notes`, `saved_at`, counts of `rows`, `labeled` rows, `labels` per question, and `questions`, and the saved [`check`](#keep-a-gate-as-a-check) or `null` |
+| `POST /api/workbench/datasets` | `name`, `rows` (text or a list), optional `notes` and `questions` | `dataset`: the same summary; `check_dropped` says why a saved check was removed |
 | `POST /api/workbench/datasets/load` | `id` | `dataset`: the saved file |
 | `POST /api/workbench/datasets/delete` | `id` | `deleted`: whether a file was removed |
 
@@ -448,6 +448,78 @@ held-out folds), `gap`, `below`, `spread`, `unreached`, and the per-fold `parts`
 `gap` in cost per 1,000 rows, `worse`, `review_folds` (folds whose cheapest choice is to review every row),
 `spread`, and `parts`.
 
+## Keep a gate as a check
+
+Policy's thresholds are chosen on one run. When you later reword a question or move to a new model,
+the same thresholds may automate more rows, or fewer, and at a different accuracy. A **check** keeps
+the gate with the rows it was tuned on, so you can rerun it and see whether it still holds.
+
+To save one, load or save a dataset with its questions, run Bulk with those questions, set or tune
+Policy's gates, and open **Save as a check** at the end of the Policy panel. Choose two targets:
+
+- **accurate when automated, at least**: the accuracy the automated rows must reach. With
+  [targets at 95% confidence](#targets-at-95-confidence) selected in Policy, the 95% lower bound must
+  reach it instead;
+- **automated, at least**: the share of labeled rows the gate must automate.
+
+They start at the highest of 90%, 95%, and 99% that this run meets, and at this run's automation
+less a margin of at least five points, and the panel says whether this run meets them. **Save
+check** adds them to the dataset file under `"check"`, with the gated questions and thresholds,
+the signal, and the current model. Policy with one gated question checks a single threshold, as
+Calibrate sets it. The panel asks you to save the dataset first when the rows box or labels differ
+from the file, or when the run asked other questions than the ones saved with the dataset, since a
+check reruns exactly what the file holds.
+
+```json
+"check": {
+  "gates": {"department": 0.6, "wants_refund": 0.4},
+  "signal": "confidence",
+  "bound": "estimate",
+  "model": "jev-1.13.0",
+  "min_accuracy": 0.9,
+  "min_coverage": 0.3,
+  "saved_at": "2026-10-31T12:00:00Z"
+}
+```
+
+A check holds targets, never answers or results from an earlier run. Saving the dataset again keeps
+its check while every gated question is still among the saved questions, so adding rows or labels
+keeps it; otherwise the check is removed and the page says why.
+
+**Run check**, under the dataset in **Datasets**, sends every saved row to the model again, one call
+per row, and scores the answers with the check's gates. Type a model name beside it to ask that model
+instead. The report shows **Passed** when both targets hold, **Failed** when one does not, and **Not
+judged** when some rows got no answer or no row is labeled for every gated question, since a check is
+measured on every row or not at all. It lists the accuracy with its interval, the share automated,
+the cost and median latency, and the automated rows with a wrong answer.
+
+From a terminal, `scripts/check.py` runs the same checks:
+
+```sh
+uv run --locked scripts/check.py                     # every dataset that holds a check
+uv run --locked scripts/check.py support-tickets     # some of them, by id
+uv run --locked scripts/check.py --model jev-1.14.0  # ask another model than the checks name
+uv run --locked scripts/check.py --list              # show the checks; no model calls
+```
+
+It makes paid calls with the configured key and prints one report per check. It exits 0 when every
+check passed, 1 when any failed, and 2 when a check could not be judged or none was found. `--out
+report.json` writes the reports, which include rows and answers, so review the file before sharing
+it. Because committed datasets carry their checks, a CI job with a key can rerun them after a
+change, for example in GitHub Actions:
+
+```yaml
+- run: uv run --locked scripts/check.py
+  env:
+    TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+```
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/checks` | `id`, `check`: `gates`, `min_accuracy` (0.5–1), optional `min_coverage` (default 0), `signal`, `bound`, and `model` (default: the current model) | `dataset`: the summary, with the `check` |
+| `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
+| `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, and `answered_by` |
+
 ## Compare two variants
 
 **Compare** answers "did this change help?" A variant is a question set and a model. Variant A
@@ -528,6 +600,7 @@ request with one file part per picture.
 | Bulk rows | First 200 nonempty rows |
 | Imported CSV | 2,000,000 characters and 100 columns; the first 200 rows with state |
 | Saved dataset | 200 nonempty rows and 2,000,000 characters as JSON |
+| Check | One per dataset; up to 10 gated questions; one call per row on every run |
 | Calibrate, Costs, Review, Slices, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Prices | $0 to $1,000,000 each; up to 100 priced mistakes |
 | Policy gated questions | 10 |

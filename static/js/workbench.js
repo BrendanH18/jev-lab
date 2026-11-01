@@ -11,6 +11,10 @@ const W = {
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
     savedText: "", runText: null, labelsDirty: false,
+    // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
+    // checkForm: Policy's "Save as a check" targets as typed (percent strings; null takes a default from the run).
+    // checkRuns: per dataset id, a check run in flight or its report (jev/checks.py), and the model typed to ask instead.
+    ranQuestions: null, runModel: null, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
     // CSV import (jev/csvimport.py): the file or pasted text, the column uses chosen so far, and the server's report.
     // pending: a newer conversion is on its way; qkey: the questions the report was checked against.
     csv: { open: false, text: "", file: "", columns: {}, report: null, error: null, seq: 0, pending: false, qkey: null },
@@ -590,7 +594,7 @@ async function saveDataset() {
   if (!settleLabels("Save the rows box")) return;
   const questions = d.withQuestions ? bulkQuestions() : null;
   try {
-    const { dataset } = await api("/api/workbench/datasets", {
+    const { dataset, check_dropped: dropped } = await api("/api/workbench/datasets", {
       name, notes: d.notes, rows: rowsPayload(), questions: questions && Object.keys(questions).length ? questions : undefined,
     });
     b.savedText = b.rowsText;
@@ -602,6 +606,7 @@ async function saveDataset() {
     if (!d.questions && b.source === "dataset") b.source = "current";
     b.datasets = (await api("/api/workbench/datasets")).datasets;
     toast(`Saved ${dataset.rows} rows (${dataset.labeled} labeled) to data/workbench/datasets/${dataset.id}.json`);
+    if (dropped) toast(`Removed the dataset's check: ${dropped}`, "error");
     render();
   } catch (e) { handleError(e); render(); }
 }
@@ -649,6 +654,7 @@ function renderDatasets() {
         h("label", { class: "toggle", style: { gap: "6px" } }, withQ, h("span", { class: "track" }), "Save the selected questions with the rows"),
         h("div", {}, h("button", { class: "btn sm", onclick: saveDataset }, icon("check"), "Save rows and labels"))),
       h("p", { class: "faint", style: { fontSize: "12px" } }, "Saves the rows box, with the labels you chose in the results table, as one JSON file you can commit. Only rows and labels are saved, never answers: run a loaded dataset to get answers."),
+      b.datasets.some((x) => x.check) ? h("datalist", { id: "cmp-models" }, (W.compare.models || []).map((n) => h("option", { value: n }))) : null,
       b.datasets.length ? b.datasets.map((x) => h("div", { class: "item" },
         h("div", { class: "grid", style: { gap: "2px" } },
           h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
@@ -657,8 +663,174 @@ function renderDatasets() {
           x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
         h("div", { style: { display: "flex", gap: "6px" } },
           h("button", { class: "btn sm", onclick: () => loadDataset(x.id) }, "Load"),
-          h("button", { class: "btn sm ghost danger", "aria-label": `Delete ${x.id}`, onclick: () => deleteDataset(x.id) }, icon("trash")))))
+          h("button", { class: "btn sm ghost danger", "aria-label": `Delete ${x.id}`, onclick: () => deleteDataset(x.id) }, icon("trash"))),
+        x.check ? checkItem(x) : null))
         : h("div", { class: "empty" }, "No saved datasets yet. Label some rows, name them, and save.")));
+}
+
+// ---------- Checks ----------
+// A check (jev/checks.py) keeps Policy's gate with a saved dataset: the gated questions and thresholds, the model, and
+// the targets the gate must keep meeting. Running it sends every saved row to the model again and judges the new
+// answers, so the report below a dataset always comes from a run started here. scripts/check.py runs the same checks.
+const canon = (v) => (v && typeof v === "object" && !Array.isArray(v)
+  ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon(v[k])}`).join(",")}}`
+  : Array.isArray(v) ? `[${v.map(canon).join(",")}]` : JSON.stringify(v));
+
+function checkTargetsText(c) {
+  return `${pct(c.min_accuracy, 1)} accurate${c.bound === "lower" ? " at 95% confidence" : ""} · at least ${pct(c.min_coverage)} automated`;
+}
+
+function checkItem(x) {
+  const c = x.check;
+  const run = W.bulk.checkRuns[x.id] || (W.bulk.checkRuns[x.id] = { running: false, report: null, model: "" });
+  const model = h("input", { class: "input sm", list: "cmp-models", value: run.model, spellcheck: "false", style: { maxWidth: "190px" },
+    placeholder: `model: ${c.model}`, "aria-label": `Model to ask for the ${x.id} check` });
+  model.addEventListener("focus", loadModels);
+  model.addEventListener("input", () => { run.model = model.value; });
+  const n = Math.min(x.rows, 200);
+  return h("div", { class: "check-item" },
+    h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
+      h("span", { class: "badge info" }, icon("check"), "Check"),
+      h("span", { class: "mono" }, Object.entries(c.gates).map(([q, t]) => `${q} ≥ ${t.toFixed(2)}`).join(" · ")),
+      h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}`)),
+    h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: run.running, onclick: () => runCheck(x.id) },
+        run.running ? [h("span", { class: "spin" }), " Checking…"] : [icon("layers"), `Run check · ${n} call${n === 1 ? "" : "s"}`]),
+      model,
+      h("button", { class: "btn sm ghost", disabled: run.running, onclick: () => removeCheck(x.id) }, "Remove check")),
+    run.report ? checkReport(run.report) : null);
+}
+
+async function runCheck(id) {
+  const b = W.bulk;
+  const run = b.checkRuns[id];
+  run.running = true;
+  run.report = null;
+  render();
+  try {
+    run.report = await api("/api/workbench/checks/run", { id, model: run.model.trim() || undefined });
+  } catch (e) { handleError(e); }
+  run.running = false;
+  render();
+}
+
+async function removeCheck(id) {
+  if (!confirm(`Remove the check from “${id}”? The rows, labels, and questions stay.`)) return;
+  try {
+    await api("/api/workbench/checks/delete", { id });
+    delete W.bulk.checkRuns[id];
+    W.bulk.datasets = (await api("/api/workbench/datasets")).datasets;
+    render();
+  } catch (e) { handleError(e); }
+}
+
+const CHECK_BADGE = { pass: ["good", "check", "Passed"], fail: ["critical", "stop", "Failed"], error: ["warning", "eye", "Not judged"] };
+
+function checkReport(rep) {
+  const [tone, ic, label] = CHECK_BADGE[rep.status];
+  const t = rep.targets;
+  const mark = (ok) => h("span", { class: `badge ${ok ? "good" : "critical"}` }, ok ? "meets" : "misses");
+  const lower = rep.check.bound === "lower";
+  return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("span", { class: `badge ${tone}` }, icon(ic), label),
+      h("span", { class: "faint", style: { fontSize: "12px" } },
+        `${rep.rows} rows · asked ${rep.model}${rep.answered_by?.length ? `, answered by ${rep.answered_by.join(", ")}` : ""}`)),
+    t.accuracy ? h("div", { class: "stat-row" },
+      stat("accuracy when automated", [rep.accuracy === null ? "—" : withCI(pct(rep.accuracy, 1), rep.accuracy_low, rep.accuracy_high), " ", mark(t.accuracy.ok)]),
+      stat(lower ? "target, 95% lower bound" : "target", pct(t.accuracy.target, 1)),
+      stat("automated", [`${rep.automated} of ${rep.labeled} · ${pct(rep.coverage)}`, " ", mark(t.coverage.ok)]),
+      stat("minimum", pct(t.coverage.target)),
+      stat("cost", usd(rep.cost_usd)),
+      rep.latency_ms_median === null ? null : stat("median latency", ms(rep.latency_ms_median))) : null,
+    rep.reasons.length ? h("ul", { class: "muted", style: { fontSize: "12.5px", margin: 0, paddingLeft: "18px" } },
+      rep.reasons.map((r) => h("li", {}, r))) : null,
+    rep.mistakes.length ? h("div", { class: "grid", style: { gap: "4px" } },
+      h("span", { class: "faint", style: { fontSize: "12px" } }, `Automated but wrong · ${rep.mistakes_total}`),
+      h("div", { class: "scroll" }, h("table", { class: "table" },
+        h("tbody", {}, rep.mistakes.slice(0, 5).map((m) => h("tr", {},
+          h("td", { class: "num" }, String(m.index + 1)),
+          h("td", { class: "row", style: { maxWidth: "260px" } }, m.row),
+          h("td", {}, Object.entries(m.wrong).map(([q, a]) => h("div", { style: { fontSize: "12px" } },
+            h("span", { class: "mono" }, q), `: ${a.answer}, label ${a.label} `, h("span", { class: "faint mono" }, `(${a.signal.toFixed(2)})`))))))))),
+      rep.mistakes_total > 5 ? h("span", { class: "faint", style: { fontSize: "12px" } }, `…and ${rep.mistakes_total - 5} more. Load the dataset and run it in Bulk to see every row.`) : null) : null);
+}
+
+// Policy's "Save as a check": why it cannot be saved yet, or the targets to save and whether this run meets them.
+function checkBlocker() {
+  const b = W.bulk;
+  const d = b.dataset;
+  if (!d.id) return "Save these rows as a dataset, with their questions, to keep this gate as a check.";
+  if (bulkUnsaved() || b.runText !== b.savedText) return `Save the dataset first: a check reruns the rows saved in data/workbench/datasets/${d.id}.json, and these differ.`;
+  if (!d.questions || canon(b.ranQuestions) !== canon(d.questions)) {
+    return `This run asked other questions than the ones saved with “${d.name}”. Run its saved questions, or save the dataset with these.`;
+  }
+  return null;
+}
+
+function checkDefaults(rep, bound) {
+  const met = [0.99, 0.95, 0.90].find((target) => rep.automated && (bound === "lower" ? rep.accuracy_low : rep.accuracy) + 1e-9 >= target);
+  return { accuracy: String(Math.round(100 * (met || 0.9))), coverage: String(Math.max(0, Math.floor(rep.coverage * 20) * 5 - 5)) };
+}
+
+function checkVerdict(rep, bound, form) {
+  const acc = Number(form.accuracy) / 100;
+  const cov = Number(form.coverage) / 100;
+  if (!(acc >= 0.5 && acc <= 1) || !(cov >= 0 && cov <= 1)) return [h("span", { style: { color: "var(--critical-text)" } }, "Accuracy takes 50–100%, automated 0–100%.")];
+  const measured = bound === "lower" ? rep.accuracy_low : rep.accuracy;
+  const accOk = rep.automated > 0 && measured + 1e-9 >= acc;
+  const covOk = rep.coverage + 1e-9 >= cov;
+  return [`On this run: ${measured === null ? "nothing automated" : `${pct(measured, 1)} ${bound === "lower" ? "at 95% confidence" : "accurate"}`} `,
+    h("span", { class: `badge ${accOk ? "good" : "critical"}` }, accOk ? "meets" : "misses"),
+    ` · ${pct(rep.coverage)} automated `, h("span", { class: `badge ${covOk ? "good" : "critical"}` }, covOk ? "meets" : "misses"),
+    accOk && covOk ? "" : ". A check that fails on the run it comes from will fail when you rerun it."];
+}
+
+function checkSaveBody(rep) {
+  const b = W.bulk;
+  const p = b.policy;
+  const title = h("h3", { class: "cal-h" }, "Save as a check");
+  const blocker = checkBlocker();
+  if (blocker) return [title, h("p", { class: "faint", style: { fontSize: "12.5px" } }, blocker)];
+  // Until a target is typed, it follows the gates: the highest target this run meets, and its automation less a margin.
+  const typed = b.checkForm;
+  const form = { ...checkDefaults(rep, p.bound), ...Object.fromEntries(Object.entries(typed).filter(([, v]) => v !== null)) };
+  const verdict = h("div", { id: "check-verdict", style: { fontSize: "12.5px" } }, checkVerdict(rep, p.bound, form));
+  const field = (key, label, min) => {
+    const input = h("input", { class: "input sm", type: "number", min, max: 100, step: 1, value: form[key], style: { width: "84px" },
+      id: `check-${key}`, "aria-label": label });
+    input.addEventListener("input", () => { typed[key] = form[key] = input.value; mount(verdict, ...checkVerdict(rep, p.bound, form)); });
+    return h("label", { style: { display: "flex", gap: "6px", alignItems: "center" } }, h("span", { class: "muted" }, label), input, "%");
+  };
+  const existing = b.datasets.find((x) => x.id === b.dataset.id)?.check;
+  const model = b.runModel || "the current model";
+  return [title,
+    h("p", { class: "faint", style: { fontSize: "12.5px" } },
+      `Keeps these thresholds with “${b.dataset.name}”, asking ${model}, and the targets they must keep meeting. Run the check from the Datasets panel or with `,
+      h("code", {}, "uv run scripts/check.py"), " after you change wording or model: it reruns every saved row and fails when a target is missed. Only targets are saved, never answers."),
+    h("div", { style: { display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
+      field("accuracy", p.bound === "lower" ? "accurate at 95% confidence, at least" : "accurate when automated, at least", 50),
+      field("coverage", "automated, at least", 0),
+      h("button", { class: "btn sm", onclick: saveCheck }, icon("check"), existing ? "Replace the saved check" : `Save check to ${b.dataset.id}`)),
+    verdict];
+}
+
+async function saveCheck() {
+  const b = W.bulk;
+  const p = b.policy;
+  const id = b.dataset.id;
+  const blocker = checkBlocker();  // the rows box or labels may have changed since the panel was drawn
+  if (blocker) return toast(blocker, "error");
+  if (b.datasets.find((x) => x.id === id)?.check && !confirm(`Replace the check saved with “${id}”?`)) return;
+  try {
+    const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: b.runModel || "",
+      min_accuracy: Number($("#check-accuracy").value) / 100, min_coverage: Number($("#check-coverage").value) / 100 };
+    await api("/api/workbench/checks", { id, check });
+    b.datasets = (await api("/api/workbench/datasets")).datasets;
+    delete b.checkRuns[id];
+    toast(`Saved the check to data/workbench/datasets/${id}.json`);
+    render();
+  } catch (e) { handleError(e); }
 }
 
 // ---------- CSV import ----------
@@ -886,8 +1058,12 @@ async function runBulk() {
   try {
     const b = W.bulk;
     const ranText = b.rowsText;
+    const runModel = currentStatus()?.model || "";  // the model can change in Settings after the run
     b.result = await api("/api/workbench/bulk", { rows: rowsPayload(), questions });
     b.runText = ranText;
+    b.ranQuestions = questions;
+    b.runModel = runModel;
+    b.checkForm = { accuracy: null, coverage: null };
     b.labelsDirty = false;
     b.sortKey = null;
     b.labels = {};
@@ -1797,7 +1973,8 @@ function renderPolicy() {
       nOn ? null : h("p", { class: "muted" }, "Check at least one question to gate."),
       h("div", { id: "pol-tunes", class: "chips" }),
       h("div", { id: "pol-out", class: "grid", style: { gap: "14px" } }),
-      nOn ? holdoutPanel(p, "pol-holdout", () => Object.keys(activeGates())) : null));
+      nOn ? holdoutPanel(p, "pol-holdout", () => Object.keys(activeGates())) : null,
+      h("div", { id: "pol-check", class: "holdout" })));
 }
 
 function policyCode(rep) {
@@ -1892,8 +2069,9 @@ function updatePolicy() {
     await rescorePolicy();
     render();
   }));
-  if (!rep) return mount("#pol-out");
+  if (!rep) { mount("#pol-check"); return mount("#pol-out"); }
   const n = rep.labeled;
+  mount("#pol-check", ...(n ? checkSaveBody(rep) : []));
   if (n) sliceSoon.pol();
   const notes = [
     n && n < 100 ? h("p", { class: "faint" }, `With ${n} labeled rows, one row moves accuracy by ${(100 / n).toFixed(1)} points. Tuned thresholds fit these rows; confirm them on more labeled rows before you rely on them.`) : null,
