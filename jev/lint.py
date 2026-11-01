@@ -33,6 +33,9 @@ _TICKED = re.compile(r"`([^`\n]+)`")
 _STEP = re.compile(r"\.([\w-]+)|\[(\d+)\]")
 # Quoted text is data the question carries, such as a search query, so its question marks do not count.
 _QUOTED = re.compile(r"“[^”]*”|‘[^’]*’|\"[^\"]*\"|(?<!\w)'[^'\n]*'(?!\w)|`[^`]*`")
+# Sentence punctuation and quotes, which do not change what a description says. Signs, operators, and
+# symbols such as - < > $ % do, so they are kept.
+_PROSE = re.compile(r"[\s.,;:!?'\"“”‘’()]+")
 _KEY_VALUE = re.compile(r"^\s*[A-Z][\w ./-]{0,30}:[ \t]+\S", re.M)
 
 
@@ -53,10 +56,10 @@ def _strings(value: Any) -> Iterable[str]:
 
 
 def _norm(value: Any) -> str:
-    """A description for comparing: case, spacing, and punctuation ignored in text; field names (in any order),
+    """A description for comparing: case, spacing, and sentence punctuation ignored in text; field names (in any order),
     numbers, and structure kept, so criteria that differ only in a field or a number stay different."""
     if isinstance(value, str):
-        return " ".join(re.sub(r"[^\w`]+", " ", value.lower()).split())
+        return " ".join(_PROSE.sub(" ", value.lower()).split())
     if isinstance(value, dict):
         return "{%s}" % ", ".join("%s: %s" % (key, _norm(item)) for key, item in sorted(value.items())) if value else ""
     if isinstance(value, list):
@@ -135,7 +138,7 @@ def _instructions(qid: str, question: dict) -> List[dict]:
 
 
 def _repeats(values: List[Tuple[str, Any]]) -> List[List[str]]:
-    """Groups of names whose descriptions are the same once case and punctuation are ignored."""
+    """Groups of names whose descriptions are the same once case and sentence punctuation are ignored."""
     groups: Dict[str, List[str]] = {}
     for name, value in values:
         key = _norm(value)

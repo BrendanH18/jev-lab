@@ -94,6 +94,12 @@ class InstructionTests(unittest.TestCase):
         q = {"x": choice("Which?", {"a": {"covers": "Charges"}, "b": {"about": "Charges"}})}
         self.assertEqual(codes("hi", q), [("mixed_option_fields", "x")])
 
+    def test_signs_and_operators_keep_descriptions_apart(self):
+        q = {"x": choice("How large is the order?", {"small": "Amount < 100", "large": "Amount > 100"})}
+        self.assertEqual(codes("hi", q), [])
+        q = {"x": score("How cold?", ["Temperature: -10 C", "Temperature: 10 C"])}
+        self.assertEqual(codes("hi", q), [])
+
     def test_the_same_fields_in_another_order_are_the_same_description(self):
         q = {"x": choice("Which team?", {"billing": {"covers": "Charges", "excludes": "Refunds"},
                                          "refunds": {"excludes": "Refunds", "covers": "Charges"}})}

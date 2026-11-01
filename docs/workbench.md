@@ -60,7 +60,7 @@ A **problem** is almost certainly a mistake:
 | Finding | What it means |
 | --- | --- |
 | A path the state lacks | A backticked path, such as `` `ticket.from` `` or `` `lines[2]` ``, names nothing in the state, so the model cannot see what the question points at. A text state has no fields at all. Picture references are not paths |
-| The same question twice | Two questions of the same type have the same instructions and criteria, once case and punctuation are ignored |
+| The same question twice | Two questions of the same type have the same instructions and criteria, once case and sentence punctuation are ignored. Signs and operators such as `-`, `<`, and `>` count |
 | Options or levels alike | Two Choice options, or two Score levels, have the same description, so the model cannot tell them apart |
 
 **Advice** is a pattern the guide recommends against. It may still be what you meant:
