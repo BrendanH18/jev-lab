@@ -76,17 +76,20 @@ class TypeSafeClient:
             QUEUE.extend(json.load(open(os.environ["FAKE_ANSWERS"])))
 
     def system_one(self, state, questions, model=None):
+        if os.environ.get("FAKE_STATES"):
+            with open(os.environ["FAKE_STATES"], "a") as states:
+                states.write(json.dumps(state) + "\\n")
         raw = QUEUE.pop(0)
         group = lambda t: {k: NS(**a) for k, a in raw.items() if a["type"] == t}
         return NS(choices=group("choice"), nouls=group("noul"), scores=group("score"))
 '''
 
 FAKE_JS_SDK = '''
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 const queue = process.env.FAKE_ANSWERS ? JSON.parse(readFileSync(process.env.FAKE_ANSWERS, "utf8")) : [];
 export class TypeSafeClient {
   async systemOne(request) {
-    globalThis.requests = [...(globalThis.requests || []), request];
+    if (process.env.FAKE_STATES) appendFileSync(process.env.FAKE_STATES, JSON.stringify(request.state) + "\\n");
     return { answers: queue.shift() };
   }
 }
@@ -144,11 +147,15 @@ class ExportTests(unittest.TestCase):
         (self.tmp / "typesafe_sdk.py").write_text(FAKE_SDK)
         (self.tmp / "gate.py").write_text(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0")["python"])
         (self.tmp / "answers.json").write_text(json.dumps(CASES[:3]))
-        rows = 'Order A-1041 arrived damaged.\n\n{"text": "Refund please", "channel": "email"}\n42\n'
-        env = dict(os.environ, FAKE_ANSWERS=str(self.tmp / "answers.json"), PYTHONPATH=str(self.tmp))
+        rows = 'Order A-1041 arrived damaged.\n\n{"text": "Refund please", "channel": "email", "_expect": {"is_urgent": true}}\n42\n'
+        env = dict(os.environ, FAKE_ANSWERS=str(self.tmp / "answers.json"), PYTHONPATH=str(self.tmp),
+                   FAKE_STATES=str(self.tmp / "states.jsonl"))
         out = subprocess.run([sys.executable, str(self.tmp / "gate.py")], input=rows, capture_output=True, text=True,
                              env=env, check=True, cwd=self.tmp).stdout.splitlines()
         self.assertEqual([json.loads(line)["route"] for line in out], ["auto", "review", "auto"])
+        sent = [json.loads(line) for line in (self.tmp / "states.jsonl").read_text().splitlines()]
+        self.assertEqual(sent, [{"text": "Order A-1041 arrived damaged."}, {"text": "Refund please", "channel": "email"},
+                                {"text": "42"}], "labels never reach the model")
 
     @unittest.skipUnless(typesafe_sdk, "the TypeSafe SDK needs Python 3.10+")
     def test_python_with_the_real_sdk(self):
@@ -187,10 +194,13 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual(json.loads(out), want)
         (self.tmp / "gate.mjs").write_text(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0")["javascript"])
         (self.tmp / "answers.json").write_text(json.dumps(CASES[:2]))
-        rows = 'Order A-1041 arrived damaged.\n{"text": "Refund please"}\n'
+        rows = 'Order A-1041 arrived damaged.\n{"text": "Refund please", "_expect": {"is_urgent": true}}\n'
         out = subprocess.run(["node", "gate.mjs"], input=rows, capture_output=True, text=True, check=True, cwd=self.tmp,
-                             env=dict(os.environ, FAKE_ANSWERS=str(self.tmp / "answers.json"))).stdout.splitlines()
+                             env=dict(os.environ, FAKE_ANSWERS=str(self.tmp / "answers.json"),
+                                      FAKE_STATES=str(self.tmp / "states.jsonl"))).stdout.splitlines()
         self.assertEqual([json.loads(line)["route"] for line in out], ["auto", "review"])
+        sent = [json.loads(line) for line in (self.tmp / "states.jsonl").read_text().splitlines()]
+        self.assertEqual(sent, [{"text": "Order A-1041 arrived damaged."}, {"text": "Refund please"}], "labels never reach the model")
 
 
 class ValidationTests(unittest.TestCase):

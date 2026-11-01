@@ -603,7 +603,7 @@ it across calls.
 The Python file (`gate.py`) needs `typesafe-sdk` on Python 3.10+. The JavaScript file (`gate.mjs`)
 needs `@typesafe-ai/sdk` on Node 22+, and its `decide` returns a promise. Both read
 `TYPESAFE_API_KEY`. Run either as a script to route rows the way Bulk reads them, one per line: a
-JSON object is sent as it is, and other text becomes `{"text": line}`. Each row's decision is printed
+JSON object is sent without its `_expect` labels, and other text becomes `{"text": line}`. Each row's decision is printed
 as a line of JSON:
 
 ```sh

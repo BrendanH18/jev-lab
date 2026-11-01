@@ -14,7 +14,7 @@ as Calibrate and Policy read it, and returns:
 A signal equal to its threshold clears it, as in the Workbench. An answer the model did not return holds
 its question, so an incomplete result goes to review rather than being acted on. Run as a script, each
 file reads rows from standard input, one per line, as Bulk does: a JSON object is sent as it is, and
-other text becomes {"text": line}. It prints one decision per line as JSON.
+other text becomes {"text": line}. A row's "_expect" labels are removed first, as Bulk removes them. It prints one decision per line as JSON.
 
 Exporting makes no model call. The thresholds are only as good as the labeled rows they were tuned on;
 the file says where they came from.
@@ -187,7 +187,10 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "        row = json.loads(line)",
         "    except ValueError:",
         "        return {FIELD: line}",
-        "    return row if isinstance(row, dict) else {FIELD: line}",
+        "    if not isinstance(row, dict):",
+        "        return {FIELD: line}",
+        "    row.pop(%r, None)  # a labeled Bulk row's labels: the model never sees them, as in Bulk" % workbench.LABEL_KEY,
+        "    return row",
         "",
         "",
         "def main():",
@@ -281,7 +284,10 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "function row(line) {",
         "  try {",
         "    const parsed = JSON.parse(line);",
-        "    if (parsed && typeof parsed === \"object\" && !Array.isArray(parsed)) return parsed;",
+        "    if (parsed && typeof parsed === \"object\" && !Array.isArray(parsed)) {",
+        "      delete parsed[%s]; // a labeled Bulk row's labels: the model never sees them, as in Bulk" % json.dumps(workbench.LABEL_KEY),
+        "      return parsed;",
+        "    }",
         "  } catch { /* text */ }",
         "  return { [FIELD]: line };",
         "}",
