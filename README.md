@@ -104,6 +104,9 @@ conditions.
   Box questions visually or as JSON.
 - **Test:** save a run with editable expectations, then rerun after changing questions or models.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
+- **Import CSV:** bring rows in from a spreadsheet. Choose which columns the model reads and which hold
+  labels for which question. Label values that fit no answer are listed rather than guessed. It makes
+  no model calls.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. It reuses the Bulk answers, so it makes no extra calls.

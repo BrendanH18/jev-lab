@@ -21,8 +21,8 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, claims, compare, cost, dispatch, envfile, examples, find, hello, holdout, images, policy, review,
-                 security, shield, workbench)
+from jev import (calibrate, claims, compare, cost, csvimport, dispatch, envfile, examples, find, hello, holdout, images,
+                 policy, review, security, shield, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -511,6 +511,10 @@ def api_wb_dataset_delete(body):
     return {"deleted": workbench.delete_dataset(str(body.get("id", "")))}
 
 
+def api_wb_import(body):
+    return csvimport.convert(body.get("text"), body.get("questions"), body.get("columns"))
+
+
 def api_wb_bulk_sample(_body):
     return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS,
             "terse_questions": examples.TERSE_BULK_QUESTIONS}
@@ -556,6 +560,7 @@ ROUTES = {
     ("POST", "/api/workbench/items/run"): api_wb_run_items,
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
+    ("POST", "/api/workbench/import"): api_wb_import,
     ("GET", "/api/workbench/datasets"): api_wb_datasets,
     ("POST", "/api/workbench/datasets"): api_wb_dataset_save,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,

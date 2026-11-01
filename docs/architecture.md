@@ -48,6 +48,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
 | [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, saved datasets of labeled rows, bulk calls, and code exports |
+| [`jev/csvimport.py`](../jev/csvimport.py) | CSV import: delimiter detection, a use for each column, and label cells checked against the questions and put under `_expect` |
 | [`jev/calibrate.py`](../jev/calibrate.py) | Accuracy, confusion, reliability, threshold sweeps, and 95% Wilson intervals over labeled Bulk answers |
 | [`jev/policy.py`](../jev/policy.py) | A gate over several questions at once: automation, joint accuracy, per-question holds and errors, and a threshold search for target accuracies, measured or at 95% confidence |
 | [`jev/holdout.py`](../jev/holdout.py) | Five-fold cross-validation of tuned thresholds: deterministic folds by row, tuning on the other folds, and pooled accuracy on held-out rows |
@@ -63,7 +64,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/security.py`](../jev/security.py) | Loopback Host, Origin, Fetch Metadata, session-token, and content-type checks |
 
 Shield reweighting, Dispatch replanning, and Workbench calibration, costs, label review, policy, holdout, and comparison
-scoring reuse existing model answers without another API call. A Workbench comparison run makes one call per row
+scoring reuse existing model answers without another API call. CSV import only reads the file into rows. A Workbench comparison run makes one call per row
 and variant, interleaved by row; scoring uses only rows that both variants answered. The cascade
 reads each threshold's accuracy, cost, and latency from those same answers and per-call usage.
 Autopilot merges both sets of questions into a single request with prefixed IDs, splits the
