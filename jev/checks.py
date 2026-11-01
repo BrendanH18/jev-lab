@@ -124,6 +124,9 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
             rep = policy.evaluate(rows, gates, check["signal"])
         except CalibrationError as err:
             reasons.append(str(err))
+    if rep is not None and rep["skipped"]:
+        reasons.append("%d of %d rows have no readable answer to a gated question, so the check was not measured "
+                       "on every row. Run it again." % (rep["skipped"], len(results)))
     if rep is not None and not rep["labeled"]:
         reasons.append("No row is labeled for every gated question (%s), so accuracy is unknown." % ", ".join(qids))
     targets: Dict[str, dict] = {}
@@ -145,7 +148,7 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
         if not coverage_ok:
             reasons.append("It automated %s of labeled rows, below the %s minimum."
                            % (_pct(rep["coverage"]), _pct(check["min_coverage"])))
-    if stopped or missing or not targets:
+    if stopped or missing or not targets or rep["skipped"]:
         status = "error"
     else:
         status = "pass" if all(t["ok"] for t in targets.values()) else "fail"

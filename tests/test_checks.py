@@ -200,6 +200,11 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(rep["status"], "error", "a check is judged on every row or not at all")
         self.assertIn("1 of 3 rows got no answer", rep["reasons"][0])
         self.assertEqual(rep["errors"], [{"index": 2, "error": "boom"}])
+        rows = results([(0.98, True), (0.05, False)])
+        rows[1]["answers"] = {}  # answered, but not the gated question
+        rep = checks.evaluate(rows, self.check(min_accuracy=1, min_coverage=1))
+        self.assertEqual(rep["status"], "error", "a row without a gated answer is not dropped from the measure")
+        self.assertIn("1 of 2 rows have no readable answer", rep["reasons"][0])
         rep = checks.evaluate(results([(0.98, None)]), self.check())
         self.assertEqual(rep["status"], "error")
         self.assertIn("No row is labeled", rep["reasons"][0])
