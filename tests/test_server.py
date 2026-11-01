@@ -382,7 +382,7 @@ class HttpTests(unittest.TestCase):
             status, _, body = self.request("POST", "/api/workbench/import",
                                            json.dumps({"text": text, "questions": questions}), self.post_headers())
             bad, _, err = self.request("POST", "/api/workbench/import",
-                                       json.dumps({"text": text, "questions": questions, "columns": {"u": "label:nope"}}),
+                                       json.dumps({"text": text, "questions": questions, "columns": {"u": "guess"}}),
                                        self.post_headers())
         self.assertEqual(status, 200, body)
         report = json.loads(body)

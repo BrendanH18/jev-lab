@@ -35,6 +35,9 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(csvimport.parse('"a,b";c\n1;2')[1], ["a,b", "c"])  # a comma inside quotes does not count
         self.assertEqual(csvimport.parse("text\nhello")[0], ",")
 
+    def test_a_blank_first_line_does_not_hide_the_delimiter(self):
+        self.assertEqual(csvimport.parse("\n  \na;b\n1;2")[1:], (["a", "b"], [["1", "2"]]))
+
     def test_blank_and_repeated_names_stay_addressable_and_rows_fit_the_header(self):
         _, names, rows = csvimport.parse("text, ,text\n1\n1,2,3,4")
         self.assertEqual(names, ["text", "column_2", "text_2"])
@@ -121,12 +124,20 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(uses(csvimport.convert("text,label:a\nhi,yes\n", twins))["label:a"], "label:a")
         self.assertEqual(uses(csvimport.convert("text,label:B\nhi,yes\n", twins))["label:B"], "state")
 
+    def test_a_repeated_label_header_is_skipped_not_read_by_the_model(self):
+        rep = csvimport.convert("text,department,department\nCharged twice,billing,billing\n", QUESTIONS)
+        self.assertEqual(uses(rep), {"text": "state", "department": "label:department", "department_2": "skip"})
+        self.assertEqual(rep["rows"], [{"text": "Charged twice", "_expect": {"department": "billing"}}])
+        self.assertEqual(uses(csvimport.convert("text,text\na,b\n"))["text_2"], "state")
+
+    def test_a_chosen_label_for_a_question_no_longer_run_keeps_the_suggestion(self):
+        rep = csvimport.convert("text,department\nhi,billing\n", QUESTIONS, {"text": "state", "department": "label:gone"})
+        self.assertEqual(uses(rep)["department"], "label:department")
+
     def test_chosen_uses_override_the_suggestion(self):
         text = "subject,body,department\nHelp,Charged twice,billing\n"
         rep = csvimport.convert(text, QUESTIONS, {"subject": "skip", "department": "state", "gone": "skip"})
         self.assertEqual(rep["rows"], [{"body": "Charged twice", "department": "billing"}])
-        with self.assertRaisesRegex(WorkbenchError, "use must be"):
-            csvimport.convert(text, QUESTIONS, {"body": "label:unknown"})
         with self.assertRaisesRegex(WorkbenchError, "use must be"):
             csvimport.convert(text, QUESTIONS, {"body": "label"})
         # Choosing a column as a label takes the label over from the column only suggested for it.

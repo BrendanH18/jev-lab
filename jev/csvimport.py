@@ -39,7 +39,7 @@ NO = {"no", "false", "n", "0"}
 
 def _delimiter(text: str) -> str:
     """Comma, tab, or semicolon: the one the header line holds most of, outside quotes. Comma on a tie."""
-    head = text.split("\n", 1)[0]
+    head = next((line for line in text.split("\n") if line.strip()), "")  # parse() skips blank lines too
     counts = {",": 0, "\t": 0, ";": 0}
     quoted = False
     for ch in head:
@@ -105,13 +105,21 @@ def _question(name: Optional[str], questions: Dict[str, dict]) -> Optional[str]:
     return folded[0] if len(folded) == 1 else None
 
 
+def _base(name: str, earlier: List[str]) -> str:
+    """The header a repeated column had before _header() added its suffix."""
+    head, _, n = name.rpartition("_")
+    return head if n.isdigit() and head in earlier else name
+
+
 def suggest(names: List[str], questions: Dict[str, dict]) -> Dict[str, str]:
-    """A use for every column, from its name alone."""
-    prefixed = {_question(_label_target(n), questions) for n in names} - {None}
+    """A use for every column, from its name alone. A repeated header is read as the header it repeats, so a second
+    label column for a question is skipped rather than shown to the model."""
+    bases = [_base(n, names[:i]) for i, n in enumerate(names)]
+    prefixed = {_question(_label_target(n), questions) for n in bases} - {None}
     roles = {}
-    for name in names:
-        target = _question(_label_target(name), questions)
-        plain = _question(name, questions)
+    for name, base in zip(names, bases):
+        target = _question(_label_target(base), questions)
+        plain = _question(base, questions)
         if target:
             role = "label:" + target
         elif plain and plain not in prefixed:
@@ -134,10 +142,11 @@ def _roles(names: List[str], questions: Dict[str, dict], chosen: Any) -> Dict[st
     for name, role in chosen.items():
         if name not in roles:
             continue  # a column from an earlier file; the new one does not have it
-        if role not in ("state", "skip") and not (isinstance(role, str) and role.startswith("label:")
-                                                  and role[len("label:"):] in questions):
-            raise WorkbenchError("Column %r: use must be state, skip, or label:<question id> for a question being run"
-                                 % name)
+        if isinstance(role, str) and role.startswith("label:"):
+            if role[len("label:"):] not in questions:
+                continue  # a label for a question no longer being run: keep the suggestion
+        elif role not in ("state", "skip"):
+            raise WorkbenchError("Column %r: use must be state, skip, or label:<question id>" % name)
         roles[name] = role
     for name, role in list(roles.items()):
         # A column chosen as a question's label takes it over from a column only suggested for it.
