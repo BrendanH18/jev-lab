@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from . import compare, images, perturb
+from . import compare, images, orders, perturb
 from .client import JevClient, JevError
 from .config import SAMPLES_DIR, WORKBENCH_DIR
 
@@ -622,27 +622,58 @@ def validate_variants(variants: Any) -> List[dict]:
         kind = variant.get("perturb") or None
         if kind is not None and kind not in perturb.KINDS:
             raise WorkbenchError("Variant %s: perturb must be one of %s" % (name, ", ".join(perturb.KINDS)))
-        out.append({"questions": questions, "model": (model or "").strip() or None, "perturb": kind})
+        average = variant.get("average_orders", False)
+        if not isinstance(average, bool):
+            raise WorkbenchError("Variant %s: average_orders must be true or false" % name)
+        if average and not orders.averaged_ids(questions):
+            raise WorkbenchError("Variant %s: averaging over both orders needs a Choice question with two or more options"
+                                 % name)
+        out.append({"questions": questions, "model": (model or "").strip() or None, "perturb": kind,
+                    "average_orders": average})
     return out
 
 
+def _pair(outcomes: List[dict], questions: Dict[str, dict]) -> dict:
+    """One outcome for an averaged variant from its two calls (jev/orders.py): the options as written, then
+    reversed. When either call did not answer, the row has no answer: an error, or skipped by a stop. The
+    spend of a call that did answer stays in "meta", so the variant's cost counts it."""
+    first, second = outcomes
+    spent = [o["meta"] for o in outcomes if "meta" in o]
+    meta = {"meta": orders.combine_meta(spent)} if spent else {}
+    sent = {"input": first["input"]} if "input" in first else {}
+    if "answers" in first and "answers" in second:
+        answers, picks = orders.average(first["answers"], second["answers"], questions)
+        return dict(sent, answers=answers, orders=picks, **meta)
+    failed = next((o for o in outcomes if "error" in o), None)
+    return dict(sent, **meta, **({"error": failed["error"]} if failed else {"skipped": True}))
+
+
 def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
-    """Both variants over the same rows: one call per row and variant, interleaved row by row so a run
-    stopped by the budget leaves the variants with nearly the same rows. Scoring (compare.evaluate)
-    uses only rows both variants answered."""
+    """Both variants over the same rows: one call per row and variant, two for a variant that averages
+    over both orders, interleaved row by row so a run stopped by the budget leaves the variants with
+    nearly the same rows. Scoring (compare.evaluate) uses only rows both variants answered."""
     variants = validate_variants(variants)
     # Resolve a blank model once: the current model can change in Settings while the run is going,
     # and every call of a variant must use the same model.
     models = [v["model"] or client.model for v in variants]
+    asked = [[v["questions"]] + ([orders.reverse_options(v["questions"])] if v["average_orders"] else []) for v in variants]
     split = _split_rows(rows)
     started = time.perf_counter()
-    jobs = [(i, v["questions"], model, v["perturb"]) for i in range(len(split)) for v, model in zip(variants, models)]
-    outcomes, stopped = _run_jobs(client, split, jobs, field)
-    width = len(variants)
-    results = [dict(_row_base(split, i), runs=outcomes[i * width:(i + 1) * width]) for i in range(len(split))]
+    jobs = [(i, questions, model, v["perturb"]) for i in range(len(split))
+            for v, model, sets in zip(variants, models, asked) for questions in sets]
+    flat, stopped = _run_jobs(client, split, jobs, field)
+    width = sum(len(sets) for sets in asked)
+    results = []
+    for i in range(len(split)):
+        calls, runs = flat[i * width:(i + 1) * width], []
+        for v, sets in zip(variants, asked):
+            taken, calls = calls[:len(sets)], calls[len(sets):]
+            runs.append(_pair(taken, v["questions"]) if len(taken) == 2 else taken[0])
+        results.append(dict(_row_base(split, i), runs=runs))
     summaries = []
     for v, variant in enumerate(variants):
         done = [r["runs"][v] for r in results if "answers" in r["runs"][v]]
+        spent = [r["runs"][v]["meta"] for r in results if "meta" in r["runs"][v]]
         latencies = [o["meta"]["latency_ms"] for o in done]
         kind = variant["perturb"]
         summaries.append({"name": compare.NAMES[v], "model": models[v], "perturb": kind,
@@ -650,14 +681,17 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
                           "perturbed_rows": sum(1 for r in results if "input" in r["runs"][v]),
                           "unperturbed_rows": sum(1 for r in results if kind and "input" not in r["runs"][v]
                                                   and "skipped" not in r["runs"][v]),
+                          "average_orders": variant["average_orders"],
+                          "orders": orders.disagreement([r["runs"][v] for r in results], variant["questions"])
+                          if variant["average_orders"] else None,
                           "questions": variant["questions"], "completed": len(done),
                           "errors": sum(1 for r in results if "error" in r["runs"][v]),
-                          "cost_usd": sum(o["meta"]["cost_usd"] for o in done),
-                          "input_tokens": sum(o["meta"]["input_tokens"] for o in done),
+                          "cost_usd": sum(m["cost_usd"] for m in spent),
+                          "input_tokens": sum(m["input_tokens"] for m in spent),
                           "latency_ms_median": statistics.median(latencies) if latencies else None})
     return {"variants": summaries, "results": results, "rows": len(split), "stopped": stopped,
             "agreement": compare.agreement(results, [v["questions"] for v in variants], models[0] == models[1],
-                                           [v["perturb"] for v in variants]),
+                                           [v["perturb"] for v in variants], [v["average_orders"] for v in variants]),
             "labeled": sum(1 for r in results if r.get("expect")),
             "wall_ms": (time.perf_counter() - started) * 1000,
             "cost_usd": sum(s["cost_usd"] for s in summaries)}

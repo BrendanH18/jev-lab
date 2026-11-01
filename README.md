@@ -70,7 +70,7 @@ issue real refunds, or transfer money.
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. **Open in Workbench**, in the same drawer, puts that exact request in
@@ -140,7 +140,9 @@ conditions.
   often an answer changes and how many changed answers kept the same place in the list. **Rows**, on variant
   B, makes it an input check: the same request with each row rewritten by code, with typos, in lowercase,
   with an unrelated sentence added, or with its JSON fields shuffled, reporting how often an answer
-  changes on rewrites that should not move it. A cascade shows what asking one
+  changes on rewrites that should not move it. **Average A's orders** tests a fix for an order effect:
+  variant B asks A's questions twice, once with each Choice question's options reversed, and averages
+  the answers in code, so the report shows what the second call per row buys. A cascade shows what asking one
   variant first, and the other only when it is unsure, would cost and how accurate it would be.
 - **Open a demo's request:** **Open in Workbench**, in any demo's **Inspect JSON** drawer, opens the
   exact request that demo sent in a new Workbench tab, with its pictures. Its answers stay behind;
