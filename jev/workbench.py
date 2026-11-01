@@ -554,9 +554,9 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
     """jobs: [(row index, questions, model or None, perturbation or None)]. Returns (one outcome per job,
     first stopping error).
 
-    An outcome is {"answers", "meta"}, {"error"}, or {"skipped": True}. A perturbed job's outcome also
-    holds the state it sent as "input". A missing key or exhausted budget stops new calls; other errors
-    stay with their row.
+    An outcome is {"answers", "meta"}, {"error"}, or {"skipped": True}. When a perturbation changed the
+    row, the outcome also holds the state it sent as "input". A missing key or exhausted budget stops new
+    calls; other errors stay with their row.
     """
     stop = threading.Event()
     stopped = {"error": None}
@@ -567,8 +567,9 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
         state = _state(split, index, field)
         sent = {}
         if kind:
-            state = perturb.apply(kind, state, index)
-            sent = {"input": state}
+            rewritten = perturb.apply(kind, state, index)
+            if perturb.changed(state, rewritten):
+                state, sent = rewritten, {"input": rewritten}
         try:
             result = client.system_one(state, questions, model=model)
             return dict(sent, answers=result.answers, meta=result.meta())
@@ -645,9 +646,10 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
         latencies = [o["meta"]["latency_ms"] for o in done]
         kind = variant["perturb"]
         summaries.append({"name": compare.NAMES[v], "model": models[v], "perturb": kind,
-                          # rows the perturbation rewrote; the rest went out as written
-                          "perturbed_rows": sum(perturb.changed(_state(split, i, field), perturb.apply(kind, _state(split, i, field), i))
-                                                for i in range(len(split))) if kind else 0,
+                          # rows sent rewritten, and rows sent as written because the rewrite left them unchanged
+                          "perturbed_rows": sum(1 for r in results if "input" in r["runs"][v]),
+                          "unperturbed_rows": sum(1 for r in results if kind and "input" not in r["runs"][v]
+                                                  and "skipped" not in r["runs"][v]),
                           "questions": variant["questions"], "completed": len(done),
                           "errors": sum(1 for r in results if "error" in r["runs"][v]),
                           "cost_usd": sum(o["meta"]["cost_usd"] for o in done),

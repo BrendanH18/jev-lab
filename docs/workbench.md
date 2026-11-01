@@ -621,7 +621,9 @@ first, so B asks A's questions of A's model. When nothing but the rows differs, 
 every question and option, the agreement table becomes an input check: any answer that changed,
 changed because of the rewrite. The summary table says how many rows the rewrite changed. A row it
 left as it was, such as a text row under **With JSON fields shuffled**, is a plain repeat of A's
-request. Rows where the answers differ show what B was sent under the row as written.
+request, so the input check leaves it out. Rows where the answers differ show what B was sent under
+the row as written. **Reverse A's options** sets the rows back to as written, so an order check and an
+input check never mix.
 
 Labels still apply, so the usual accuracy and McNemar comparison shows whether the rewrite also costs
 accuracy. A few changed answers are normal on rows the model finds close either way. To see that

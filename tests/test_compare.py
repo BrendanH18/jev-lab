@@ -254,8 +254,11 @@ class AgreementTests(unittest.TestCase):
                                                 "same_position": 3, "options": 3}])
 
     def test_an_input_check_needs_the_same_request_with_only_the_rows_perturbed(self):
-        results = [{"runs": [outcome(dept=choice("billing")), outcome(dept=choice("shipping"))]},
-                   {"runs": [outcome(dept=choice("billing")), outcome(dept=choice("billing"))]}]
+        rewritten = lambda **answers: dict(outcome(**answers), input={"text": "rewritten"})  # noqa: E731
+        results = [{"runs": [outcome(dept=choice("billing")), rewritten(dept=choice("shipping"))]},
+                   {"runs": [outcome(dept=choice("billing")), rewritten(dept=choice("billing"))]},
+                   # the rewrite left this row as it was: a plain repeat, left out of the input check
+                   {"runs": [outcome(dept=choice("billing")), outcome(dept=choice("shipping"))]}]
         urgent = {"type": "noul", "instructions": "Urgent?"}
         same = {"dept": DEPT, "urgent": urgent}
         rows = compare.agreement(results, [same, same], perturbs=[None, "typos"])
@@ -263,7 +266,8 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual((rows[0]["answered"], rows[0]["changed"]), (2, 1))
         # Without a perturbation it is a plain agreement table; with another model, another question, or
         # another option order in B, a changed answer need not come from the rows.
-        self.assertFalse(compare.agreement(results, [same, same], perturbs=[None, None])[0]["perturbed"])
+        plain = compare.agreement(results, [same, same], perturbs=[None, None])[0]
+        self.assertEqual((plain["perturbed"], plain["answered"], plain["changed"]), (False, 3, 2))
         self.assertFalse(compare.agreement(results, [same, same], same_model=False, perturbs=[None, "typos"])[0]["perturbed"])
         for b in ({"dept": REVERSED, "urgent": urgent}, {"urgent": urgent, "dept": DEPT}, {"dept": DEPT}):
             with self.subTest(b=list(b)):
@@ -277,14 +281,30 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual(sorted(state["text"] for state, _ in client.calls),  # calls run concurrently
                          ["Ship it today", "ship it today", "where is it", "where is it"])
         self.assertEqual([v["perturb"] for v in report["variants"]], [None, "lowercase"])
-        self.assertEqual([v["perturbed_rows"] for v in report["variants"]], [0, 1])  # one row was lowercase already
+        # One row was lowercase already, so B sent it as written: a repeat, left out of the input check.
+        self.assertEqual([(v["perturbed_rows"], v["unperturbed_rows"]) for v in report["variants"]], [(0, 0), (1, 1)])
         first, second = report["results"]
         self.assertEqual(first["row"], "Ship it today")  # the row as written, as A saw it
         self.assertNotIn("input", first["runs"][0])
         self.assertEqual(first["runs"][1]["input"], {"text": "ship it today"})
-        self.assertNotIn("_expect", second["runs"][1]["input"])
+        self.assertNotIn("input", second["runs"][1])
         urgent = report["agreement"][0]
-        self.assertEqual((urgent["perturbed"], urgent["answered"], urgent["changed"]), (True, 2, 1))
+        self.assertEqual((urgent["perturbed"], urgent["answered"], urgent["changed"]), (True, 1, 1))
+        labeled = workbench.run_compare(client, [{"text": "Now", "_expect": {"urgent": True}}],
+                                        [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}])
+        self.assertEqual(labeled["results"][0]["runs"][1]["input"], {"text": "now"})  # labels never reach the model
+
+    def test_a_budget_stop_counts_only_rows_sent_rewritten(self):
+        class Budget(FakeClient):
+            def system_one(self, state, questions, assets=None, model=None):
+                if len(self.calls) >= 2:
+                    raise JevError("budget", status=402)
+                return super().system_one(state, questions, model=model)
+
+        with patch.object(workbench, "BULK_CONCURRENCY", 1):
+            report = workbench.run_compare(Budget(), ["A", "B", "C"], [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}])
+        self.assertEqual(report["stopped"], "budget")
+        self.assertEqual((report["variants"][1]["perturbed_rows"], report["variants"][1]["unperturbed_rows"]), (1, 0))
 
 
 class RunTests(unittest.TestCase):

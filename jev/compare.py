@@ -237,7 +237,8 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
 
     perturbs: each variant's perturbation of its rows, or None. When they differ, the rows differ, so
     no question counts as reordered. When they differ and the request is otherwise identical, down to the
-    order of every question and option, each question is marked "perturbed": an input check."""
+    order of every question and option, each question is marked "perturbed": an input check. It counts
+    only rows the perturbation changed (a run with "input"); the rest were plain repeats."""
     qa, qb = questions
     same_rows = len(set(perturbs or [None])) == 1
     # Dict equality ignores key order, so this holds when the sets differ only in how options are listed.
@@ -256,6 +257,8 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
             answers = [(r.get("answers") or {}).get(qid) if isinstance(r, dict) else None for r in runs]
             if len(answers) != 2 or not all(isinstance(a, dict) for a in answers):
                 continue
+            if input_only and not any(isinstance(r, dict) and "input" in r for r in runs):
+                continue  # the rewrite left this row as it was
             try:
                 picks = [calibrate.read(a)[0] for a in answers]
             except (KeyError, TypeError, ValueError, AttributeError):

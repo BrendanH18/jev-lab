@@ -2394,6 +2394,7 @@ function reverseA() {
   const [a, b] = W.compare.variants;
   b.text = JSON.stringify(reversed, null, 2);
   b.model = a.model;
+  b.perturb = "";  // the rows as written, so the order is the only change
   render();
   toast("B is A with each Choice question's options in reverse order");
 }
@@ -2638,12 +2639,18 @@ function renderCompareReport() {
 // reordered), every changed answer comes from the order alone.
 function agreementBlock(res) {
   const c = W.compare;
-  const rows = (res.agreement || []).filter((a) => a.answered);
-  if (!rows.length) return null;
-  const moved = rows.filter((a) => a.reordered);
-  const perturbed = rows.some((a) => a.perturbed);
+  const perturbed = (res.agreement || []).some((a) => a.perturbed);
   const kind = res.variants.find((v) => v.perturb);
   const how = kind ? PERTURBS[kind.perturb] || kind.perturb : "";
+  const rows = (res.agreement || []).filter((a) => a.answered);
+  if (!rows.length && perturbed && !kind.perturbed_rows) {
+    return h("div", { class: "grid", style: { gap: "8px" } },
+      h("h3", { class: "cal-h" }, `Input check: the rows ${how}`),
+      h("p", { class: "muted", style: { fontSize: "12.5px", maxWidth: "820px", margin: 0 } },
+        `The rewrite left every row as it was (say, text rows have one field to shuffle), so B repeated A's request and there is nothing to check. Try another rewrite.`));
+  }
+  if (!rows.length) return null;
+  const moved = rows.filter((a) => a.reordered);
   const show = (qid) => async () => {
     c.qid = qid;
     await rescoreCompare();
@@ -2660,8 +2667,8 @@ function agreementBlock(res) {
     notes.push(changed.length
       ? `Answers that changed when only the rows were rewritten ${how}: ${changed.map((a) => `“${a.qid}” ${a.changed} of ${a.answered}`).join(", ")}.`
       : `No answer changed on any question when the rows were rewritten ${how}.`);
-    const same = res.rows - kind.perturbed_rows;
-    if (same) notes.push(`${same} of ${res.rows} rows came out of the rewrite unchanged (say, a row with one field to shuffle or no long words), so on those rows B repeated A's request.`);
+    const same = kind.unperturbed_rows;
+    if (same) notes.push(`${same} of ${res.rows} rows came out of the rewrite unchanged (say, a row with one field to shuffle or no long words). B repeated A's request on them, so they are left out of the input check.`);
   }
   return h("div", { class: "grid", style: { gap: "8px" } },
     h("h3", { class: "cal-h" }, moved.length ? "Order check: how often an answer changes when only the order of the options changes"
