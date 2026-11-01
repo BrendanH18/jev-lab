@@ -52,6 +52,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
 | [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, saved datasets of labeled rows, bulk calls, and code exports |
+| [`jev/lint.py`](../jev/lint.py) | Question checks: plain-code findings about a request before it is run, such as backticked paths the state lacks, repeated questions, options or levels, and compound questions, each linked to TypeSafe's guide |
 | [`jev/csvimport.py`](../jev/csvimport.py) | CSV import: delimiter detection, a use for each column, and label cells checked against the questions and put under `_expect` |
 | [`jev/calibrate.py`](../jev/calibrate.py) | Accuracy, confusion, reliability, threshold sweeps, and 95% Wilson intervals over labeled Bulk answers |
 | [`jev/policy.py`](../jev/policy.py) | A gate over several questions at once: automation, joint accuracy, per-question holds and errors, and a threshold search for target accuracies, measured or at 95% confidence |

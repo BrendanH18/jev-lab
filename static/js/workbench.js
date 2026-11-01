@@ -7,6 +7,8 @@ import { reverseOptions } from "./variants.js";
 
 const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
+  // Question checks (jev/lint.py): the last report for the Build request, made by code, never by the model.
+  lint: null,
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
     // Saved datasets (data/workbench/datasets/): rows and labels only, never answers. savedText is the rows box as
@@ -175,6 +177,7 @@ function loadInto(state, questions, { expect = {}, name = "", notes = "", id = n
   W.handoff = handoff;
   W.result = null;
   W.exported = null;
+  W.lint = null;
   W.saveOpen = false;
   W.raw = false;
   W.tab = "build";
@@ -265,6 +268,7 @@ function renderBuild() {
   const right = h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "Answers"), h("div", { class: "spacer" }),
+        h("button", { class: "btn sm", onclick: checkQuestions, title: "Read the questions for common mistakes. Plain code: no model call, no cost." }, icon("search"), "Check questions"),
         h("button", { class: "btn sm", onclick: exportCode }, icon("code"), "Export code"),
         h("button", { class: "btn sm", disabled: !W.result, onclick: () => { W.saveOpen = !W.saveOpen; if (W.saveOpen && !Object.keys(W.expect).length) W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)])); render(); } }, icon("save"), "Save as test"),
         runBtn),
@@ -275,6 +279,7 @@ function renderBuild() {
           renderBoxes(),
           h("div", { class: "answers" }, Object.entries(W.result.answers).map(([qid, a]) => answerCard(qid, a, W.result.trace.request.questions[qid]))))
         : h("div", { class: "empty" }, "Press Run. Every question is evaluated in parallel against the state, in one request.")),
+    W.lint ? renderLint() : null,
     W.saveOpen && W.result ? renderSaveForm() : null,
     W.exported ? renderExport() : null,
     h("div", { class: "panel" },
@@ -414,8 +419,44 @@ async function run() {
     W.result = await api("/api/workbench/run", { state: parseState(W.stateText), questions, images: imagesPayload() });
     W.result.images = images;
     W.saveOpen = false;
+    if (W.lint) await checkQuestions({ scroll: false });
     render();
   } catch (e) { handleError(e); btn.disabled = false; }
+}
+
+async function checkQuestions({ scroll = true } = {}) {
+  const questions = toQuestions(W.questions);
+  if (!Object.keys(questions).length) return toast("Add at least one question with an id.", "error");
+  try {
+    W.lint = await api("/api/workbench/lint", { state: parseState(W.stateText), questions, images: imageNames() });
+    render();
+    if (scroll) $("#lint")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { handleError(e); }
+}
+
+function renderLint() {
+  const { findings, counts, guide } = W.lint;
+  const head = (level, n) => (level === "problem" ? `${n} ${n === 1 ? "problem" : "problems"}` : `${n} advice`);
+  return h("div", { class: "panel", id: "lint" },
+    h("div", { class: "panel-head" }, h("h2", {}, "Question checks"),
+      counts.problem ? h("span", { class: "badge critical" }, icon("alert"), head("problem", counts.problem)) : null,
+      counts.advice ? h("span", { class: "badge warning" }, icon("question"), head("advice", counts.advice)) : null,
+      h("div", { class: "spacer" }),
+      h("button", { class: "btn sm ghost", title: "Close", "aria-label": "Close question checks", onclick: () => { W.lint = null; render(); } }, icon("x"))),
+    h("div", { class: "panel-body grid", style: { gap: "8px" } },
+      findings.length
+        ? h("ul", { class: "lint-list" }, findings.map((f) => h("li", { class: `lint ${f.level}` },
+          f.level === "problem" ? statusBadge("fail", "Problem") : h("span", { class: "badge warning" }, icon("question"), "Advice"),
+          h("div", {},
+            f.question ? h("code", { class: "mono" }, f.question) : h("span", { class: "faint" }, "State"),
+            h("div", { class: "muted" }, f.message),
+            h("a", { class: "faint", href: f.guide, target: "_blank", rel: "noopener" }, "Why: How to build with System One")))))
+        : h("div", { class: "callout good" }, icon("check"), h("div", {}, h("b", {}, "No findings."),
+          h("div", { class: "muted" }, "Checks catch common mistakes, not every one. Run the questions and read the answers."))),
+      h("p", { class: "faint", style: { fontSize: "12px" } },
+        "Plain code read these questions: no model call, no cost. A problem is almost certainly a mistake; advice is a pattern ",
+        h("a", { href: guide, target: "_blank", rel: "noopener" }, "TypeSafe's guide"),
+        " recommends against, and may be what you meant. After an edit, press Check questions again.")));
 }
 
 async function exportCode() {

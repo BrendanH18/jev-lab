@@ -47,6 +47,42 @@ with this fictional support ticket and paste the questions into the JSON editor:
 JSON** to see the exact request and response. Adjust the questions or criteria and rerun to
 compare. The built-in examples provide thirteen starting patterns.
 
+## Check your questions
+
+**Check questions**, beside **Export code**, reads the request for common mistakes before you pay for
+a call. It is plain code, so it makes no model call and costs nothing. Each finding names its question
+and links to the part of TypeSafe's guide,
+[How to build with System One](https://docs.typesafe.ai/concepts/how-to-build-with-system-one), that
+the advice comes from.
+
+A **problem** is almost certainly a mistake:
+
+| Finding | What it means |
+| --- | --- |
+| A path the state lacks | A backticked path, such as `` `ticket.from` `` or `` `lines[2]` ``, names nothing in the state, so the model cannot see what the question points at. A text state has no fields at all. Picture references are not paths |
+| The same question twice | Two questions of the same type have the same instructions and criteria, once case and punctuation are ignored |
+| Options or levels alike | Two Choice options, or two Score levels, have the same description, so the model cannot tell them apart |
+
+**Advice** is a pattern the guide recommends against. It may still be what you meant:
+
+| Finding | What it means |
+| --- | --- |
+| Several questions | The instructions hold more than one question mark. Question marks inside quotes or backticks, such as a quoted search query, do not count |
+| Long instructions | Text instructions run past 60 words |
+| An option without a description | Some Choice options are described and others are not. Options that all go undescribed, such as weekdays, are fine |
+| Options with different fields | Choice options are described by objects with different fields, or by a mix of objects and text |
+| A Noul without criteria | A Noul lacks a `true` or a `false` criterion that says what a yes or a no means |
+| Fields in text | The state is text with two or more `Key: value` lines, which read better as JSON fields |
+
+The checks read text, so they can question something that works. Run the question and read its
+answers before you rewrite it. When the Question checks panel is open, **Run** checks the request it
+sends again. A test in `tests/test_lint.py` requires that no demo or example request has a problem.
+
+`POST /api/workbench/lint` takes `state`, `questions`, and optional `images`, the Build tab's pictures
+keyed by reference. It returns `findings`, each with its `level` (`problem` or `advice`), `code`,
+`question` (or `null` for the state), `message`, and `guide` link, problems first; `counts` per level;
+and `guide`. It makes no model call.
+
 ## Add images
 
 Images and Box questions are early TypeSafe features, labeled

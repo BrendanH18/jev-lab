@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, envfile, examples, find, hello, holdout, images,
-                 policy, review, security, shield, slices, workbench)
+                 lint, policy, review, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -416,6 +416,12 @@ def api_wb_export(body):
     return workbench.export(body.get("state"), body.get("questions"), client.model, body.get("images"))
 
 
+def api_wb_lint(body):
+    state, questions = workbench.validate_state(body.get("state")), workbench.validate_questions(body.get("questions"))
+    refs = body.get("images")  # the Build tab's pictures, keyed by reference, as Export takes them
+    return lint.check(state, questions, refs if isinstance(refs, dict) else {})
+
+
 def api_wb_items(_body):
     return {"items": workbench.list_items()}
 
@@ -581,6 +587,7 @@ ROUTES = {
     ("GET", "/api/workbench/examples"): api_wb_examples,
     ("POST", "/api/workbench/run"): api_wb_run,
     ("POST", "/api/workbench/export"): api_wb_export,
+    ("POST", "/api/workbench/lint"): api_wb_lint,
     ("GET", "/api/workbench/items"): api_wb_items,
     ("POST", "/api/workbench/items"): api_wb_save,
     ("POST", "/api/workbench/items/delete"): api_wb_delete,
