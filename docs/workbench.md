@@ -575,6 +575,52 @@ change, for example in GitHub Actions:
 | `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
 | `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, and `answered_by` |
 
+## Export a gate as code
+
+A gate is only useful once your application applies it. **Export as a module**, under Policy's gate
+code, and **Export as code**, beside a saved check, write the gate as a file to add to your
+application: the question set, the model, the signal, and the thresholds, with one function.
+
+```python
+from gate import decide
+
+decision = decide({"text": "I was charged twice. Please fix this today."})
+# {"route": "review", "held": ["department"], "answers": {"department": "billing", "is_urgent": True, ...}}
+```
+
+`decide(state)` asks every question in one call, then decides in code:
+
+- `route` is `"auto"` when every gated answer clears its threshold, and `"review"` otherwise.
+- `held` lists the gated questions that did not clear theirs, in gate order.
+- `answers` shows each answer as Calibrate does: a Choice's option, a Noul's yes or no as `True` or
+  `False`, and a Score's most likely level.
+
+It reads each signal exactly as Calibrate and Policy do. A Noul's confidence is |2p − 1|, and a signal
+equal to its threshold clears it. When the model returns no answer to a gated question, that question
+is held, so an incomplete result goes to review. Pass your own client as the second argument to reuse
+it across calls.
+
+The Python file (`gate.py`) needs `typesafe-sdk` on Python 3.10+. The JavaScript file (`gate.mjs`)
+needs `@typesafe-ai/sdk` on Node 22+, and its `decide` returns a promise. Both read
+`TYPESAFE_API_KEY`. Run either as a script to route rows the way Bulk reads them, one per line: a
+JSON object is sent without its `_expect` labels, and other text becomes `{"text": line}`. Each row's decision is printed
+as a line of JSON:
+
+```sh
+python gate.py < rows.jsonl
+node gate.mjs < rows.jsonl
+```
+
+A file exported from a check says which dataset and targets the thresholds came from. A file exported
+from Policy says they came from one Bulk run. Thresholds fit the labeled rows they were tuned on, so
+[check them on unseen rows](#check-on-unseen-rows) and on your own traffic before you rely on them.
+Exporting makes no model call. `tests/test_gate.py` checks that both files route rows exactly as
+Policy does.
+
+`POST /api/workbench/gate/export` takes `questions`, `gates`, `signal` (default `confidence`), and
+`model` (default: the current model), or `dataset`, the ID of a dataset whose check to export. It
+returns `python` and `javascript`.
+
 ## Compare two variants
 
 **Compare** answers "did this change help?" A variant is a question set and a model. Variant A

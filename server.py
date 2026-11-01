@@ -21,7 +21,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, envfile, examples, find, hello, holdout, images,
+from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, envfile, examples, find, gate, hello, holdout, images,
                  lint, policy, review, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
@@ -545,6 +545,13 @@ def api_wb_check_run(body):
     return checks.run(client, str(body.get("id", "")), model or None)
 
 
+def api_wb_gate_export(body):
+    if body.get("dataset"):
+        return gate.export_check(str(body["dataset"]))
+    return gate.export(body.get("questions"), body.get("gates"), body.get("signal", "confidence"),
+                       body.get("model") or client.model)
+
+
 def api_wb_import(body):
     return csvimport.convert(body.get("text"), body.get("questions"), body.get("columns"))
 
@@ -588,6 +595,7 @@ ROUTES = {
     ("POST", "/api/workbench/run"): api_wb_run,
     ("POST", "/api/workbench/export"): api_wb_export,
     ("POST", "/api/workbench/lint"): api_wb_lint,
+    ("POST", "/api/workbench/gate/export"): api_wb_gate_export,
     ("GET", "/api/workbench/items"): api_wb_items,
     ("POST", "/api/workbench/items"): api_wb_save,
     ("POST", "/api/workbench/items/delete"): api_wb_delete,
