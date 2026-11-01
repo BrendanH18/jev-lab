@@ -119,6 +119,48 @@ separate model call. Rows are text or JSON, so Box questions cannot run in bulk.
 budget error stops new work where possible; already admitted calls may complete. Per-row errors
 remain visible in the results.
 
+## Import a CSV
+
+Labeled data usually lives in a spreadsheet. **Import CSV**, beside **Load sample rows**, turns one
+into rows. Choose a file or paste the text. The first line must name the columns; commas, tabs, and
+semicolons are detected from it. Pick the questions to run first, because label columns are
+checked against them.
+
+Each column gets a use, which you can change:
+
+| Use | What happens to the cell |
+| --- | --- |
+| Model reads it | It becomes a field of the row, named by the column. A row is an object of these fields; empty cells are left out |
+| Label for a question | It goes under `_expect`, so the model never sees it |
+| Skip | It is left out |
+
+Columns start with a use chosen from their names. `label:department`, `expect:department`, and
+`_expect.department` label `department`. A column named like a question, ignoring case, labels it too,
+unless a `label:` column for that question exists. The CSV that **Download CSV** writes names its
+answer columns by question, so those are skipped. Every other column is read by the model. Its
+`row` column holds each row as it was, so when `row` is the only column the model reads, each cell
+becomes the row itself. One column labels each question: choosing a label for a column takes it
+from the column that had it, and that column becomes Skip.
+
+| Question type | A label cell may be |
+| --- | --- |
+| Choice | An option key. Case and surrounding spaces are ignored when only one option matches |
+| Noul | `yes`/`no`, `true`/`false`, `y`/`n`, or `1`/`0`, in any case |
+| Score | A level number, starting at `0` |
+
+An empty label cell leaves that row unlabeled. A value that fits no answer, such as an option the
+question does not have, is left out and listed under the column table, so you can fix the file or
+the question. Rows with nothing for the model to read are left out, and so is every row after the
+first 200. **Put rows in the rows box** replaces the rows box with JSON lines that carry the labels,
+asking first if that would lose unsaved rows. Run them, or [save them as a
+dataset](#save-rows-and-labels). Importing makes no model calls.
+
+`POST /api/workbench/import` takes `text`, optional `questions`, and optional `columns`, a use for
+each column by name: `state`, `skip`, or `label:<question id>`. It returns `delimiter`, `columns`
+(each with its `name`, `use`, and first `samples`), `rows`, the counts `dropped` (past 200), `empty`,
+and `labeled`, `labels` per question, and `problems`, one per value that fits no answer: its `column`,
+`question`, `value`, and number of `rows`.
+
 ## Measure accuracy and choose a threshold
 
 A JSON row can carry labels under `_expect`, keyed by question ID. Jev Lab removes them before the
@@ -453,6 +495,7 @@ request with one file part per picture.
 | Levels per Score question | 2–25 |
 | State in the single-request editor and saved tests | 120,000 characters after JSON serialization |
 | Bulk rows | First 200 nonempty rows |
+| Imported CSV | 2,000,000 characters and 100 columns; the first 200 rows with state |
 | Saved dataset | 200 nonempty rows and 2,000,000 characters as JSON |
 | Calibrate, Costs, Review, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Prices | $0 to $1,000,000 each; up to 100 priced mistakes |

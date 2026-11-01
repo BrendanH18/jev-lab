@@ -375,6 +375,22 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("threshold", json.loads(err)["error"])
 
+    def test_csv_import_over_http_is_pure_code(self):
+        questions = {"u": {"type": "noul", "instructions": "Urgent?"}}
+        text = "text,u\nShip it today,yes\nNo rush,maybe\n"
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/import",
+                                           json.dumps({"text": text, "questions": questions}), self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/import",
+                                       json.dumps({"text": text, "questions": questions, "columns": {"u": "label:nope"}}),
+                                       self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual(report["rows"], [{"text": "Ship it today", "_expect": {"u": True}}, {"text": "No rush"}])
+        self.assertEqual(report["problems"], [{"column": "u", "question": "u", "value": "maybe", "rows": 1}])
+        self.assertEqual(bad, 400)
+        self.assertIn("label:<question id>", json.loads(err)["error"])
+
     def test_bulk_text_accepts_json_lines_with_labels(self):
         fake = FakeClient()
         rows = 'plain\n{"text": "labeled", "_expect": {"u": true}}'
