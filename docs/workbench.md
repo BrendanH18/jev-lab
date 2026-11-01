@@ -602,6 +602,37 @@ often ones where two options fit about equally, and sharper option descriptions 
 than a new order. If rows are labeled, the usual accuracy and McNemar comparison shows whether
 either order is more accurate. The check costs one extra call per row, like any comparison.
 
+### Order averaging
+
+When the order check finds answers that move with the order, one fix is to ask both orders and let
+code combine them. **Average A's orders**, on variant B, makes B a copy of A, with the same model and
+the rows as written, that asks each row twice: once with the options as listed and once with each
+Choice question's options in reverse order. The **Ask** menu on B turns this on or off for any
+question set. For each Choice question with two or more options, the two probability lists are
+averaged option by option. The top average is B's answer, a tie goes to the option listed first, and
+the confidence is recomputed from the averages with TypeSafe's Choice formula: how far the top
+probability sits above an even split. Every other question (Noul, Score, Box, or a Choice question
+with one option) keeps the answer from the call with the options as listed. Whole-number option
+names reverse too, because the server builds the reversed request.
+
+Reversing swaps the first and last options, so a lean toward the first or the last place is split
+between them. With three or more options the middle ones keep their place, so averaging can reduce a
+position effect but not rule one out; Compare's labels show whether it helped. Where the two orders
+disagree, the averages often split and the confidence usually falls, so a threshold may send those
+rows to review instead of automating whichever answer the order happened to suggest. It does not
+always: a near tie in one order and a confident pick in the other can average to more confidence than
+the first call had. The report adds a table
+of how often each averaged question's two orders picked different options, with a 95% interval: an
+order check from the same calls. Rows where A and B answer differently show B's pick in each order.
+
+Compare scores B's averaged answers like any other, so the summary shows whether the second call buys
+accuracy, calibration, or automation at a target accuracy, and the cost row shows its price: twice the
+tokens and cost per row. Latency is the slower of the two calls, as an application that sends both at
+once would wait for it. A row where one of the two calls failed has no answer for B, so it is left out
+of scoring, and the spend of the call that did answer still counts. With only one variant averaging,
+the agreement table is a plain agreement table, never an order or input check. `POST
+/api/workbench/compare` takes `"average_orders": true` on a variant.
+
 ### Input check
 
 A good answer should not move when a customer makes a typo, writes in lowercase, adds a line that has
@@ -622,8 +653,8 @@ every question and option, the agreement table becomes an input check: any answe
 changed because of the rewrite. The summary table says how many rows the rewrite changed. A row it
 left as it was, such as a text row under **With JSON fields shuffled**, is a plain repeat of A's
 request, so the input check leaves it out. Rows where the answers differ show what B was sent under
-the row as written. **Reverse A's options** sets the rows back to as written, so an order check and an
-input check never mix.
+the row as written. **Reverse A's options** sets the rows back to as written, and B back to asking once,
+so an order check never mixes with an input check or order averaging.
 
 Labels still apply, so the usual accuracy and McNemar comparison shows whether the rewrite also costs
 accuracy. A few changed answers are normal on rows the model finds close either way. To see that

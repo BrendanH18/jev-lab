@@ -27,7 +27,7 @@ const W = {
     review: { report: null, kept: new Set(), all: { suspects: false, next: false } },
     // Accuracy by slice (jev/slices.py), for Calibrate at its threshold and for Policy at its gates. One field for both.
     slice: { field: null, cal: null, pol: null } },
-  compare: { variants: [{ text: "", model: "", perturb: "" }, { text: "", model: "", perturb: "" }], terse: null, models: null, modelsLoading: false,
+  compare: { variants: [{ text: "", model: "", perturb: "", average: false }, { text: "", model: "", perturb: "", average: false }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
   // A demo's request opened with Open in Workbench (static/js/handoff.js): the page's name and the model it asked.
@@ -2368,6 +2368,10 @@ function variantPanel(i) {
   const rows = i === 1 ? h("select", { class: "input", "aria-label": `Rows variant ${name} is sent` },
     Object.entries(PERTURBS).map(([k, label]) => h("option", { value: k, selected: k === v.perturb }, k ? `The rows, ${label}` : "The rows as written"))) : null;
   rows?.addEventListener("change", () => { v.perturb = rows.value; render(); });
+  const asked = i === 1 ? h("select", { class: "input", "aria-label": `How variant ${name} asks` },
+    h("option", { value: "", selected: !v.average }, "Once, with the options as listed"),
+    h("option", { value: "both", selected: v.average }, "Twice, with the options in both orders, averaged")) : null;
+  asked?.addEventListener("change", () => { v.average = asked.value === "both"; render(); });
   const set = (questions) => { v.text = JSON.stringify(questions, null, 2); render(); };
   return h("div", { class: "panel raw" },
     h("div", { class: "panel-head" }, h("i", { class: `cmp-key ${name.toLowerCase()}` }), h("h2", {}, `Variant ${name}`), h("div", { class: "spacer" }),
@@ -2376,11 +2380,14 @@ function variantPanel(i) {
         h("button", { class: "btn sm ghost", onclick: () => set(W.bulk.sampleQuestions) }, "Sample"),
         h("button", { class: "btn sm ghost", onclick: () => set(W.compare.terse) }, "Sample, terse"),
         i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model", onclick: () => { v.text = W.compare.variants[0].text; v.model = W.compare.variants[0].model; render(); } }, "Copy A") : null,
-        i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, with each Choice question's options in reverse order", onclick: reverseA }, "Reverse A's options") : null)),
+        i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, with each Choice question's options in reverse order", onclick: reverseA }, "Reverse A's options") : null,
+        i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, asked in both option orders and averaged", onclick: averageA }, "Average A's orders") : null)),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
       h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Model"), model),
       rows ? h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Rows"), rows,
         v.perturb ? h("span", { class: "faint" }, "An input check: with B a copy of A (", h("b", {}, "Copy A"), "), any answer that changes changed because of the rewrite.") : null) : null,
+      asked ? h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Ask"), asked,
+        v.average ? h("span", { class: "faint" }, "Each row is sent twice, the second time with every Choice question's options in reverse order, and the two answers are averaged in code. That costs twice as much per row.") : null) : null,
       area, note));
 }
 
@@ -2395,8 +2402,25 @@ function reverseA() {
   b.text = JSON.stringify(reversed, null, 2);
   b.model = a.model;
   b.perturb = "";  // the rows as written, so the order is the only change
+  b.average = false;
   render();
   toast("B is A with each Choice question's options in reverse order");
+}
+
+// A fix to measure against the order check: B asks A's questions twice, once with each Choice question's options
+// reversed, and averages the answers (jev/orders.py), so the first and last places trade options.
+function averageA() {
+  let questions;
+  try { questions = parseVariant(0); } catch (e) { return toast(e.message, "error"); }
+  const choice = Object.values(questions).some((q) => q && q.type === "choice" && q.criteria && typeof q.criteria === "object" && Object.keys(q.criteria).length > 1);
+  if (!choice) return toast("Variant A has no Choice question with two or more options to average over both orders.", "error");
+  const [a, b] = W.compare.variants;
+  b.text = a.text;
+  b.model = a.model;
+  b.perturb = "";
+  b.average = true;
+  render();
+  toast("B asks A's questions in both option orders and averages the answers");
 }
 
 const runLabel = (n) => [icon("layers"), `Run ${Math.min(n, 200)} rows × 2 variants`];
@@ -2419,7 +2443,8 @@ function renderCompare() {
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("p", { class: "muted", style: { maxWidth: "820px" } }, "Change one thing and measure it: reword a question, trim its criteria, or switch the model. Both variants answer the same labeled rows, and the report shows which one was right more often, how far to trust each one's confidence, and the rows where they disagree. ",
       h("b", {}, "Reverse A's options"), " makes B an order check: if an answer changes when only the order of the options changes, the model is reading the list, not the row. ",
-      h("b", {}, "Rows"), ", on B, makes it an input check: B's rows get typos, lowercase, an unrelated sentence, or shuffled fields, changes that should not move a good answer."),
+      h("b", {}, "Rows"), ", on B, makes it an input check: B's rows get typos, lowercase, an unrelated sentence, or shuffled fields, changes that should not move a good answer. ",
+      h("b", {}, "Average A's orders"), " tests a fix for an order effect: B asks A's questions twice, once with the options reversed, and averages the answers, so the report shows what a second call per row buys."),
     h("div", { class: "grid cmp-grid" }, variantPanel(0), variantPanel(1)),
     h("datalist", { id: "cmp-models" }, (c.models || []).map((n) => h("option", { value: n }))),
     h("div", { class: "grid wb-grid" },
@@ -2430,7 +2455,7 @@ function renderCompare() {
       h("div", { class: "panel" },
         h("div", { class: "panel-head" }, h("h2", {}, "Run both")),
         h("div", { class: "panel-body grid", style: { gap: "10px", fontSize: "12.5px" } },
-          h("p", { class: "muted" }, "Each row is sent once per variant, so 40 rows make 80 live calls. They run 8 at a time and count against the session budget. The report scores both variants only on rows both answered, so a stopped run or a failed call cannot tilt the comparison."),
+          h("p", { class: "muted" }, "Each row is sent once per variant, so 40 rows make 80 live calls, or 120 when B asks in both orders. They run 8 at a time and count against the session budget. The report scores both variants only on rows both answered, so a stopped run or a failed call cannot tilt the comparison."),
           h("p", { class: "muted" }, "Labels come from ", h("code", {}, "\"_expect\""), " in the rows. To label in the browser, use the label column on the Bulk tab, then ", h("b", {}, "Keep labels in rows"), ". Only question ids that both variants share, with the same type, are compared."),
           h("div", {}, runBtn)))),
     c.result ? renderCompareReport() : null,
@@ -2440,7 +2465,8 @@ function renderCompare() {
 async function runCompare() {
   const c = W.compare;
   let variants;
-  try { variants = VARIANTS.map((_, i) => ({ questions: parseVariant(i), model: c.variants[i].model.trim(), perturb: c.variants[i].perturb || null })); }
+  try { variants = VARIANTS.map((_, i) => ({ questions: parseVariant(i), model: c.variants[i].model.trim(), perturb: c.variants[i].perturb || null,
+    average_orders: !!c.variants[i].average })); }
   catch (e) { return toast(e.message, "error"); }
   if (c.running) return;
   c.running = true;
@@ -2519,8 +2545,9 @@ function summaryTable(res, rep) {
     summaryRow("model", vs.map((v) => h("span", { class: "mono" }, v.model))),
     summaryRow("questions", vs.map((v) => String(Object.keys(v.questions).length))),
     vs.some((v) => v.perturb) ? summaryRow("rows sent", vs.map((v) => (v.perturb ? `${PERTURBS[v.perturb] || v.perturb} · ${v.perturbed_rows} of ${res.rows} rewritten` : "as written"))) : null,
+    vs.some((v) => v.average_orders) ? summaryRow("asked", vs.map((v) => (v.average_orders ? "twice, options in both orders, averaged" : "once"))) : null,
     summaryRow("rows answered", vs.map((v) => `${v.completed} of ${res.rows}${v.errors ? ` · ${v.errors} failed` : ""}`)),
-    summaryRow("median latency", vs.map((v) => (v.latency_ms_median === null ? "—" : ms(v.latency_ms_median))), vs.map((v) => v.latency_ms_median), false),
+    summaryRow(vs.some((v) => v.average_orders) ? "median latency, slower of two calls when asked twice" : "median latency", vs.map((v) => (v.latency_ms_median === null ? "—" : ms(v.latency_ms_median))), vs.map((v) => v.latency_ms_median), false),
     summaryRow("input tokens", vs.map((v) => num(v.input_tokens)), vs.map((v) => (v.completed ? v.input_tokens / v.completed : null)), false),
     summaryRow("cost", vs.map((v) => usd(v.cost_usd)), vs.map((v) => (v.completed ? v.cost_usd / v.completed : null)), false),
   ];
@@ -2629,6 +2656,7 @@ function renderCompareReport() {
         stat("rows", String(res.rows)), stat("labeled", String(res.labeled)),
         stat("wall", ms(res.wall_ms), true), stat("cost, both variants", usd(res.cost_usd))),
       agreementBlock(res),
+      ordersBlock(res),
       body,
       h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes),
       h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, use(0), use(1))));
@@ -2690,6 +2718,25 @@ function agreementBlock(res) {
         : "Each answer is the top pick on the same row, labeled or not. The interval is 95%."));
 }
 
+// For a variant that averages over both orders (jev/orders.py): how often its two calls picked different options.
+// Those are the rows where averaging decides the answer, and the share is an order check from the same calls.
+function ordersBlock(res) {
+  const vs = res.variants.map((v, i) => ({ ...v, name: VARIANTS[i] })).filter((v) => v.average_orders && v.orders?.some((o) => o.answered));
+  if (!vs.length) return null;
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("h3", { class: "cal-h" }, "Order averaging: how often the two orders disagree"),
+    h("div", { class: "scroll" }, h("table", { class: "table cmp-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "variant"), h("th", {}, "question"), h("th", {}, "rows both orders answered"), h("th", {}, "orders picked differently"))),
+      h("tbody", {}, vs.flatMap((v) => v.orders.filter((o) => o.answered).map((o) => h("tr", {},
+        h("th", {}, h("i", { class: `cmp-key ${v.name.toLowerCase()}` }), v.name),
+        h("td", {}, o.qid),
+        h("td", { class: "num" }, String(o.answered)),
+        h("td", {}, withCI(`${o.changed} (${pct(o.rate, 1)})`, o.low, o.high)))))))),
+    h("p", { class: "faint", style: { fontSize: "12px", maxWidth: "820px", margin: 0 } },
+      "Each row was asked with the options as listed and in reverse order. Where the two picks differ, the averaged probabilities decide, and the confidence usually falls, so a threshold may send those rows to review. ",
+      "Only Choice questions with two or more options are averaged; every other question keeps the answer from the call with the options as listed. Compare the variants above to see whether the second call is worth its cost."));
+}
+
 function cmpSweepTable(rep) {
   const [a, b] = rep.variants;
   const cell = (p) => [h("td", {}, `${p.automated} · ${pct(p.coverage)}`), h("td", {}, p.accuracy === null ? "—" : withCI(pct(p.accuracy, 1), p.low, p.high))];
@@ -2700,12 +2747,19 @@ function cmpSweepTable(rep) {
         h("td", { class: "mono" }, p.threshold.toFixed(2)), cell(p), cell(b.sweep[Math.round(p.threshold * 100)])))))));
 }
 
-// The rewritten row a perturbed variant was sent, under the row as written.
+// The rewritten row a perturbed variant was sent, under the row as written, and what an averaged variant
+// picked in each order.
 function sentText(res, index) {
   const runs = res.results[index]?.runs || [];
-  return runs.map((run, v) => (run && "input" in run
-    ? h("div", { class: "faint", style: { marginTop: "4px", fontSize: "12px" } }, h("b", {}, `${VARIANTS[v]} saw: `), rowText(run.input))
-    : null));
+  const qid = W.compare.qid;
+  return runs.flatMap((run, v) => [
+    run && "input" in run
+      ? h("div", { class: "faint", style: { marginTop: "4px", fontSize: "12px" } }, h("b", {}, `${VARIANTS[v]} saw: `), rowText(run.input))
+      : null,
+    run?.orders?.[qid]
+      ? h("div", { class: "faint", style: { marginTop: "4px", fontSize: "12px" } }, h("b", {}, `${VARIANTS[v]} in each order: `),
+        `${run.orders[qid][0]} as listed, ${run.orders[qid][1]} reversed`)
+      : null]);
 }
 
 function renderCompareRows() {

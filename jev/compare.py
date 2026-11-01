@@ -224,7 +224,7 @@ def reordered(qa: Any, qb: Any) -> bool:
 
 
 def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model: bool = True,
-              perturbs: Optional[List[Optional[str]]] = None) -> List[dict]:
+              perturbs: Optional[List[Optional[str]]] = None, averaged: Optional[List[bool]] = None) -> List[dict]:
     """For each question id both variants ask with the same type, in A's order: how many rows both
     answered and how many of those got a different answer from each, with a 95% interval on the share.
 
@@ -238,12 +238,16 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
     perturbs: each variant's perturbation of its rows, or None. When they differ, the rows differ, so
     no question counts as reordered. When they differ and the request is otherwise identical, down to the
     order of every question and option, each question is marked "perturbed": an input check. It counts
-    only rows the perturbation changed (a run with "input"); the rest were plain repeats."""
+    only rows the perturbation changed (a run with "input"); the rest were plain repeats.
+
+    averaged: whether each variant averages over both option orders (jev/orders.py). When only one does,
+    its answers come from two calls, so neither the order nor the rows alone explain a change."""
     qa, qb = questions
     same_rows = len(set(perturbs or [None])) == 1
+    same_asking = len(set(averaged or [False])) == 1
     # Dict equality ignores key order, so this holds when the sets differ only in how options are listed.
-    order_only = same_rows and same_model and list(qa) == list(qb) and qa == qb
-    input_only = not same_rows and same_model and json.dumps(qa) == json.dumps(qb)
+    order_only = same_asking and same_rows and same_model and list(qa) == list(qb) and qa == qb
+    input_only = same_asking and not same_rows and same_model and json.dumps(qa) == json.dumps(qb)
     out = []
     for qid, q in qa.items():
         other = qb.get(qid)
