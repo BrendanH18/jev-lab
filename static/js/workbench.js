@@ -11,10 +11,10 @@ const W = {
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
     savedText: "", runText: null, labelsDirty: false,
-    // ranQuestions: the questions the last Bulk run asked, so a check is saved only for the questions it reruns.
+    // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
     // checkForm: Policy's "Save as a check" targets as typed (percent strings; null takes a default from the run).
     // checkRuns: per dataset id, a check run in flight or its report (jev/checks.py), and the model typed to ask instead.
-    ranQuestions: null, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
+    ranQuestions: null, runModel: null, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
     // CSV import (jev/csvimport.py): the file or pasted text, the column uses chosen so far, and the server's report.
     // pending: a newer conversion is on its way; qkey: the questions the report was checked against.
     csv: { open: false, text: "", file: "", columns: {}, report: null, error: null, seq: 0, pending: false, qkey: null },
@@ -803,7 +803,7 @@ function checkSaveBody(rep) {
     return h("label", { style: { display: "flex", gap: "6px", alignItems: "center" } }, h("span", { class: "muted" }, label), input, "%");
   };
   const existing = b.datasets.find((x) => x.id === b.dataset.id)?.check;
-  const model = currentStatus()?.model || "jev-latest";
+  const model = b.runModel || "the current model";
   return [title,
     h("p", { class: "faint", style: { fontSize: "12.5px" } },
       `Keeps these thresholds with “${b.dataset.name}”, asking ${model}, and the targets they must keep meeting. Run the check from the Datasets panel or with `,
@@ -823,7 +823,7 @@ async function saveCheck() {
   if (blocker) return toast(blocker, "error");
   if (b.datasets.find((x) => x.id === id)?.check && !confirm(`Replace the check saved with “${id}”?`)) return;
   try {
-    const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: currentStatus()?.model || "",
+    const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: b.runModel || "",
       min_accuracy: Number($("#check-accuracy").value) / 100, min_coverage: Number($("#check-coverage").value) / 100 };
     await api("/api/workbench/checks", { id, check });
     b.datasets = (await api("/api/workbench/datasets")).datasets;
@@ -1058,9 +1058,11 @@ async function runBulk() {
   try {
     const b = W.bulk;
     const ranText = b.rowsText;
+    const runModel = currentStatus()?.model || "";  // the model can change in Settings after the run
     b.result = await api("/api/workbench/bulk", { rows: rowsPayload(), questions });
     b.runText = ranText;
     b.ranQuestions = questions;
+    b.runModel = runModel;
     b.checkForm = { accuracy: null, coverage: null };
     b.labelsDirty = false;
     b.sortKey = null;
