@@ -93,6 +93,8 @@ class EvaluateTests(unittest.TestCase):
     def test_rejects_bad_input(self):
         # A field these rows cannot be sliced by falls back to the first one they can.
         self.assertEqual(slices.evaluate([row({"g": "a"}, True), row({"g": "b"}, True)], "text")["field"], "g")
+        for odd in ([], {}, 3):  # not a field name at all: the same fallback, not a crash
+            self.assertEqual(slices.evaluate([row({"g": "a"}, True), row({"g": "b"}, True)], odd)["field"], "g")
         for bad in ("rows", [{"row": {}, "correct": 1, "automated": True}], [{"row": {}, "correct": True}]):
             with self.assertRaises(CalibrationError):
                 slices.evaluate(bad)

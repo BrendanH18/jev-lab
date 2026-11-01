@@ -109,7 +109,7 @@ def evaluate(rows: Any, field: Any = None) -> dict:
     field used, the overall numbers, and one entry per value, largest first."""
     rows = _rows(rows)
     options = fields(rows)
-    if field not in {f["name"] for f in options}:  # also None, or a field an earlier run had
+    if not isinstance(field, str) or field not in {f["name"] for f in options}:  # None, or a field an earlier run had
         field = options[0]["name"] if options else None
     overall = _stats(rows)
     groups: Dict[str, List[dict]] = {}
