@@ -18,7 +18,9 @@ const W = {
     costs: { review: "2", error: "20", mistakes: [] },
     cal: { qid: null, signal: "confidence", bound: "estimate", threshold: 0.5, report: null, cost: null, holdout: null, holdoutSeq: 0 },
     policy: { signal: "confidence", bound: "estimate", gates: {}, report: null, tunes: null, cost: null, cheapest: null, holdout: null, holdoutSeq: 0 },
-    review: { report: null, kept: new Set(), all: { suspects: false, next: false } } },
+    review: { report: null, kept: new Set(), all: { suspects: false, next: false } },
+    // Accuracy by slice (jev/slices.py), for Calibrate at its threshold and for Policy at its gates. One field for both.
+    slice: { field: null, cal: null, pol: null } },
   compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
@@ -1158,6 +1160,7 @@ function renderCalibrate() {
             h("td", { class: "mono" }, p.threshold.toFixed(2)), h("td", {}, `${p.automated} of ${n}`), h("td", {}, pct(p.coverage)),
             h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy)), h("td", {}, interval(p.low, p.high) || "—"))))))),
       h("div", { id: "cal-cost", class: "grid", style: { gap: "10px" } }),
+      h("div", { id: "cal-slices", class: "grid", style: { gap: "8px" } }, sliceBody("cal")),
       holdoutPanel(c, "cal-holdout", () => [c.qid]),
       h("div", { class: "cal-tables" }, confusionTable(rep), reliabilityTable(rep)),
       h("div", { class: "code" }, h("pre", { id: "cal-code" }),
@@ -1240,6 +1243,7 @@ function updateCal() {
     stat("this run, all rows", `${autoAll} of ${all.length} automated`));
   mount("#cal-chart", calChart(rep, t));
   updateCalCost();
+  sliceSoon.cal();
   $("#cal-code").textContent = calCode(rep, c.qid, c.signal, t);
   if (b.review.report && b.review.asked !== t) reviewSoon();  // Label next ranks rows by their distance to t
   for (const tr of $$("#bulk-table tbody tr")) {
@@ -1890,6 +1894,7 @@ function updatePolicy() {
   }));
   if (!rep) return mount("#pol-out");
   const n = rep.labeled;
+  if (n) sliceSoon.pol();
   const notes = [
     n && n < 100 ? h("p", { class: "faint" }, `With ${n} labeled rows, one row moves accuracy by ${(100 / n).toFixed(1)} points. Tuned thresholds fit these rows; confirm them on more labeled rows before you rely on them.`) : null,
     rep.unlabeled ? h("p", { class: "faint" }, `${rep.unlabeled} answered rows lack a label for at least one gated question and are not scored.`) : null,
@@ -1917,8 +1922,84 @@ function updatePolicy() {
     policyBar(rep),
     policyTable(rep),
     policyMistakes(rep),
+    h("div", { id: "pol-slices", class: "grid", style: { gap: "8px" } }, sliceBody("pol")),
     code,
     h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes));
+}
+
+// ---------- Slices ----------
+// Accuracy for each value of one row field (jev/slices.py), so a part of the data where answers are worse stands out.
+// Calibrate slices its scored rows at the slider's threshold; Policy slices its scored rows at the current gates.
+// No model calls. The section keeps its last table while a newer one is on its way.
+const sliceSeq = { cal: 0, pol: 0 };
+function sliceRows(kind) {
+  const b = W.bulk;
+  const rowsBy = new Map(b.result.results.map((r) => [r.index, r.row]));
+  if (kind === "cal") {
+    const rep = b.cal.report;
+    if (!rep?.labeled) return null;
+    return rep.rows.map((r) => ({ row: rowsBy.get(r.index), correct: r.correct, automated: r.signal + 1e-9 >= b.cal.threshold }));
+  }
+  const rep = b.policy.report;
+  if (!rep?.labeled) return null;
+  return rep.rows.map((r) => ({ row: rowsBy.get(r.index), correct: r.correct, automated: r.automated }));
+}
+async function reslice(kind) {
+  const b = W.bulk;
+  const seq = ++sliceSeq[kind];
+  const rows = sliceRows(kind);
+  let report = null;
+  if (rows) {
+    try { report = await api("/api/workbench/slices", { rows, field: b.slice.field }); }
+    catch (e) { if (seq === sliceSeq[kind]) handleError(e); }
+  }
+  if (seq !== sliceSeq[kind]) return;
+  b.slice[kind] = report;
+  const el = $(`#${kind}-slices`);
+  if (el) mount(el, sliceBody(kind));
+}
+const sliceSoon = { cal: debounce(() => reslice("cal"), 150), pol: debounce(() => reslice("pol"), 150) };
+
+function sliceBody(kind) {
+  const b = W.bulk;
+  const rep = b.slice[kind];
+  if (!rep) return null;
+  const title = h("h3", { class: "cal-h" }, kind === "cal" ? "By slice, at this threshold" : "By slice, at these gates");
+  if (!rep.field) {
+    return [title, h("p", { class: "faint", style: { fontSize: "12.5px" } }, "No field of these rows has 2 to 20 values to compare. Give JSON rows a field such as ",
+      h("code", {}, "\"channel\""), " or ", h("code", {}, "\"language\""), ", for example a column kept by Import CSV, to see accuracy for each value.")];
+  }
+  const sel = h("select", { class: "input", "aria-label": "Field to slice by", style: { width: "auto" } },
+    rep.fields.map((f) => h("option", { value: f.name, selected: f.name === rep.field }, `${f.name} (${f.values} values)`)));
+  sel.addEventListener("change", () => { b.slice.field = sel.value; reslice("cal"); reslice("pol"); });
+  const o = rep.overall;
+  const acc = (v, lo, hi) => (v === null ? "—" : withCI(pct(v, 1), lo, hi));
+  const mark = (s) => {
+    const both = s.below && s.below_all;
+    if (!s.below && !s.below_all) return null;
+    const what = both ? "Worse than the rest" : s.below ? "Worse when automated" : "Worse over every row";
+    const ps = [s.below ? `automated rows p = ${s.p.toFixed(3)}` : null, s.below_all ? `every row p = ${s.p_all.toFixed(3)}` : null].filter(Boolean).join(", ");
+    return h("span", { class: "badge warning", title: `One-sided Fisher exact test against every other slice together: ${ps}` }, what);
+  };
+  const marked = rep.slices.filter((s) => s.below || s.below_all).length;
+  return [
+    h("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" } }, title, sel),
+    h("div", { class: "scroll" }, h("table", { class: "table slices" },
+      h("thead", {}, h("tr", {}, h("th", {}, rep.field), h("th", {}, "rows"), h("th", {}, "accuracy, every row"), h("th", {}, "automated"),
+        h("th", {}, "accuracy when automated"), h("th", {}, "wrong but automated"), h("th", {}))),
+      h("tbody", {}, rep.slices.map((s) => h("tr", { class: s.below || s.below_all ? "slice-below" : "" },
+        h("td", {}, h("code", {}, s.value)), h("td", { class: "num" }, String(s.rows)),
+        h("td", {}, acc(s.accuracy, s.accuracy_low, s.accuracy_high)),
+        h("td", {}, `${s.automated} · ${pct(s.coverage)}`),
+        h("td", {}, acc(s.automated_accuracy, s.automated_low, s.automated_high)),
+        h("td", { class: "num" }, String(s.wrong_automated)), h("td", {}, mark(s)))),
+        h("tr", { class: "slice-all" }, h("td", {}, h("b", {}, "all")), h("td", { class: "num" }, String(o.rows)),
+          h("td", {}, acc(o.accuracy, o.accuracy_low, o.accuracy_high)), h("td", {}, `${o.automated} · ${pct(o.coverage)}`),
+          h("td", {}, acc(o.automated_accuracy, o.automated_low, o.automated_high)), h("td", { class: "num" }, String(o.wrong_automated)), h("td", {}))))),
+    h("p", { class: "faint", style: { fontSize: "12px" } }, marked
+      ? "A marked slice is right less often than every other slice together, by more than chance explains (one-sided Fisher exact test, p < 0.05). Even a slice that is no worse is marked about one time in twenty, so with several slices, label more rows of a marked one before acting on it."
+      : "No slice is worse than the rest by more than chance explains (one-sided Fisher exact test, p < 0.05). Small slices rarely show a difference, so this does not show every slice is as accurate."),
+  ];
 }
 
 // ---------- Holdout ----------

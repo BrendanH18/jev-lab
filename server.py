@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (calibrate, claims, compare, cost, csvimport, dispatch, envfile, examples, find, hello, holdout, images,
-                 policy, review, security, shield, workbench)
+                 policy, review, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -495,6 +495,10 @@ def api_wb_review(body):
                            str(body.get("signal") or "confidence"))
 
 
+def api_wb_slices(body):
+    return slices.evaluate(body.get("rows"), body.get("field"))
+
+
 def api_wb_datasets(_body):
     return {"datasets": workbench.list_datasets()}
 
@@ -570,6 +574,7 @@ ROUTES = {
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,
     ("POST", "/api/workbench/holdout"): api_wb_holdout,
     ("POST", "/api/workbench/review"): api_wb_review,
+    ("POST", "/api/workbench/slices"): api_wb_slices,
     ("POST", "/api/workbench/cost"): api_wb_cost,
     ("POST", "/api/workbench/compare"): api_wb_compare,
     ("POST", "/api/workbench/compare/score"): api_wb_compare_score,
