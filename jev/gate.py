@@ -56,7 +56,9 @@ def _origin(source: Optional[dict]) -> str:
     """One sentence on where the thresholds came from, for the file's header."""
     source = source or {}
     if source.get("dataset"):
-        line = "Thresholds from the check saved with the Jev Lab dataset %r" % source["dataset"]
+        # JSON quoting escapes quotes, backslashes, and line breaks, so a dataset's name cannot end the file's
+        # docstring or comment and become code in the module someone runs.
+        line = "Thresholds from the check saved with the Jev Lab dataset %s" % json.dumps(str(source["dataset"]))
         if source.get("min_accuracy") is not None:
             line += ", whose targets are %s%% accuracy on automated rows%s and at least %s%% of rows automated" % (
                 _percent(source["min_accuracy"]),

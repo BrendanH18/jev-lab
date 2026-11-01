@@ -205,11 +205,20 @@ class ValidationTests(unittest.TestCase):
     def test_the_header_says_where_the_thresholds_came_from(self):
         out = gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0",
                           {"dataset": "Support tickets", "min_accuracy": 0.95, "min_coverage": 0.6, "bound": "lower"})
-        line = ("Thresholds from the check saved with the Jev Lab dataset 'Support tickets', whose targets are 95% accuracy"
+        line = ('Thresholds from the check saved with the Jev Lab dataset "Support tickets", whose targets are 95% accuracy'
                 " on automated rows at 95% confidence and at least 60% of rows automated.")
         self.assertIn(line, out["python"])
         self.assertIn("// " + line, out["javascript"])
         self.assertIn("Workbench Policy on one Bulk run", gate.export(QUESTIONS, GATES, "confidence", "m")["python"])
+
+
+    def test_a_dataset_name_cannot_become_code(self):
+        name = 'Tickets """\nimport os; os.exit(1)  # */ \\'
+        out = gate.export(QUESTIONS, GATES, "confidence", "m", {"dataset": name})
+        tree = compile(out["python"], "gate.py", "exec", flags=0x400, dont_inherit=True)  # PyCF_ONLY_AST
+        self.assertEqual([type(n).__name__ for n in tree.body[:4]], ["Expr", "Import", "Import", "ImportFrom"])
+        self.assertNotIn("\nimport os", out["python"])
+        self.assertNotIn("\nimport os", out["javascript"])
 
 
 class RouteTests(unittest.TestCase):
@@ -234,7 +243,7 @@ class RouteTests(unittest.TestCase):
                                       "min_accuracy": 0.9, "min_coverage": 0.5})
         out = server.api_wb_gate_export({"dataset": "tickets"})
         self.assertIn("MODEL = 'jev-1.13.0'", out["python"])
-        self.assertIn("dataset 'Tickets', whose targets are 90% accuracy on automated rows and at least 50%", out["python"])
+        self.assertIn('dataset "Tickets", whose targets are 90% accuracy on automated rows and at least 50%', out["python"])
 
 
 if __name__ == "__main__":
