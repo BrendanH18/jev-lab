@@ -308,6 +308,16 @@ class HttpTests(unittest.TestCase):
             self.request("POST", "/api/workbench/datasets", json.dumps({"name": "Refunds", "rows": rows, "questions": questions}),
                          self.post_headers())
             spec = {"gates": {"refund": 0.5}, "min_accuracy": 0.9, "min_coverage": 0.5}
+            self.request("POST", "/api/workbench/checks", json.dumps({"id": "refunds", "check": spec}), self.post_headers())
+            other = {"urgent": {"type": "noul", "instructions": "Urgent?"}}
+            status, _, body = self.request("POST", "/api/workbench/datasets",
+                                           json.dumps({"name": "Refunds", "rows": rows, "questions": other}), self.post_headers())
+            self.assertEqual(status, 200, body)
+            self.assertIn("refund", json.loads(body)["check_dropped"], "the page is told why the check went")
+            self.assertIsNone(json.loads(body)["dataset"]["check"])
+            self.request("POST", "/api/workbench/datasets", json.dumps({"name": "Refunds", "rows": rows, "questions": questions}),
+                         self.post_headers())
+            spec = {"gates": {"refund": 0.5}, "min_accuracy": 0.9, "min_coverage": 0.5}
             status, _, body = self.request("POST", "/api/workbench/checks", json.dumps({"id": "refunds", "check": spec}),
                                            self.post_headers())
             self.assertEqual(status, 200, body)

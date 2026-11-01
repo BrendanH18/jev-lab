@@ -504,7 +504,11 @@ def api_wb_datasets(_body):
 
 
 def api_wb_dataset_save(body):
-    return {"dataset": workbench.dataset_summary(workbench.save_dataset(body))}
+    dataset = workbench.save_dataset(body)
+    out = {"dataset": workbench.dataset_summary(dataset)}
+    if dataset.get("check_dropped"):
+        out["check_dropped"] = dataset["check_dropped"]
+    return out
 
 
 def api_wb_dataset_load(body):

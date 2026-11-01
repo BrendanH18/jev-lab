@@ -819,6 +819,8 @@ async function saveCheck() {
   const b = W.bulk;
   const p = b.policy;
   const id = b.dataset.id;
+  const blocker = checkBlocker();  // the rows box or labels may have changed since the panel was drawn
+  if (blocker) return toast(blocker, "error");
   if (b.datasets.find((x) => x.id === id)?.check && !confirm(`Replace the check saved with “${id}”?`)) return;
   try {
     const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: currentStatus()?.model || "",
