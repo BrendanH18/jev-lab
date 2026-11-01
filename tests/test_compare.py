@@ -251,7 +251,7 @@ class AgreementTests(unittest.TestCase):
         self.assertFalse(preview["agreement"][0]["reordered"])
         self.assertEqual(report["agreement"], [{"qid": "dept", "type": "choice", "answered": 3, "changed": 3, "rate": 1.0,
                                                 "low": calibrate.wilson(3, 3)[0], "high": 1.0, "reordered": True,
-                                                "same_position": 3}])
+                                                "same_position": 3, "options": 3}])
 
 
 class RunTests(unittest.TestCase):

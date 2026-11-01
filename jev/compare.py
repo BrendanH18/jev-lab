@@ -17,8 +17,9 @@ cost, and latency at each threshold are read from those answers, again without c
 
 Agreement counts, for every question both variants ask, how often their answers differ, with or
 without labels. When B asks a Choice question with A's instructions and options, listed in another
-order, every changed answer is an effect of the order alone; the count of changed answers that kept
-the same position in the list shows whether the model follows the position rather than the option.
+order, every changed answer is an effect of the order alone. It also counts the changed answers that
+kept the same position in the list. With two options every changed answer does, so the count says
+something only for three or more.
 """
 
 from __future__ import annotations
@@ -260,5 +261,6 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
                  "rate": changed / answered if answered else None, "low": low, "high": high, "reordered": moved}
         if moved:
             entry["same_position"] = same_position
+            entry["options"] = len(lists[0])
         out.append(entry)
     return out

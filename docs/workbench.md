@@ -593,8 +593,9 @@ same order, differing only in the order of Choice options. Each call asks every 
 if B asks another model or changes another question, the table stays an agreement table, since that
 change could move an answer too. Any answer that changes on such a question changed because of the order alone. For those
 answers, **same place in the list** counts the ones that picked the option at the same position in
-both lists, say the first option in A and the first option in B. Such a row followed the position,
-not the option. A sentence under the table sums up each reordered question.
+both lists, say the first option in A and the first option in B, as an answer that follows the
+position would. With only two options every changed answer does, so the count tells position from
+option only for three or more. A sentence under the table sums up each reordered question.
 
 A robust question changes no answers, or very few. When some change, look at those rows: they are
 often ones where two options fit about equally, and sharper option descriptions usually help more

@@ -7,7 +7,7 @@
 // objects always list in ascending order.
 export function reverseOptions(questions) {
   let moved = false;
-  const out = {};
+  const out = Object.create(null);  // a question id such as "__proto__" stays an ordinary key
   for (const [qid, q] of Object.entries(questions || {})) {
     const criteria = q && q.type === "choice" && q.criteria && typeof q.criteria === "object" && !Array.isArray(q.criteria) ? q.criteria : null;
     const reversed = criteria ? Object.fromEntries(Object.entries(criteria).reverse()) : null;

@@ -2633,7 +2633,8 @@ function agreementBlock(res) {
   };
   const notes = moved.map((a) => (a.changed
     ? `“${a.qid}”: ${a.changed} of ${a.answered} answers changed when only the order of its options changed` +
-      (a.same_position ? `, and ${a.same_position} of those picked the option in the same place in the list, so on ${a.same_position === 1 ? "that row" : "those rows"} the answer followed the position, not the option.` : ".")
+      (a.options === 2 ? ". With two options, a changed answer always picks the same place in the list, so the place cannot tell position from option."
+        : a.same_position ? `, and ${a.same_position} of those picked the option in the same place in both lists, as an answer that follows the position would.` : ".")
     : `“${a.qid}”: no answer changed on ${a.answered} rows when only the order of its options changed.`));
   return h("div", { class: "grid", style: { gap: "8px" } },
     h("h3", { class: "cal-h" }, moved.length ? "Order check: how often an answer changes when only the order of the options changes" : "Agreement: how often A and B answer each question differently"),

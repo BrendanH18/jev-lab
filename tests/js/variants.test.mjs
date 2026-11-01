@@ -23,6 +23,13 @@ test("reverses each Choice question's options and leaves everything else alone",
   assert.deepEqual(Object.keys(QUESTIONS.department.criteria), ["billing", "shipping", "other"], "input is not changed");
 });
 
+test("keeps a question whose id is __proto__", () => {
+  const questions = JSON.parse('{"__proto__": {"type": "noul", "instructions": "x"}, "team": {"type": "choice", "instructions": "y", "criteria": {"a": "A", "b": "B"}}}');
+  const out = JSON.parse(JSON.stringify(reverseOptions(questions)));
+  assert.deepEqual(Object.keys(out), ["__proto__", "team"]);
+  assert.deepEqual(Object.keys(out.team.criteria), ["b", "a"]);
+});
+
 test("returns null when no Choice question's order can change", () => {
   assert.equal(reverseOptions({ urgency: QUESTIONS.urgency, refund: QUESTIONS.refund }), null);
   assert.equal(reverseOptions({ one: { type: "choice", instructions: "x", criteria: { only: "One" } } }), null);
