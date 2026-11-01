@@ -375,6 +375,19 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("threshold", json.loads(err)["error"])
 
+    def test_slices_over_http_are_pure_code(self):
+        rows = ([{"row": {"channel": "email"}, "correct": True, "automated": True}] * 20
+                + [{"row": {"channel": "chat"}, "correct": False, "automated": True}] * 5)
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/slices", json.dumps({"rows": rows}), self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/slices", json.dumps({"rows": "all"}), self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual(report["field"], "channel")
+        self.assertEqual([(s["value"], s["below"]) for s in report["slices"]], [("email", False), ("chat", True)])
+        self.assertEqual(bad, 400)
+        self.assertIn("rows", json.loads(err)["error"])
+
     def test_csv_import_over_http_is_pure_code(self):
         questions = {"u": {"type": "noul", "instructions": "Urgent?"}}
         text = "text,u\nShip it today,yes\nNo rush,maybe\n"

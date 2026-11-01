@@ -331,6 +331,37 @@ gated questions it finds the best thresholds on 0.01 steps. With more, it is a s
 guarantee that no better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
 more labeled rows before relying on them.
 
+## Accuracy by slice
+
+An overall accuracy can hide a part of the data where the answers are much worse: one channel, one
+language, one product line. **By slice**, in Calibrate and in Policy, groups the scored rows by the
+value of one field of their input and shows, for each value:
+
+- how many labeled rows it has and their accuracy over every row;
+- how many the gate automates, at Calibrate's threshold or Policy's gates, and the accuracy of those;
+- how many automated rows are wrong.
+
+Each accuracy has a 95% interval, and a last row shows every slice together. A slice is marked when
+it is right less often than every other slice together, by more than chance explains: a one-sided
+Fisher exact test gives p < 0.05. **Worse than the rest** means both its automated rows and all its
+rows are worse; otherwise the mark says which. Small slices rarely reach the mark, so an unmarked
+slice is not shown to be as accurate, only not shown to be worse. Even a slice that is no worse is
+marked about one time in twenty, so with several slices, label more rows of a marked one before
+acting on it. The section makes no model calls.
+
+Slicing needs JSON rows with a field that takes 2 to 20 values, such as `"channel": "email"`. Text
+rows and the sample tickets have none. A column the model reads after [Import CSV](#import-a-csv) is
+such a field. Rows without the field fall in the `(none)` slice, and values compare as text, so `1`
+and `"1"` are one slice. Calibrate and Policy share the chosen field.
+
+`POST /api/workbench/slices` takes `rows`, one per scored row, each with its input as `row` and
+booleans `correct` and `automated`, and an optional `field`. Without a field, or with one these rows
+cannot be sliced by, it uses the first field that can. It returns `fields` (each `name` with its
+number of `values`), the `field` used, `overall`, and `slices`, largest first. Each slice has its
+`value`, `rows`, `correct`, `accuracy` with `accuracy_low` and `accuracy_high`, `automated`, `coverage`,
+`automated_correct`, `wrong_automated`, `automated_accuracy` with `automated_low` and `automated_high`,
+and the test's `p` and `below` for automated rows and `p_all` and `below_all` for every row.
+
 ## Choose a threshold by cost
 
 An accuracy target says how often the automated answers are right. An application pays for two things instead:
@@ -497,7 +528,7 @@ request with one file part per picture.
 | Bulk rows | First 200 nonempty rows |
 | Imported CSV | 2,000,000 characters and 100 columns; the first 200 rows with state |
 | Saved dataset | 200 nonempty rows and 2,000,000 characters as JSON |
-| Calibrate, Costs, Review, Policy, Holdout, and Compare scoring rows | 1,000 per request |
+| Calibrate, Costs, Review, Slices, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Prices | $0 to $1,000,000 each; up to 100 priced mistakes |
 | Policy gated questions | 10 |
 | Holdout folds | 2–10 through the API, 5 in the Workbench; at least 2 labeled rows per fold |

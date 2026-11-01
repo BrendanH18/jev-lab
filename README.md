@@ -121,6 +121,9 @@ conditions.
   answer it uses is confident. See what share of rows the combined gate automates and how accurate
   they are, tune the thresholds for 90%, 95%, or 99% accuracy, and copy the Python gate. It also
   reuses the Bulk answers.
+- **By slice:** in Calibrate and Policy, see accuracy for each value of a row field such as a channel or a
+  language, with intervals, and which slices are worse than the rest by more than chance. It also reuses
+  the Bulk answers.
 - **Check on unseen rows:** in Calibrate and Policy, see what the tuned thresholds deliver on rows they were
   not tuned on. Five-fold cross-validation tunes on four fifths of the labeled rows and routes the fifth,
   then compares that accuracy with the accuracy on the tuning rows. It also reuses the Bulk answers.
