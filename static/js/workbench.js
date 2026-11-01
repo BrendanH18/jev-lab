@@ -3,6 +3,7 @@ import {
   money, pct, photoView, prepareImage, stat, statusBadge, toast, usd,
 } from "./common.js";
 import { readHandoff } from "./handoff.js";
+import { reverseOptions } from "./variants.js";
 
 const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
@@ -2362,10 +2363,25 @@ function variantPanel(i) {
         h("button", { class: "btn sm ghost", onclick: () => set(toQuestions(W.questions)) }, "Build questions"),
         h("button", { class: "btn sm ghost", onclick: () => set(W.bulk.sampleQuestions) }, "Sample"),
         h("button", { class: "btn sm ghost", onclick: () => set(W.compare.terse) }, "Sample, terse"),
-        i === 1 ? h("button", { class: "btn sm ghost", onclick: () => { v.text = W.compare.variants[0].text; render(); } }, "Copy A") : null)),
+        i === 1 ? h("button", { class: "btn sm ghost", onclick: () => { v.text = W.compare.variants[0].text; render(); } }, "Copy A") : null,
+        i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, with each Choice question's options in reverse order", onclick: reverseA }, "Reverse A's options") : null)),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
       h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Model"), model),
       area, note));
+}
+
+// An order check: B becomes A, with the same model and each Choice question's options in reverse order, so
+// any answer that changes changed because of the order alone.
+function reverseA() {
+  let questions;
+  try { questions = parseVariant(0); } catch (e) { return toast(e.message, "error"); }
+  const reversed = reverseOptions(questions);
+  if (!reversed) return toast("Variant A has no Choice question whose options can be reordered. Score levels keep their order, and options named by whole numbers always list in ascending order.", "error");
+  const [a, b] = W.compare.variants;
+  b.text = JSON.stringify(reversed, null, 2);
+  b.model = a.model;
+  render();
+  toast("B is A with each Choice question's options in reverse order");
 }
 
 const runLabel = (n) => [icon("layers"), `Run ${Math.min(n, 200)} rows × 2 variants`];
@@ -2386,7 +2402,8 @@ function renderCompare() {
     if (!c.running) mount(runBtn, runLabel(n));
   });
   return h("div", { class: "grid", style: { gap: "16px" } },
-    h("p", { class: "muted", style: { maxWidth: "820px" } }, "Change one thing and measure it: reword a question, trim its criteria, or switch the model. Both variants answer the same labeled rows, and the report shows which one was right more often, how far to trust each one's confidence, and the rows where they disagree."),
+    h("p", { class: "muted", style: { maxWidth: "820px" } }, "Change one thing and measure it: reword a question, trim its criteria, or switch the model. Both variants answer the same labeled rows, and the report shows which one was right more often, how far to trust each one's confidence, and the rows where they disagree. ",
+      h("b", {}, "Reverse A's options"), " makes B an order check: if an answer changes when only the order of the options changes, the model is reading the list, not the row."),
     h("div", { class: "grid cmp-grid" }, variantPanel(0), variantPanel(1)),
     h("datalist", { id: "cmp-models" }, (c.models || []).map((n) => h("option", { value: n }))),
     h("div", { class: "grid wb-grid" },
@@ -2594,9 +2611,46 @@ function renderCompareReport() {
       h("div", { class: "stat-row" },
         stat("rows", String(res.rows)), stat("labeled", String(res.labeled)),
         stat("wall", ms(res.wall_ms), true), stat("cost, both variants", usd(res.cost_usd))),
+      agreementBlock(res),
       body,
       h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes),
       h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, use(0), use(1))));
+}
+
+// How often A and B answer each shared question differently, read from the answers, so it needs no labels.
+// When B lists a Choice question's options in another order and changes nothing else (jev/compare.py
+// reordered), every changed answer comes from the order alone.
+function agreementBlock(res) {
+  const c = W.compare;
+  const rows = (res.agreement || []).filter((a) => a.answered);
+  if (!rows.length) return null;
+  const moved = rows.filter((a) => a.reordered);
+  const show = (qid) => async () => {
+    c.qid = qid;
+    await rescoreCompare();
+    render();
+    $("#compare-rows")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const notes = moved.map((a) => (a.changed
+    ? `“${a.qid}”: ${a.changed} of ${a.answered} answers changed when only the order of its options changed` +
+      (a.same_position ? `, and ${a.same_position} of those picked the option in the same place in the list, so on ${a.same_position === 1 ? "that row" : "those rows"} the answer followed the position, not the option.` : ".")
+    : `“${a.qid}”: no answer changed on ${a.answered} rows when only the order of its options changed.`));
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("h3", { class: "cal-h" }, moved.length ? "Order check: how often an answer changes when only the order of the options changes" : "Agreement: how often A and B answer each question differently"),
+    h("div", { class: "scroll" }, h("table", { class: "table cmp-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "question"), h("th", {}, "rows both answered"), h("th", {}, moved.length ? "answers changed" : "answers differ"),
+        moved.length ? h("th", { title: "Changed answers that picked the option in the same place in each variant's list" }, "same place in the list") : null, h("th", {}))),
+      h("tbody", {}, rows.map((a) => h("tr", {},
+        h("th", {}, a.qid, a.reordered ? h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, "options reordered") : null),
+        h("td", {}, String(a.answered)),
+        h("td", {}, a.changed ? withCI(`${a.changed} · ${pct(a.rate, 1)}`, a.low, a.high) : "0"),
+        moved.length ? h("td", {}, a.reordered && a.changed ? `${a.same_position} of ${a.changed}` : "—") : null,
+        h("td", {}, a.changed && a.qid !== c.qid ? h("button", { class: "btn sm ghost", onclick: show(a.qid) }, "Show rows")
+          : a.changed ? h("span", { class: "faint" }, "shown below") : null)))))),
+    notes.length ? h("div", { class: "grid", style: { gap: "4px" } }, notes.map((n) => h("p", { class: "muted", style: { fontSize: "12.5px", maxWidth: "820px", margin: 0 } }, n))) : null,
+    h("p", { class: "faint", style: { fontSize: "12px", maxWidth: "820px", margin: 0 } }, moved.length
+      ? "Each answer is A's and B's top pick on the same row. The interval is 95%. A small share can still matter: those rows get a different answer depending on how the options happen to be listed."
+      : "Each answer is the top pick on the same row, labeled or not. The interval is 95%."));
 }
 
 function cmpSweepTable(rep) {

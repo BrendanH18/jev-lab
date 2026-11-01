@@ -24,6 +24,8 @@ handler. Served pages receive a per-process token. [`static/js/common.js`](../st
 adds that token to requests, builds shared UI elements, and renders model answers and traces. The
 trace drawer's **Open in Workbench** passes the inspected request to the Workbench through the
 browser's `localStorage` ([`static/js/handoff.js`](../static/js/handoff.js)); it adds no server route.
+Compare's **Reverse A's options** builds its order-check variant in the browser
+([`static/js/variants.js`](../static/js/variants.js)). Both modules have no DOM code, so `tests/js` tests them under Node.
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,
@@ -58,7 +60,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/checks.py`](../jev/checks.py) | Checks: a gate saved with a dataset, rerun over its rows and judged against an accuracy and an automation target; used by the Workbench and `scripts/check.py` |
 | [`jev/slices.py`](../jev/slices.py) | Accuracy by slice: scored rows grouped by a field of their input, with intervals and a one-sided Fisher exact test against the other slices |
 | [`jev/review.py`](../jev/review.py) | Label review: answers that disagree with their labels, ranked by the probability the label got, and unlabeled rows ranked by distance to a threshold |
-| [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, and a cascade sweep |
+| [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, a cascade sweep, and agreement by question, including the order check for reordered Choice options |
 | [`jev/examples.py`](../jev/examples.py) | Workbench example question sets |
 | [`jev/world.py`](../jev/world.py) | Fictional business state, deterministic action checks, and mutations |
 | [`jev/scenarios.py`](../jev/scenarios.py) | Synthetic inbox messages, labels, and commands |

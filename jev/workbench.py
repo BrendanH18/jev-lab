@@ -635,6 +635,7 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
                           "input_tokens": sum(o["meta"]["input_tokens"] for o in done),
                           "latency_ms_median": statistics.median(latencies) if latencies else None})
     return {"variants": summaries, "results": results, "rows": len(split), "stopped": stopped,
+            "agreement": compare.agreement(results, [v["questions"] for v in variants]),
             "labeled": sum(1 for r in results if r.get("expect")),
             "wall_ms": (time.perf_counter() - started) * 1000,
             "cost_usd": sum(s["cost_usd"] for s in summaries)}

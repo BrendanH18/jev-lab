@@ -185,6 +185,62 @@ Q = {"urgent": {"type": "noul", "instructions": "Does this need attention today?
 TERSE = {"urgent": {"type": "noul", "instructions": "Urgent?"}}
 
 
+DEPT = {"type": "choice", "instructions": "Which team?",
+        "criteria": {"billing": "Money", "shipping": "Parcels", "other": "Anything else"}}
+REVERSED = dict(DEPT, criteria=dict(reversed(list(DEPT["criteria"].items()))))
+
+
+def outcome(**answers):
+    return {"answers": answers}
+
+
+class AgreementTests(unittest.TestCase):
+    def test_reordered_needs_the_same_instructions_and_options_in_another_order(self):
+        self.assertTrue(compare.reordered(DEPT, REVERSED))
+        self.assertFalse(compare.reordered(DEPT, DEPT))
+        self.assertFalse(compare.reordered(DEPT, dict(REVERSED, instructions="Which department?")))
+        self.assertFalse(compare.reordered(DEPT, dict(REVERSED, criteria={"other": "Anything", "shipping": "Parcels", "billing": "Money"})))
+        self.assertFalse(compare.reordered(DEPT, {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "Money", "other": "Anything else"}}))
+        score = {"type": "score", "instructions": "How bad?", "criteria": ["mild", "bad"]}
+        self.assertFalse(compare.reordered(score, dict(score, criteria=["bad", "mild"])))
+
+    def test_counts_changed_answers_per_shared_question_without_labels(self):
+        opts = ("billing", "shipping", "other")
+        results = [
+            {"runs": [outcome(dept=choice("billing", opts), urgent=noul(0.9)), outcome(dept=choice("billing", opts), urgent=noul(0.2))]},
+            # A picked its first option and B its first option: same position, different option
+            {"runs": [outcome(dept=choice("billing", opts), urgent=noul(0.9)), outcome(dept=choice("other", opts), urgent=noul(0.8))]},
+            # Picked last in A and the middle in B: changed, but not by keeping the position
+            {"runs": [outcome(dept=choice("other", opts)), outcome(dept=choice("shipping", opts))]},
+            {"runs": [outcome(dept=choice("billing", opts)), {"error": "boom"}]},
+            {"runs": [outcome(dept={"type": "choice", "choice": "nope", "probabilities": {}}), outcome(dept=choice("billing", opts))]},
+        ]
+        urgent = {"type": "noul", "instructions": "Urgent?"}
+        rows = compare.agreement(results, [{"dept": DEPT, "urgent": urgent, "only_a": urgent},
+                                           {"urgent": urgent, "dept": REVERSED, "only_b": urgent}])
+        self.assertEqual([r["qid"] for r in rows], ["dept", "urgent"])
+        dept, urg = rows
+        self.assertEqual((dept["answered"], dept["changed"], dept["reordered"], dept["same_position"]), (3, 2, True, 1))
+        self.assertAlmostEqual(dept["rate"], 2 / 3)
+        self.assertEqual((dept["low"], dept["high"]), calibrate.wilson(2, 3))
+        self.assertEqual((urg["answered"], urg["changed"], urg["reordered"]), (2, 1, False))
+        self.assertNotIn("same_position", urg)
+
+    def test_a_question_with_another_type_in_b_or_no_answers_is_handled(self):
+        urgent = {"type": "noul", "instructions": "Urgent?"}
+        rows = compare.agreement([{"runs": [{"skipped": True}, {"skipped": True}]}],
+                                 [{"dept": DEPT, "urgent": urgent}, {"dept": urgent, "urgent": urgent}])
+        self.assertEqual(rows, [{"qid": "urgent", "type": "noul", "answered": 0, "changed": 0, "rate": None,
+                                 "low": None, "high": None, "reordered": False}])
+
+    def test_run_compare_reports_agreement_for_reversed_options(self):
+        # The fake picks the last option it is offered, so reversing the list changes every answer.
+        report = workbench.run_compare(FakeClient(), ["a", "b", "c"], [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}}])
+        self.assertEqual(report["agreement"], [{"qid": "dept", "type": "choice", "answered": 3, "changed": 3, "rate": 1.0,
+                                                "low": calibrate.wilson(3, 3)[0], "high": 1.0, "reordered": True,
+                                                "same_position": 3}])
+
+
 class RunTests(unittest.TestCase):
     def test_runs_each_row_once_per_variant_with_its_model(self):
         client = FakeClient(lambda s, q: {"urgent": 0.9 if "today" in q["urgent"]["instructions"] else 0.1})

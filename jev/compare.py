@@ -14,6 +14,11 @@ unevenly if neither variant were better.
 The cascade asks one variant first and escalates to the other only when the first one's gating
 signal falls below a threshold. Both variants already answered every scored row, so its accuracy,
 cost, and latency at each threshold are read from those answers, again without calls.
+
+Agreement counts, for every question both variants ask, how often their answers differ, with or
+without labels. When B asks a Choice question with A's instructions and options, listed in another
+order, every changed answer is an effect of the order alone; the count of changed answers that kept
+the same position in the list shows whether the model follows the position rather than the option.
 """
 
 from __future__ import annotations
@@ -203,3 +208,52 @@ def evaluate(rows: Any, signal: str = "confidence", first: str = "A", bound: str
         "disagreements": disagreements,
         "cascade": cascade(scored, usage, lead),
     }
+
+
+def reordered(qa: Any, qb: Any) -> bool:
+    """True when B's Choice question is A's, with the same instructions and options, listed in another order."""
+    if not (isinstance(qa, dict) and isinstance(qb, dict)) or qa.get("type") != "choice" or qb.get("type") != "choice":
+        return False
+    ca, cb = qa.get("criteria"), qb.get("criteria")
+    return (isinstance(ca, dict) and isinstance(cb, dict) and ca == cb and list(ca) != list(cb)
+            and qa.get("instructions") == qb.get("instructions"))
+
+
+def agreement(results: List[dict], questions: List[Dict[str, dict]]) -> List[dict]:
+    """For each question id both variants ask with the same type, in A's order: how many rows both
+    answered and how many of those got a different answer from each, with a 95% interval on the share.
+
+    results: workbench.run_compare's rows, each with "runs" [A's outcome, B's outcome]. Labels are not used.
+    For a reordered Choice question, "same_position" counts the changed answers that picked the option
+    at the same place in each variant's list."""
+    qa, qb = questions
+    out = []
+    for qid, q in qa.items():
+        other = qb.get(qid)
+        if not isinstance(other, dict) or other.get("type") != q.get("type"):
+            continue
+        moved = reordered(q, other)
+        lists = (list(q["criteria"]), list(other["criteria"])) if moved else None
+        answered = changed = same_position = 0
+        for row in results:
+            runs = row.get("runs") or []
+            answers = [(r.get("answers") or {}).get(qid) if isinstance(r, dict) else None for r in runs]
+            if len(answers) != 2 or not all(isinstance(a, dict) for a in answers):
+                continue
+            try:
+                picks = [calibrate.read(a)[0] for a in answers]
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue  # unreadable answers are listed by Compare's per-question report
+            answered += 1
+            if picks[0] == picks[1]:
+                continue
+            changed += 1
+            if lists and all(p in names for p, names in zip(picks, lists)):
+                same_position += lists[0].index(picks[0]) == lists[1].index(picks[1])
+        low, high = calibrate.wilson(changed, answered)
+        entry = {"qid": qid, "type": q.get("type"), "answered": answered, "changed": changed,
+                 "rate": changed / answered if answered else None, "low": low, "high": high, "reordered": moved}
+        if moved:
+            entry["same_position"] = same_position
+        out.append(entry)
+    return out
