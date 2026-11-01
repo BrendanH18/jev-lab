@@ -279,7 +279,7 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(json.loads(body)["dataset"], {"id": "tickets", "name": "Tickets", "notes": "",
                                                            "saved_at": json.loads(body)["dataset"]["saved_at"], "rows": 2,
                                                            "labeled": 1, "labels": {"dept": 1}, "questions": 0,
-                                                           "check": None})
+                                                           "check": None, "check_notes": []})
             status, _, body = self.request("GET", "/api/workbench/datasets")
             self.assertEqual([d["id"] for d in json.loads(body)["datasets"]], ["tickets"])
             status, _, body = self.request("POST", "/api/workbench/datasets/load", json.dumps({"id": "tickets"}),
@@ -514,7 +514,7 @@ class HttpTests(unittest.TestCase):
             status = server.api_model({"model": "jev-latest"})
         self.assertEqual((preview["model"], preview["supports_box"]), ("jev-preview", True))
         self.assertEqual((versioned["model"], versioned["supports_box"]), ("jev-1.14.0", True))
-        self.assertEqual((status["model"], status["supports_box"]), ("jev-latest", False))
+        self.assertEqual((status["model"], status["supports_box"]), ("jev-latest", True))  # jev-latest is Jev 1.14
         # Choosing the configured default is not an override.
         self.assertEqual(status["model_source"], "settings" if server.client.settings.model == "jev-latest" else "selected")
         self.assertEqual(server.api_model({"model": ""})["model_source"], "settings")

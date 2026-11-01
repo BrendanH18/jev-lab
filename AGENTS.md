@@ -118,8 +118,9 @@ them, checks probability answers against user-authored `expect` ranges, persists
 files under `data/workbench/` (one file per saved test — these are meant to be committed), saves
 Bulk rows and their `_expect` labels as datasets under `data/workbench/datasets/` (inputs and labels
 only — never answers, per the no-replay rule below), keeps a tuned Policy gate with a dataset as a *check*
-(`jev/checks.py`: gates, model and user-chosen targets, never measured results) that the Datasets
-panel and `scripts/check.py` rerun live, runs a
+(`jev/checks.py`: gates, model, the versioned id that answered the tuning run as `tuned_on`, and
+user-chosen targets, never measured results) that the Datasets panel and `scripts/check.py` rerun live,
+runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
 `SpendGuard`), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a
 Python or JavaScript module whose `decide(state)` routes a row (`jev/gate.py`).

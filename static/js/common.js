@@ -421,7 +421,7 @@ function modelPicker() {
   const note = h("div", { class: "faint", style: { fontSize: "11.5px" } }, "Loading the models this key can use…");
   const describe = () => {
     const box = status.supports_box ? "Answers Box questions."
-      : "Box questions need Jev 1.14 or later: pick jev-preview, or set TYPESAFE_DEFAULT_MODEL to a versioned id.";
+      : "Box questions need Jev 1.14 or later: pick jev-latest, or set TYPESAFE_DEFAULT_MODEL to jev-1.14.0.";
     const source = status.model_source === "selected"
       ? `Selected for this run; restarting returns to ${status.default_model}.`
       : "From TYPESAFE_DEFAULT_MODEL (or the default).";

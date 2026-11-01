@@ -181,11 +181,30 @@ class JevClientTests(unittest.TestCase):
         self.assertTrue(client_mod.supports_box(c.model))
         c.set_model(None)
         self.assertEqual((c.model, c.model_source), ("jev-1.13.0", "settings"))
-        # Aliases per https://docs.typesafe.ai/models#aliases: jev-latest -> 1.13, jev-preview -> 1.14.
-        self.assertFalse(client_mod.supports_box("jev-latest"))
+        # Aliases per https://docs.typesafe.ai/models#aliases: both point at 1.14 since 2026-10-14.
+        self.assertEqual(client_mod.resolve_alias("jev-latest"), "jev-1.14.0")
+        self.assertTrue(client_mod.supports_box("jev-latest"))
         self.assertTrue(client_mod.supports_box("jev-preview"))
         self.assertTrue(client_mod.supports_box("jev-2.0.0"))
         self.assertEqual(client_mod.resolve_alias("jev-1.14.0"), "jev-1.14.0")
+
+    def test_versioned_ids_and_pin_notes(self):
+        for model in ("jev-1.14.0", "jev-1.13", "jev-2.0.0"):
+            self.assertTrue(client_mod.is_versioned(model), model)
+            self.assertIsNone(client_mod.pin_note(model, "jev-1.13.0"), "a versioned id never moves")
+        for model in ("jev-latest", "jev-preview", "jev-1.14.0-rc1", "", "my-proxy"):
+            self.assertFalse(client_mod.is_versioned(model), model)
+        self.assertIsNone(client_mod.pin_note(""))
+        moved = client_mod.pin_note("jev-latest", "jev-1.13.0")
+        self.assertIn("jev-latest now points to jev-1.14.0", moved)
+        self.assertIn("tuned on answers from jev-1.13.0", moved)
+        same = client_mod.pin_note("jev-latest", "jev-1.14.0")
+        self.assertIn("an alias that moves", same)
+        self.assertIn("tuned on answers from jev-1.14.0", same)
+        self.assertNotIn("now points", same)
+        unknown = client_mod.pin_note("jev-latest")
+        self.assertIn("an alias that moves", unknown)
+        self.assertNotIn("tuned on answers", unknown)
 
     def test_error_messages(self):
         self.assertIn("rejected the API key", client_mod._error_message(401, {"detail": {"message": "bad"}}))

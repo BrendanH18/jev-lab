@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
-import re
 import sys
 import threading
 import time
@@ -24,7 +23,7 @@ from urllib.parse import urlparse
 from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, envfile, examples, find, gate, hello, holdout, images,
                  lint, policy, review, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
-from jev.client import JevClient, JevError, price_per_input_token, supports_box
+from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
 from jev.play import Games
 from jev.scenarios import COMMANDS, INBOX
@@ -35,9 +34,6 @@ STATIC = PROJECT_ROOT / "static"
 PAGES = {"/": "index.html", "/shield": "shield.html", "/dispatch": "dispatch.html", "/autopilot": "autopilot.html",
          "/claims": "claims.html", "/find": "find.html", "/play": "play.html", "/workbench": "workbench.html"}
 MAX_BODY_BYTES = 12 * 1024 * 1024  # room for a few base64 photos
-# GET /v1/models currently lists only the aliases; versioned ids are accepted whether or not they appear
-# in the list (https://docs.typesafe.ai/models#list-models).
-VERSIONED_MODEL = re.compile(r"jev-\d+\.\d+(\.\d+)?")
 
 settings = Settings()
 client = JevClient(settings)
@@ -129,8 +125,11 @@ def api_models(_body):
 
 
 def check_model(model: str) -> None:
-    """BadRequest unless this key can use `model`: the configured or current model, a listed name, or a versioned id."""
-    if not model or model in (client.settings.model, client.model) or VERSIONED_MODEL.fullmatch(model):
+    """BadRequest unless this key can use `model`: the configured or current model, a listed name, or a versioned id.
+
+    GET /v1/models currently lists only the aliases; versioned ids are accepted whether or not they appear in the
+    list (https://docs.typesafe.ai/models#list-models)."""
+    if not model or model in (client.settings.model, client.model) or is_versioned(model):
         return
     names = [m.get("name") for m in client.models().get("models", [])]
     if model not in names:
