@@ -242,7 +242,7 @@ class AgreementTests(unittest.TestCase):
         rows = compare.agreement([{"runs": [{"skipped": True}, {"skipped": True}]}],
                                  [{"dept": DEPT, "urgent": urgent}, {"dept": urgent, "urgent": urgent}])
         self.assertEqual(rows, [{"qid": "urgent", "type": "noul", "answered": 0, "changed": 0, "rate": None,
-                                 "low": None, "high": None, "reordered": False}])
+                                 "low": None, "high": None, "reordered": False, "perturbed": False}])
 
     def test_run_compare_reports_agreement_for_reversed_options(self):
         # The fake picks the last option it is offered, so reversing the list changes every answer.
@@ -250,8 +250,41 @@ class AgreementTests(unittest.TestCase):
         preview = workbench.run_compare(FakeClient(), ["a"], [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}, "model": "jev-preview"}])
         self.assertFalse(preview["agreement"][0]["reordered"])
         self.assertEqual(report["agreement"], [{"qid": "dept", "type": "choice", "answered": 3, "changed": 3, "rate": 1.0,
-                                                "low": calibrate.wilson(3, 3)[0], "high": 1.0, "reordered": True,
+                                                "low": calibrate.wilson(3, 3)[0], "high": 1.0, "reordered": True, "perturbed": False,
                                                 "same_position": 3, "options": 3}])
+
+    def test_an_input_check_needs_the_same_request_with_only_the_rows_perturbed(self):
+        results = [{"runs": [outcome(dept=choice("billing")), outcome(dept=choice("shipping"))]},
+                   {"runs": [outcome(dept=choice("billing")), outcome(dept=choice("billing"))]}]
+        urgent = {"type": "noul", "instructions": "Urgent?"}
+        same = {"dept": DEPT, "urgent": urgent}
+        rows = compare.agreement(results, [same, same], perturbs=[None, "typos"])
+        self.assertEqual([(r["qid"], r["perturbed"], r["reordered"]) for r in rows], [("dept", True, False), ("urgent", True, False)])
+        self.assertEqual((rows[0]["answered"], rows[0]["changed"]), (2, 1))
+        # Without a perturbation it is a plain agreement table; with another model, another question, or
+        # another option order in B, a changed answer need not come from the rows.
+        self.assertFalse(compare.agreement(results, [same, same], perturbs=[None, None])[0]["perturbed"])
+        self.assertFalse(compare.agreement(results, [same, same], same_model=False, perturbs=[None, "typos"])[0]["perturbed"])
+        for b in ({"dept": REVERSED, "urgent": urgent}, {"urgent": urgent, "dept": DEPT}, {"dept": DEPT}):
+            with self.subTest(b=list(b)):
+                row = compare.agreement(results, [same, b], perturbs=[None, "typos"])[0]
+                self.assertEqual((row["perturbed"], row["reordered"]), (False, False))
+
+    def test_run_compare_sends_b_the_perturbed_rows_and_reports_an_input_check(self):
+        client = FakeClient(lambda state, q: {"urgent": 0.9 if state["text"].islower() else 0.1})
+        rows = ["Ship it today", {"text": "where is it", "_expect": {"urgent": True}}]
+        report = workbench.run_compare(client, rows, [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}])
+        self.assertEqual(sorted(state["text"] for state, _ in client.calls),  # calls run concurrently
+                         ["Ship it today", "ship it today", "where is it", "where is it"])
+        self.assertEqual([v["perturb"] for v in report["variants"]], [None, "lowercase"])
+        self.assertEqual([v["perturbed_rows"] for v in report["variants"]], [0, 1])  # one row was lowercase already
+        first, second = report["results"]
+        self.assertEqual(first["row"], "Ship it today")  # the row as written, as A saw it
+        self.assertNotIn("input", first["runs"][0])
+        self.assertEqual(first["runs"][1]["input"], {"text": "ship it today"})
+        self.assertNotIn("_expect", second["runs"][1]["input"])
+        urgent = report["agreement"][0]
+        self.assertEqual((urgent["perturbed"], urgent["answered"], urgent["changed"]), (True, 2, 1))
 
 
 class RunTests(unittest.TestCase):

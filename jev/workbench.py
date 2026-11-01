@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from . import compare, images
+from . import compare, images, perturb
 from .client import JevClient, JevError
 from .config import SAMPLES_DIR, WORKBENCH_DIR
 
@@ -544,30 +544,41 @@ def _row_base(split: List[tuple], index: int) -> dict:
     return {"index": index, "row": row, "expect": labels} if labels is not None else {"index": index, "row": row}
 
 
-def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
-    """jobs: [(row index, questions, model or None)]. Returns (one outcome per job, first stopping error).
+def _state(split: List[tuple], index: int, field: str) -> Any:
+    """The state a row is sent as: a JSON row as it is, a text row under `field`."""
+    row = split[index][0]
+    return row if isinstance(row, (dict, list)) else {field: row}
 
-    An outcome is {"answers", "meta"}, {"error"}, or {"skipped": True}. A missing key or exhausted
-    budget stops new calls; other errors stay with their row.
+
+def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
+    """jobs: [(row index, questions, model or None, perturbation or None)]. Returns (one outcome per job,
+    first stopping error).
+
+    An outcome is {"answers", "meta"}, {"error"}, or {"skipped": True}. A perturbed job's outcome also
+    holds the state it sent as "input". A missing key or exhausted budget stops new calls; other errors
+    stay with their row.
     """
     stop = threading.Event()
     stopped = {"error": None}
     lock = threading.Lock()
 
     def one(job):
-        index, questions, model = job
-        row = split[index][0]
-        state = row if isinstance(row, (dict, list)) else {field: row}
+        index, questions, model, kind = job
+        state = _state(split, index, field)
+        sent = {}
+        if kind:
+            state = perturb.apply(kind, state, index)
+            sent = {"input": state}
         try:
             result = client.system_one(state, questions, model=model)
-            return {"answers": result.answers, "meta": result.meta()}
+            return dict(sent, answers=result.answers, meta=result.meta())
         except JevError as err:
             if err.status in (401, 402):
                 with lock:
                     if stopped["error"] is None:
                         stopped["error"] = str(err)
                 stop.set()
-            return {"error": str(err)}
+            return dict(sent, error=str(err))
 
     outcomes = map_until_stopped(one, jobs, BULK_CONCURRENCY, stop, lambda _job: {"skipped": True})
     return outcomes, stopped["error"]
@@ -578,7 +589,7 @@ def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "t
     questions = bulk_questions(questions)
     split = _split_rows(rows)
     started = time.perf_counter()
-    outcomes, stopped = _run_jobs(client, split, [(i, questions, model) for i in range(len(split))], field)
+    outcomes, stopped = _run_jobs(client, split, [(i, questions, model, None) for i in range(len(split))], field)
     results = [dict(_row_base(split, i), **outcome) for i, outcome in enumerate(outcomes)]
     done = [r for r in results if "answers" in r]
     return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
@@ -592,7 +603,8 @@ def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "t
 
 
 def validate_variants(variants: Any) -> List[dict]:
-    """Two variants, each a Bulk question set and an optional model name (None uses the current model)."""
+    """Two variants, each a Bulk question set, an optional model name (None uses the current model), and an
+    optional perturbation of the rows it is sent (jev/perturb.py; None sends them as written)."""
     if not isinstance(variants, list) or len(variants) != len(compare.NAMES):
         raise WorkbenchError("Compare needs exactly two variants")
     out = []
@@ -606,7 +618,10 @@ def validate_variants(variants: Any) -> List[dict]:
         model = variant.get("model")
         if model is not None and not isinstance(model, str):
             raise WorkbenchError("Variant %s: model must be a string" % name)
-        out.append({"questions": questions, "model": (model or "").strip() or None})
+        kind = variant.get("perturb") or None
+        if kind is not None and kind not in perturb.KINDS:
+            raise WorkbenchError("Variant %s: perturb must be one of %s" % (name, ", ".join(perturb.KINDS)))
+        out.append({"questions": questions, "model": (model or "").strip() or None, "perturb": kind})
     return out
 
 
@@ -620,7 +635,7 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     models = [v["model"] or client.model for v in variants]
     split = _split_rows(rows)
     started = time.perf_counter()
-    jobs = [(i, v["questions"], model) for i in range(len(split)) for v, model in zip(variants, models)]
+    jobs = [(i, v["questions"], model, v["perturb"]) for i in range(len(split)) for v, model in zip(variants, models)]
     outcomes, stopped = _run_jobs(client, split, jobs, field)
     width = len(variants)
     results = [dict(_row_base(split, i), runs=outcomes[i * width:(i + 1) * width]) for i in range(len(split))]
@@ -628,14 +643,19 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     for v, variant in enumerate(variants):
         done = [r["runs"][v] for r in results if "answers" in r["runs"][v]]
         latencies = [o["meta"]["latency_ms"] for o in done]
-        summaries.append({"name": compare.NAMES[v], "model": models[v],
+        kind = variant["perturb"]
+        summaries.append({"name": compare.NAMES[v], "model": models[v], "perturb": kind,
+                          # rows the perturbation rewrote; the rest went out as written
+                          "perturbed_rows": sum(perturb.changed(_state(split, i, field), perturb.apply(kind, _state(split, i, field), i))
+                                                for i in range(len(split))) if kind else 0,
                           "questions": variant["questions"], "completed": len(done),
                           "errors": sum(1 for r in results if "error" in r["runs"][v]),
                           "cost_usd": sum(o["meta"]["cost_usd"] for o in done),
                           "input_tokens": sum(o["meta"]["input_tokens"] for o in done),
                           "latency_ms_median": statistics.median(latencies) if latencies else None})
     return {"variants": summaries, "results": results, "rows": len(split), "stopped": stopped,
-            "agreement": compare.agreement(results, [v["questions"] for v in variants], models[0] == models[1]),
+            "agreement": compare.agreement(results, [v["questions"] for v in variants], models[0] == models[1],
+                                           [v["perturb"] for v in variants]),
             "labeled": sum(1 for r in results if r.get("expect")),
             "wall_ms": (time.perf_counter() - started) * 1000,
             "cost_usd": sum(s["cost_usd"] for s in summaries)}

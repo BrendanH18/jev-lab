@@ -19,11 +19,14 @@ Agreement counts, for every question both variants ask, how often their answers 
 without labels. When B asks a Choice question with A's instructions and options, listed in another
 order, every changed answer is an effect of the order alone. It also counts the changed answers that
 kept the same position in the list. With two options every changed answer does, so the count says
-something only for three or more.
+something only for three or more. Likewise, when B asks exactly A's request of the same model and only
+the rows differ, rewritten by a perturbation (jev/perturb.py), every changed answer is an effect of that
+rewrite alone: an input check.
 """
 
 from __future__ import annotations
 
+import json
 from math import comb
 from math import isfinite
 from typing import Any, Dict, List, Optional, Tuple
@@ -220,7 +223,8 @@ def reordered(qa: Any, qb: Any) -> bool:
             and qa.get("instructions") == qb.get("instructions"))
 
 
-def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model: bool = True) -> List[dict]:
+def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model: bool = True,
+              perturbs: Optional[List[Optional[str]]] = None) -> List[dict]:
     """For each question id both variants ask with the same type, in A's order: how many rows both
     answered and how many of those got a different answer from each, with a 95% interval on the share.
 
@@ -229,10 +233,16 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
     same model (same_model) and the same questions in the same order, differing only in the order of
     Choice options. Every question goes out in one call, so rewording another question could change an
     answer too. For a reordered Choice question, "same_position" counts the changed answers that picked the option
-    at the same place in each variant's list."""
+    at the same place in each variant's list.
+
+    perturbs: each variant's perturbation of its rows, or None. When they differ, the rows differ, so
+    no question counts as reordered. When they differ and the request is otherwise identical, down to the
+    order of every question and option, each question is marked "perturbed": an input check."""
     qa, qb = questions
+    same_rows = len(set(perturbs or [None])) == 1
     # Dict equality ignores key order, so this holds when the sets differ only in how options are listed.
-    order_only = same_model and list(qa) == list(qb) and qa == qb
+    order_only = same_rows and same_model and list(qa) == list(qb) and qa == qb
+    input_only = not same_rows and same_model and json.dumps(qa) == json.dumps(qb)
     out = []
     for qid, q in qa.items():
         other = qb.get(qid)
@@ -258,7 +268,8 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
                 same_position += lists[0].index(picks[0]) == lists[1].index(picks[1])
         low, high = calibrate.wilson(changed, answered)
         entry = {"qid": qid, "type": q.get("type"), "answered": answered, "changed": changed,
-                 "rate": changed / answered if answered else None, "low": low, "high": high, "reordered": moved}
+                 "rate": changed / answered if answered else None, "low": low, "high": high, "reordered": moved,
+                 "perturbed": input_only}
         if moved:
             entry["same_position"] = same_position
             entry["options"] = len(lists[0])

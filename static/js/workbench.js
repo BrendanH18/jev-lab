@@ -27,7 +27,7 @@ const W = {
     review: { report: null, kept: new Set(), all: { suspects: false, next: false } },
     // Accuracy by slice (jev/slices.py), for Calibrate at its threshold and for Policy at its gates. One field for both.
     slice: { field: null, cal: null, pol: null } },
-  compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
+  compare: { variants: [{ text: "", model: "", perturb: "" }, { text: "", model: "", perturb: "" }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
   // A demo's request opened with Open in Workbench (static/js/handoff.js): the page's name and the model it asked.
@@ -2317,6 +2317,15 @@ function costRow(rep) {
 // Two variants, each a question set and a model, over the Bulk rows. The server makes one call per
 // row and variant; scoring a question (jev/compare.py) reuses those answers and makes no calls.
 const VARIANTS = ["A", "B"];
+// How B's rows can be rewritten (jev/perturb.py). Each keeps the row's meaning, and the same rows get the same
+// rewrite on every run, so with B a copy of A a changed answer is an effect of the rewrite alone.
+const PERTURBS = {
+  "": "as written",
+  typos: "with typos",
+  lowercase: "in lowercase",
+  distractor: "with an unrelated sentence added",
+  shuffle: "with JSON fields shuffled",
+};
 
 function parseVariant(i) {
   const name = VARIANTS[i];
@@ -2356,6 +2365,9 @@ function variantPanel(i) {
   const model = h("input", { class: "input", list: "cmp-models", value: v.model, spellcheck: "false", "aria-label": `Variant ${name} model`,
     placeholder: `Current model (${currentStatus()?.model || "jev-latest"})` });
   model.addEventListener("input", () => { v.model = model.value; });
+  const rows = i === 1 ? h("select", { class: "input", "aria-label": `Rows variant ${name} is sent` },
+    Object.entries(PERTURBS).map(([k, label]) => h("option", { value: k, selected: k === v.perturb }, k ? `The rows, ${label}` : "The rows as written"))) : null;
+  rows?.addEventListener("change", () => { v.perturb = rows.value; render(); });
   const set = (questions) => { v.text = JSON.stringify(questions, null, 2); render(); };
   return h("div", { class: "panel raw" },
     h("div", { class: "panel-head" }, h("i", { class: `cmp-key ${name.toLowerCase()}` }), h("h2", {}, `Variant ${name}`), h("div", { class: "spacer" }),
@@ -2367,6 +2379,8 @@ function variantPanel(i) {
         i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, with each Choice question's options in reverse order", onclick: reverseA }, "Reverse A's options") : null)),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
       h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Model"), model),
+      rows ? h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Rows"), rows,
+        v.perturb ? h("span", { class: "faint" }, "An input check: with B a copy of A (", h("b", {}, "Copy A"), "), any answer that changes changed because of the rewrite.") : null) : null,
       area, note));
 }
 
@@ -2403,7 +2417,8 @@ function renderCompare() {
   });
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("p", { class: "muted", style: { maxWidth: "820px" } }, "Change one thing and measure it: reword a question, trim its criteria, or switch the model. Both variants answer the same labeled rows, and the report shows which one was right more often, how far to trust each one's confidence, and the rows where they disagree. ",
-      h("b", {}, "Reverse A's options"), " makes B an order check: if an answer changes when only the order of the options changes, the model is reading the list, not the row."),
+      h("b", {}, "Reverse A's options"), " makes B an order check: if an answer changes when only the order of the options changes, the model is reading the list, not the row. ",
+      h("b", {}, "Rows"), ", on B, makes it an input check: B's rows get typos, lowercase, an unrelated sentence, or shuffled fields, changes that should not move a good answer."),
     h("div", { class: "grid cmp-grid" }, variantPanel(0), variantPanel(1)),
     h("datalist", { id: "cmp-models" }, (c.models || []).map((n) => h("option", { value: n }))),
     h("div", { class: "grid wb-grid" },
@@ -2424,7 +2439,7 @@ function renderCompare() {
 async function runCompare() {
   const c = W.compare;
   let variants;
-  try { variants = VARIANTS.map((_, i) => ({ questions: parseVariant(i), model: c.variants[i].model.trim() })); }
+  try { variants = VARIANTS.map((_, i) => ({ questions: parseVariant(i), model: c.variants[i].model.trim(), perturb: c.variants[i].perturb || null })); }
   catch (e) { return toast(e.message, "error"); }
   if (c.running) return;
   c.running = true;
@@ -2502,6 +2517,7 @@ function summaryTable(res, rep) {
   const rows = [
     summaryRow("model", vs.map((v) => h("span", { class: "mono" }, v.model))),
     summaryRow("questions", vs.map((v) => String(Object.keys(v.questions).length))),
+    vs.some((v) => v.perturb) ? summaryRow("rows sent", vs.map((v) => (v.perturb ? `${PERTURBS[v.perturb] || v.perturb} · ${v.perturbed_rows} of ${res.rows} rewritten` : "as written"))) : null,
     summaryRow("rows answered", vs.map((v) => `${v.completed} of ${res.rows}${v.errors ? ` · ${v.errors} failed` : ""}`)),
     summaryRow("median latency", vs.map((v) => (v.latency_ms_median === null ? "—" : ms(v.latency_ms_median))), vs.map((v) => v.latency_ms_median), false),
     summaryRow("input tokens", vs.map((v) => num(v.input_tokens)), vs.map((v) => (v.completed ? v.input_tokens / v.completed : null)), false),
@@ -2625,6 +2641,9 @@ function agreementBlock(res) {
   const rows = (res.agreement || []).filter((a) => a.answered);
   if (!rows.length) return null;
   const moved = rows.filter((a) => a.reordered);
+  const perturbed = rows.some((a) => a.perturbed);
+  const kind = res.variants.find((v) => v.perturb);
+  const how = kind ? PERTURBS[kind.perturb] || kind.perturb : "";
   const show = (qid) => async () => {
     c.qid = qid;
     await rescoreCompare();
@@ -2636,10 +2655,19 @@ function agreementBlock(res) {
       (a.options === 2 ? ". With two options, a changed answer always picks the same place in the list, so the place cannot tell position from option."
         : a.same_position ? `, and ${a.same_position} of those picked the option in the same place in both lists, as an answer that follows the position would.` : ".")
     : `“${a.qid}”: no answer changed on ${a.answered} rows when only the order of its options changed.`));
+  if (perturbed) {
+    const changed = rows.filter((a) => a.changed);
+    notes.push(changed.length
+      ? `Answers that changed when only the rows were rewritten ${how}: ${changed.map((a) => `“${a.qid}” ${a.changed} of ${a.answered}`).join(", ")}.`
+      : `No answer changed on any question when the rows were rewritten ${how}.`);
+    const same = res.rows - kind.perturbed_rows;
+    if (same) notes.push(`${same} of ${res.rows} rows came out of the rewrite unchanged (say, a row with one field to shuffle or no long words), so on those rows B repeated A's request.`);
+  }
   return h("div", { class: "grid", style: { gap: "8px" } },
-    h("h3", { class: "cal-h" }, moved.length ? "Order check: how often an answer changes when only the order of the options changes" : "Agreement: how often A and B answer each question differently"),
+    h("h3", { class: "cal-h" }, moved.length ? "Order check: how often an answer changes when only the order of the options changes"
+      : perturbed ? `Input check: how often an answer changes when only the rows are rewritten ${how}` : "Agreement: how often A and B answer each question differently"),
     h("div", { class: "scroll" }, h("table", { class: "table cmp-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, "question"), h("th", {}, "rows both answered"), h("th", {}, moved.length ? "answers changed" : "answers differ"),
+      h("thead", {}, h("tr", {}, h("th", {}, "question"), h("th", {}, "rows both answered"), h("th", {}, moved.length || perturbed ? "answers changed" : "answers differ"),
         moved.length ? h("th", { title: "Changed answers that picked the option in the same place in each variant's list" }, "same place in the list") : null, h("th", {}))),
       h("tbody", {}, rows.map((a) => h("tr", {},
         h("th", {}, a.qid, a.reordered ? h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, "options reordered") : null),
@@ -2651,7 +2679,8 @@ function agreementBlock(res) {
     notes.length ? h("div", { class: "grid", style: { gap: "4px" } }, notes.map((n) => h("p", { class: "muted", style: { fontSize: "12.5px", maxWidth: "820px", margin: 0 } }, n))) : null,
     h("p", { class: "faint", style: { fontSize: "12px", maxWidth: "820px", margin: 0 } }, moved.length
       ? "Each answer is A's and B's top pick on the same row. The interval is 95%. A small share can still matter: those rows get a different answer depending on how the options happen to be listed."
-      : "Each answer is the top pick on the same row, labeled or not. The interval is 95%."));
+      : perturbed ? "Each answer is A's top pick on the row as written and B's on the rewritten row. The interval is 95%. A changed answer can also come from a row the model finds close either way, so compare with a run of B as a plain copy of A."
+        : "Each answer is the top pick on the same row, labeled or not. The interval is 95%."));
 }
 
 function cmpSweepTable(rep) {
@@ -2662,6 +2691,14 @@ function cmpSweepTable(rep) {
       h("thead", {}, h("tr", {}, h("th", {}, "threshold"), h("th", {}, "A automated"), h("th", {}, "A accuracy"), h("th", {}, "B automated"), h("th", {}, "B accuracy"))),
       h("tbody", {}, a.sweep.filter((p) => Math.round(p.threshold * 100) % 5 === 0).map((p) => h("tr", {},
         h("td", { class: "mono" }, p.threshold.toFixed(2)), cell(p), cell(b.sweep[Math.round(p.threshold * 100)])))))));
+}
+
+// The rewritten row a perturbed variant was sent, under the row as written.
+function sentText(res, index) {
+  const runs = res.results[index]?.runs || [];
+  return runs.map((run, v) => (run && "input" in run
+    ? h("div", { class: "faint", style: { marginTop: "4px", fontSize: "12px" } }, h("b", {}, `${VARIANTS[v]} saw: `), rowText(run.input))
+    : null));
 }
 
 function renderCompareRows() {
@@ -2680,7 +2717,7 @@ function renderCompareRows() {
         h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "label"), h("th", {}, "A"), h("th", {}, "B"), h("th", {}, "result"))),
         h("tbody", {}, rep.disagreements.map((d) => h("tr", {},
           h("td", { class: "num" }, String(d.index + 1)),
-          h("td", { class: "row" }, rowText(res.results[d.index]?.row)),
+          h("td", { class: "row" }, rowText(res.results[d.index]?.row), sentText(res, d.index)),
           h("td", {}, d.label ?? h("span", { class: "faint" }, "—")),
           d.answers.map(answer),
           h("td", {}, d.verdict && verdicts[d.verdict] ? statusBadge(...verdicts[d.verdict]) : h("span", { class: "faint" }, "no label")))))))
