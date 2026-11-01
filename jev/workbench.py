@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from . import compare, images, orders, perturb
-from .client import JevClient, JevError
+from .client import JevClient, JevError, pin_note
 from .config import SAMPLES_DIR, WORKBENCH_DIR
 
 MAX_QUESTIONS = 100
@@ -347,9 +347,11 @@ def dataset_summary(dataset: dict) -> dict:
                 if value is not None:
                     labeled[qid] = labeled.get(qid, 0) + 1
     check = dataset.get("check")
+    check = check if isinstance(check, dict) else None
+    pin = pin_note(str(check.get("model") or ""), check.get("tuned_on")) if check else None
     return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
             "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
-            "questions": len(dataset.get("questions") or {}), "check": check if isinstance(check, dict) else None}
+            "questions": len(dataset.get("questions") or {}), "check": check, "check_notes": [pin] if pin else []}
 
 
 def _dataset_text(dataset: dict) -> str:

@@ -157,16 +157,17 @@ class ClaimsTests(unittest.TestCase):
         self.assertEqual(loc["box"]["bottom"], 1.0)
         self.assertAlmostEqual(loc["box"]["top"], 0.25)
 
-    def test_older_models_and_the_default_alias_skip_the_box_question(self):
-        for model in ("jev-1.13.0", "jev-latest"):
+    def test_older_models_skip_the_box_question(self):
+        for model in ("jev-1.13.0", "jev-1.12"):
             out, client = self.run_claim(GOOD, model=model)
             self.assertNotIn("damage_box", client.calls[0][1], model)
             self.assertFalse(out["box_supported"], model)
             self.assertFalse(out["location"]["shown"], model)
             self.assertEqual(out["verdict"]["decision"], "approve", model)
-        out, client = self.run_claim(GOOD, model="jev-preview")
-        self.assertIn("damage_box", client.calls[0][1])
-        self.assertTrue(out["box_supported"])
+        for model in ("jev-latest", "jev-preview", "jev-1.14.0"):  # jev-latest points at Jev 1.14 since 2026-10-14
+            out, client = self.run_claim(GOOD, model=model)
+            self.assertIn("damage_box", client.calls[0][1], model)
+            self.assertTrue(out["box_supported"], model)
 
     def test_examples_reach_their_intended_decisions_with_clear_answers(self):
         damaged = {"torn-bag": True, "crushed-box": True, "intact-bag": False, "grinder-ok": False}

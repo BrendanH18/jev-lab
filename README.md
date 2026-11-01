@@ -81,9 +81,9 @@ simulation updates run locally.
 Claims, Autopilot's photo check, and the Workbench's image support use TypeSafe's
 [images](https://docs.typesafe.ai/images) and [Box](https://docs.typesafe.ai/primitives/box)
 features, which TypeSafe labels dreamer-ready: suitable for prototypes, with formats and accuracy
-that may change. Box questions need Jev 1.14 or later, and the default `jev-latest` alias still points
-at Jev 1.13, so choose `jev-preview` from the key menu in the top bar or set `TYPESAFE_DEFAULT_MODEL`
-to `jev-1.14.0`. The bundled sample pictures are simple drawings, so try your own photos too.
+that may change. Box questions need Jev 1.14 or later, which the default `jev-latest` alias points at
+since October 14, 2026. If you pinned `jev-1.13.0`, choose `jev-latest` from the key menu in the top bar.
+The bundled sample pictures are simple drawings, so try your own photos too.
 
 ![Autopilot comparing integrated handling with Dispatch alone](docs/screenshots/autopilot.png)
 
@@ -135,7 +135,8 @@ conditions.
 - **Checks:** keep a tuned gate with its dataset, with the model and two targets: an accuracy and a
   share automated. **Run check** reruns every saved row and says whether the gate still meets them;
   `uv run --locked scripts/check.py` does the same from a terminal or CI and exits nonzero on a miss.
-  Only targets are saved, never answers.
+  A check saved from a run of an alias such as `jev-latest` asks the version that answered that run, so
+  the gate stays on the version it was tuned on when the alias moves. Only targets are saved, never answers.
 - **Export a gate:** write Policy's gate, or a saved check, as a Python or JavaScript file. Its `decide(state)`
   asks the questions in one call and routes the row to `auto` or `review` by the tuned thresholds, reading
   each answer as Policy does. Run it as a script to route rows from standard input. It makes no model call.
@@ -238,7 +239,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and pull request guid
 | Session-token `403` after a restart | Reload the page to get the new session token. |
 | Budget `402` or rate-limit `429` | Inspect usage in the app. Wait for the rate window or restart with an appropriate budget. |
 | Port already in use | Set another `PORT` and open the corresponding loopback URL. |
-| Box questions fail, or Claims shows no box | Box needs Jev 1.14 or later, and `jev-latest` still points at Jev 1.13. Choose `jev-preview` in the key menu, or set `TYPESAFE_DEFAULT_MODEL=jev-1.14.0`. |
+| Box questions fail, or Claims shows no box | Box needs Jev 1.14 or later. Choose `jev-latest` in the key menu, or set `TYPESAFE_DEFAULT_MODEL=jev-1.14.0`. |
 | An image is rejected | Use a PNG or JPEG. The browser resizes uploads to 280–1568 pixels per side; very narrow panoramas cannot fit. |
 
 For reproducible bugs and feature proposals, [open an issue](https://github.com/BrendanH18/jev-lab/issues).

@@ -520,7 +520,7 @@ Policy's gates, and open **Save as a check** at the end of the Policy panel. Cho
 They start at the highest of 90%, 95%, and 99% that this run meets, and at this run's automation
 less a margin of at least five points, and the panel says whether this run meets them. **Save
 check** adds them to the dataset file under `"check"`, with the gated questions and thresholds,
-the signal, and the current model. Policy with one gated question checks a single threshold, as
+the signal, and the model. Policy with one gated question checks a single threshold, as
 Calibrate sets it. The panel asks you to save the dataset first when the rows box or labels differ
 from the file, or when the run asked other questions than the ones saved with the dataset, since a
 check reruns exactly what the file holds.
@@ -530,12 +530,31 @@ check reruns exactly what the file holds.
   "gates": {"department": 0.6, "wants_refund": 0.4},
   "signal": "confidence",
   "bound": "estimate",
-  "model": "jev-1.13.0",
+  "model": "jev-1.14.0",
+  "tuned_on": "jev-1.14.0",
   "min_accuracy": 0.9,
   "min_coverage": 0.3,
   "saved_at": "2026-10-31T12:00:00Z"
 }
 ```
+
+### Pin the model version
+
+An alias such as `jev-latest` points at a new version when TypeSafe ships one, so a gate that asks an
+alias can start getting answers from a model it was never tuned on, with no change on your side.
+TypeSafe [recommends](https://docs.typesafe.ai/models#aliases) sending the versioned id once you have
+tuned thresholds. Each response names the version that answered it, so when every row of the Bulk run
+was answered by one version and the run asked an alias, Policy shows **Pin the check and the exported
+gate to** that version, checked. A check saved then asks that version, as does **Export as a module**.
+Uncheck it to keep the alias. Either way the check records the version that answered the run as
+`tuned_on`.
+
+A saved check that asks an alias says so under the dataset and in `scripts/check.py --list`. When its
+`tuned_on` differs from the version the alias points at now, the note says the alias has moved since
+the gate was tuned, and that running the check shows whether the gate still holds. A run answered
+by a version other than `tuned_on`, an alias's or one typed beside **Run check**, says so in its
+report. To pin a check after it passes on the new version, load the dataset, run it in Bulk, and save
+the check again. The notes never change whether a check passes.
 
 A check holds targets, never answers or results from an earlier run. Saving the dataset again keeps
 its check while every gated question is still among the saved questions, so adding rows or labels
@@ -554,7 +573,7 @@ From a terminal, `scripts/check.py` runs the same checks:
 uv run --locked scripts/check.py                     # every dataset that holds a check
 uv run --locked scripts/check.py support-tickets     # some of them, by id
 uv run --locked scripts/check.py --model jev-1.14.0  # ask another model than the checks name
-uv run --locked scripts/check.py --list              # show the checks; no model calls
+uv run --locked scripts/check.py --list              # show the checks, and any that ask an alias; no model calls
 ```
 
 It makes paid calls with the configured key and prints one report per check. It exits 0 when every
@@ -571,9 +590,9 @@ change, for example in GitHub Actions:
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
-| `POST /api/workbench/checks` | `id`, `check`: `gates`, `min_accuracy` (0.5–1), optional `min_coverage` (default 0), `signal`, `bound`, and `model` (default: the current model) | `dataset`: the summary, with the `check` |
+| `POST /api/workbench/checks` | `id`, `check`: `gates`, `min_accuracy` (0.5–1), optional `min_coverage` (default 0), `signal`, `bound`, `model` (default: the current model), and optional `tuned_on` (the versioned id that answered the tuning run) | `dataset`: the summary, with the `check` and `check_notes` |
 | `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
-| `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, and `answered_by` |
+| `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, `answered_by`, and `notes` |
 
 ## Export a gate as code
 

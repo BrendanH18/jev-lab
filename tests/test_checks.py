@@ -73,6 +73,11 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(check, {"gates": {"refund": 0.6, "dept": 1.0}, "signal": "confidence", "bound": "estimate",
                                  "model": "jev-1.13.0", "min_accuracy": 0.95, "min_coverage": 0.0})
 
+    def test_tuned_on_is_kept_when_given(self):
+        check = checks.validate_check(dict(CHECK, model="jev-latest", tuned_on=" jev-1.14.0 "), Q)
+        self.assertEqual((check["model"], check["tuned_on"]), ("jev-latest", "jev-1.14.0"))
+        self.assertNotIn("tuned_on", checks.validate_check(CHECK, Q), "checks saved before tuned_on existed have none")
+
     def test_rejects(self):
         box = dict(Q, where={"type": "box", "instructions": "Where?"})
         cases = [
@@ -89,6 +94,8 @@ class ValidateTests(unittest.TestCase):
             (dict(CHECK, min_accuracy=0.4), "from 0.5 to 1", Q),
             (dict(CHECK, min_accuracy=True), "min_accuracy", Q),
             (dict(CHECK, min_coverage=float("nan")), "min_coverage", Q),
+            (dict(CHECK, tuned_on="jev-latest"), "versioned model id", Q),
+            (dict(CHECK, tuned_on=14), "versioned model id", Q),
         ]
         for spec, message, questions in cases:
             with self.subTest(message=message), self.assertRaises(workbench.WorkbenchError) as ctx:
@@ -110,6 +117,13 @@ class StorageTests(Temp):
         self.assertFalse(checks.remove_check("refunds"))
         self.assertEqual(checks.listed(), [])
         self.assertIsNone(workbench.list_datasets()[0]["check"])
+
+    def test_listing_notes_a_check_that_asks_an_alias(self):
+        self.save()
+        self.assertEqual(workbench.list_datasets()[0]["check_notes"], [], "a pinned check has nothing to note")
+        self.save(check=dict(CHECK, model="jev-latest", tuned_on="jev-1.13.0"))
+        [note] = workbench.list_datasets()[0]["check_notes"]
+        self.assertIn("jev-latest now points to jev-1.14.0", note)
 
     def test_needs_saved_questions(self):
         workbench.save_dataset({"name": "Refunds", "rows": rows_text()})
@@ -239,6 +253,25 @@ class RunTests(Temp):
         self.assertEqual(rep["status"], "fail")
         self.assertEqual(rep["mistakes"][0]["row"], "Where is my parcel?")
 
+    def test_run_notes_a_version_other_than_the_one_tuned_on(self):
+        self.save(check=dict(CHECK, model="jev-latest", tuned_on="jev-1.13.0"))
+        client = self.client()
+        client.model = "jev-1.14.0"  # the version the alias answers with now
+        rep = checks.run(client, "refunds")
+        self.assertEqual(set(client.models), {"jev-latest"})
+        self.assertEqual((rep["status"], rep["answered_by"]), ("pass", ["jev-1.14.0"]), "notes never change the status")
+        [note] = rep["notes"]
+        self.assertIn("Answered by jev-1.14.0, but these thresholds were tuned on answers from jev-1.13.0", note)
+
+    def test_run_notes_an_alias_and_nothing_once_pinned(self):
+        self.save(check=dict(CHECK, model="jev-latest", tuned_on="jev-1.14.0"))
+        client = self.client()
+        client.model = "jev-1.14.0"
+        [note] = checks.run(client, "refunds")["notes"]
+        self.assertIn("Asks jev-latest, an alias; this run was answered by jev-1.14.0", note)
+        self.save(check=dict(CHECK, model="jev-1.14.0", tuned_on="jev-1.14.0"))
+        self.assertEqual(checks.run(client, "refunds")["notes"], [])
+
     def test_run_without_a_check(self):
         self.save(check=None)
         with self.assertRaisesRegex(workbench.WorkbenchError, "has no check"):
@@ -258,6 +291,12 @@ class ScriptTests(Temp):
         self.assertEqual(code, 0)
         self.assertIn("refund>=0.60", out)
         self.assertIn("90.0% accurate, at least 50.0% automated", out)
+        self.assertNotIn("note:", out)
+        self.save(check=dict(CHECK, model="jev-latest", tuned_on="jev-1.13.0"))
+        code, out = self.main("--list")
+        self.assertEqual(code, 0)
+        self.assertIn("model jev-latest  tuned on jev-1.13.0", out)
+        self.assertIn("note: jev-latest now points to jev-1.14.0", out)
 
     def test_exit_status_follows_the_checks(self):
         self.save()

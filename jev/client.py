@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import threading
 import time
 import urllib.error
@@ -49,12 +50,15 @@ _KNOWN_INPUT_USD = {
     "jev-1.14": JEV_1_14_INPUT_USD,
     "jev-1.13.0": JEV_1_13_INPUT_USD,
     "jev-1.13": JEV_1_13_INPUT_USD,
-    "jev-latest": JEV_1_13_INPUT_USD,
+    "jev-latest": JEV_1_14_INPUT_USD,
     "jev-preview": JEV_1_14_INPUT_USD,
 }
-# Aliases move with releases (https://docs.typesafe.ai/models#aliases). jev-latest, the SDKs' default,
-# still points at Jev 1.13, which cannot answer Box questions. Update this when the alias moves.
-ALIASES = {"jev-latest": "jev-1.13.0", "jev-preview": "jev-1.14.0"}
+# Aliases move with releases (https://docs.typesafe.ai/models#aliases). jev-latest, the SDKs' default, moved
+# from Jev 1.13 to Jev 1.14 when 1.14 shipped on 2026-10-14. Update this when an alias moves. A response's
+# "model" field names the version that answered, which is the only sure way to know.
+ALIASES = {"jev-latest": "jev-1.14.0", "jev-preview": "jev-1.14.0"}
+# A versioned model id, which never moves. Any other name may be an alias.
+VERSIONED_MODEL = re.compile(r"jev-\d+\.\d+(\.\d+)?")
 RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504, 529}
 
 
@@ -73,6 +77,27 @@ def price_per_input_token(model: str) -> float:
 def resolve_alias(model: str) -> str:
     """The versioned id a known alias points at; other names are returned unchanged."""
     return ALIASES.get(model or "", model or "")
+
+
+def is_versioned(model: str) -> bool:
+    """True for an id such as jev-1.14.0, which always asks the same model; False for an alias such as jev-latest."""
+    return bool(VERSIONED_MODEL.fullmatch(model or ""))
+
+
+def pin_note(model: str, tuned_on: Optional[str] = None) -> Optional[str]:
+    """Why a gate that asks `model` may not get the answers it was tuned on, or None when it asks a versioned id.
+
+    tuned_on: the versioned id that answered the run the gate was tuned on, when it was recorded."""
+    if not model or is_versioned(model):
+        return None
+    now = ALIASES.get(model)
+    if tuned_on and now and now != tuned_on:
+        return ("%s now points to %s, but these thresholds were tuned on answers from %s. Run the check to see "
+                "whether the gate still holds on %s." % (model, now, tuned_on, now))
+    tuned = (" These thresholds were tuned on answers from %s." % tuned_on) if tuned_on else ""
+    return ("Asks %s, an alias that moves to a new version when TypeSafe ships one, and thresholds tuned on one "
+            "version may not hold on the next.%s To pin it, run the dataset in Bulk and save the check again."
+            % (model, tuned))
 
 
 def supports_box(model: str) -> bool:

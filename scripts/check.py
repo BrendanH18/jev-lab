@@ -4,7 +4,7 @@
     uv run scripts/check.py                    # every dataset in data/workbench/datasets/ that holds a check
     uv run scripts/check.py support-tickets    # only these datasets, by id
     uv run scripts/check.py --model jev-1.14.0 # ask another model than the checks name
-    uv run scripts/check.py --list             # show the checks; no model calls
+    uv run scripts/check.py --list             # show the checks, and any that ask a moving alias; no model calls
 
 A check (jev/checks.py) gates some of a dataset's questions at fixed thresholds and names two targets: the
 accuracy the automated rows must reach and the share of labeled rows that must be automated. This script
@@ -47,8 +47,11 @@ def targets_text(check: dict) -> str:
 def print_list(summaries) -> None:
     for d in summaries:
         c = d["check"]
-        print("%s  (%d rows, %d labeled)  model %s\n  gate: %s on %s\n  targets: %s" % (
-            d["id"], d["rows"], d["labeled"], c.get("model"), gates_text(c), c.get("signal"), targets_text(c)))
+        tuned = "  tuned on %s" % c["tuned_on"] if c.get("tuned_on") and c["tuned_on"] != c.get("model") else ""
+        print("%s  (%d rows, %d labeled)  model %s%s\n  gate: %s on %s\n  targets: %s" % (
+            d["id"], d["rows"], d["labeled"], c.get("model"), tuned, gates_text(c), c.get("signal"), targets_text(c)))
+        for note in d.get("check_notes", []):
+            print("  note: " + note)
 
 
 def print_report(rep: dict) -> None:
@@ -72,6 +75,8 @@ def print_report(rep: dict) -> None:
         rep["cost_usd"], rep["input_tokens"], "n/a" if latency is None else "%.0f ms" % latency))
     for reason in rep["reasons"]:
         print("  - " + reason)
+    for note in rep.get("notes", []):
+        print("  note: " + note)
     for m in rep["mistakes"][:MISTAKES_PRINTED]:
         wrong = "; ".join("%s answered %s, label %s (%.2f)" % (q, a["answer"], a["label"], a["signal"]) for q, a in m["wrong"].items())
         row = m["row"] if len(m["row"]) <= 70 else m["row"][:67] + "..."

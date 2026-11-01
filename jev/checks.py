@@ -2,10 +2,15 @@
 
 Policy tunes thresholds on one Bulk run. A check keeps that decision with the rows it was tuned on. In a
 saved dataset (data/workbench/datasets/<id>.json), under "check", it records which questions are gated at
-which thresholds, the signal they read, the model to ask, and two targets a person chose: the accuracy the
-automated rows must reach (measured, or at 95% confidence) and the share of labeled rows that must be
-automated. Running a check sends every row to the model again, scores the new answers with
+which thresholds, the signal they read, the model to ask, the version that answered the run the thresholds
+were tuned on, and two targets a person chose: the accuracy the automated rows must reach (measured, or at
+95% confidence) and the share of labeled rows that must be automated. Running a check sends every row to the model again, scores the new answers with
 policy.evaluate, and passes only when both targets hold on every row of the dataset.
+
+A check saved from a run of an alias such as jev-latest asks the version that answered that run by default,
+because an alias moves when TypeSafe ships a new version and thresholds tuned on one version may not hold on
+the next (https://docs.typesafe.ai/models#aliases). A check that still asks an alias carries a note saying so,
+and a run answered by another version than the one the gate was tuned on says that too.
 
 A check holds targets, never answers or results from an earlier run, so every number a run reports comes
 from that run. Run checks from the Workbench's Datasets panel, or with scripts/check.py, which exits
@@ -22,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from . import calibrate, policy, workbench
 from .calibrate import CalibrationError
-from .client import JevClient
+from .client import JevClient, is_versioned
 from .workbench import WorkbenchError
 
 STATUSES = ("pass", "fail", "error")
@@ -65,9 +70,30 @@ def validate_check(spec: Any, questions: Any) -> dict:
     model = (model or "").strip()
     if not model or len(model) > MAX_MODEL_CHARS:
         raise WorkbenchError("Name the model the check asks, up to %d characters" % MAX_MODEL_CHARS)
-    return {"gates": gates, "signal": signal, "bound": bound, "model": model,
-            "min_accuracy": _unit(spec.get("min_accuracy"), "min_accuracy", 0.5),
-            "min_coverage": _unit(spec.get("min_coverage", 0), "min_coverage")}
+    out = {"gates": gates, "signal": signal, "bound": bound, "model": model,
+           "min_accuracy": _unit(spec.get("min_accuracy"), "min_accuracy", 0.5),
+           "min_coverage": _unit(spec.get("min_coverage", 0), "min_coverage")}
+    tuned_on = spec.get("tuned_on")
+    if tuned_on is not None:  # checks saved before this field existed have none
+        if not isinstance(tuned_on, str) or not is_versioned(tuned_on.strip()):
+            raise WorkbenchError("tuned_on must be the versioned model id that answered the tuning run, such as jev-1.14.0")
+        out["tuned_on"] = tuned_on.strip()
+    return out
+
+
+def run_notes(check: dict, answered_by: List[str]) -> List[str]:
+    """What may make a run's answers differ from the ones the check was tuned on: a version other than the one
+    it was tuned on, or an alias. Notes never change a check's status. Before a run, client.pin_note says it."""
+    tuned_on = check.get("tuned_on")
+    if not answered_by:
+        return []
+    if tuned_on and answered_by != [tuned_on]:
+        return ["Answered by %s, but these thresholds were tuned on answers from %s. If the check passes, pin it "
+                "to the new version: run the dataset in Bulk and save the check again." % (", ".join(answered_by), tuned_on)]
+    if not is_versioned(check["model"]):
+        return ["Asks %s, an alias; this run was answered by %s. To keep the check on that version, run the dataset "
+                "in Bulk and save the check again." % (check["model"], ", ".join(answered_by))]
+    return []
 
 
 def save_check(dataset_id: str, spec: Any) -> dict:
@@ -181,9 +207,10 @@ def run(client: JevClient, dataset_id: str, model: Optional[str] = None) -> dict
     done = [r for r in bulk["results"] if "answers" in r]
     latencies = [r["meta"]["latency_ms"] for r in done]
     report = evaluate(bulk["results"], check, bulk["stopped"])
+    answered_by = sorted({r["meta"].get("model") for r in done if r["meta"].get("model")})
     report.update({
         "id": dataset_id, "name": dataset.get("name") or dataset_id, "check": check, "model": asked,
-        "answered_by": sorted({r["meta"].get("model") for r in done if r["meta"].get("model")}),
+        "answered_by": answered_by, "notes": run_notes(check, answered_by),
         "cost_usd": bulk["cost_usd"], "input_tokens": bulk["input_tokens"], "wall_ms": bulk["wall_ms"],
         "latency_ms_median": statistics.median(latencies) if latencies else None,
     })

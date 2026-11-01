@@ -16,9 +16,10 @@ const W = {
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
     savedText: "", runText: null, labelsDirty: false,
     // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
+    // pin: save the check and export the gate with the version that answered the run, when the run asked an alias.
     // checkForm: Policy's "Save as a check" targets as typed (percent strings; null takes a default from the run).
     // checkRuns: per dataset id, a check run in flight or its report (jev/checks.py), and the model typed to ask instead.
-    ranQuestions: null, runModel: null, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
+    ranQuestions: null, runModel: null, pin: true, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
     // gateExport: Policy's gate or a saved check exported as a module (jev/gate.py), and the language shown.
     gateExport: null,
     // CSV import (jev/csvimport.py): the file or pasted text, the column uses chosen so far, and the server's report.
@@ -760,7 +761,8 @@ function checkItem(x) {
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
       h("span", { class: "badge info" }, icon("check"), "Check"),
       h("span", { class: "mono" }, Object.entries(c.gates).map(([q, t]) => `${q} ≥ ${t.toFixed(2)}`).join(" · ")),
-      h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}`)),
+      h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}${c.tuned_on && c.tuned_on !== c.model ? ` · tuned on ${c.tuned_on}` : ""}`)),
+    (x.check_notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm", disabled: run.running, onclick: () => runCheck(x.id) },
         run.running ? [h("span", { class: "spin" }), " Checking…"] : [icon("layers"), `Run check · ${n} call${n === 1 ? "" : "s"}`]),
@@ -856,6 +858,7 @@ function checkReport(rep) {
       rep.latency_ms_median === null ? null : stat("median latency", ms(rep.latency_ms_median))) : null,
     rep.reasons.length ? h("ul", { class: "muted", style: { fontSize: "12.5px", margin: 0, paddingLeft: "18px" } },
       rep.reasons.map((r) => h("li", {}, r))) : null,
+    (rep.notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
     rep.mistakes.length ? h("div", { class: "grid", style: { gap: "4px" } },
       h("span", { class: "faint", style: { fontSize: "12px" } }, `Automated but wrong · ${rep.mistakes_total}`),
       h("div", { class: "scroll" }, h("table", { class: "table" },
@@ -865,6 +868,42 @@ function checkReport(rep) {
           h("td", {}, Object.entries(m.wrong).map(([q, a]) => h("div", { style: { fontSize: "12px" } },
             h("span", { class: "mono" }, q), `: ${a.answer}, label ${a.label} `, h("span", { class: "faint mono" }, `(${a.signal.toFixed(2)})`))))))))),
       rep.mistakes_total > 5 ? h("span", { class: "faint", style: { fontSize: "12px" } }, `…and ${rep.mistakes_total - 5} more. Load the dataset and run it in Bulk to see every row.`) : null) : null);
+}
+
+// The versioned id that answered every row of the last Bulk run (from each response's "model" field), or null.
+// TypeSafe recommends sending it instead of an alias once thresholds are tuned: an alias such as jev-latest moves to
+// a new version when one ships, and thresholds tuned on one version may not hold on the next.
+const VERSIONED = /^jev-\d+\.\d+(\.\d+)?$/;
+function tunedOn() {
+  const versions = [...new Set((W.bulk.result?.results || []).map((r) => r.meta?.model).filter(Boolean))];
+  return versions.length === 1 && VERSIONED.test(versions[0]) ? versions[0] : null;
+}
+
+// The model a check saved from this run asks, and an exported gate sends: the answering version when pinned.
+function gateModel() {
+  const b = W.bulk;
+  const v = tunedOn();
+  return v && b.pin ? v : b.runModel || "";
+}
+
+// Shown when the run asked an alias: whether to pin the check and the exported gate to the version that answered.
+function pinControl() {
+  const b = W.bulk;
+  const v = tunedOn();
+  const versions = [...new Set((b.result?.results || []).map((r) => r.meta?.model).filter(Boolean))];
+  if (!v) {
+    return versions.length > 1 ? h("p", { class: "faint", style: { fontSize: "12.5px" } },
+      `This run was answered by ${versions.join(" and ")}: ${b.runModel || "the model"} moved to a new version during it. Run it again before you keep these thresholds.`) : null;
+  }
+  if (v === b.runModel) return null;
+  const box = h("input", { type: "checkbox", id: "pol-pin", checked: b.pin });
+  box.addEventListener("change", () => { b.pin = box.checked; render(); });
+  return h("div", { style: { fontSize: "12.5px" } },
+    h("label", { for: "pol-pin", style: { display: "flex", gap: "6px", alignItems: "center" } }, box,
+      h("span", {}, "Pin the check and the exported gate to ", h("code", {}, v))),
+    h("p", { class: "faint", style: { margin: "4px 0 0 22px" } },
+      `This run asked ${b.runModel || "the current model"}, an alias, and ${v} answered it. An alias moves to a new version when TypeSafe ships one, and thresholds tuned on one version may not hold on the next. `,
+      h("a", { href: "https://docs.typesafe.ai/models#aliases", target: "_blank", rel: "noopener" }, "TypeSafe's advice"), "."));
 }
 
 // Policy's "Save as a check": why it cannot be saved yet, or the targets to save and whether this run meets them.
@@ -914,7 +953,7 @@ function checkSaveBody(rep) {
     return h("label", { style: { display: "flex", gap: "6px", alignItems: "center" } }, h("span", { class: "muted" }, label), input, "%");
   };
   const existing = b.datasets.find((x) => x.id === b.dataset.id)?.check;
-  const model = b.runModel || "the current model";
+  const model = gateModel() || "the current model";
   return [title,
     h("p", { class: "faint", style: { fontSize: "12.5px" } },
       `Keeps these thresholds with “${b.dataset.name}”, asking ${model}, and the targets they must keep meeting. Run the check from the Datasets panel or with `,
@@ -934,7 +973,7 @@ async function saveCheck() {
   if (blocker) return toast(blocker, "error");
   if (b.datasets.find((x) => x.id === id)?.check && !confirm(`Replace the check saved with “${id}”?`)) return;
   try {
-    const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: b.runModel || "",
+    const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: gateModel(), tuned_on: tunedOn() || undefined,
       min_accuracy: Number($("#check-accuracy").value) / 100, min_coverage: Number($("#check-coverage").value) / 100 };
     await api("/api/workbench/checks", { id, check });
     b.datasets = (await api("/api/workbench/datasets")).datasets;
@@ -1175,6 +1214,7 @@ async function runBulk() {
     b.runText = ranText;
     b.ranQuestions = questions;
     b.runModel = runModel;
+    b.pin = true;
     b.checkForm = { accuracy: null, coverage: null };
     b.labelsDirty = false;
     b.sortKey = null;
@@ -2193,10 +2233,11 @@ function updatePolicy() {
     h("p", { class: "faint" }, `Tuning raises whichever threshold drops the most wrong rows per row it drops, until the target holds${p.bound === "lower" ? " at 95% confidence" : ""}, then re-chooses thresholds two at a time while that automates more rows. With one or two gated questions it finds the best thresholds on 0.01 steps; with more it is a search, not a guarantee.`),
   ];
   const code = h("div", { class: "grid", style: { gap: "8px" } },
+    pinControl(),
     h("div", { class: "code" }, h("pre", { id: "pol-code" }, policyCode(rep)),
       h("button", { class: "btn sm copy", onclick: () => copyText($("#pol-code").textContent) }, icon("copy"), "Copy")),
     h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm", onclick: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: p.signal, model: W.bulk.runModel || undefined }, "Policy's gate") },
+      h("button", { class: "btn sm", onclick: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: p.signal, model: gateModel() || undefined }, "Policy's gate") },
         icon("code"), "Export as a module"),
       h("span", { class: "faint", style: { fontSize: "12px" } }, "A Python or JavaScript file with these questions, the model, and these thresholds built in: decide(state) routes one row.")));
   if (!n) {
