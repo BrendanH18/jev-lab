@@ -66,8 +66,12 @@ class InstructionTests(unittest.TestCase):
         self.assertEqual(codes("hi", q), [("several_questions", "x")])
 
     def test_question_marks_in_quoted_data_do_not_count(self):
-        q = {"x": noul("Does any line of `document` answer: “When do we roast?”?", yes="Y", no="N")}
-        self.assertEqual(codes({"document": "L000 We roast on Mondays."}, q), [])
+        state = {"document": "L000 We roast on Mondays."}
+        for text in ("Does any line of `document` answer: “When do we roast?”?",
+                     "Does `document` say 'Where is my order? Can I get a refund?'?",
+                     "Does `document` say ‘Where is it?’?", "Doesn't `document` say when we roast?"):
+            with self.subTest(text=text):
+                self.assertEqual(codes(state, {"x": noul(text, yes="Y", no="N")}), [])
 
     def test_long_instructions_are_advice(self):
         q = {"x": noul(" ".join(["word"] * (lint.LONG_WORDS + 1)) + "?", yes="Y", no="N")}
@@ -80,6 +84,15 @@ class InstructionTests(unittest.TestCase):
         findings = lint.check("hi", q)["findings"]
         self.assertEqual([(f["code"], f["question"]) for f in findings], [("same_question", "a")])
         self.assertIn("`a` and `b`", findings[0]["message"])
+
+    def test_structured_criteria_differing_in_a_field_or_number_are_not_duplicates(self):
+        q = {"a": noul("Is it urgent?", yes="Due today", no="No deadline"),
+             "b": noul("Is it urgent?", yes="No deadline", no="Due today")}
+        self.assertEqual(codes("hi", q), [])
+        q = {"x": choice("How much?", {"small": {"max": 10}, "large": {"max": 100}})}
+        self.assertEqual(codes("hi", q), [])
+        q = {"x": choice("Which?", {"a": {"covers": "Charges"}, "b": {"about": "Charges"}})}
+        self.assertEqual(codes("hi", q), [("mixed_option_fields", "x")])
 
     def test_the_same_wording_with_different_criteria_is_not_a_duplicate(self):
         q = {"a": choice("Which team?", {"billing": "Charges", "shipping": "Parcels"}),

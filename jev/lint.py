@@ -18,6 +18,7 @@ question and look at the answers before rewriting one that the checks question.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -31,7 +32,7 @@ _PATH = re.compile(r"[A-Za-z_][\w-]*(?:\.[\w-]+|\[\d+\])*")
 _TICKED = re.compile(r"`([^`\n]+)`")
 _STEP = re.compile(r"\.([\w-]+)|\[(\d+)\]")
 # Quoted text is data the question carries, such as a search query, so its question marks do not count.
-_QUOTED = re.compile(r"“[^”]*”|\"[^\"]*\"|`[^`]*`")
+_QUOTED = re.compile(r"“[^”]*”|‘[^’]*’|\"[^\"]*\"|(?<!\w)'[^'\n]*'(?!\w)|`[^`]*`")
 _KEY_VALUE = re.compile(r"^\s*[A-Z][\w ./-]{0,30}:[ \t]+\S", re.M)
 
 
@@ -52,9 +53,15 @@ def _strings(value: Any) -> Iterable[str]:
 
 
 def _norm(value: Any) -> str:
-    """A description for comparing: case, spacing, and punctuation ignored."""
-    text = " ".join(_strings(value)) if not isinstance(value, str) else value
-    return " ".join(re.sub(r"[^\w`]+", " ", text.lower()).split())
+    """A description for comparing: case, spacing, and punctuation ignored in text; field names, numbers, and
+    structure kept, so criteria that differ only in a field or a number stay different."""
+    if isinstance(value, str):
+        return " ".join(re.sub(r"[^\w`]+", " ", value.lower()).split())
+    if isinstance(value, dict):
+        return "{%s}" % ", ".join("%s: %s" % (key, _norm(item)) for key, item in value.items()) if value else ""
+    if isinstance(value, list):
+        return "[%s]" % " | ".join(_norm(item) for item in value) if value else ""
+    return "" if value is None else json.dumps(value)
 
 
 def _resolve(value: Any, path: str) -> bool:
