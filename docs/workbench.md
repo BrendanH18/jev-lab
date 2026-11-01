@@ -554,6 +554,11 @@ score, such as an option only one of them offers. A stopped run or a failed call
 tilt the comparison; the report says how many rows were left out. Only question IDs that both
 variants ask, with the same type, can be compared.
 
+Above the per-question report, an agreement table lists every question both variants ask: how
+many rows both answered and how many got a different answer from each, with a 95% interval on the
+share. It reads only the answers, so it needs no labels. **Show rows** switches the report to that
+question and lists the rows that differ.
+
 For the question you pick, the report shows:
 
 - each variant's model, rows answered, median latency, input tokens, and cost;
@@ -570,6 +575,32 @@ For the question you pick, the report shows:
 Scoring reuses the answers, so changing the question or the gate makes no calls. **Use A in
 Build** or **Use B in Build** copies that variant's questions into the Build tab. Pin model
 versions when you compare wording, so an alias update cannot change one side of the comparison.
+
+### Order check
+
+A model can lean on the order of a Choice question's options, preferring whichever is listed first
+or last, instead of reading the row. Calibrate and Compare cannot see that on their own, because
+the options are always listed the same way. **Reverse A's options**, on variant B, makes B a copy of
+A, with the same model and each Choice question's options in reverse order. Instructions, option
+descriptions, Noul questions, and Score scales stay the same; a Score scale keeps its order because
+its levels run from low to high. Options named by whole numbers cannot be reordered, because
+JavaScript always lists them in ascending order, so the button says so.
+
+Run the comparison as usual. The agreement table then becomes an order check, and each question whose
+options are only reordered is marked: same instructions, same options and descriptions, another
+order. That needs the rest of the request to match too: the same model and the same questions in the
+same order, differing only in the order of Choice options. Each call asks every question at once, so
+if B asks another model or changes another question, the table stays an agreement table, since that
+change could move an answer too. Any answer that changes on such a question changed because of the order alone. For those
+answers, **same place in the list** counts the ones that picked the option at the same position in
+both lists, say the first option in A and the first option in B, as an answer that follows the
+position would. With only two options every changed answer does, so the count tells position from
+option only for three or more. A sentence under the table sums up each reordered question.
+
+A robust question changes no answers, or very few. When some change, look at those rows: they are
+often ones where two options fit about equally, and sharper option descriptions usually help more
+than a new order. If rows are labeled, the usual accuracy and McNemar comparison shows whether
+either order is more accurate. The check costs one extra call per row, like any comparison.
 
 ### Cascade
 
