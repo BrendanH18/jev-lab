@@ -2643,7 +2643,7 @@ function agreementBlock(res) {
       h("tbody", {}, rows.map((a) => h("tr", {},
         h("th", {}, a.qid, a.reordered ? h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, "options reordered") : null),
         h("td", {}, String(a.answered)),
-        h("td", {}, a.changed ? withCI(`${a.changed} · ${pct(a.rate, 1)}`, a.low, a.high) : "0"),
+        h("td", {}, withCI(`${a.changed} · ${pct(a.rate, 1)}`, a.low, a.high)),
         moved.length ? h("td", {}, a.reordered && a.changed ? `${a.same_position} of ${a.changed}` : "—") : null,
         h("td", {}, a.changed && a.qid !== c.qid ? h("button", { class: "btn sm ghost", onclick: show(a.qid) }, "Show rows")
           : a.changed ? h("span", { class: "faint" }, "shown below") : null)))))),

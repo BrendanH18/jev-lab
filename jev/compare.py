@@ -219,12 +219,13 @@ def reordered(qa: Any, qb: Any) -> bool:
             and qa.get("instructions") == qb.get("instructions"))
 
 
-def agreement(results: List[dict], questions: List[Dict[str, dict]]) -> List[dict]:
+def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model: bool = True) -> List[dict]:
     """For each question id both variants ask with the same type, in A's order: how many rows both
     answered and how many of those got a different answer from each, with a 95% interval on the share.
 
     results: workbench.run_compare's rows, each with "runs" [A's outcome, B's outcome]. Labels are not used.
-    For a reordered Choice question, "same_position" counts the changed answers that picked the option
+    A question counts as reordered only when both variants ask the same model (same_model), since another
+    model could change an answer too. For a reordered Choice question, "same_position" counts the changed answers that picked the option
     at the same place in each variant's list."""
     qa, qb = questions
     out = []
@@ -232,7 +233,7 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]]) -> List[dic
         other = qb.get(qid)
         if not isinstance(other, dict) or other.get("type") != q.get("type"):
             continue
-        moved = reordered(q, other)
+        moved = same_model and reordered(q, other)
         lists = (list(q["criteria"]), list(other["criteria"])) if moved else None
         answered = changed = same_position = 0
         for row in results:

@@ -225,6 +225,9 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual((dept["low"], dept["high"]), calibrate.wilson(2, 3))
         self.assertEqual((urg["answered"], urg["changed"], urg["reordered"]), (2, 1, False))
         self.assertNotIn("same_position", urg)
+        # With another model in B, a changed answer need not come from the order.
+        other_model = compare.agreement(results, [{"dept": DEPT}, {"dept": REVERSED}], same_model=False)
+        self.assertEqual((other_model[0]["changed"], other_model[0]["reordered"]), (2, False))
 
     def test_a_question_with_another_type_in_b_or_no_answers_is_handled(self):
         urgent = {"type": "noul", "instructions": "Urgent?"}
@@ -236,6 +239,8 @@ class AgreementTests(unittest.TestCase):
     def test_run_compare_reports_agreement_for_reversed_options(self):
         # The fake picks the last option it is offered, so reversing the list changes every answer.
         report = workbench.run_compare(FakeClient(), ["a", "b", "c"], [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}}])
+        preview = workbench.run_compare(FakeClient(), ["a"], [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}, "model": "jev-preview"}])
+        self.assertFalse(preview["agreement"][0]["reordered"])
         self.assertEqual(report["agreement"], [{"qid": "dept", "type": "choice", "answered": 3, "changed": 3, "rate": 1.0,
                                                 "low": calibrate.wilson(3, 3)[0], "high": 1.0, "reordered": True,
                                                 "same_position": 3}])

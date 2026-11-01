@@ -587,8 +587,9 @@ its levels run from low to high. Options named by whole numbers cannot be reorde
 JavaScript always lists them in ascending order, so the button says so.
 
 Run the comparison as usual. The agreement table then becomes an order check, and each question whose
-options are only reordered is marked: same instructions, same options and descriptions, another
-order. Any answer that changes on such a question changed because of the order alone. For those
+options are only reordered is marked: same model, same instructions, same options and descriptions,
+another order. If B asks another model, the table stays an agreement table, since the model could
+change an answer too. Any answer that changes on such a question changed because of the order alone. For those
 answers, **same place in the list** counts the ones that picked the option at the same position in
 both lists, say the first option in A and the first option in B. Such a row followed the position,
 not the option. A sentence under the table sums up each reordered question.
