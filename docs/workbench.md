@@ -602,6 +602,36 @@ often ones where two options fit about equally, and sharper option descriptions 
 than a new order. If rows are labeled, the usual accuracy and McNemar comparison shows whether
 either order is more accurate. The check costs one extra call per row, like any comparison.
 
+### Input check
+
+A good answer should not move when a customer makes a typo, writes in lowercase, adds a line that has
+nothing to do with the question, or when another system lists a record's fields in another order. The
+**Rows** menu on variant B rewrites every row B is sent, in code, before the call:
+
+| Rows | What changes |
+| --- | --- |
+| With typos | Two neighboring letters swap inside some words of five or more lowercase letters, at least one per string that has such a word. Names, codes such as `A-2210`, and acronyms stay as they are. |
+| In lowercase | Every string value is lowercased. Field names stay. |
+| With an unrelated sentence added | One neutral sentence, such as "Sent from my phone.", is added to the end of the longest string. |
+| With JSON fields shuffled | Every object lists its fields in another order. Values and list order stay. A text row has one field, so it does not change. |
+
+Only B's calls get the rewrite. Variant A, the labels, and the rows box stay as written. The rewrite
+is seeded by the row's position, so the same rows get the same rewrite on every run. Use **Copy A**
+first, so B asks A's questions of A's model. When nothing but the rows differs, down to the order of
+every question and option, the agreement table becomes an input check: any answer that changed,
+changed because of the rewrite. The summary table says how many rows the rewrite changed. A row it
+left as it was, such as a text row under **With JSON fields shuffled**, is a plain repeat of A's
+request, so the input check leaves it out. Rows where the answers differ show what B was sent under
+the row as written. **Reverse A's options** sets the rows back to as written, so an order check and an
+input check never mix.
+
+Labels still apply, so the usual accuracy and McNemar comparison shows whether the rewrite also costs
+accuracy. A few changed answers are normal on rows the model finds close either way. To see that
+baseline, run B as a plain copy of A with the rows as written. If many more answers change under a
+rewrite, the question leans on surface features, and clearer instructions or option descriptions
+usually help. The check costs one extra call per row, like any comparison. `POST /api/workbench/compare`
+takes the rewrite as `"perturb"` on a variant: `typos`, `lowercase`, `distractor`, or `shuffle`.
+
 ### Cascade
 
 A cascade asks one variant first and asks the other only when the first is unsure: below a

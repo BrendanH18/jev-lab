@@ -60,7 +60,8 @@ arithmetic, lookups, or authorization checks.
 | [`jev/checks.py`](../jev/checks.py) | Checks: a gate saved with a dataset, rerun over its rows and judged against an accuracy and an automation target; used by the Workbench and `scripts/check.py` |
 | [`jev/slices.py`](../jev/slices.py) | Accuracy by slice: scored rows grouped by a field of their input, with intervals and a one-sided Fisher exact test against the other slices |
 | [`jev/review.py`](../jev/review.py) | Label review: answers that disagree with their labels, ranked by the probability the label got, and unlabeled rows ranked by distance to a threshold |
-| [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, a cascade sweep, and agreement by question, including the order check for reordered Choice options |
+| [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, a cascade sweep, and agreement by question, including the order check for reordered Choice options and the input check for perturbed rows |
+| [`jev/perturb.py`](../jev/perturb.py) | Seeded rewrites of a Bulk row that keep its meaning (typos, lowercase, an unrelated sentence, shuffled fields), for Compare's input check |
 | [`jev/examples.py`](../jev/examples.py) | Workbench example question sets |
 | [`jev/world.py`](../jev/world.py) | Fictional business state, deterministic action checks, and mutations |
 | [`jev/scenarios.py`](../jev/scenarios.py) | Synthetic inbox messages, labels, and commands |
