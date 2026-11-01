@@ -787,8 +787,10 @@ function renderGateExport() {
   const tabs = [["python", "Python"], ["javascript", "JavaScript"]];
   const file = g.tab === "python" ? "gate.py" : "gate.mjs";
   const download = () => {
-    const a = h("a", { href: URL.createObjectURL(new Blob([g.out[g.tab]], { type: "text/plain" })), download: file });
+    const url = URL.createObjectURL(new Blob([g.out[g.tab]], { type: "text/plain" }));
+    const a = h("a", { href: url, download: file });
     document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url));
   };
   return h("div", { class: "panel", id: "gate-export" },
     h("div", { class: "panel-head" }, icon("code"), h("h2", {}, `Gate as code · ${g.title}`),

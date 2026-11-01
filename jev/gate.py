@@ -35,6 +35,11 @@ FIELD = "text"  # a Bulk text row becomes {"text": row}; checks.run sends rows t
 def validate(questions: Any, gates: Any, signal: Any, model: Any) -> tuple:
     """(questions, gates, signal, model) checked, or WorkbenchError."""
     questions = workbench.bulk_questions(questions)
+    # In a JavaScript object literal, a "__proto__" key sets the prototype instead of adding the key, so the
+    # exported module would silently lose that question, gate, or option.
+    if "__proto__" in questions or any("__proto__" in q["criteria"] for q in questions.values()
+                                       if isinstance(q.get("criteria"), dict)):
+        raise WorkbenchError("A question or option named __proto__ cannot be exported: JavaScript would drop it")
     try:
         gates = policy._gates(gates)
     except CalibrationError as err:
@@ -165,7 +170,8 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "    for qid, threshold in THRESHOLDS.items():",
         "        answer = _answer(result, qid)",
         "        # 1e-9 absorbs float rounding, so a signal equal to its threshold clears it, as in the Workbench.",
-        "        if answer is None or signal(answer, TYPES[qid]) + 1e-9 < threshold:",
+        "        # Written as \"not >=\", so an unreadable signal (NaN) holds its question too.",
+        "        if answer is None or not signal(answer, TYPES[qid]) + 1e-9 >= threshold:",
         "            held.append(qid)",
         "    return held",
         "",
@@ -265,8 +271,9 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "// The gated questions that are unsure, in gate order. A missing answer holds its question.",
         "export function heldBy(answers) {",
         "  // 1e-9 absorbs float rounding, so a signal equal to its threshold clears it, as in the Workbench.",
+        "  // Written as \"not >=\", so an unreadable signal (NaN) holds its question too.",
         "  return Object.entries(THRESHOLDS)",
-        "    .filter(([id, threshold]) => !answers[id] || signal(answers[id], TYPES[id]) + 1e-9 < threshold)",
+        "    .filter(([id, threshold]) => !Object.hasOwn(answers, id) || !(signal(answers[id], TYPES[id]) + 1e-9 >= threshold))",
         "    .map(([id]) => id);",
         "}",
         "",
@@ -277,7 +284,7 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "  const { answers } = await client.systemOne({ state, model: MODEL, questions });",
         "  const held = heldBy(answers);",
         "  const shown = Object.fromEntries(Object.entries(TYPES).map(([id, type]) =>",
-        "    [id, answers[id] ? value(answers[id], type) : null]));",
+        "    [id, Object.hasOwn(answers, id) ? value(answers[id], type) : null]));",
         "  return { route: held.length ? \"review\" : \"auto\", held, answers: shown };",
         "}",
         "",

@@ -192,6 +192,16 @@ class ExportTests(unittest.TestCase):
                     held = expected(case, signal=signal)
                     want.append({"route": "review" if held else "auto", "held": held, "answers": shown(case)})
                 self.assertEqual(json.loads(out), want)
+        # An answer the model left out holds its question, even when its id names an inherited property, and an
+        # unreadable signal (here a Choice answer without its confidence) holds its question too.
+        named = {"constructor": {"type": "noul", "instructions": "Is it spam?"}, "department": QUESTIONS["department"]}
+        (self.tmp / "gate.mjs").write_text(gate.export(named, {"constructor": 0.4, "department": 0.6}, "confidence", "m")["javascript"])
+        unreadable = dict(answers()["department"], confidence=None)
+        cases = [{"department": answers()["department"]}, {"department": unreadable, "constructor": {"type": "noul", "noul": 0.95}}]
+        out = json.loads(subprocess.run(["node", "run.mjs", json.dumps(cases)], capture_output=True, text=True, check=True,
+                                        cwd=self.tmp).stdout)
+        self.assertEqual([(d["route"], d["held"], d["answers"]["constructor"]) for d in out],
+                         [("review", ["constructor"], None), ("review", ["department"], True)])
         (self.tmp / "gate.mjs").write_text(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0")["javascript"])
         (self.tmp / "answers.json").write_text(json.dumps(CASES[:2]))
         rows = 'Order A-1041 arrived damaged.\n{"text": "Refund please", "_expect": {"is_urgent": true}}\n'
@@ -221,6 +231,12 @@ class ValidationTests(unittest.TestCase):
         self.assertIn("// " + line, out["javascript"])
         self.assertIn("Workbench Policy on one Bulk run", gate.export(QUESTIONS, GATES, "confidence", "m")["python"])
 
+
+    def test_a_question_or_option_named_proto_is_refused(self):
+        for questions in (dict(QUESTIONS, __proto__={"type": "noul", "instructions": "Is it spam?"}),
+                          dict(QUESTIONS, kind={"type": "choice", "instructions": "Which?", "criteria": {"__proto__": "x", "b": "y"}})):
+            with self.subTest(questions=list(questions)), self.assertRaises(workbench.WorkbenchError):
+                gate.export(questions, GATES, "confidence", "m")
 
     def test_a_dataset_name_cannot_become_code(self):
         name = 'Tickets """\nimport os; os.exit(1)  # */ \\'
