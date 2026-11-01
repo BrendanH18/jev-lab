@@ -198,7 +198,8 @@ async function boot() {
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);
   W.compare.variants[1].text = JSON.stringify(sample.terse_questions, null, 2);
   const first = W.examples[0];
-  const handed = readHandoff(localStorage);
+  let handed = null;
+  try { handed = readHandoff(localStorage); } catch { /* site data blocked: reading localStorage itself throws */ }
   if (handed) {
     loadInto(handed.state, handed.questions, { images: handed.images, handoff: { source: handed.source, model: handed.model } });
     return;
