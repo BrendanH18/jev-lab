@@ -1,6 +1,8 @@
 // Shared helpers for the Jev Lab pages: API calls (with the session token), formatting, DOM
 // building, probability bars, the request inspector, the key/settings modal, and the top bar.
 
+import { handoffFromTrace, writeHandoff } from "./handoff.js";
+
 const TOKEN = document.querySelector('meta[name="jev-csrf"]')?.content || "";
 let status = { configured: false };
 
@@ -234,8 +236,18 @@ function highlight(json) {
   });
 }
 
+// Put the inspected request in the Workbench's Build tab, in a new tab so the demo keeps its place.
+async function openInWorkbench() {
+  try {
+    writeHandoff(localStorage, await handoffFromTrace(drawer.current, drawer.source, drawer.uploads));
+  } catch (e) { return toast(e.message, "error"); }
+  if (!window.open("/workbench#build", "_blank")) location.href = "/workbench#build";
+}
+
 let drawer;
-export function inspect(trace, title = "Jev request") {
+// `source` names the page in the Workbench (default: the title before " · "). `uploads` holds the base64 of
+// pictures this page uploaded, since the trace leaves their bytes out; Open in Workbench needs them.
+export function inspect(trace, title = "Jev request", { source = null, uploads = [] } = {}) {
   if (!drawer) {
     const pre = h("pre");
     const tabs = ["request", "response"].map((t) => h("button", { class: "tab", "data-tab": t }, t === "request" ? "Request" : "Response"));
@@ -243,15 +255,16 @@ export function inspect(trace, title = "Jev request") {
     const heading = h("h3");
     const backdrop = h("div", { class: "drawer-backdrop", onclick: () => close() });
     const copyBtn = h("button", { class: "btn ghost sm", title: "Copy JSON", onclick: () => copyText(JSON.stringify(drawer.current[drawer.which], null, 2)) }, icon("copy"));
+    const workbenchBtn = h("button", { class: "btn sm", title: "Edit and rerun this request in the Workbench, in a new tab. Its answers stay here.", onclick: () => openInWorkbench() }, icon("arrow"), "Open in Workbench");
     const panel = h("aside", { class: "drawer", role: "dialog", "aria-label": "Request inspector" },
-      h("div", { class: "panel-head" }, icon("code"), heading, h("div", { class: "spacer" }), h("div", { class: "tabs" }, tabs), copyBtn,
+      h("div", { class: "panel-head" }, icon("code"), heading, h("div", { class: "spacer" }), h("div", { class: "tabs" }, tabs), workbenchBtn, copyBtn,
         h("button", { class: "btn ghost sm", onclick: () => close(), "aria-label": "Close" }, icon("x"))),
       h("div", { style: { padding: "12px 18px", borderBottom: "1px solid var(--line)" } }, meta),
       pre);
     document.body.append(backdrop, panel);
     const close = () => { panel.classList.remove("open"); backdrop.classList.remove("open"); };
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-    drawer = { pre, tabs, meta, heading, panel, backdrop, current: null, which: "request" };
+    drawer = { pre, tabs, meta, heading, panel, backdrop, workbenchBtn, current: null, which: "request", source: "", uploads: [] };
     tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.tab)));
     function show(which) {
       drawer.which = which;
@@ -263,6 +276,9 @@ export function inspect(trace, title = "Jev request") {
   }
   drawer.current = trace;
   drawer.heading.textContent = title;
+  drawer.source = source || title.split(" · ")[0];
+  drawer.uploads = uploads;
+  drawer.workbenchBtn.style.display = location.pathname === "/workbench" || !trace?.request?.questions ? "none" : "";
   const m = trace.meta || {};
   mount(drawer.meta,
     stat("model", m.model), stat("questions", m.question_count),

@@ -2,6 +2,7 @@ import {
   $, $$, answerCard, api, callStats, copyText, currentStatus, debounce, h, handleError, icon, initChrome, inspect, mount, ms, num,
   money, pct, photoView, prepareImage, stat, statusBadge, toast, usd,
 } from "./common.js";
+import { readHandoff } from "./handoff.js";
 
 const W = {
   tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
@@ -28,6 +29,8 @@ const W = {
   compare: { variants: [{ text: "", model: "" }, { text: "", model: "" }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
+  // A demo's request opened with Open in Workbench (static/js/handoff.js): the page's name and the model it asked.
+  handoff: null,
 };
 const TYPES = ["noul", "choice", "score", "box"];
 const TABS = [["build", "Build"], ["tests", "Tests"], ["bulk", "Bulk"], ["compare", "Compare"], ["examples", "Examples"]];
@@ -159,7 +162,7 @@ function imageFor(question, state, images) {
   return images.length === 1 ? images[0] : null;
 }
 
-function loadInto(state, questions, { expect = {}, name = "", notes = "", id = null, example = null, images = {} } = {}) {
+function loadInto(state, questions, { expect = {}, name = "", notes = "", id = null, example = null, images = {}, handoff = null } = {}) {
   W.stateText = typeof state === "string" ? state : JSON.stringify(state, null, 2);
   W.questions = fromQuestions(questions);
   W.images = imagesFromSpecs(images);
@@ -168,6 +171,7 @@ function loadInto(state, questions, { expect = {}, name = "", notes = "", id = n
   W.saveNotes = notes;
   W.editingId = id;
   W.loadedExample = example;
+  W.handoff = handoff;
   W.result = null;
   W.exported = null;
   W.saveOpen = false;
@@ -194,6 +198,11 @@ async function boot() {
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);
   W.compare.variants[1].text = JSON.stringify(sample.terse_questions, null, 2);
   const first = W.examples[0];
+  const handed = readHandoff(localStorage);
+  if (handed) {
+    loadInto(handed.state, handed.questions, { images: handed.images, handoff: { source: handed.source, model: handed.model } });
+    return;
+  }
   loadInto(first.state, first.questions, { expect: first.expect, example: first.id, images: first.images });
   const hash = location.hash.replace("#", "");
   if (TABS.some(([k]) => k === hash)) { W.tab = hash; render(); }
@@ -219,13 +228,27 @@ function render() {
 }
 
 // ---------- Build ----------
+// Says where an opened demo request came from, and that its answers did not come along.
+function handoffNote() {
+  const ho = W.handoff;
+  if (!ho) return null;
+  const model = currentStatus().model;
+  return h("div", { class: "callout" }, icon("arrow"), h("div", {},
+    h("b", {}, `Opened from ${ho.source}`),
+    h("div", { class: "muted" }, `This started as the exact request ${ho.source} sent. Its answers stayed in that tab: press Run to ask the model again,`
+      + " then reword a question, save it as a test, or use the questions in Bulk."
+      + (ho.model && model && ho.model !== model ? ` ${ho.source} asked ${ho.model}; Run asks ${model}.` : ""))));
+}
+
 function renderBuild() {
   const stateArea = h("textarea", { class: "input", spellcheck: "false", placeholder: "Plain text, or a JSON object/array. Point questions at fields with `backticks`." }, W.stateText);
   stateArea.addEventListener("input", () => { W.stateText = stateArea.value; });
   const left = h("div", { class: "grid", style: { gap: "16px" } },
+    handoffNote(),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "State"), h("div", { class: "spacer" }),
-        h("span", { class: "faint", style: { fontSize: "12px" } }, W.loadedExample ? `from example: ${W.loadedExample}` : W.editingId ? `editing test: ${W.editingId}` : "")),
+        h("span", { class: "faint", style: { fontSize: "12px" } }, W.loadedExample ? `from example: ${W.loadedExample}` : W.editingId ? `editing test: ${W.editingId}`
+          : W.handoff ? `from ${W.handoff.source}` : "")),
       h("div", { class: "panel-body state-box" }, stateArea)),
     renderImages(),
     h("div", { class: "panel" },

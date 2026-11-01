@@ -21,7 +21,9 @@ flowchart LR
 
 [`server.py`](../server.py) defines page mappings, JSON routes, key onboarding, and the HTTP
 handler. Served pages receive a per-process token. [`static/js/common.js`](../static/js/common.js)
-adds that token to requests, builds shared UI elements, and renders model answers and traces.
+adds that token to requests, builds shared UI elements, and renders model answers and traces. The
+trace drawer's **Open in Workbench** passes the inspected request to the Workbench through the
+browser's `localStorage` ([`static/js/handoff.js`](../static/js/handoff.js)); it adds no server route.
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,

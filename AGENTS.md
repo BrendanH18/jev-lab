@@ -22,6 +22,7 @@ uv run python -m unittest discover tests      # run all tests (no key/network ne
 python3 -m unittest discover tests            # same, no uv
 python3 -m unittest tests.test_workbench -v   # run one test module
 python3 -m unittest tests.test_workbench.ItemTests.test_save_list_run_delete  # run one test
+node --test tests/js/*.test.mjs               # browser-module tests (Node 22, no DOM; CI runs them)
 
 uv run scripts/validate.py                    # run every built-in scenario against the LIVE model
                                                # and print a report (~100 calls, well under $0.01).
@@ -89,7 +90,11 @@ raise `BadRequest`/`jev.workbench.WorkbenchError`/`jev.envfile.EnvFileError` for
 write the handler, add it to `ROUTES`, and (if the response should ever come back non-JSON or the
 page needs new markup) update the relevant `static/*.html`+`static/js/*.js` pair — each app page
 has one JS file with no shared framework, only the helpers in `static/js/common.js` (DOM builder
-`h()`, `api()` fetch wrapper, the JSON "Inspect" drawer, toasts, the key/settings modal).
+`h()`, `api()` fetch wrapper, the JSON "Inspect" drawer, toasts, the key/settings modal). The drawer's
+**Open in Workbench** button (`static/js/handoff.js`) hands the inspected request — state, questions,
+pictures, never answers — to the Workbench's Build tab through `localStorage`, with no server route;
+`tests/test_handoff.py` checks that every demo's request passes Workbench validation, so a demo that
+changes its request shape must keep it acceptable there.
 
 **Security is centralized in `jev/security.py`**, called once per request in
 `server.py:Handler._handle` before any route runs: Host-header allow-list (blocks DNS rebinding —
