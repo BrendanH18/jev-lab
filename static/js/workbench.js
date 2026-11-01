@@ -2375,7 +2375,7 @@ function variantPanel(i) {
         h("button", { class: "btn sm ghost", onclick: () => set(toQuestions(W.questions)) }, "Build questions"),
         h("button", { class: "btn sm ghost", onclick: () => set(W.bulk.sampleQuestions) }, "Sample"),
         h("button", { class: "btn sm ghost", onclick: () => set(W.compare.terse) }, "Sample, terse"),
-        i === 1 ? h("button", { class: "btn sm ghost", onclick: () => { v.text = W.compare.variants[0].text; render(); } }, "Copy A") : null,
+        i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model", onclick: () => { v.text = W.compare.variants[0].text; v.model = W.compare.variants[0].model; render(); } }, "Copy A") : null,
         i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, with each Choice question's options in reverse order", onclick: reverseA }, "Reverse A's options") : null)),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
       h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Model"), model),
