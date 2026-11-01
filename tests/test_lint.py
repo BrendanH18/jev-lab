@@ -94,6 +94,11 @@ class InstructionTests(unittest.TestCase):
         q = {"x": choice("Which?", {"a": {"covers": "Charges"}, "b": {"about": "Charges"}})}
         self.assertEqual(codes("hi", q), [("mixed_option_fields", "x")])
 
+    def test_the_same_fields_in_another_order_are_the_same_description(self):
+        q = {"x": choice("Which team?", {"billing": {"covers": "Charges", "excludes": "Refunds"},
+                                         "refunds": {"excludes": "Refunds", "covers": "Charges"}})}
+        self.assertEqual(codes("hi", q), [("same_options", "x")])
+
     def test_the_same_wording_with_different_criteria_is_not_a_duplicate(self):
         q = {"a": choice("Which team?", {"billing": "Charges", "shipping": "Parcels"}),
              "b": choice("Which team?", {"sales": "Pricing", "support": "Bugs"})}

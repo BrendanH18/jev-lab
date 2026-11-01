@@ -53,12 +53,12 @@ def _strings(value: Any) -> Iterable[str]:
 
 
 def _norm(value: Any) -> str:
-    """A description for comparing: case, spacing, and punctuation ignored in text; field names, numbers, and
-    structure kept, so criteria that differ only in a field or a number stay different."""
+    """A description for comparing: case, spacing, and punctuation ignored in text; field names (in any order),
+    numbers, and structure kept, so criteria that differ only in a field or a number stay different."""
     if isinstance(value, str):
         return " ".join(re.sub(r"[^\w`]+", " ", value.lower()).split())
     if isinstance(value, dict):
-        return "{%s}" % ", ".join("%s: %s" % (key, _norm(item)) for key, item in value.items()) if value else ""
+        return "{%s}" % ", ".join("%s: %s" % (key, _norm(item)) for key, item in sorted(value.items())) if value else ""
     if isinstance(value, list):
         return "[%s]" % " | ".join(_norm(item) for item in value) if value else ""
     return "" if value is None else json.dumps(value)
