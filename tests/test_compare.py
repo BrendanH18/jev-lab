@@ -216,9 +216,11 @@ class AgreementTests(unittest.TestCase):
             {"runs": [outcome(dept={"type": "choice", "choice": "nope", "probabilities": {}}), outcome(dept=choice("billing", opts))]},
         ]
         urgent = {"type": "noul", "instructions": "Urgent?"}
-        rows = compare.agreement(results, [{"dept": DEPT, "urgent": urgent, "only_a": urgent},
-                                           {"urgent": urgent, "dept": REVERSED, "only_b": urgent}])
+        rows = compare.agreement(results, [{"dept": DEPT, "urgent": urgent}, {"dept": REVERSED, "urgent": urgent}])
         self.assertEqual([r["qid"] for r in rows], ["dept", "urgent"])
+        mixed = compare.agreement(results, [{"dept": DEPT, "urgent": urgent, "only_a": urgent},
+                                            {"urgent": urgent, "dept": REVERSED, "only_b": urgent}])
+        self.assertEqual([r["qid"] for r in mixed], ["dept", "urgent"])
         dept, urg = rows
         self.assertEqual((dept["answered"], dept["changed"], dept["reordered"], dept["same_position"]), (3, 2, True, 1))
         self.assertAlmostEqual(dept["rate"], 2 / 3)
@@ -228,6 +230,12 @@ class AgreementTests(unittest.TestCase):
         # With another model in B, a changed answer need not come from the order.
         other_model = compare.agreement(results, [{"dept": DEPT}, {"dept": REVERSED}], same_model=False)
         self.assertEqual((other_model[0]["changed"], other_model[0]["reordered"]), (2, False))
+        # Every question goes out in one call, so any other change to the request rules out an order check.
+        for b in ({"dept": REVERSED, "urgent": dict(urgent, instructions="Due today?")},
+                  {"dept": REVERSED}, {"urgent": urgent, "dept": REVERSED}):
+            with self.subTest(b=list(b)):
+                self.assertFalse(compare.agreement(results, [{"dept": DEPT, "urgent": urgent}, b])[0]["reordered"])
+        self.assertTrue(compare.agreement(results, [{"dept": DEPT, "urgent": urgent}, {"dept": REVERSED, "urgent": urgent}])[0]["reordered"])
 
     def test_a_question_with_another_type_in_b_or_no_answers_is_handled(self):
         urgent = {"type": "noul", "instructions": "Urgent?"}

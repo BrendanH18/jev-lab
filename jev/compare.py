@@ -224,16 +224,20 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
     answered and how many of those got a different answer from each, with a 95% interval on the share.
 
     results: workbench.run_compare's rows, each with "runs" [A's outcome, B's outcome]. Labels are not used.
-    A question counts as reordered only when both variants ask the same model (same_model), since another
-    model could change an answer too. For a reordered Choice question, "same_position" counts the changed answers that picked the option
+    A question counts as reordered only when nothing else in the request changed: both variants ask the
+    same model (same_model) and the same questions in the same order, differing only in the order of
+    Choice options. Every question goes out in one call, so rewording another question could change an
+    answer too. For a reordered Choice question, "same_position" counts the changed answers that picked the option
     at the same place in each variant's list."""
     qa, qb = questions
+    # Dict equality ignores key order, so this holds when the sets differ only in how options are listed.
+    order_only = same_model and list(qa) == list(qb) and qa == qb
     out = []
     for qid, q in qa.items():
         other = qb.get(qid)
         if not isinstance(other, dict) or other.get("type") != q.get("type"):
             continue
-        moved = same_model and reordered(q, other)
+        moved = order_only and reordered(q, other)
         lists = (list(q["criteria"]), list(other["criteria"])) if moved else None
         answered = changed = same_position = 0
         for row in results:
