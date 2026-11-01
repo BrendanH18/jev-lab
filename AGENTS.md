@@ -121,7 +121,8 @@ only — never answers, per the no-replay rule below), keeps a tuned Policy gate
 (`jev/checks.py`: gates, model and user-chosen targets, never measured results) that the Datasets
 panel and `scripts/check.py` rerun live, runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
-`SpendGuard`), and exports the exact request as runnable Python/JavaScript/curl.
+`SpendGuard`), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a
+Python or JavaScript module whose `decide(state)` routes a row (`jev/gate.py`).
 
 ## Conventions
 

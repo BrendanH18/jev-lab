@@ -748,14 +748,9 @@ def image_file(ref: str, spec: dict) -> str:
     return "%s.%s" % (ref, spec.get("format") or "jpg")
 
 
-def export_python(state: Any, questions: Dict[str, dict], model: str, refs: Dict[str, dict] = None) -> str:
-    refs = refs or {}
-    names = ["Choice", "Noul", "NoulCriteria", "Score", "TypeSafeClient"] + (["Box"] if has_box(questions) else [])
-    names += ["Image"] if refs else []
-    lines = (["from pathlib import Path", ""] if refs else []) + [
-        "from typesafe_sdk import %s" % ", ".join(sorted(names)), "",
-        "client = TypeSafeClient(model=%r)  # reads TYPESAFE_API_KEY from the environment" % model, "",
-        "state = %s" % _py(state), "", "questions = {"]
+def python_questions(questions: Dict[str, dict]) -> List[str]:
+    """The lines of a `questions = {...}` block built from the Python SDK's question classes."""
+    lines = ["questions = {"]
     for qid, q in questions.items():
         args = ["instructions=%s" % _py(q["instructions"], 8)]
         if q["type"] == "choice":
@@ -773,15 +768,26 @@ def export_python(state: Any, questions: Dict[str, dict], model: str, refs: Dict
                 args.append("criteria=NoulCriteria(true=%s, false=%s)" % (_py(c.get("true"), 8), _py(c.get("false"), 8)))
         lines.append("        " + ",\n        ".join(args) + ",")
         lines.append("    ),")
+    return lines + ["}"]
+
+
+def export_python(state: Any, questions: Dict[str, dict], model: str, refs: Dict[str, dict] = None) -> str:
+    refs = refs or {}
+    names = ["Choice", "Noul", "NoulCriteria", "Score", "TypeSafeClient"] + (["Box"] if has_box(questions) else [])
+    names += ["Image"] if refs else []
+    lines = (["from pathlib import Path", ""] if refs else []) + [
+        "from typesafe_sdk import %s" % ", ".join(sorted(names)), "",
+        "client = TypeSafeClient(model=%r)  # reads TYPESAFE_API_KEY from the environment" % model, "",
+        "state = %s" % _py(state), ""] + python_questions(questions)
     if refs:
-        lines += ["}", "", "# Each reference in the text is replaced by its picture. Save the pictures beside this file.",
+        lines += ["", "# Each reference in the text is replaced by its picture. Save the pictures beside this file.",
                   "assets = {"] + ["    %r: Image(Path(%r))," % (ref, image_file(ref, spec)) for ref, spec in refs.items()] + [
             "}", "",
             "# Images and Box questions are early TypeSafe features and need this header. Box needs Jev 1.14+.",
             "result = client.system_one(state, questions, assets=assets,",
             "                           extra_headers={\"TypeSafe-Danger-Zone-Images\": \"true\"})", ""]
     else:
-        lines += ["}", "", "result = client.system_one(state, questions)", ""]
+        lines += ["", "result = client.system_one(state, questions)", ""]
     for qid, q in questions.items():
         if q["type"] == "box":
             lines.append("%s = result.boxes[%r]     # .box.left/.top/.right/.bottom, .confidence" % (_ident(qid), qid))

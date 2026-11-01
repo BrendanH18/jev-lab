@@ -19,6 +19,8 @@ const W = {
     // checkForm: Policy's "Save as a check" targets as typed (percent strings; null takes a default from the run).
     // checkRuns: per dataset id, a check run in flight or its report (jev/checks.py), and the model typed to ask instead.
     ranQuestions: null, runModel: null, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
+    // gateExport: Policy's gate or a saved check exported as a module (jev/gate.py), and the language shown.
+    gateExport: null,
     // CSV import (jev/csvimport.py): the file or pasted text, the column uses chosen so far, and the server's report.
     // pending: a newer conversion is on its way; qkey: the questions the report was checked against.
     csv: { open: false, text: "", file: "", columns: {}, report: null, error: null, seq: 0, pending: false, qkey: null },
@@ -763,8 +765,49 @@ function checkItem(x) {
       h("button", { class: "btn sm", disabled: run.running, onclick: () => runCheck(x.id) },
         run.running ? [h("span", { class: "spin" }), " Checking…"] : [icon("layers"), `Run check · ${n} call${n === 1 ? "" : "s"}`]),
       model,
+      h("button", { class: "btn sm", onclick: () => exportGate({ dataset: x.id }, `the check saved with “${x.name || x.id}”`) }, icon("code"), "Export as code"),
       h("button", { class: "btn sm ghost", disabled: run.running, onclick: () => removeCheck(x.id) }, "Remove check")),
     run.report ? checkReport(run.report) : null);
+}
+
+// ---------- Gate export ----------
+// jev/gate.py writes Policy's gate, or a saved check, as a Python or JavaScript module: decide(state) asks the questions
+// in one call and routes the row to "auto" or "review" by the same thresholds and signal. Exporting makes no model call.
+async function exportGate(body, title) {
+  try {
+    const out = await api("/api/workbench/gate/export", body);
+    W.bulk.gateExport = { out, title, tab: W.bulk.gateExport?.tab || "python" };
+    render();
+    $("#gate-export")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { handleError(e); }
+}
+
+function renderGateExport() {
+  const g = W.bulk.gateExport;
+  const tabs = [["python", "Python"], ["javascript", "JavaScript"]];
+  const file = g.tab === "python" ? "gate.py" : "gate.mjs";
+  const download = () => {
+    const a = h("a", { href: URL.createObjectURL(new Blob([g.out[g.tab]], { type: "text/plain" })), download: file });
+    document.body.append(a); a.click(); a.remove();
+  };
+  return h("div", { class: "panel", id: "gate-export" },
+    h("div", { class: "panel-head" }, icon("code"), h("h2", {}, `Gate as code · ${g.title}`),
+      h("div", { class: "tabs" }, tabs.map(([k, l]) => h("button", { class: `tab${g.tab === k ? " active" : ""}`, onclick: () => { g.tab = k; render(); } }, l))),
+      h("div", { class: "spacer" }),
+      h("button", { class: "btn sm", onclick: download }, icon("save"), `Download ${file}`),
+      h("button", { class: "btn sm ghost", title: "Close", "aria-label": "Close the gate export", onclick: () => { W.bulk.gateExport = null; render(); } }, icon("x"))),
+    h("div", { class: "panel-body grid", style: { gap: "8px" } },
+      h("p", { class: "muted", style: { fontSize: "12.5px" } },
+        h("code", {}, g.tab === "python" ? "decide(state)" : "await decide(state)"),
+        " asks every question in one call and returns ", h("code", {}, "route"), " (", h("code", {}, "\"auto\""), " when every gated answer clears its threshold, else ",
+        h("code", {}, "\"review\""), "), the ", h("code", {}, "held"), " questions, and the ", h("code", {}, "answers"),
+        ". It reads each signal as Policy does, and a missing answer goes to review. Run it as a script to route one row per line of standard input."),
+      h("div", { class: "code" }, h("pre", { id: "gate-code" }, g.out[g.tab]),
+        h("button", { class: "btn sm copy", onclick: () => copyText(g.out[g.tab]) }, icon("copy"), "Copy")),
+      h("p", { class: "faint", style: { fontSize: "12px" } },
+        g.tab === "python" ? "pip install typesafe-sdk (Python 3.10+), then set TYPESAFE_API_KEY. Run: python gate.py < rows.jsonl"
+          : "npm install @typesafe-ai/sdk (Node 22+), then set TYPESAFE_API_KEY. Run: node gate.mjs < rows.jsonl",
+        ". The thresholds fit the labeled rows they were tuned on; confirm them on your own traffic before you rely on them. Exporting makes no model call.")));
 }
 
 async function runCheck(id) {
@@ -1107,6 +1150,7 @@ function renderBulk() {
             h("p", { class: "muted" }, "At $0.042 per million input tokens, a question set over a million short messages costs about ", h("b", {}, "$10"), ". That is why “classify everything, then sort” is finally practical."),
             h("p", { class: "muted" }, "With labeled rows, Calibrate shows how often each answer was right and where to set the confidence threshold: above it your code acts, below it a person reviews. Choose the threshold from your own data, not a default."))))),
     b.csv.open ? renderImport() : null,
+    b.gateExport ? renderGateExport() : null,
     b.result ? renderCosts() : null,
     b.result ? renderCalibrate() : null,
     b.result ? renderReview() : null,
@@ -2146,8 +2190,13 @@ function updatePolicy() {
     rep.invalid.length ? invalidNote(rep) : null,
     h("p", { class: "faint" }, `Tuning raises whichever threshold drops the most wrong rows per row it drops, until the target holds${p.bound === "lower" ? " at 95% confidence" : ""}, then re-chooses thresholds two at a time while that automates more rows. With one or two gated questions it finds the best thresholds on 0.01 steps; with more it is a search, not a guarantee.`),
   ];
-  const code = h("div", { class: "code" }, h("pre", { id: "pol-code" }, policyCode(rep)),
-    h("button", { class: "btn sm copy", onclick: () => copyText($("#pol-code").textContent) }, icon("copy"), "Copy"));
+  const code = h("div", { class: "grid", style: { gap: "8px" } },
+    h("div", { class: "code" }, h("pre", { id: "pol-code" }, policyCode(rep)),
+      h("button", { class: "btn sm copy", onclick: () => copyText($("#pol-code").textContent) }, icon("copy"), "Copy")),
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", onclick: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: p.signal, model: W.bulk.runModel || undefined }, "Policy's gate") },
+        icon("code"), "Export as a module"),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "A Python or JavaScript file with these questions, the model, and these thresholds built in: decide(state) routes one row.")));
   if (!n) {
     return mount("#pol-out",
       h("div", { class: "stat-row" }, stat("this run, all rows", `${rep.routed_automated} of ${rep.routed} automated`, true)),

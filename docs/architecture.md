@@ -59,6 +59,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/holdout.py`](../jev/holdout.py) | Five-fold cross-validation of tuned thresholds: deterministic folds by row, tuning on the other folds, and pooled accuracy on held-out rows |
 | [`jev/cost.py`](../jev/cost.py) | Thresholds chosen by price: per-row costs from a review price, a default mistake price, and prices for specific mistakes; the cheapest gates on one or several questions; the cost at every threshold; and a cross-validated cost on held-out rows |
 | [`jev/checks.py`](../jev/checks.py) | Checks: a gate saved with a dataset, rerun over its rows and judged against an accuracy and an automation target; used by the Workbench and `scripts/check.py` |
+| [`jev/gate.py`](../jev/gate.py) | Gate export: a Policy gate or a saved check written as a Python or JavaScript module whose `decide(state)` asks the questions and routes the row by the thresholds |
 | [`jev/slices.py`](../jev/slices.py) | Accuracy by slice: scored rows grouped by a field of their input, with intervals and a one-sided Fisher exact test against the other slices |
 | [`jev/review.py`](../jev/review.py) | Label review: answers that disagree with their labels, ranked by the probability the label got, and unlabeled rows ranked by distance to a threshold |
 | [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, a cascade sweep, and agreement by question, including the order check for reordered Choice options and the input check for perturbed rows |
