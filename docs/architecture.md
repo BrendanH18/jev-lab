@@ -53,6 +53,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/policy.py`](../jev/policy.py) | A gate over several questions at once: automation, joint accuracy, per-question holds and errors, and a threshold search for target accuracies, measured or at 95% confidence |
 | [`jev/holdout.py`](../jev/holdout.py) | Five-fold cross-validation of tuned thresholds: deterministic folds by row, tuning on the other folds, and pooled accuracy on held-out rows |
 | [`jev/cost.py`](../jev/cost.py) | Thresholds chosen by price: per-row costs from a review price, a default mistake price, and prices for specific mistakes; the cheapest gates on one or several questions; the cost at every threshold; and a cross-validated cost on held-out rows |
+| [`jev/checks.py`](../jev/checks.py) | Checks: a gate saved with a dataset, rerun over its rows and judged against an accuracy and an automation target; used by the Workbench and `scripts/check.py` |
 | [`jev/slices.py`](../jev/slices.py) | Accuracy by slice: scored rows grouped by a field of their input, with intervals and a one-sided Fisher exact test against the other slices |
 | [`jev/review.py`](../jev/review.py) | Label review: answers that disagree with their labels, ranked by the probability the label got, and unlabeled rows ranked by distance to a threshold |
 | [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, and a cascade sweep |
@@ -86,7 +87,8 @@ without another call, the same way Shield reweights.
 - `.env` stores optional local configuration and an API key; it must stay gitignored and untracked.
 - Workbench pictures are saved in `data/workbench/images/`, named by a hash of their bytes.
 - Workbench datasets are written to `data/workbench/datasets/<id>.json`: Bulk rows, their `_expect`
-  labels, and optionally the question set. They hold no answers, and are also meant for version control.
+  labels, optionally the question set, and optionally a check: gates, a model, and targets. They hold
+  no answers, and are also meant for version control.
 - Bundled sample documents and rows live in `data/samples/`; the Bulk tickets in `tickets.jsonl`
   carry `_expect` labels for Calibrate. Sample pictures live in `static/img/samples/` and are drawn
   by [`scripts/draw_samples.py`](../scripts/draw_samples.py). Screenshots live in `docs/screenshots/`.
@@ -108,7 +110,9 @@ behavior without depending on live model judgments.
 [`scripts/validate.py`](../scripts/validate.py) exercises the bundled scenarios using real API
 calls. It reports observations and mismatches for human review; it is not an automated quality
 gate. Its exit status indicates execution errors. Workbench saved expectations provide another
-way to compare actual model results over time.
+way to compare actual model results over time. [`scripts/check.py`](../scripts/check.py) is a
+gate: it reruns the checks saved with Workbench datasets and exits nonzero when one misses its
+targets, but only on the rows and labels its datasets hold.
 
 For setup and contribution checks, see [CONTRIBUTING.md](../CONTRIBUTING.md). For trust boundaries,
 key handling, and the limitations of estimated spending guards, see [SECURITY.md](../SECURITY.md).

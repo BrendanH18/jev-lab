@@ -21,7 +21,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, claims, compare, cost, csvimport, dispatch, envfile, examples, find, hello, holdout, images,
+from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, envfile, examples, find, hello, holdout, images,
                  policy, review, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, price_per_input_token, supports_box
@@ -515,6 +515,26 @@ def api_wb_dataset_delete(body):
     return {"deleted": workbench.delete_dataset(str(body.get("id", "")))}
 
 
+def api_wb_check_save(body):
+    spec = body.get("check")
+    if isinstance(spec, dict) and not str(spec.get("model") or "").strip():
+        spec = dict(spec, model=client.model)  # a blank model is the one this server asks now
+    if isinstance(spec, dict):
+        check_model(str(spec.get("model")).strip())
+    return {"dataset": workbench.dataset_summary(checks.save_check(str(body.get("id", "")), spec))}
+
+
+def api_wb_check_delete(body):
+    return {"removed": checks.remove_check(str(body.get("id", "")))}
+
+
+def api_wb_check_run(body):
+    model = str(body.get("model") or "").strip()
+    if model:
+        check_model(model)
+    return checks.run(client, str(body.get("id", "")), model or None)
+
+
 def api_wb_import(body):
     return csvimport.convert(body.get("text"), body.get("questions"), body.get("columns"))
 
@@ -569,6 +589,9 @@ ROUTES = {
     ("POST", "/api/workbench/datasets"): api_wb_dataset_save,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
+    ("POST", "/api/workbench/checks"): api_wb_check_save,
+    ("POST", "/api/workbench/checks/delete"): api_wb_check_delete,
+    ("POST", "/api/workbench/checks/run"): api_wb_check_run,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,

@@ -29,6 +29,9 @@ uv run scripts/validate.py                    # run every built-in scenario agai
                                                # wording, thresholds, or the model version — the
                                                # unit tests use fake answers and cannot tell you
                                                # whether Jev's real answers still make sense.
+uv run scripts/check.py                       # rerun the checks saved in Workbench datasets against the
+                                               # LIVE model (one call per row); exits 1 when a gate misses
+                                               # its targets. Needs TYPESAFE_API_KEY. --list makes no calls.
 ```
 
 Lint with `uv run --locked ruff check` (configured in `pyproject.toml`; CI runs it). No formatter is
@@ -109,7 +112,9 @@ validates arbitrary `state`/`questions` from the UI (`validate_questions`/`valid
 them, checks probability answers against user-authored `expect` ranges, persists runs as JSON
 files under `data/workbench/` (one file per saved test — these are meant to be committed), saves
 Bulk rows and their `_expect` labels as datasets under `data/workbench/datasets/` (inputs and labels
-only — never answers, per the no-replay rule below), runs a
+only — never answers, per the no-replay rule below), keeps a tuned Policy gate with a dataset as a *check*
+(`jev/checks.py`: gates, model and user-chosen targets, never measured results) that the Datasets
+panel and `scripts/check.py` rerun live, runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
 `SpendGuard`), and exports the exact request as runnable Python/JavaScript/curl.
 

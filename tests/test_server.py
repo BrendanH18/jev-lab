@@ -278,7 +278,8 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(status, 200, body)
             self.assertEqual(json.loads(body)["dataset"], {"id": "tickets", "name": "Tickets", "notes": "",
                                                            "saved_at": json.loads(body)["dataset"]["saved_at"], "rows": 2,
-                                                           "labeled": 1, "labels": {"dept": 1}, "questions": 0})
+                                                           "labeled": 1, "labels": {"dept": 1}, "questions": 0,
+                                                           "check": None})
             status, _, body = self.request("GET", "/api/workbench/datasets")
             self.assertEqual([d["id"] for d in json.loads(body)["datasets"]], ["tickets"])
             status, _, body = self.request("POST", "/api/workbench/datasets/load", json.dumps({"id": "tickets"}),
@@ -295,6 +296,42 @@ class HttpTests(unittest.TestCase):
                                            self.post_headers())
             self.assertTrue(json.loads(body)["deleted"])
             self.assertEqual(list(Path(folder, "datasets").iterdir()), [])
+
+    def test_checks_over_http(self):
+        questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}
+        fake = FakeClient(lambda state, qs: {"refund": 0.98 if "refund" in state["text"] else 0.05})
+        with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")), \
+                patch.object(server.client, "models", return_value={"models": [{"name": "jev-latest"}]}):
+            rows = "\n".join(json.dumps({"text": t, "_expect": {"refund": label}})
+                             for t, label in (("refund me", "yes"), ("love it", "no")))
+            self.request("POST", "/api/workbench/datasets", json.dumps({"name": "Refunds", "rows": rows, "questions": questions}),
+                         self.post_headers())
+            spec = {"gates": {"refund": 0.5}, "min_accuracy": 0.9, "min_coverage": 0.5}
+            status, _, body = self.request("POST", "/api/workbench/checks", json.dumps({"id": "refunds", "check": spec}),
+                                           self.post_headers())
+            self.assertEqual(status, 200, body)
+            self.assertEqual(json.loads(body)["dataset"]["check"]["model"], server.client.model, "a blank model is the current one")
+            bad, _, err = self.request("POST", "/api/workbench/checks",
+                                       json.dumps({"id": "refunds", "check": dict(spec, model="no-such-model")}), self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("not available to this key", json.loads(err)["error"])
+            forged, _, _ = self.request("POST", "/api/workbench/checks/run", json.dumps({"id": "refunds"}),
+                                        {"Content-Type": "application/json"})
+            self.assertEqual(forged, 403, "running a check spends budget, so it needs the session token")
+            with patch.object(server.client, "system_one", side_effect=fake.system_one):
+                status, _, body = self.request("POST", "/api/workbench/checks/run",
+                                               json.dumps({"id": "refunds", "model": "jev-1.14.0"}), self.post_headers())
+            self.assertEqual(status, 200, body)
+            rep = json.loads(body)
+            self.assertEqual((rep["status"], rep["model"], rep["automated"], rep["labeled"]), ("pass", "jev-1.14.0", 2, 2))
+            self.assertEqual(fake.models, ["jev-1.14.0"] * 2)
+            status, _, body = self.request("POST", "/api/workbench/checks/delete", json.dumps({"id": "refunds"}),
+                                           self.post_headers())
+            self.assertTrue(json.loads(body)["removed"])
+            bad, _, err = self.request("POST", "/api/workbench/checks/run", json.dumps({"id": "refunds"}), self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("has no check", json.loads(err)["error"])
 
     def test_policy_over_http_is_pure_code(self):
         rows = [{"index": 0, "answers": {"u": {"type": "noul", "noul": 0.9}}, "labels": {"u": "yes"}},

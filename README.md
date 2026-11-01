@@ -70,7 +70,7 @@ issue real refunds, or transfer money.
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, compare two wordings or models, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, compare two wordings or models, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. Model judgments are live; reweighting, replanning, exports, and
@@ -127,6 +127,10 @@ conditions.
 - **Check on unseen rows:** in Calibrate and Policy, see what the tuned thresholds deliver on rows they were
   not tuned on. Five-fold cross-validation tunes on four fifths of the labeled rows and routes the fifth,
   then compares that accuracy with the accuracy on the tuning rows. It also reuses the Bulk answers.
+- **Checks:** keep a tuned gate with its dataset, with the model and two targets: an accuracy and a
+  share automated. **Run check** reruns every saved row and says whether the gate still meets them;
+  `uv run --locked scripts/check.py` does the same from a terminal or CI and exits nonzero on a miss.
+  Only targets are saved, never answers.
 - **Compare:** run two variants, each a question set and a model, over the same labeled rows. See
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
   significance test, and the rows where the variants disagree. A cascade shows what asking one
@@ -192,7 +196,14 @@ For optional live evaluation after changing question wording or model versions:
 uv run --locked scripts/validate.py --out report.json
 ```
 
-This makes paid API calls using the configured key and prints observed results. Its exit status
+To rerun the [checks](docs/workbench.md#keep-a-gate-as-a-check) saved with Workbench datasets, which exit
+nonzero when a gate misses its targets:
+
+```sh
+uv run --locked scripts/check.py
+```
+
+`validate.py` makes paid API calls using the configured key and prints observed results. Its exit status
 reports execution errors, not whether the model matched every scenario expectation. Review the
 report before sharing it.
 

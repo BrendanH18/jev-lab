@@ -16,7 +16,7 @@ import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from . import compare, images
 from .client import JevClient, JevError
@@ -346,9 +346,10 @@ def dataset_summary(dataset: dict) -> dict:
             for qid, value in labels.items():
                 if value is not None:
                     labeled[qid] = labeled.get(qid, 0) + 1
+    check = dataset.get("check")
     return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
             "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
-            "questions": len(dataset.get("questions") or {})}
+            "questions": len(dataset.get("questions") or {}), "check": check if isinstance(check, dict) else None}
 
 
 def _dataset_text(dataset: dict) -> str:
@@ -358,16 +359,8 @@ def _dataset_text(dataset: dict) -> str:
     return head[:-2] + ',\n  "rows": [\n' + rows + "\n  ]\n}\n"
 
 
-def save_dataset(spec: dict) -> dict:
-    """Write a dataset named spec["name"]; a dataset with the same id is replaced."""
-    name = str(spec.get("name") or "").strip()[:120]
-    if not SLUG.sub("", name.lower()):
-        raise WorkbenchError("Give the dataset a name")
-    dataset = {"id": slugify(name), "name": name, "notes": str(spec.get("notes") or "")[:2000],
-               "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-    if spec.get("questions"):
-        dataset["questions"] = bulk_questions(spec["questions"])
-    dataset["rows"] = validate_rows(spec.get("rows"))
+def write_dataset(dataset: dict) -> None:
+    """Replace data/workbench/datasets/<id>.json with `dataset`, atomically."""
     text = _dataset_text(dataset)
     if len(text) > MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
@@ -376,7 +369,43 @@ def save_dataset(spec: dict) -> dict:
     partial = path.with_name("%s.%d.partial" % (path.name, threading.get_ident()))  # one per concurrent save
     partial.write_text(text, encoding="utf-8")
     partial.replace(path)
-    return dataset
+
+
+def _prior_check(dataset_id: str) -> Any:
+    """The check saved in the dataset file this save replaces, or None."""
+    try:
+        check = json.loads(_dataset_path(dataset_id).read_text(encoding="utf-8")).get("check")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return check if isinstance(check, dict) else None
+
+
+def save_dataset(spec: dict) -> dict:
+    """Write a dataset named spec["name"]; a dataset with the same id is replaced.
+
+    A check saved in the file it replaces (jev/checks.py) is kept while it still fits the questions saved
+    now, so adding rows or labels keeps it. Otherwise it is dropped and the returned dataset says why under
+    "check_dropped" (not written to the file)."""
+    from . import checks  # checks imports this module
+
+    name = str(spec.get("name") or "").strip()[:120]
+    if not SLUG.sub("", name.lower()):
+        raise WorkbenchError("Give the dataset a name")
+    dataset = {"id": slugify(name), "name": name, "notes": str(spec.get("notes") or "")[:2000],
+               "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if spec.get("questions"):
+        dataset["questions"] = bulk_questions(spec["questions"])
+    prior = _prior_check(dataset["id"])
+    dropped = None
+    if prior is not None:
+        try:
+            dataset["check"] = dict(checks.validate_check(prior, dataset.get("questions")),
+                                    saved_at=prior.get("saved_at"))
+        except WorkbenchError as err:
+            dropped = str(err)
+    dataset["rows"] = validate_rows(spec.get("rows"))
+    write_dataset(dataset)
+    return dict(dataset, check_dropped=dropped) if dropped else dataset
 
 
 def list_datasets() -> List[dict]:
@@ -544,11 +573,12 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
     return outcomes, stopped["error"]
 
 
-def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text") -> dict:
+def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None) -> dict:
+    """Every row with the same questions. model: None asks the current model."""
     questions = bulk_questions(questions)
     split = _split_rows(rows)
     started = time.perf_counter()
-    outcomes, stopped = _run_jobs(client, split, [(i, questions, None) for i in range(len(split))], field)
+    outcomes, stopped = _run_jobs(client, split, [(i, questions, model) for i in range(len(split))], field)
     results = [dict(_row_base(split, i), **outcome) for i, outcome in enumerate(outcomes)]
     done = [r for r in results if "answers" in r]
     return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
