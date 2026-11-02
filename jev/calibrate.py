@@ -61,14 +61,11 @@ def rows_needed(target: float) -> int:
     return n
 
 
-PLAN_LIMIT = 100000  # beyond this many automated rows a plan stops being useful advice
-
-
 def automated_needed(accuracy: float, target: float) -> Optional[int]:
     """The fewest automated rows at this accuracy whose 95% Wilson lower bound reaches the target.
 
-    None when the accuracy is not above the target, since no number of rows can show it then, or when it
-    would take more than PLAN_LIMIT rows. The lower bound rises with n at a fixed accuracy."""
+    None when the accuracy is not above the target, since no number of rows can show it then. The lower bound
+    rises with n at a fixed accuracy and approaches it, so doubling n finds a bound, then bisection the fewest."""
     if accuracy <= target + _EPS:
         return None
 
@@ -78,8 +75,6 @@ def automated_needed(accuracy: float, target: float) -> Optional[int]:
     hi = 1
     while not ok(hi):
         hi *= 2
-        if hi > 2 * PLAN_LIMIT:
-            return None
     lo = hi // 2  # ok(lo) is false, or lo is 0
     while hi - lo > 1:
         mid = (lo + hi) // 2
@@ -87,7 +82,7 @@ def automated_needed(accuracy: float, target: float) -> Optional[int]:
             hi = mid
         else:
             lo = mid
-    return hi if hi <= PLAN_LIMIT else None
+    return hi
 
 
 def plan(candidates: List[Tuple[int, int]], labeled: int, target: float) -> Optional[dict]:
@@ -107,8 +102,6 @@ def plan(candidates: List[Tuple[int, int]], labeled: int, target: float) -> Opti
             continue
         coverage = automated / labeled
         more = max(1, ceil(need / coverage - _EPS) - labeled)
-        if more > PLAN_LIMIT:
-            continue
         if best is None or (more, -coverage) < (best["more"], -best["coverage"]):
             best = {"more": more, "automated": need, "accuracy": accuracy, "coverage": coverage, "index": index}
     return best

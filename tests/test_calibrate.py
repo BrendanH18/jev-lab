@@ -238,7 +238,11 @@ class IntervalTests(unittest.TestCase):
         n = calibrate.automated_needed(0.97, 0.95)
         self.assertGreaterEqual(calibrate.wilson(0.97 * n, n)[0], 0.95)
         self.assertLess(calibrate.wilson(0.97 * (n - 1), n - 1)[0], 0.95)
-        self.assertIsNone(calibrate.automated_needed(0.9501, 0.95))  # millions of rows: past PLAN_LIMIT
+        # Just above the target takes a great many rows, but a finite number.
+        n = calibrate.automated_needed(0.9501, 0.95)
+        self.assertGreater(n, 1000000)
+        self.assertGreaterEqual(calibrate.wilson(0.9501 * n, n)[0] + calibrate._EPS, 0.95)  # the tie rule meets() uses
+        self.assertEqual(calibrate.plan([(100, 100)], 100, 0.99)["automated"], calibrate.automated_needed(101 / 102, 0.99))
 
     def test_plan_smooths_accuracy_and_picks_the_fewest_more_rows(self):
         # 3 of 3 right smooths to 80%, which cannot show 90%; 20 of 20 smooths to 95.5% and needs 92 automated
