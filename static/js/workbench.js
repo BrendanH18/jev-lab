@@ -11,8 +11,8 @@ const W = {
   lint: null,
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
-    // Row pictures (a row's "_image"): their image URLs by name, for thumbnails.
-    pictures: {},
+    // Row pictures (a row's "_image"): their image URLs by name, for thumbnails, and the sample picture rows' questions.
+    pictures: {}, pictureQuestions: null,
     // Saved datasets (data/workbench/datasets/): rows and labels only, never answers. savedText is the rows box as
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
@@ -662,6 +662,16 @@ async function addPictures(input) {
     render();
   } catch (e) { handleError(e); }
 }
+async function loadSamplePictures() {
+  try {
+    const s = await api("/api/workbench/bulk/sample-pictures");
+    if (!replaceRows(rowsText(s.rows), "the sample picture rows")) return;
+    W.bulk.pictureQuestions = s.questions;
+    W.bulk.source = "pictures";
+    W.bulk.dataset.id = null;
+    render();
+  } catch (e) { handleError(e); }
+}
 // Image URLs for the pictures rows name: samples from static files, uploads fetched once.
 async function loadPictureUrls(results) {
   const b = W.bulk;
@@ -1298,6 +1308,7 @@ function rowsPayload(rows = W.bulk.rowsText) {
 function bulkQuestions() {
   const b = W.bulk;
   if (b.source === "dataset" && b.dataset.questions) return b.dataset.questions;
+  if (b.source === "pictures" && b.pictureQuestions) return b.pictureQuestions;
   return b.source === "sample" ? b.sampleQuestions : toQuestions(W.questions);
 }
 
@@ -1320,6 +1331,7 @@ function renderBulk() {
           h("button", { class: "btn sm ghost", onclick: () => { b.csv.open = !b.csv.open; render(); if (b.csv.open) $("#csv-import")?.scrollIntoView({ behavior: "smooth", block: "start" }); } }, "Import CSV"),
           h("button", { class: "btn sm ghost", onclick: () => $("#bulk-pictures").click(), title: "Each picture becomes a row whose state names it as photo" }, "Add pictures"),
           h("input", { type: "file", id: "bulk-pictures", accept: "image/png,image/jpeg", multiple: true, hidden: true, onchange: (e) => addPictures(e.target) }),
+          h("button", { class: "btn sm ghost", onclick: loadSamplePictures }, "Sample pictures"),
           h("button", { class: "btn sm ghost", onclick: loadSampleRows }, "Load sample rows")),
         h("div", { class: "panel-body" }, rows,
           h("p", { class: "faint", style: { fontSize: "12px", marginTop: "8px" } }, "Put labels on a JSON row under ", h("code", {}, "\"_expect\""), ", keyed by question id: ",
@@ -1333,6 +1345,7 @@ function renderBulk() {
           h("div", { class: "panel-body grid", style: { gap: "10px" } },
             src("current", `Current Build questions (${Object.keys(current).length})`),
             src("sample", `Sample: support triage (${Object.keys(b.sampleQuestions || {}).length})`),
+            b.pictureQuestions ? src("pictures", `Sample: Claims photo checks (${Object.keys(b.pictureQuestions).length})`) : null,
             b.dataset.questions ? src("dataset", `Saved with “${b.dataset.name}” (${Object.keys(b.dataset.questions).length})`) : null,
             h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run. The sample rows carry labels for the sample questions."),
             h("div", {}, runBtn))),

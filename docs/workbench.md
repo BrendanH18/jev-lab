@@ -187,9 +187,9 @@ picture row cannot have its own `photo` field.
 
 **Add pictures** resizes the chosen PNG or JPEG files in the browser, as Build does, stores them under
 `data/workbench/images/` by a hash of their bytes, and adds one row per picture. Review those files
-before committing them. To try it without photos of your own, name the samples in rows and open the Claims
-demo's request in the Workbench (**Inspect JSON**, then **Open in Workbench**) for its photo questions, Box
-included.
+before committing them. **Sample pictures** loads Claims's four examples as labeled picture rows and
+offers Claims's photo questions, Box included, to run on them. The drawings are simple, so try your own
+photos too.
 
 Box questions run in Bulk when every row has a picture. Label a Box with its four edges, as fractions
 of the picture's width and height. Calibrate counts a Box answer as right when it overlaps its label

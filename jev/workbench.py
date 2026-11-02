@@ -403,6 +403,28 @@ def load_pictures(names: Any) -> Dict[str, dict]:
     return out
 
 
+def sample_picture_rows() -> List[dict]:
+    """Claims's examples as labeled picture rows, with Claims's photo questions (Box included). The states are the
+    ones the Claims demo sends; the labels say what the bundled drawings show, and where the damage is."""
+    from . import claims
+    from .world import World
+
+    orders = World().state["orders"]
+    # The damage in each drawing, as edge fractions of the 640x480 canvas (scripts/draw_samples.py).
+    where = {"torn-bag": {"left": 0.45, "top": 0.36, "right": 0.68, "bottom": 0.58},
+             "crushed-box": {"left": 0.51, "top": 0.37, "right": 0.74, "bottom": 0.69}}
+    rows = []
+    for ex in claims.EXAMPLES:
+        damaged = ex["sample"] in where
+        state = claims.state_for(ex["order"], orders[ex["order"]], ex["note"], "x")
+        del state[PHOTO_FIELD]
+        labels = {"shows_item": True, "damage_visible": damaged, "matches_note": damaged}
+        if damaged:
+            labels["damage_box"] = where[ex["sample"]]
+        rows.append(dict(state, **{IMAGE_KEY: ex["sample"], LABEL_KEY: labels}))
+    return rows
+
+
 def dataset_summary(dataset: dict) -> dict:
     """What the dataset list shows: the counts, without the rows."""
     rows = dataset.get("rows") or []

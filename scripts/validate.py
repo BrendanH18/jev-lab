@@ -200,6 +200,22 @@ def run(client: JevClient, out: dict) -> None:
                                                                  report["ece"], reach))
         out["calibrate"][qid] = {k: report[k] for k in ("accuracy", "labeled", "ece", "targets", "confusion", "classes")}
 
+    section("Bulk · sample picture rows (Claims's drawings) with Claims's questions, Box scored by overlap")
+    pictures = workbench.run_bulk(client, workbench.sample_picture_rows(), claims.questions())
+    out["bulk_pictures"] = pictures["results"]
+    for r in pictures["results"]:
+        a, labels = r.get("answers"), r.get("expect") or {}
+        if not a:
+            print("row %d error: %s" % (r["index"], r.get("error")))
+            continue
+        marks = []
+        for qid, label in labels.items():
+            if qid == "damage_box":
+                marks.append("box IoU %.2f" % calibrate.iou(label, a[qid]["box"]))
+            else:
+                said = a[qid]["noul"] >= 0.5
+                marks.append("%s=%s%s" % (qid, pct(a[qid]["noul"]).strip(), "" if said == label else " (label %s)" % label))
+        print("%-12s %s" % (r["row"]["_image"], " | ".join(marks)))
 
 
 def main() -> int:
