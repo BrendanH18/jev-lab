@@ -54,6 +54,7 @@ RULES = ("if department = billing then is_urgent = yes\n"
 def expected_rules(answer_set):
     """The rules Policy holds this row by, as written."""
     parsed = rules.parse(RULES)
+    rules.check(parsed, rules.kinds_from_questions(QUESTIONS))
     lines = rules.holding(parsed, answer_set)
     return [r["text"] for r in parsed if r["line"] in lines]
 

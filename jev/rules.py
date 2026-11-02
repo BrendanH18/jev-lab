@@ -109,8 +109,15 @@ def kinds_from_answers(rows: List[dict]) -> Dict[str, Tuple[str, List[str]]]:
 
 
 def check(rules: List[dict], kinds: Dict[str, Tuple[str, List[str]]]) -> None:
-    """CalibrationError when a rule names a question these answers lack, or an answer its question cannot give."""
+    """CalibrationError when a rule names a question these answers lack, or an answer its question cannot give.
+
+    It also writes a Noul condition's values as yes or no in place (`true` -> `yes`), by the question's kind, so a
+    condition then compares an answer literally: a Choice option named `true` stays itself. Check rules before
+    evaluating them."""
     for rule in rules:
+        for side in ("if", "then"):
+            rule[side] = [(q, op, [_yes_no(v) for v in vs] if kinds.get(q, ("",))[0] == "noul" else vs)
+                          for q, op, vs in rule[side]]
         for qid, op, values in rule["if"] + rule["then"]:
             where = "Rule on line %d" % rule["line"]
             if qid not in kinds:
@@ -120,8 +127,6 @@ def check(rules: List[dict], kinds: Dict[str, Tuple[str, List[str]]]) -> None:
                 raise CalibrationError("%s: %s compares levels, so it needs a Score question; %r is a %s"
                                        % (where, op, qid, qtype))
             for v in values:
-                if qtype == "noul":
-                    v = _yes_no(v)
                 if v not in allowed:
                     raise CalibrationError("%s: %r cannot answer %r; it answers %s"
                                            % (where, qid, v, ", ".join(allowed)))
@@ -140,8 +145,7 @@ def _holds(cond: Cond, shown: Dict[str, str]) -> Optional[bool]:
     if op in ORDERED:
         a, b = int(value), int(values[0])
         return {">=": a >= b, "<=": a <= b, ">": a > b, "<": a < b}[op]
-    wanted = {_yes_no(v) if value in ("yes", "no") else v for v in values}
-    return (value in wanted) if op in ("=", "in") else (value not in wanted)
+    return (value in values) if op in ("=", "in") else (value not in values)
 
 
 def broken(rule: dict, shown: Dict[str, str]) -> Optional[bool]:

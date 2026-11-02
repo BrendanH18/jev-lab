@@ -308,6 +308,7 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
     qtypes.update({q: s["type"] for q, s in questions.items() if s["type"] in policy.TYPES and q not in qtypes})
     ref_rows, new_rows = _read(reference, qtypes, signal), _read(new, qtypes, signal)
     parsed = rulebook.parse(check.get("rules"))
+    rulebook.check(parsed, rulebook.kinds_from_questions(questions))
     ref_routed, ref_auto = _route(ref_rows, gates, parsed)
     new_routed, new_auto = _route(new_rows, gates, parsed)
 

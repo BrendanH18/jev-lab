@@ -57,6 +57,15 @@ class ParseTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(CalibrationError):
                 rules.check(rules.parse(text), kinds)
 
+    def test_yes_no_aliases_apply_to_noul_questions_only(self):
+        kinds = {"flag": ("choice", ["yes", "true", "no"]), "refund": ("noul", ["yes", "no"]), "dept": ("choice", ["billing", "none"])}
+        choice_rule = rules.parse("if flag != true then dept = billing")
+        rules.check(choice_rule, kinds)
+        self.assertTrue(rules.broken(choice_rule[0], {"flag": "yes", "dept": "none"}), "a Choice option `true` is not `yes`")
+        noul_rule = rules.parse("if refund = TRUE then dept = billing")
+        rules.check(noul_rule, kinds)
+        self.assertEqual(noul_rule[0]["if"], [("refund", "=", ["yes"])])
+
     def test_broken_needs_every_if_and_a_failed_then(self):
         rule = rules.parse(RULE)[0]
         self.assertTrue(rules.broken(rule, {"refund": "yes", "dept": "none"}))

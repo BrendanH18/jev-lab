@@ -67,11 +67,8 @@ def _rules(text: Any, questions: Dict[str, dict]) -> List[dict]:
     except CalibrationError as err:
         raise WorkbenchError(str(err)) from err
 
-    def cond(c: tuple) -> list:
-        qid, op, values = c
-        return [qid, op, [rulebook._yes_no(v) for v in values] if questions[qid]["type"] == "noul" else values]
-
-    return [{"rule": r["text"], "if": [cond(c) for c in r["if"]], "then": [cond(c) for c in r["then"]]} for r in parsed]
+    # check() wrote each Noul value as yes or no, as decide() shows a Noul answer.
+    return [{"rule": r["text"], "if": [list(c) for c in r["if"]], "then": [list(c) for c in r["then"]]} for r in parsed]
 
 
 def _origin(source: Optional[dict]) -> str:
