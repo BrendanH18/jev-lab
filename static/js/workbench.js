@@ -2161,14 +2161,19 @@ async function rerule() {
   const text = r.text.trim();
   r.checked = text;  // the text this check reads, accepted or not
   if (!text || !b.result) { r.report = null; r.error = null; r.applied = ""; return; }
+  const check = (rules) => api("/api/workbench/rules", { rules, rows: policyRowsAll(), questions: b.ranQuestions || undefined });
   try {
-    const report = await api("/api/workbench/rules", { rules: text, rows: policyRowsAll(), questions: b.ranQuestions || undefined });
+    const report = await check(text);
     if (seq === ruleSeq) Object.assign(r, { report, error: null, applied: text });
   } catch (e) {
     if (seq !== ruleSeq) return;
     r.error = e.message || String(e);
-    // A refused edit keeps the rules accepted before it; rules that no longer fit this run are dropped.
-    if (text === r.applied) Object.assign(r, { report: null, applied: "" });
+    // A refused edit keeps the rules accepted before it, rechecked against this run; rules that no longer fit it are dropped.
+    if (!r.applied || text === r.applied) { Object.assign(r, { report: null, applied: "" }); return; }
+    try {
+      const report = await check(r.applied);
+      if (seq === ruleSeq) r.report = report;
+    } catch { if (seq === ruleSeq) Object.assign(r, { report: null, applied: "" }); }
   }
 }
 // Every answered row with all its answers and labels, for the rules report.
