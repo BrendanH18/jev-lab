@@ -1633,7 +1633,7 @@ function ordinalBlock(o, qid) {
     o.cuts.length ? h("p", { class: "faint", style: { fontSize: "12.5px" } },
       "An application often acts on the expected score rather than one level, for example ",
       h("code", {}, `result.scores[${key}].score >= ${o.cuts[o.cuts.length - 1].cut.toFixed(2)}`),
-      ". Each cut is the one that agrees best with the labels on these rows, so its accuracy is optimistic until you check it on rows it was not chosen on.") : null);
+      ". Each cut is the one on a 0.05 grid that agrees best with the labels on these rows, so its accuracy is optimistic until you check it on rows it was not chosen on. The coarse grid keeps a cut from fitting the gap between two rows.") : null);
 }
 
 function invalidNote(rep) {

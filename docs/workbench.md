@@ -256,8 +256,9 @@ question, Calibrate also shows how far off its answers are:
 - how often the most likely level is within one level of the label, with a 95% interval;
 - the mean error, in levels, of the most likely level and of the expected score (the
   probability-weighted level the answer returns as `score`);
-- for each level k above the lowest, the cut on the expected score that best decides "the label is k
-  or above" on these rows: an application that escalates when `score >= 1.5` acts on such a cut.
+- for each level k above the lowest, the cut on the expected score, in steps of 0.05, that best
+  decides "the label is k or above" on these rows: an application that escalates when `score >= 1.5`
+  acts on such a cut. The coarse steps keep a cut from fitting the gap between two rows.
   The table gives the cut's accuracy over every labeled row, how many rows it flags, and how many are
   labeled k or above. A level with no rows on one side of it gets no cut.
 
