@@ -643,10 +643,14 @@ async function addPictures(input) {
   input.value = "";
   if (!files.length) return;
   try {
-    const prepared = [];
-    for (const file of files.slice(0, 20)) prepared.push(await prepareImage(file));
-    const { names } = await api("/api/workbench/pictures", { pictures: prepared.map((x) => ({ data_base64: x.data_base64 })) });
-    names.forEach((name, i) => { W.bulk.pictures[name] = prepared[i].url; });
+    // One picture per request: a few detailed photos together could pass the server's request size limit.
+    const names = [];
+    for (const file of files.slice(0, 20)) {
+      const picture = await prepareImage(file);
+      const [name] = (await api("/api/workbench/pictures", { pictures: [{ data_base64: picture.data_base64 }] })).names;
+      W.bulk.pictures[name] = picture.url;
+      names.push(name);
+    }
     const b = W.bulk;
     const added = names.map((name) => ({ note: "", _image: name }));
     const current = rowsPayload();  // a JSON array stays an array of rows; lines stay lines
