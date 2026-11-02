@@ -879,7 +879,8 @@ function checkReport(rep) {
 // ---------- Drift ----------
 // jev/drift.py runs the dataset's rows and the new rows, both live, and compares them through the check's gate: the share
 // automated, each question's answers and confidence, and an estimated accuracy on the new rows, which need no labels.
-const lineCount = (text) => text.split("\n").filter((l) => l.trim()).length;
+// The rows box's formats: one row per line, or a JSON array of rows (rowsPayload parses it as Bulk does).
+const lineCount = (text) => { const rows = rowsPayload(text); return Array.isArray(rows) ? rows.length : rows.split("\n").filter((l) => l.trim()).length; };
 
 function driftForm(x, run) {
   const d = run.drift;
@@ -911,7 +912,7 @@ async function runDrift(id) {
   run.drift.report = null;
   render();
   try {
-    run.drift.report = await api("/api/workbench/checks/drift", { id, rows: run.drift.text, model: run.model.trim() || undefined });
+    run.drift.report = await api("/api/workbench/checks/drift", { id, rows: rowsPayload(run.drift.text), model: run.model.trim() || undefined });
   } catch (e) { handleError(e); }
   run.drift.running = false;
   render();
@@ -1242,8 +1243,7 @@ function countRows(text) {
 }
 
 // The rows box as the server takes it: a JSON array, or the text itself (one row per line).
-function rowsPayload() {
-  const rows = W.bulk.rowsText;
+function rowsPayload(rows = W.bulk.rowsText) {
   if (/^\[/.test(rows.trim())) { try { return JSON.parse(rows); } catch { /* keep text */ } }
   return rows;
 }

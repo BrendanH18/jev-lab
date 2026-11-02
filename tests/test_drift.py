@@ -345,6 +345,8 @@ class ScriptTests(Temp):
         code, out = self.main("tickets", "--drift", str(self.dir / "missing.jsonl"), client=self.configured())
         self.assertEqual(code, 2)
         self.assertIn("Cannot read", out)
+        code, out = self.main("tickets", "--drift", "", client=self.configured())
+        self.assertEqual((code, "Cannot read" in out), (2, True), "an empty path never falls back to the plain check")
         code, out = self.main("tickets", "--drift", self.rows_file([""], "empty.jsonl"), client=self.configured())
         self.assertEqual((code, "Paste the new rows" in out), (2, True))
         nokey = self.configured()

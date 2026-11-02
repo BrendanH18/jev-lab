@@ -204,7 +204,7 @@ def main(argv=None) -> int:
     if args.list:
         print_list(with_checks[i] for i in ids)
         return 0
-    if args.drift:
+    if args.drift is not None:  # an empty path is an error, not a request for the ordinary check
         return run_drift(args, with_checks)
 
     client = JevClient()
