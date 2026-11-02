@@ -1,5 +1,6 @@
 """Calibrate is arithmetic over answers Bulk already returned; these tests pin that arithmetic."""
 
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -228,6 +229,38 @@ class IntervalTests(unittest.TestCase):
         for target in calibrate.TARGETS:
             self.assertIsNone(lower[target]["threshold"])
             self.assertEqual(lower[target]["needed"], calibrate.rows_needed(target))
+
+    def test_automated_needed_is_the_fewest_rows_at_an_accuracy(self):
+        # At a perfect accuracy this is rows_needed; below or at the target no number of rows is enough.
+        for target in calibrate.TARGETS:
+            self.assertEqual(calibrate.automated_needed(1.0, target), calibrate.rows_needed(target))
+            self.assertIsNone(calibrate.automated_needed(target, target))
+        n = calibrate.automated_needed(0.97, 0.95)
+        self.assertGreaterEqual(calibrate.wilson(0.97 * n, n)[0], 0.95)
+        self.assertLess(calibrate.wilson(0.97 * (n - 1), n - 1)[0], 0.95)
+        self.assertIsNone(calibrate.automated_needed(0.9501, 0.95))  # millions of rows: past PLAN_LIMIT
+
+    def test_plan_smooths_accuracy_and_picks_the_fewest_more_rows(self):
+        # 3 of 3 right smooths to 80%, which cannot show 90%; 20 of 20 smooths to 95.5% and needs 92 automated
+        # rows, 92 / (20 / 21) = 96.6, so 76 more labeled rows.
+        found = calibrate.plan([(21, 20), (20, 20), (3, 3)], 21, 0.9)
+        self.assertEqual(found["index"], 1)
+        self.assertAlmostEqual(found["accuracy"], 21 / 22)
+        need = calibrate.automated_needed(21 / 22, 0.9)
+        self.assertEqual(found["automated"], need)
+        self.assertEqual(found["more"], math.ceil(need * 21 / 20) - 21)
+        self.assertIsNone(calibrate.plan([(3, 3), (0, 0)], 3, 0.9))
+
+    def test_a_lower_bound_target_that_is_not_shown_carries_a_plan(self):
+        # The 20 clean rows above threshold 0.21 cannot show 95% yet; the plan names that threshold.
+        data = rows(*[(choice("billing", 0.9, 0.9), "billing")] * 20 + [(choice("none", 0.5, 0.2), "billing")])
+        lower = {t["target"]: t for t in calibrate.evaluate(data, bound="lower")["targets"]}
+        plan = lower[0.95]["plan"]
+        self.assertEqual(plan["threshold"], 0.21)
+        self.assertEqual(plan["more"], calibrate.plan([(20, 20)], 21, 0.95)["more"])
+        self.assertNotIn("index", plan)
+        # Measured targets and reached targets carry none.
+        self.assertTrue(all(t["plan"] is None for t in calibrate.evaluate(data)["targets"]))
 
     def test_a_lower_bound_target_can_include_a_wrong_row_when_there_are_enough_rows(self):
         # 60 right rows and one wrong row: 98.4% measured, and the 95% lower bound is 91.3%.

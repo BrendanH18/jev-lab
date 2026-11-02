@@ -364,15 +364,25 @@ def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimat
     calibrate.check_bound(bound)
     qids, _, levels, right = prepared(rows, qids, signal)
     out = []
+    path = None
     for target, steps in zip(TARGETS, search(levels, right, bound)):
         if steps is None:
-            out.append({"target": target, "gates": None, "automated": 0, "coverage": 0.0, "accuracy": None,
-                        "low": None, "high": None, "needed": calibrate.rows_needed(target)})
+            entry = {"target": target, "gates": None, "automated": 0, "coverage": 0.0, "accuracy": None,
+                     "low": None, "high": None, "needed": calibrate.rows_needed(target), "plan": None}
+            if bound == "lower" and levels:
+                # How many more labeled rows would show it, for the thresholds along the greedy search's path.
+                path = path or _greedy(levels, right, len(qids))
+                found = calibrate.plan([(auto, good) for _, auto, good in path], len(levels), target)
+                if found:
+                    found["gates"] = {q: path[found["index"]][0][j] / STEPS for j, q in enumerate(qids)}
+                    del found["index"]
+                    entry["plan"] = found
+            out.append(entry)
             continue
         auto = admitted(levels, steps)
         good = sum(right[i] for i in auto)
         low, high = calibrate.wilson(good, len(auto))
         out.append({"target": target, "gates": {q: steps[j] / STEPS for j, q in enumerate(qids)},
                     "automated": len(auto), "coverage": len(auto) / len(levels), "accuracy": good / len(auto),
-                    "low": low, "high": high, "needed": calibrate.rows_needed(target)})
+                    "low": low, "high": high, "needed": calibrate.rows_needed(target), "plan": None})
     return {"signal": signal, "bound": bound, "labeled": len(levels), "targets": out}
