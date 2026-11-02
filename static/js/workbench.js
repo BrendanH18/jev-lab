@@ -648,8 +648,10 @@ async function addPictures(input) {
     const { names } = await api("/api/workbench/pictures", { pictures: prepared.map((x) => ({ data_base64: x.data_base64 })) });
     names.forEach((name, i) => { W.bulk.pictures[name] = prepared[i].url; });
     const b = W.bulk;
-    const lines = names.map((name) => JSON.stringify({ note: "", _image: name }));
-    b.rowsText = [b.rowsText.trim(), ...lines].filter(Boolean).join("\n");
+    const added = names.map((name) => ({ note: "", _image: name }));
+    const current = rowsPayload();  // a JSON array stays an array of rows; lines stay lines
+    b.rowsText = Array.isArray(current) ? rowsText([...current, ...added])
+      : [b.rowsText.trim(), ...added.map((x) => JSON.stringify(x))].filter(Boolean).join("\n");
     markUnsaved();
     if (files.length > 20) toast("Added the first 20 pictures; add the rest in another batch.", "error");
     else toast(`Added ${names.length} picture row${names.length > 1 ? "s" : ""}. Saved under data/workbench/images.`);
