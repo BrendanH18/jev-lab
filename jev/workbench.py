@@ -9,6 +9,7 @@ their labels can be saved as datasets in data/workbench/datasets/.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import statistics
@@ -33,6 +34,11 @@ SLUG = re.compile(r"[^a-z0-9]+")
 IMAGE_FILE = re.compile(r"[0-9a-f]{16}\.(png|jpg)")
 QUESTION_TYPES = ("noul", "choice", "score", "box")
 LABEL_KEY = "_expect"  # a bulk row's labels: removed before the call, returned beside the answers
+# A bulk row's picture: a bundled sample's name or a file in data/workbench/images. It is sent as an image asset,
+# and the row's state names it under PHOTO_FIELD, so questions can say `photo` as Claims's do.
+IMAGE_KEY = "_image"
+PHOTO_FIELD = "photo"
+MAX_SAVED_PICTURES = 20  # pictures stored per request
 
 
 class WorkbenchError(ValueError):
@@ -329,8 +335,93 @@ def validate_rows(rows: Any) -> List[Any]:
         state, _labels = split_labels(row, number)
         try:
             validate_state(state)
+            row_picture(state)
         except WorkbenchError as err:
             raise WorkbenchError("Row %d: %s" % (number, err))
+    return rows
+
+
+def picture_name(name: Any) -> str:
+    """A row picture's name, checked: a bundled sample, or a file saved in data/workbench/images."""
+    if isinstance(name, str) and (name in images.SAMPLES or IMAGE_FILE.fullmatch(name)):
+        return name
+    raise WorkbenchError("%s must name a sample picture (%s) or a picture saved with Add pictures"
+                         % (IMAGE_KEY, ", ".join(images.SAMPLES)))
+
+
+def row_picture(row: Any) -> Optional[str]:
+    """The picture a row names under IMAGE_KEY, or None. A picture row is an object without its own PHOTO_FIELD."""
+    if not isinstance(row, dict) or IMAGE_KEY not in row:
+        return None
+    if PHOTO_FIELD in row:
+        raise WorkbenchError("a row with %s cannot also have its own %r field: the picture is sent under it"
+                             % (IMAGE_KEY, PHOTO_FIELD))
+    return picture_name(row[IMAGE_KEY])
+
+
+def picture_asset(name: str) -> dict:
+    """The image asset for a row picture's name."""
+    name = picture_name(name)
+    try:
+        if name in images.SAMPLES:
+            return images.sample_asset(name)
+        return item_image({"file": name})
+    except images.ImageError as err:
+        raise WorkbenchError(str(err)) from err
+
+
+def save_pictures(uploads: Any) -> List[str]:
+    """Store browser uploads ({"data_base64"}) under data/workbench/images by hash; return their names."""
+    if not isinstance(uploads, list) or not uploads:
+        raise WorkbenchError("pictures must be a nonempty list")
+    if len(uploads) > MAX_SAVED_PICTURES:
+        raise WorkbenchError("At most %d pictures at a time" % MAX_SAVED_PICTURES)
+    names = []
+    for number, spec in enumerate(uploads, 1):
+        if not isinstance(spec, dict) or spec.get("sample"):
+            raise WorkbenchError("Picture %d must be an uploaded image" % number)
+        try:
+            entry = images.parse_upload(spec)
+        except images.ImageError as err:
+            raise WorkbenchError("Picture %d: %s" % (number, err)) from err
+        name = "%s.%s" % (entry["sha"], entry["format"])
+        images_dir().mkdir(parents=True, exist_ok=True)
+        if not (images_dir() / name).exists():
+            (images_dir() / name).write_bytes(entry["data"])
+        names.append(name)
+    return names
+
+
+def load_pictures(names: Any) -> Dict[str, dict]:
+    """{name: {"format", "data_base64"}} for row pictures, so the browser can show them."""
+    if not isinstance(names, list) or len(names) > MAX_BULK_ROWS:
+        raise WorkbenchError("names must be a list of up to %d pictures" % MAX_BULK_ROWS)
+    out = {}
+    for name in dict.fromkeys(names):
+        entry = picture_asset(name)
+        out[name] = {"format": entry["format"], "data_base64": images.wire_asset(entry)["data_base64"]}
+    return out
+
+
+def sample_picture_rows() -> List[dict]:
+    """Claims's examples as labeled picture rows, with Claims's photo questions (Box included). The states are the
+    ones the Claims demo sends; the labels say what the bundled drawings show, and where the damage is."""
+    from . import claims
+    from .world import World
+
+    orders = World().state["orders"]
+    # The damage in each drawing, as edge fractions of the 640x480 canvas (scripts/draw_samples.py).
+    where = {"torn-bag": {"left": 0.45, "top": 0.36, "right": 0.68, "bottom": 0.58},
+             "crushed-box": {"left": 0.51, "top": 0.37, "right": 0.74, "bottom": 0.69}}
+    rows = []
+    for ex in claims.EXAMPLES:
+        damaged = ex["sample"] in where
+        state = claims.state_for(ex["order"], orders[ex["order"]], ex["note"], "x")
+        del state[PHOTO_FIELD]
+        labels = {"shows_item": True, "damage_visible": damaged, "matches_note": damaged}
+        if damaged:
+            labels["damage_box"] = where[ex["sample"]]
+        rows.append(dict(state, **{IMAGE_KEY: ex["sample"], LABEL_KEY: labels}))
     return rows
 
 
@@ -417,6 +508,8 @@ def save_dataset(spec: dict) -> dict:
         except WorkbenchError as err:
             dropped = str(err)
     dataset["rows"] = validate_rows(spec.get("rows"))
+    if dataset.get("questions"):  # a dataset reruns its questions, so a Box question needs a picture on every row
+        _need_pictures([split_labels(r, i + 1) for i, r in enumerate(dataset["rows"])], dataset["questions"])
     write_dataset(dataset)
     return dict(dataset, check_dropped=dropped) if dropped else dataset
 
@@ -538,10 +631,16 @@ def split_labels(row: Any, number: int) -> tuple:
 
 
 def bulk_questions(questions: Any) -> Dict[str, dict]:
-    questions = validate_questions(questions)
+    """Questions for Bulk. Box questions are allowed here; a run checks that every row has a picture for them."""
+    return validate_questions(questions)
+
+
+def _need_pictures(split: List[tuple], questions: Dict[str, dict]) -> None:
     if has_box(questions):
-        raise WorkbenchError("Bulk rows are text, and Box questions need an image. Remove the Box questions first.")
-    return questions
+        bare = [i + 1 for i, (row, _) in enumerate(split) if row_picture(row) is None]
+        if bare:
+            raise WorkbenchError("Box questions need a picture on every row: row %d has no %s. Add pictures, or "
+                                 "remove the Box questions." % (bare[0], IMAGE_KEY))
 
 
 def _split_rows(rows: List[Any]) -> List[tuple]:
@@ -549,7 +648,13 @@ def _split_rows(rows: List[Any]) -> List[tuple]:
     rows = [r for r in rows if r not in (None, "")][:MAX_BULK_ROWS]
     if not rows:
         raise WorkbenchError("No rows to run")
-    return [split_labels(row, i + 1) for i, row in enumerate(rows)]
+    split = [split_labels(row, i + 1) for i, row in enumerate(rows)]
+    for i, (row, _) in enumerate(split):
+        try:
+            row_picture(row)
+        except WorkbenchError as err:
+            raise WorkbenchError("Row %d: %s" % (i + 1, err)) from err
+    return split
 
 
 def _row_base(split: List[tuple], index: int) -> dict:
@@ -558,9 +663,25 @@ def _row_base(split: List[tuple], index: int) -> dict:
 
 
 def _state(split: List[tuple], index: int, field: str) -> Any:
-    """The state a row is sent as: a JSON row as it is, a text row under `field`."""
+    """The state a row is sent as: a JSON row as it is, a text row under `field`. A picture row's IMAGE_KEY is
+    replaced by PHOTO_FIELD naming its image (see _picture)."""
     row = split[index][0]
+    picture = row_picture(row)
+    if picture is not None:
+        row = {k: v for k, v in row.items() if k != IMAGE_KEY}
+        row[PHOTO_FIELD] = _ref(picture)
     return row if isinstance(row, (dict, list)) else {field: row}
+
+
+def _ref(picture: str) -> str:
+    """The asset reference a row picture is sent under: stable per picture, and a valid reference."""
+    return "photo_" + hashlib.sha256(picture.encode("utf-8")).hexdigest()[:16]
+
+
+def _picture(split: List[tuple], index: int) -> Optional[Dict[str, dict]]:
+    """{reference: asset} for a picture row, else None."""
+    picture = row_picture(split[index][0])
+    return {_ref(picture): picture_asset(picture)} if picture is not None else None
 
 
 def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
@@ -571,6 +692,7 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
     row, the outcome also holds the state it sent as "input". A missing key or exhausted budget stops new
     calls; other errors stay with their row.
     """
+    pictures = [_picture(split, i) for i in range(len(split))]  # read once, so a missing file fails before any call
     stop = threading.Event()
     stopped = {"error": None}
     lock = threading.Lock()
@@ -581,10 +703,12 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
         sent = {}
         if kind:
             rewritten = perturb.apply(kind, state, index)
+            if isinstance(rewritten, dict) and isinstance(state, dict) and PHOTO_FIELD in state:
+                rewritten[PHOTO_FIELD] = state[PHOTO_FIELD]  # rewrite the words, never the picture's reference
             if perturb.changed(state, rewritten):
                 state, sent = rewritten, {"input": rewritten}
         try:
-            result = client.system_one(state, questions, model=model)
+            result = client.system_one(state, questions, model=model, assets=pictures[index])
             return dict(sent, answers=result.answers, meta=result.meta())
         except JevError as err:
             if err.status in (401, 402):
@@ -602,6 +726,7 @@ def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "t
     """Every row with the same questions. model: None asks the current model."""
     questions = bulk_questions(questions)
     split = _split_rows(rows)
+    _need_pictures(split, questions)
     started = time.perf_counter()
     outcomes, stopped = _run_jobs(client, split, [(i, questions, model, None) for i in range(len(split))], field)
     results = [dict(_row_base(split, i), **outcome) for i, outcome in enumerate(outcomes)]
@@ -671,6 +796,8 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     models = [v["model"] or client.model for v in variants]
     asked = [[v["questions"]] + ([orders.reverse_options(v["questions"])] if v["average_orders"] else []) for v in variants]
     split = _split_rows(rows)
+    for v in variants:
+        _need_pictures(split, v["questions"])
     started = time.perf_counter()
     jobs = [(i, questions, model, v["perturb"]) for i in range(len(split))
             for v, model, sets in zip(variants, models, asked) for questions in sets]

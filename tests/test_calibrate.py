@@ -171,12 +171,31 @@ class InputTests(unittest.TestCase):
         self.assertEqual(len(r["confusion"]), 3)
 
     def test_rejects_requests_it_cannot_answer(self):
-        for bad in (None, "rows", [], [{"answer": {"type": "box", "box": {}}, "label": "x"}],
+        for bad in (None, "rows", [], [{"answer": {"type": "bbox", "box": {}}, "label": "x"}],
                     rows(({"type": "noul", "noul": 0.5}, True), (choice("billing", 0.9), "billing"))):
             with self.subTest(bad=bad), self.assertRaises(calibrate.CalibrationError):
                 calibrate.evaluate(bad)
         with self.assertRaises(calibrate.CalibrationError):
             calibrate.evaluate(rows((choice("billing", 0.9), "billing")), "vibes")
+
+    def test_box_answers_are_right_when_they_overlap_their_label(self):
+        def box(left, top, right, bottom, confidence):
+            return {"type": "box", "box": {"left": left, "top": top, "right": right, "bottom": bottom}, "confidence": confidence}
+        label = {"left": 0.2, "top": 0.2, "right": 0.6, "bottom": 0.6}
+        r = calibrate.evaluate(rows(
+            (box(0.2, 0.2, 0.6, 0.6, 0.9), label),          # the same box: IoU 1
+            (box(0.25, 0.2, 0.6, 0.6, 0.8), label),         # IoU 0.875
+            (box(0.4, 0.4, 0.8, 0.8, 0.3), label),          # IoU 1/7: wrong, and unsure
+            (box(0.2, 0.2, 0.6, 0.6, 0.7), {"left": 0.5, "top": 0, "right": 0.4, "bottom": 1}),  # left > right
+            (box(0.2, 0.2, 0.6, 0.6, 0.7), None)))
+        self.assertEqual((r["type"], r["labeled"], r["correct"], r["unlabeled"], len(r["invalid"])), ("box", 3, 2, 1, 1))
+        self.assertEqual((r["classes"], r["confusion"], r["iou_right"]), ([], [], 0.5))
+        self.assertAlmostEqual(r["iou_mean"], (1 + 0.875 + 1 / 7) / 3)
+        self.assertEqual(r["rows"][0]["predicted"], "0.20, 0.20, 0.60, 0.60")
+        by_t = {p["threshold"]: p for p in r["sweep"]}
+        self.assertEqual((by_t[0.31]["automated"], by_t[0.31]["accuracy"]), (2, 1.0), "the gate reads the Box's confidence")
+        self.assertEqual(calibrate.evaluate(rows((box(0.2, 0.2, 0.6, 0.6, 0.9), label)), "top_probability")["signals"], {"0": 0.9})
+        self.assertAlmostEqual(calibrate.iou(label, {"left": 0.4, "top": 0.2, "right": 0.8, "bottom": 0.6}), 1 / 3)
 
     def test_no_labels_still_reports_shape(self):
         r = calibrate.evaluate(rows((choice("billing", 0.9), None)))

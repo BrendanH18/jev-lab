@@ -109,6 +109,8 @@ conditions.
   Each finding links to TypeSafe's guide. It is plain code and makes no model call.
 - **Test:** save a run with editable expectations, then rerun after changing questions or models.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
+  A row can carry a picture, a sample or one of your own, so photo questions and Box questions run in
+  bulk too, and Calibrate scores a Box answer by how much it overlaps its label.
 - **Import CSV:** bring rows in from a spreadsheet. Choose which columns the model reads and which hold
   labels for which question. Label values that fit no answer are listed rather than guessed. It makes
   no model calls.
