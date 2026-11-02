@@ -171,24 +171,25 @@ def _gates(qids: List[str], steps: Optional[List[int]]) -> Optional[dict]:
     return None if steps is None else {q: steps[j] / STEPS for j, q in enumerate(qids)}
 
 
-def prepared(rows: Any, qids: Any, signal: str, costs: Any) -> Tuple[List[str], dict, List[List[int]], List[bool], List[float], dict]:
+def prepared(rows: Any, qids: Any, signal: str, costs: Any,
+             rules: Any = None) -> Tuple[List[str], dict, List[List[int]], List[bool], List[float], dict]:
     """policy.prepared, plus each scored row's price when automated and the parsed prices."""
     prices = parse(costs)
-    qids, data, levels, right = policy.prepared(rows, qids, signal)
+    qids, data, levels, right = policy.prepared(rows, qids, signal, rules)
     return qids, data, levels, right, row_costs(data["scored"], qids, prices), prices
 
 
 def evaluate(rows: Any, qids: Any, signal: str = "confidence", costs: Any = None, gates: Any = None,
-             tune: bool = True) -> dict:
+             tune: bool = True, rules: Any = None) -> dict:
     """rows: Policy's rows. The cheapest thresholds on `qids` (unless `tune` is false: a slider moving needs only
     the current cost), what reviewing or automating every row costs, and, with `gates` ({qid: threshold} over the
     same questions), what those thresholds cost. With one question, the cost at every threshold on the grid."""
-    qids, data, levels, right, priced, prices = prepared(rows, qids, signal, costs)
+    qids, data, levels, right, priced, prices = prepared(rows, qids, signal, costs, rules)
     if gates is not None:
         gates = policy._gates(gates)
         if set(gates) != set(qids):
             raise CalibrationError("gates must set a threshold for each of the questions")
-    n = len(levels)
+    n = len(levels) + len(data["held"])  # a row a rule holds costs a review whatever the thresholds
     review = prices["review"]
     applied = sorted({k for k in prices["mistakes"] if k[0] in qids})
     out = {"signal": signal, "questions": qids, "labeled": n, "unlabeled": data["unlabeled"], "invalid": data["invalid"],
@@ -199,7 +200,7 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", costs: Any = None
            "review_all": None, "automate_all": None, "best": None, "current": None, "sweep": None}
     if not n:
         return out
-    every = list(range(n))
+    every = list(range(len(levels)))
     out.update(review_all=measure([], right, priced, review, n), automate_all=measure(every, right, priced, review, n))
     if tune:
         steps = search(levels, [review - c for c in priced])
@@ -219,22 +220,25 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", costs: Any = None
 
 
 def holdout(levels: List[List[int]], right: List[bool], priced: List[float], review: float, qids: List[str],
-            members: List[List[int]]) -> dict:
+            members: List[List[int]], sizes: Optional[List[int]] = None) -> dict:
     """Cross-validate the cheapest thresholds: for each fold, search on the other folds and route the fold with the
-    result. members[f] lists fold f's row indices into levels."""
-    n = len(levels)
+    result. members[f] lists fold f's row indices into levels; sizes[f], when given, also counts its rows a rule
+    holds, which are always reviewed."""
+    sizes = sizes or [len(m) for m in members]
+    n = sum(sizes)
     value = [review - c for c in priced]
     whole = search(levels, value)
     tuned = measure(policy.admitted(levels, whole) if whole is not None else [], right, priced, review, n)
     unseen: List[int] = []
     parts = []
     for f, held in enumerate(members):
+        size = sizes[f]
         train = [i for g, rows in enumerate(members) if g != f for i in rows]
         steps = search([levels[i] for i in train], [value[i] for i in train])
         auto = [] if steps is None else [i for i in held if all(v >= s for v, s in zip(levels[i], steps))]
         unseen.extend(auto)
-        part = measure(list(range(len(auto))), [right[i] for i in auto], [priced[i] for i in auto], review, len(held))
-        parts.append(dict(part, rows=len(held), gates=_gates(qids, steps)))
+        part = measure(list(range(len(auto))), [right[i] for i in auto], [priced[i] for i in auto], review, size)
+        parts.append(dict(part, rows=size, gates=_gates(qids, steps)))
     held_out = measure(unseen, right, priced, review, n)
     chosen = [p["gates"] for p in parts if p["gates"] is not None]
     spread = {q: [min(g[q] for g in chosen), max(g[q] for g in chosen)] for q in qids} if chosen else None

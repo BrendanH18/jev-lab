@@ -43,7 +43,9 @@ def pct(value) -> str:
 
 
 def gates_text(check: dict) -> str:
-    return ", ".join("%s>=%.2f" % (q, t) for q, t in check["gates"].items())
+    rules = len(check["rules"].splitlines()) if check.get("rules") else 0
+    held = ", rows that break any of %d rule%s held" % (rules, "s" if rules > 1 else "") if rules else ""
+    return ", ".join("%s>=%.2f" % (q, t) for q, t in check["gates"].items()) + held
 
 
 def targets_text(check: dict) -> str:

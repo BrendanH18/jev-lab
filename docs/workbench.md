@@ -381,6 +381,45 @@ each label joins Calibrate's scored rows.
 `distance` to the threshold, and whether it is `above` it; and per-question counts of labeled,
 disagreeing, strong, and invalid labels.
 
+## Check answers against each other
+
+Each question is asked on its own, so nothing stops a row from coming back as a refund request
+routed to the team that handles nothing. **Rules**, between Review labels and Policy, check what a
+row's answers may say together. Write one rule per line:
+
+```text
+# refunds go to the teams that handle money
+if wants_refund = yes then department in billing, shipping
+if department = none then is_urgent = no
+if frustration >= 2 then is_urgent = yes
+```
+
+A row breaks a rule when every condition after `if` holds and some condition after `then` does not.
+Conditions compare an answer as Calibrate reads it: a Choice's option, a Noul's `yes` or `no` (`true`
+and `false` work too), and a Score's most likely level. They use `=`, `!=`, `in a, b`, `not in a, b`,
+and, for Score levels, `>=`, `<=`, `>`, and `<`, joined with `and`. A line starting with `#` is a
+comment. A question id in a rule cannot contain spaces. Rules are checked against the questions:
+a rule that names a question or an answer the run does not have is refused, with the line it is on.
+
+**Check rules** reads the Bulk answers in code, without model calls, and shows for each rule:
+
+- how many rows it applies to and which of them break it. These rows have a wrong answer, or the
+  rule is wrong, so they are worth a look even when nobody labeled them;
+- how many rows cannot be checked, because an answer the rule needs is missing or unreadable;
+- on rows labeled for all of the rule's questions, how often an answer to those questions is wrong
+  when the row breaks the rule and when it keeps it, with Fisher's exact test. A rule worth keeping
+  catches wrong answers more often than chance;
+- how many rows' labels break it. Then the rule, not the answers, is probably wrong.
+
+With **Policy sends rows that break a rule to review** checked (the default), Policy holds a row that
+breaks a rule, or cannot be checked against one, whatever its confidence. Such rows still count among
+the labeled rows, so the share automated drops while accuracy can rise. Tune, the costs, the check on
+unseen rows, **Save as a check**, and **Export as a module** use the same rules. A saved check keeps
+them, so **Run check**, **Compare new rows**, and `scripts/check.py` apply them on every run. The
+exported `decide(state)` returns the rules a row breaks under `rules` and routes it to review.
+Calibrate measures one question alone and ignores rules. Rules are saved with a dataset, comments
+included.
+
 ## Gate several questions at once
 
 Calibrate chooses a threshold for one question. An application usually acts on an item only when

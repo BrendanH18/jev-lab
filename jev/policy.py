@@ -16,6 +16,9 @@ time, exactly, while that automates more rows. For one or two questions the resu
 grid; for more it is a local search, not a proof that no better combination exists. With bound="lower" a
 target counts as met only when the automated rows' 95% Wilson lower bound reaches it, so a few automated
 rows cannot claim a high accuracy.
+
+With `rules` (text, see jev/rules.py), a row whose answers break a rule, or cannot be checked against one, goes
+to review whatever its signals: it still counts among the rows, but no threshold automates it.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import calibrate
+from . import calibrate, rules as rulebook
 from .calibrate import STEPS, TARGETS, CalibrationError
 
 MAX_GATES = 10
@@ -80,11 +83,21 @@ def _types(rows: List[dict], qids: List[str]) -> Dict[str, str]:
     return types
 
 
-def _prepare(rows: List[dict], qids: List[str], signal: str) -> dict:
-    """Read every row once: its gating signals, and for rows labeled on every gated question, which answers are right."""
+def _rules(text: Any, rows: List[dict]) -> List[dict]:
+    """Parsed rules, checked against the answers' own options and levels."""
+    parsed = rulebook.parse(text)
+    if parsed:
+        rulebook.check(parsed, rulebook.kinds_from_answers(rows))
+    return parsed
+
+
+def _prepare(rows: List[dict], qids: List[str], signal: str, rules: Any = None) -> dict:
+    """Read every row once: its gating signals, the rules it breaks, and for rows labeled on every gated question,
+    which answers are right."""
     if signal not in calibrate.SIGNALS:
         raise CalibrationError("signal must be one of %s" % ", ".join(calibrate.SIGNALS))
     types = _types(rows, qids)
+    parsed = _rules(rules, rows)
     routed, scored, invalid = [], [], []
     unlabeled = skipped = 0
     for row in rows:
@@ -115,7 +128,8 @@ def _prepare(rows: List[dict], qids: List[str], signal: str) -> dict:
         if len(signals) < len(qids):
             skipped += 1
             continue
-        item = {"index": index, "signals": signals, "key": row.get("key")}  # key: the row's input, for Holdout's folds
+        item = {"index": index, "signals": signals, "key": row.get("key"),  # key: the row's input, for Holdout's folds
+                "rules": rulebook.holding(parsed, row["answers"]) if parsed else []}
         routed.append(item)
         if reason:
             invalid.append({"index": index, "reason": reason})
@@ -124,35 +138,39 @@ def _prepare(rows: List[dict], qids: List[str], signal: str) -> dict:
         else:
             item.update(right=right, shown=shown)
             scored.append(item)
-    return {"types": types, "routed": routed, "scored": scored, "invalid": invalid,
+    return {"types": types, "rules": [r["text"] for r in parsed], "routed": routed, "scored": scored, "invalid": invalid,
             "unlabeled": unlabeled, "skipped": skipped}
 
 
 def _clears(item: dict, gates: Dict[str, float]) -> bool:
-    return all(item["signals"][q] + EPS >= t for q, t in gates.items())
+    """Whether the gate automates this row: every signal clears its threshold and no rule holds it."""
+    return not item["rules"] and all(item["signals"][q] + EPS >= t for q, t in gates.items())
 
 
-def evaluate(rows: Any, gates: Any, signal: str = "confidence") -> dict:
-    """rows: [{"index": int, "answers": {qid: answer}, "labels": {qid: label}}]. gates: {qid: threshold}."""
+def evaluate(rows: Any, gates: Any, signal: str = "confidence", rules: Any = None) -> dict:
+    """rows: [{"index": int, "answers": {qid: answer}, "labels": {qid: label}}]. gates: {qid: threshold}.
+    rules: text (jev/rules.py); rows whose answers break one go to review. Their answers to the rules' questions
+    must be in `answers` too."""
     gates = _gates(gates)
     qids = list(gates)
-    data = _prepare(_rows(rows), qids, signal)
+    data = _prepare(_rows(rows), qids, signal, rules)
     scored = data["scored"]
     per = {q: {"qid": q, "type": data["types"][q], "threshold": gates[q], "correct": 0,
                "holds": 0, "only": 0, "wrong_automated": 0} for q in qids}
     out_rows = []
-    automated = correct = all_right = 0
+    automated = correct = all_right = by_rules = 0
     for item in scored:
         held = [q for q in qids if item["signals"][q] + EPS < gates[q]]
         wrong = [q for q in qids if not item["right"][q]]
-        auto = not held
+        auto = not held and not item["rules"]
         ok = not wrong
+        by_rules += bool(item["rules"])
         all_right += ok
         for q in qids:
             per[q]["correct"] += item["right"][q]
         for q in held:
             per[q]["holds"] += 1
-        if len(held) == 1:
+        if len(held) == 1 and not item["rules"]:
             per[held[0]]["only"] += 1
         if auto:
             automated += 1
@@ -160,6 +178,7 @@ def evaluate(rows: Any, gates: Any, signal: str = "confidence") -> dict:
             for q in wrong:
                 per[q]["wrong_automated"] += 1
         out_rows.append({"index": item["index"], "automated": auto, "correct": ok, "held": held, "wrong": wrong,
+                         "rules": item["rules"],
                          "answers": {q: {"answer": item["shown"][q][0], "label": item["shown"][q][1],
                                          "signal": item["signals"][q]} for q in qids}})
     n = len(scored)
@@ -177,6 +196,8 @@ def evaluate(rows: Any, gates: Any, signal: str = "confidence") -> dict:
         "coverage": automated / n if n else 0.0, "accuracy": correct / automated if automated else None,
         "accuracy_low": low, "accuracy_high": high,
         "routed": len(data["routed"]), "routed_automated": routed_auto,
+        "rules": data["rules"], "held_by_rules": by_rules,
+        "routed_held_by_rules": sum(1 for item in data["routed"] if item["rules"]),
         "rows": out_rows,
     }
 
@@ -349,20 +370,26 @@ def admitted(levels: List[List[int]], steps: List[int]) -> List[int]:
     return [i for i, lv in enumerate(levels) if all(v >= s for v, s in zip(lv, steps))]
 
 
-def prepared(rows: Any, qids: Any, signal: str) -> Tuple[List[str], dict, List[List[int]], List[bool]]:
-    """(question ids, _prepare's result, grid levels per scored row, whether every gated answer is right)."""
+def prepared(rows: Any, qids: Any, signal: str, rules: Any = None) -> Tuple[List[str], dict, List[List[int]], List[bool]]:
+    """(question ids, _prepare's result, grid levels per scored row, whether every gated answer is right).
+
+    With rules, scored rows a rule holds are moved from data["scored"] to data["held"]: no threshold can automate
+    them, so the searches leave them out, but every share and cost still counts them among the labeled rows."""
     qids = _qids(qids)
-    data = _prepare(_rows(rows), qids, signal)
+    data = _prepare(_rows(rows), qids, signal, rules)
+    data["held"] = [item for item in data["scored"] if item["rules"]]
+    data["scored"] = [item for item in data["scored"] if not item["rules"]]
     levels = [[_level(item["signals"][q]) for q in qids] for item in data["scored"]]
     right = [all(item["right"].values()) for item in data["scored"]]
     return qids, data, levels, right
 
 
-def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate") -> dict:
+def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate", rules: Any = None) -> dict:
     """For each target accuracy, thresholds on `qids` that automate the most labeled rows the search finds.
     bound: what must reach the target, the automated rows' measured accuracy or its 95% lower bound."""
     calibrate.check_bound(bound)
-    qids, _, levels, right = prepared(rows, qids, signal)
+    qids, data, levels, right = prepared(rows, qids, signal, rules)
+    n = len(levels) + len(data["held"])  # rows a rule holds count, though no threshold automates them
     out = []
     path = None
     for target, steps in zip(TARGETS, search(levels, right, bound)):
@@ -372,7 +399,7 @@ def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimat
             if bound == "lower" and levels:
                 # How many more labeled rows would show it, for the thresholds along the greedy search's path.
                 path = path or _greedy(levels, right, len(qids))
-                found = calibrate.plan([(auto, good) for _, auto, good in path], len(levels), target)
+                found = calibrate.plan([(auto, good) for _, auto, good in path], n, target)
                 if found:
                     found["gates"] = {q: path[found["index"]][0][j] / STEPS for j, q in enumerate(qids)}
                     del found["index"]
@@ -383,6 +410,6 @@ def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimat
         good = sum(right[i] for i in auto)
         low, high = calibrate.wilson(good, len(auto))
         out.append({"target": target, "gates": {q: steps[j] / STEPS for j, q in enumerate(qids)},
-                    "automated": len(auto), "coverage": len(auto) / len(levels), "accuracy": good / len(auto),
+                    "automated": len(auto), "coverage": len(auto) / n, "accuracy": good / len(auto),
                     "low": low, "high": high, "needed": calibrate.rows_needed(target), "plan": None})
-    return {"signal": signal, "bound": bound, "labeled": len(levels), "targets": out}
+    return {"signal": signal, "bound": bound, "labeled": n, "targets": out}

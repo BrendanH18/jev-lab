@@ -6,8 +6,9 @@ Python or JavaScript file with the question set, the model, the signal, and the 
 one function, decide(state). It asks the questions in one call, reads each gated answer's signal exactly
 as Calibrate and Policy read it, and returns:
 
-  * route: "auto" when every gated answer clears its threshold, else "review";
+  * route: "auto" when every gated answer clears its threshold and no rule holds the row, else "review";
   * held: the gated questions that did not clear theirs, in gate order;
+  * rules: Policy's consistency rules (jev/rules.py) the answers break, or cannot be checked against, as written;
   * answers: every answer as Calibrate shows it: a Choice's option, a Noul's yes or no as a boolean, a
     Score's most likely level.
 
@@ -23,9 +24,9 @@ the file says where they came from.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from . import calibrate, policy, workbench
+from . import calibrate, policy, rules as rulebook, workbench
 from .calibrate import CalibrationError
 from .workbench import WorkbenchError, _py
 
@@ -57,6 +58,22 @@ def validate(questions: Any, gates: Any, signal: Any, model: Any) -> tuple:
     return questions, gates, signal, model.strip()
 
 
+def _rules(text: Any, questions: Dict[str, dict]) -> List[dict]:
+    """Rules as the exported files hold them: {"rule": text, "if": [[qid, op, values]], "then": [...]}, with a Noul's
+    values written yes or no, or WorkbenchError."""
+    try:
+        parsed = rulebook.parse(text)
+        rulebook.check(parsed, rulebook.kinds_from_questions(questions))
+    except CalibrationError as err:
+        raise WorkbenchError(str(err)) from err
+
+    def cond(c: tuple) -> list:
+        qid, op, values = c
+        return [qid, op, [rulebook._yes_no(v) for v in values] if questions[qid]["type"] == "noul" else values]
+
+    return [{"rule": r["text"], "if": [cond(c) for c in r["if"]], "then": [cond(c) for c in r["then"]]} for r in parsed]
+
+
 def _origin(source: Optional[dict]) -> str:
     """One sentence on where the thresholds came from, for the file's header."""
     source = source or {}
@@ -78,12 +95,13 @@ def _percent(value: float) -> str:
 
 
 def export(questions: Any, gates: Any, signal: Any = "confidence", model: Any = None,
-           source: Optional[dict] = None) -> dict:
-    """{"python": source, "javascript": source}. No model call."""
+           source: Optional[dict] = None, rules: Any = None) -> dict:
+    """{"python": source, "javascript": source}. rules: Policy's rules as text. No model call."""
     questions, gates, signal, model = validate(questions, gates, signal, model)
     origin = _origin(source)
-    return {"python": _python(questions, gates, signal, model, origin),
-            "javascript": _javascript(questions, gates, signal, model, origin)}
+    written = _rules(rules, questions)
+    return {"python": _python(questions, gates, signal, model, origin, written),
+            "javascript": _javascript(questions, gates, signal, model, origin, written)}
 
 
 def export_check(dataset_id: str) -> dict:
@@ -95,7 +113,7 @@ def export_check(dataset_id: str) -> dict:
     source = {"dataset": dataset.get("name") or dataset_id, "min_accuracy": check.get("min_accuracy"),
               "min_coverage": check.get("min_coverage"), "bound": check.get("bound")}
     return export(dataset.get("questions"), check.get("gates"), check.get("signal", "confidence"), check.get("model"),
-                  source)
+                  source, check.get("rules"))
 
 
 # --- Python --------------------------------------------------------------------------------------
@@ -114,7 +132,8 @@ _PY_SIGNAL = {
 }
 
 
-def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str) -> str:
+def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str,
+            rules: List[dict]) -> str:
     types = {qid: q["type"] for qid, q in questions.items()}
     names = sorted({"Choice", "Noul", "NoulCriteria", "Score", "TypeSafeClient"})
     reads = _PY_SIGNAL[signal]
@@ -138,6 +157,8 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "THRESHOLDS = %s" % _py(gates),
         "TYPES = %s" % _py(types),
         "FIELD = %r  # a text row becomes {FIELD: text}, as in Jev Lab's Bulk" % FIELD,
+        "# Consistency rules: a row whose answers break one, or lack an answer one needs, goes to review.",
+        "RULES = %s" % _py(rules),
         "",
     ] + workbench.python_questions(questions) + [
         "",
@@ -176,8 +197,34 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "    return held",
         "",
         "",
+        "def _holds(condition, answers):",
+        '    """Whether one condition holds for answers as decide() shows them; None when the answer is missing."""',
+        "    qid, op, values = condition",
+        "    answer = answers.get(qid)",
+        "    if answer is None:",
+        "        return None",
+        "    text = (\"yes\" if answer else \"no\") if isinstance(answer, bool) else str(answer)",
+        "    if op in (\">=\", \"<=\", \">\", \"<\"):",
+        "        a, b = int(text), int(values[0])",
+        "        return {\">=\": a >= b, \"<=\": a <= b, \">\": a > b, \"<\": a < b}[op]",
+        "    return (text in values) == (op in (\"=\", \"in\"))",
+        "",
+        "",
+        "def broken_rules(answers):",
+        '    """The rules these answers break, or cannot be checked against: every `if` holds and some `then` does not."""',
+        "    out = []",
+        "    for rule in RULES:",
+        "        found = [_holds(c, answers) for c in rule[\"if\"]]",
+        "        if False in found:",
+        "            continue",
+        "        then = [_holds(c, answers) for c in rule[\"then\"]]",
+        "        if None in found or False in then or None in then:",
+        "            out.append(rule[\"rule\"])",
+        "    return out",
+        "",
+        "",
         "def decide(state, client=None):",
-        '    """{"route": "auto" or "review", "held": [...], "answers": {...}} for one state. One model call."""',
+        '    """{"route": "auto" or "review", "held": [...], "rules": [...], "answers": {...}} for one state. One model call."""',
         "    client = client or TypeSafeClient(model=MODEL)  # reads TYPESAFE_API_KEY",
         "    result = client.system_one(state, questions, model=MODEL)",
         "    held = held_by(result)",
@@ -185,7 +232,9 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "    for qid, qtype in TYPES.items():",
         "        answer = _answer(result, qid)",
         "        answers[qid] = None if answer is None else value(answer, qtype)",
-        "    return {\"route\": \"review\" if held else \"auto\", \"held\": held, \"answers\": answers}",
+        "    rules = broken_rules(answers)",
+        "    route = \"review\" if held or rules else \"auto\"",
+        "    return {\"route\": route, \"held\": held, \"rules\": rules, \"answers\": answers}",
         "",
         "",
         "def _row(line):",
@@ -228,7 +277,8 @@ _JS_SIGNAL = {
 }
 
 
-def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str) -> str:
+def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str,
+                rules: List[dict]) -> str:
     types = {qid: q["type"] for qid, q in questions.items()}
     reads = _JS_SIGNAL[signal]
     dumps = lambda value: json.dumps(value, indent=2, ensure_ascii=False)  # noqa: E731
@@ -250,6 +300,8 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "export const THRESHOLDS = %s;" % dumps(gates),
         "const TYPES = %s;" % dumps(types),
         "const FIELD = %s; // a text row becomes {FIELD: text}, as in Jev Lab's Bulk" % json.dumps(FIELD),
+        "// Consistency rules: a row whose answers break one, or lack an answer one needs, goes to review.",
+        "export const RULES = %s;" % dumps(rules),
         "",
         "export const questions = %s;" % dumps(questions),
         "",
@@ -277,15 +329,39 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "    .map(([id]) => id);",
         "}",
         "",
+        "// Whether one condition holds for answers as decide() shows them; null when the answer is missing.",
+        "function holds([id, op, values], shown) {",
+        "  const answer = Object.hasOwn(shown, id) ? shown[id] : null;",
+        "  if (answer === null || answer === undefined) return null;",
+        "  const text = typeof answer === \"boolean\" ? (answer ? \"yes\" : \"no\") : String(answer);",
+        "  const a = Number(text), b = Number(values[0]);",
+        "  if (op === \">=\") return a >= b;",
+        "  if (op === \"<=\") return a <= b;",
+        "  if (op === \">\") return a > b;",
+        "  if (op === \"<\") return a < b;",
+        "  return values.includes(text) === (op === \"=\" || op === \"in\");",
+        "}",
+        "",
+        "// The rules these answers break, or cannot be checked against: every `if` holds and some `then` does not.",
+        "export function brokenRules(shown) {",
+        "  return RULES.filter((rule) => {",
+        "    const found = rule.if.map((c) => holds(c, shown));",
+        "    if (found.includes(false)) return false;",
+        "    const then = rule.then.map((c) => holds(c, shown));",
+        "    return found.includes(null) || then.includes(false) || then.includes(null);",
+        "  }).map((rule) => rule.rule);",
+        "}",
+        "",
         "let shared;",
         "",
-        "// {route: \"auto\" or \"review\", held: [...], answers: {...}} for one state. One model call.",
+        "// {route: \"auto\" or \"review\", held: [...], rules: [...], answers: {...}} for one state. One model call.",
         "export async function decide(state, client = (shared ??= new TypeSafeClient())) {",
         "  const { answers } = await client.systemOne({ state, model: MODEL, questions });",
         "  const held = heldBy(answers);",
         "  const shown = Object.fromEntries(Object.entries(TYPES).map(([id, type]) =>",
         "    [id, Object.hasOwn(answers, id) ? value(answers[id], type) : null]));",
-        "  return { route: held.length ? \"review\" : \"auto\", held, answers: shown };",
+        "  const rules = brokenRules(shown);",
+        "  return { route: held.length || rules.length ? \"review\" : \"auto\", held, rules, answers: shown };",
         "}",
         "",
         "function row(line) {",

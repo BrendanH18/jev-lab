@@ -125,6 +125,12 @@ conditions.
   disagreements first, since those are often labeling mistakes, and the unlabeled rows nearest
   Calibrate's threshold, whose labels decide whether it can move. Fix or label them in place. It also
   reuses the Bulk answers.
+- **Rules:** write what a row's answers may say together, such as
+  `if wants_refund = yes then department in billing, shipping`. See which rows break each rule, even
+  unlabeled, since a broken rule means a wrong answer or a wrong rule. Where rows are labeled, see
+  whether rows that break a rule really have wrong answers more often, and whether the labels break it
+  too. Policy can send rows that break a rule to review, and the saved check and exported gate keep the
+  rules. It also reuses the Bulk answers.
 - **Policy:** gate several questions at once, the way an application acts on an item only when every
   answer it uses is confident. See what share of rows the combined gate automates and how accurate
   they are, tune the thresholds for 90%, 95%, or 99% accuracy, and copy the Python gate. It also

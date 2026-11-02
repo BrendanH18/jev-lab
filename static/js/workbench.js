@@ -30,6 +30,9 @@ const W = {
     cal: { qid: null, signal: "confidence", bound: "estimate", threshold: 0.5, report: null, cost: null, holdout: null, holdoutSeq: 0 },
     policy: { signal: "confidence", bound: "estimate", gates: {}, report: null, tunes: null, cost: null, cheapest: null, holdout: null, holdoutSeq: 0 },
     review: { report: null, kept: new Set(), all: { suspects: false, next: false } },
+    // Consistency rules (jev/rules.py) as typed, the text the last report checked, its report or error, and whether
+    // Policy sends rows that break one to review. Saved with a dataset and a check.
+    rules: { text: "", applied: "", checked: "", report: null, error: null, hold: true },
     // Accuracy by slice (jev/slices.py), for Calibrate at its threshold and for Policy at its gates. One field for both.
     slice: { field: null, cal: null, pol: null } },
   compare: { variants: [{ text: "", model: "", perturb: "", average: false }, { text: "", model: "", perturb: "", average: false }], terse: null, models: null, modelsLoading: false,
@@ -665,6 +668,7 @@ async function saveDataset() {
   try {
     const { dataset, check_dropped: dropped } = await api("/api/workbench/datasets", {
       name, notes: d.notes, rows: rowsPayload(), questions: questions && Object.keys(questions).length ? questions : undefined,
+      rules: b.rules.text.trim() || undefined,
     });
     b.savedText = b.rowsText;
     b.labelsDirty = false;
@@ -686,6 +690,7 @@ async function loadDataset(id) {
     const { dataset } = await api("/api/workbench/datasets/load", { id });
     if (!replaceRows(rowsText(dataset.rows), `“${dataset.name || id}”`)) return;
     b.dataset = { id, name: dataset.name || id, notes: dataset.notes || "", withQuestions: !!dataset.questions, questions: dataset.questions || null };
+    b.rules = { ...b.rules, text: dataset.rules || "", applied: "", checked: "", report: null, error: null };
     if (dataset.questions) b.source = "dataset";
     else if (b.source === "dataset") b.source = "current";
     toast(`Loaded ${dataset.rows.length} rows. Run them to get answers.`);
@@ -746,7 +751,8 @@ const canon = (v) => (v && typeof v === "object" && !Array.isArray(v)
   : Array.isArray(v) ? `[${v.map(canon).join(",")}]` : JSON.stringify(v));
 
 function checkTargetsText(c) {
-  return `${pct(c.min_accuracy, 1)} accurate${c.bound === "lower" ? " at 95% confidence" : ""} · at least ${pct(c.min_coverage)} automated`;
+  const rules = c.rules ? c.rules.split("\n").length : 0;
+  return `${pct(c.min_accuracy, 1)} accurate${c.bound === "lower" ? " at 95% confidence" : ""} · at least ${pct(c.min_coverage)} automated${rules ? ` · ${rules} rule${rules > 1 ? "s" : ""} send breaking rows to review` : ""}`;
 }
 
 function checkItem(x) {
@@ -1075,6 +1081,7 @@ async function saveCheck() {
   if (b.datasets.find((x) => x.id === id)?.check && !confirm(`Replace the check saved with “${id}”?`)) return;
   try {
     const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: gateModel(), tuned_on: tunedOn() || undefined,
+      rules: policyRules() || undefined,
       min_accuracy: Number($("#check-accuracy").value) / 100, min_coverage: Number($("#check-coverage").value) / 100 };
     await api("/api/workbench/checks", { id, check });
     b.datasets = (await api("/api/workbench/datasets")).datasets;
@@ -1295,6 +1302,7 @@ function renderBulk() {
     b.result ? renderCosts() : null,
     b.result ? renderCalibrate() : null,
     b.result ? renderReview() : null,
+    b.result ? renderRules() : null,
     b.result ? renderPolicy() : null,
     b.result ? renderBulkTable() : null);
 }
@@ -2141,6 +2149,93 @@ function labelNext(rep) {
     h("div", {}, moreToggle("next", rep.next.length)));
 }
 
+// ---------- Rules ----------
+// What a row's answers may say together (jev/rules.py): "if wants_refund = yes then department in billing, shipping".
+// A row that breaks a rule has a wrong answer, or the rule is wrong, so it is worth a look even unlabeled. The
+// server checks the rules over the Bulk answers; no model calls. Policy can send rows that break one to review.
+let ruleSeq = 0;
+async function rerule() {
+  const b = W.bulk;
+  const r = b.rules;
+  const seq = ++ruleSeq;
+  const text = r.text.trim();
+  r.checked = text;  // the text this check reads, accepted or not
+  if (!text || !b.result) { r.report = null; r.error = null; r.applied = ""; return; }
+  try {
+    const report = await api("/api/workbench/rules", { rules: text, rows: policyRowsAll(), questions: b.ranQuestions || undefined });
+    if (seq === ruleSeq) Object.assign(r, { report, error: null, applied: text });
+  } catch (e) { if (seq === ruleSeq) Object.assign(r, { report: null, error: e.message || String(e), applied: "" }); }
+}
+// Every answered row with all its answers and labels, for the rules report.
+function policyRowsAll() {
+  const b = W.bulk;
+  return b.result.results.filter((r) => r.answers).map((r) => ({ index: r.index, answers: r.answers, labels: b.labels[r.index] || {} }));
+}
+async function applyRules() {
+  await repolicy();
+  render();
+  if (W.bulk.rules.error) toast(W.bulk.rules.error, "error");
+}
+
+function renderRules() {
+  const b = W.bulk;
+  const r = b.rules;
+  if (!policyQids(b.result).length) return null;
+  const box = h("textarea", { class: "input mono", rows: 4, spellcheck: "false", id: "rules-text", "aria-label": "Rules, one per line",
+    placeholder: "if wants_refund = yes then department in billing, shipping\nif department = none then is_urgent = no\nif frustration >= 2 then is_urgent = yes" }, r.text);
+  box.addEventListener("input", () => { r.text = box.value; });
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); applyRules(); } });
+  const hold = h("input", { type: "checkbox", checked: r.hold, id: "rules-hold" });
+  hold.addEventListener("change", async () => { r.hold = hold.checked; await repolicy(); render(); });
+  const stale = r.text.trim() !== r.checked;
+  return h("div", { class: "panel", id: "rules-panel" },
+    h("div", { class: "panel-head" }, icon("check"), h("h2", {}, "Rules"),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "what answers may say together, checked in code, no extra calls")),
+    h("div", { class: "panel-body grid", style: { gap: "12px" } },
+      h("p", { class: "muted", style: { fontSize: "13px" } }, "Each question is asked on its own, so a row can come back as a refund request for the team that handles nothing. Write what cannot be true together, one rule per line: ",
+        h("code", {}, "if <question> = <answer> then <question> in <answer>, <answer>"), ". Conditions use =, !=, in, not in, and for Score levels >=, <=, >, <; join them with ", h("code", {}, "and"),
+        ". A row that breaks a rule has a wrong answer, or the rule is wrong, so it is worth a look even unlabeled."),
+      box,
+      h("div", { style: { display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
+        h("button", { class: "btn sm", onclick: applyRules }, icon("check"), stale ? "Check rules" : "Check again"),
+        h("label", { for: "rules-hold", class: "pol-check" }, hold, h("span", {}, "Policy sends rows that break a rule to review")),
+        stale && r.text.trim() ? h("span", { class: "faint" }, "Edited since the last check. Check rules to apply them.") : null),
+      r.error ? h("p", { style: { color: "var(--critical-text)", fontSize: "12.5px" } }, r.error) : null,
+      r.report ? rulesReport(r.report) : null));
+}
+
+function rulesReport(rep) {
+  const rowsBy = new Map(W.bulk.result.results.map((x) => [x.index, x]));
+  const wrongText = (wrong, n) => (n ? `${wrong} of ${n} (${pct(wrong / n)})` : "—");
+  const broken = rep.broken_rows;
+  return h("div", { class: "grid", style: { gap: "10px" } },
+    h("div", { class: "stat-row" },
+      stat("rows that break a rule", `${rep.broken_any} of ${rep.rows}`, true)),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "rule"), h("th", { title: "Rows where every condition after if holds" }, "applies to"),
+        h("th", {}, "broken on"), h("th", { title: "Rows missing an answer the rule needs; Policy holds them" }, "cannot check"),
+        h("th", { title: "Labeled rows that break the rule with a wrong answer to one of its questions" }, "answers wrong, broken"),
+        h("th", { title: "Labeled rows the rule applies to and keeps, with a wrong answer to one of its questions" }, "answers wrong, kept"),
+        h("th", { title: "Fisher's exact test: could the difference be chance?" }, "p"),
+        h("th", { title: "Rows whose labels break the rule: then the rule, not the answers, may be wrong" }, "labels break it"))),
+      h("tbody", {}, rep.rules.map((x) => h("tr", {},
+        h("td", { class: "mono", style: { maxWidth: "340px", whiteSpace: "normal", overflowWrap: "anywhere" } }, x.text),
+        h("td", {}, String(x.applies)), h("td", {}, x.broken ? h("b", {}, String(x.broken)) : "0"), h("td", {}, String(x.unknown)),
+        h("td", {}, wrongText(x.wrong_broken, x.labeled_broken)), h("td", {}, wrongText(x.wrong_kept, x.labeled_kept)),
+        h("td", { class: "mono" }, x.p === null ? "—" : x.p < 0.001 ? "< 0.001" : x.p.toFixed(3)),
+        h("td", {}, x.labels_break.length ? h("span", { style: { color: "var(--critical-text)" }, title: `rows ${x.labels_break.map((i) => i + 1).join(", ")}` }, `${x.labels_break.length}: check the rule`) : "0")))))),
+    broken.length ? h("div", { class: "grid", style: { gap: "6px" } },
+      h("h3", { class: "cal-h" }, `Rows that break a rule · ${broken.length}: at least one answer, or the rule, is wrong`),
+      h("div", { class: "scroll" }, h("table", { class: "table" },
+        h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "breaks"))),
+        h("tbody", {}, broken.slice(0, 12).map((i) => h("tr", {},
+          h("td", { class: "num" }, String(i + 1)),
+          h("td", { class: "row", style: { maxWidth: "420px" } }, rowText(rowsBy.get(i)?.row)),
+          h("td", {}, rep.rules.filter((x) => x.broken_rows.includes(i)).map((x) => h("div", { class: "mono", style: { fontSize: "12px", whiteSpace: "normal" } }, x.text)))))))),
+      broken.length > 12 ? h("p", { class: "faint", style: { fontSize: "12px" } }, `…and ${broken.length - 12} more.`) : null) : null,
+    h("p", { class: "faint", style: { fontSize: "12.5px" } }, "Answers are read as Calibrate reads them: a Choice's option, a Noul's yes or no, a Score's most likely level. With labels, compare how often the answers are wrong on rows that break a rule and on rows it keeps: a rule worth keeping catches wrong answers more often than chance. If labels break a rule, the rule is probably wrong."));
+}
+
 // ---------- Policy ----------
 // Gates several questions at once: a row is automated only when every gated answer clears its threshold, and
 // right only when every gated answer matches its label. The server scores it (jev/policy.py); no model calls.
@@ -2163,12 +2258,19 @@ function resetPolicy() {
 function activeGates() {
   return Object.fromEntries(Object.entries(W.bulk.policy.gates).filter(([, g]) => g.on).map(([q, g]) => [q, g.t]));
 }
+// The rules Policy applies: the text the last rules report accepted, while "send to review" is on; else "".
+function policyRules() {
+  const r = W.bulk.rules;
+  return r.hold && r.report && !r.error && r.report.rules.length ? r.applied : "";
+}
 function policyRows(qids) {
   const b = W.bulk;
+  const rules = policyRules();
   return b.result.results.filter((r) => r.answers).map((r) => ({
     index: r.index,
     key: rowText(r.row),  // the row's input names it for Holdout's folds, so a rerun or reorder keeps the split
-    answers: Object.fromEntries(qids.filter((q) => r.answers[q]).map((q) => [q, r.answers[q]])),
+    // With rules, every answer: a rule may read a question no gate does.
+    answers: Object.fromEntries((rules ? Object.keys(r.answers) : qids).filter((q) => r.answers[q]).map((q) => [q, r.answers[q]])),
     labels: Object.fromEntries(qids.filter((q) => b.labels[r.index]?.[q] !== undefined).map((q) => [q, b.labels[r.index][q]])),
   }));
 }
@@ -2182,8 +2284,8 @@ async function rescorePolicy() {
   try {
     const rows = policyRows(Object.keys(gates));
     const [report, cost] = await Promise.all([
-      api("/api/workbench/policy", { rows, gates, signal: p.signal }),
-      costs ? api("/api/workbench/cost", { rows, questions: Object.keys(gates), gates, signal: p.signal, costs, tune: false }) : null]);
+      api("/api/workbench/policy", { rows, gates, signal: p.signal, rules: policyRules() || undefined }),
+      costs ? api("/api/workbench/cost", { rows, questions: Object.keys(gates), gates, signal: p.signal, costs, tune: false, rules: policyRules() || undefined }) : null]);
     if (seq === polSeq) { p.report = report; p.cost = cost; }
   } catch (e) { if (seq === polSeq) { p.report = null; p.cost = null; handleError(e); } }
 }
@@ -2195,7 +2297,7 @@ async function retunePolicy() {
   p.tunes = null;
   if (!qids.length) return;
   try {
-    const tunes = await api("/api/workbench/policy/tune", { rows: policyRows(qids), questions: qids, signal: p.signal, bound: p.bound });
+    const tunes = await api("/api/workbench/policy/tune", { rows: policyRows(qids), questions: qids, signal: p.signal, bound: p.bound, rules: policyRules() || undefined });
     if (seq === tuneSeq) p.tunes = tunes;
   } catch (e) { if (seq === tuneSeq) handleError(e); }
 }
@@ -2209,13 +2311,14 @@ async function recheapPolicy() {
   p.cheapest = null;
   if (!qids.length || !costs) return;
   try {
-    const rep = await api("/api/workbench/cost", { rows: policyRows(qids), questions: qids, signal: p.signal, costs });
+    const rep = await api("/api/workbench/cost", { rows: policyRows(qids), questions: qids, signal: p.signal, costs, rules: policyRules() || undefined });
     if (seq === cheapSeq) p.cheapest = rep;
   } catch (e) { if (seq === cheapSeq) handleError(e); }
 }
 // Gates, labels, or the signal changed: both the report and the tuned thresholds are stale. Tuning can take a
 // moment on many rows and gates, so its chips fill in when it finishes instead of holding up the report.
 async function repolicy() {
+  await rerule();  // Policy reads the rules the report accepted, so check them first
   clearHoldout(W.bulk.policy);
   retunePolicy().then(updatePolicy);
   recheapPolicy().then(updatePolicy);
@@ -2358,6 +2461,7 @@ function updatePolicy() {
   if (n) sliceSoon.pol();
   const notes = [
     n && n < 100 ? h("p", { class: "faint" }, `With ${n} labeled rows, one row moves accuracy by ${(100 / n).toFixed(1)} points. Tuned thresholds fit these rows; confirm them on more labeled rows before you rely on them.`) : null,
+    rep.rules.length ? h("p", { class: "faint" }, `${rep.rules.length === 1 ? "A rule" : `${rep.rules.length} rules`} from Rules above send${rep.rules.length === 1 ? "s" : ""} ${rep.routed_held_by_rules} of this run's ${rep.routed} rows to review whatever their confidence, and Tune, the cost, the check on unseen rows, a saved check, and the exported gate do the same.`) : null,
     rep.unlabeled ? h("p", { class: "faint" }, `${rep.unlabeled} answered rows lack a label for at least one gated question and are not scored.`) : null,
     rep.skipped ? h("p", { class: "faint" }, `${rep.skipped} rows have no readable answer to a gated question and are left out.`) : null,
     rep.invalid.length ? invalidNote(rep) : null,
@@ -2368,7 +2472,7 @@ function updatePolicy() {
     h("div", { class: "code" }, h("pre", { id: "pol-code" }, policyCode(rep)),
       h("button", { class: "btn sm copy", onclick: () => copyText($("#pol-code").textContent) }, icon("copy"), "Copy")),
     h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm", onclick: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: p.signal, model: gateModel() || undefined }, "Policy's gate") },
+      h("button", { class: "btn sm", onclick: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: p.signal, model: gateModel() || undefined, rules: policyRules() || undefined }, "Policy's gate") },
         icon("code"), "Export as a module"),
       h("span", { class: "faint", style: { fontSize: "12px" } }, "A Python or JavaScript file with these questions, the model, and these thresholds built in: decide(state) routes one row.")));
   if (!n) {
@@ -2384,6 +2488,7 @@ function updatePolicy() {
       stat("accuracy when automated", rep.accuracy === null ? "—" : withCI(pct(rep.accuracy, 1), rep.accuracy_low, rep.accuracy_high)),
       stat("all gated answers right, every row", withCI(pct(rep.accuracy_all), rep.accuracy_all_low, rep.accuracy_all_high)),
       stat("wrong but automated", String(rep.automated - rep.correct)),
+      rep.rules.length ? stat("held by a rule", `${rep.held_by_rules} of ${n}`) : null,
       p.cost?.current ? stat("cost per 1,000 rows", costVs(p.cost.current, p.cost)) : null,
       stat("this run, all rows", `${rep.routed_automated} of ${rep.routed} automated`)),
     policyBar(rep),
@@ -2493,7 +2598,8 @@ async function runHoldout(state, id, qids) {
   mount(`#${id}`, ...holdoutView(state, id, qids));
   try {
     const { costs } = costsPayload();
-    const report = await api("/api/workbench/holdout", { rows: policyRows(questions), questions, signal: state.signal, bound: state.bound, ...(costs ? { costs } : {}) });
+    const rules = state === W.bulk.policy ? policyRules() : "";  // Calibrate's single question ignores Policy's rules
+    const report = await api("/api/workbench/holdout", { rows: policyRows(questions), questions, signal: state.signal, bound: state.bound, ...(costs ? { costs } : {}), ...(rules ? { rules } : {}) });
     if (seq !== state.holdoutSeq) return;
     state.holdout = report;
   } catch (e) {

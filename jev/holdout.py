@@ -15,6 +15,7 @@ or changing a label's value keeps the split) and dealt round-robin, which keeps 
 same size. Identical
 inputs share a key, and a tie between them is broken by row index, so the deal never depends on request order.
 The pooled 95% interval treats the held-out rows as independent, which cross-validation only approximates.
+With Policy's `rules`, rows a rule holds are dealt into folds like the rest and always go to review.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def _measure(right: List[bool], auto: List[int], n: int) -> dict:
 
 
 def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate", folds: Any = FOLDS,
-             costs: Any = None) -> dict:
+             costs: Any = None, rules: Any = None) -> dict:
     """rows: Policy's rows, each optionally with "key", a string naming its input. For each target accuracy:
     the thresholds tuned on every labeled row and what they automate there, and what thresholds tuned without a
     row automate when they route it, pooled over the folds. With `costs` (as jev/cost.py takes them), the same for
@@ -67,20 +68,23 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
     calibrate.check_bound(bound)
     folds = _folds(folds)
     prices = cost.parse(costs) if costs is not None else None
-    qids, data, levels, right = policy.prepared(rows, qids, signal)
-    n = len(levels)
+    qids, data, levels, right = policy.prepared(rows, qids, signal, rules)
+    scored = data["scored"]
+    everyone = scored + data["held"]  # rows a rule holds fill out their folds, always reviewed
+    n = len(everyone)
     base = {"signal": signal, "bound": bound, "folds": folds, "questions": qids, "labeled": n,
             "minimum": folds * MIN_PER_FOLD, "targets": []}
     if n < folds * MIN_PER_FOLD:
         return base
-    scored = data["scored"]
-    fold_of = assign([_key(item) for item in scored], [item["index"] for item in scored], folds)
-    members = [[i for i in range(n) if fold_of[i] == f] for f in range(folds)]
+    fold_all = assign([_key(item) for item in everyone], [item["index"] for item in everyone], folds)
+    fold_of = fold_all[:len(scored)]
+    members = [[i for i in range(len(scored)) if fold_of[i] == f] for f in range(folds)]
+    sizes = [fold_all.count(f) for f in range(folds)]
     # Thresholds tuned on every row, then on each fold's complement: one search per fold covers every target.
     whole = policy.search(levels, right, bound)
     per_fold = []
     for f in range(folds):
-        train = [i for i in range(n) if fold_of[i] != f]
+        train = [i for i in range(len(scored)) if fold_of[i] != f]
         per_fold.append(policy.search([levels[i] for i in train], [right[i] for i in train], bound))
 
     def gates(steps: Optional[List[int]]) -> Optional[dict]:
@@ -94,7 +98,7 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
             steps = per_fold[f][t]
             auto = [] if steps is None else [i for i in members[f] if all(v >= s for v, s in zip(levels[i], steps))]
             unseen.extend(auto)
-            parts.append(dict(_measure(right, auto, len(members[f])), rows=len(members[f]), gates=gates(steps)))
+            parts.append(dict(_measure(right, auto, sizes[f]), rows=sizes[f], gates=gates(steps)))
         reached = [p["gates"] for p in parts if p["gates"] is not None]
         spread = {q: [min(g[q] for g in reached), max(g[q] for g in reached)] for q in qids} if reached else None
         tuned = _measure(right, policy.admitted(levels, seen), n) if seen is not None else None
@@ -109,6 +113,6 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
             "needed": calibrate.rows_needed(target)})
     if prices is not None:
         priced = cost.row_costs(scored, qids, prices)
-        base["cost"] = dict(cost.holdout(levels, right, priced, prices["review"], qids, members),
+        base["cost"] = dict(cost.holdout(levels, right, priced, prices["review"], qids, members, sizes),
                             review_cost=prices["review"], error=prices["error"])
     return base

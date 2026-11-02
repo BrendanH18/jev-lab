@@ -397,6 +397,17 @@ def save_dataset(spec: dict) -> dict:
                "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     if spec.get("questions"):
         dataset["questions"] = bulk_questions(spec["questions"])
+    if spec.get("rules"):  # Policy's consistency rules (jev/rules.py), as written, comments included
+        from . import rules
+        from .calibrate import CalibrationError
+
+        try:
+            parsed = rules.parse(spec["rules"])
+            rules.check(parsed, rules.kinds_from_questions(dataset.get("questions") or {}))
+        except CalibrationError as err:
+            raise WorkbenchError(str(err)) from err
+        if parsed:
+            dataset["rules"] = spec["rules"].strip()
     prior = _prior_check(dataset["id"])
     dropped = None
     if prior is not None:
