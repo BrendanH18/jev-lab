@@ -266,8 +266,17 @@ By default, a target such as "95% accurate" is met when the accuracy measured on
 it. Choose **targets at 95% confidence** to require the interval's lower bound to reach it instead.
 Calibrate's shortcuts, Policy's Tune, and Compare's "automates at" rows then name only thresholds
 that these rows support with 95% confidence. A threshold must automate enough rows for that: with
-every automated row right, 90% needs at least 35 rows, 95% needs 73, and 99% needs 381. When a
-target cannot be shown with the rows you have, its shortcut says how many it needs.
+every automated row right, 90% needs at least 35 rows, 95% needs 73, and 99% needs 381.
+
+When a target cannot be shown with the rows you have, its shortcut estimates how many more rows like
+these you would need to label: "label about 114 more rows like these (if ≥ 0.55 stays near 96%
+accurate, automating 60%)". The estimate assumes a threshold keeps the share it automates and its
+accuracy on the new rows. It takes that accuracy as (right + 1) / (automated + 2) rather than the raw
+share, so nine automated rows that are all right count as about 91% accurate, not 100%. Among Calibrate's
+thresholds, or the thresholds Policy's Tune passes through, it names the one that needs the fewest more
+rows. An accuracy just above the target needs a great many rows, and one at or below it can never show
+the target; then the shortcut says how many automated rows the target needs instead. Treat the number
+as an order of magnitude to plan labeling with, not a promise: the new rows decide.
 
 The interval treats your labeled rows as a random sample of the items the gate will see. Choosing a
 threshold from the same rows still favors thresholds that happen to fit them, so confirm the

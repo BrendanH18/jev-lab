@@ -1477,7 +1477,14 @@ function boundSelect(state, onChange) {
 const interval = (lo, hi) => (lo === null || lo === undefined ? "" : `${pct(lo)}–${pct(hi)}`);
 const withCI = (value, lo, hi) => (lo === null || lo === undefined ? value : [value, h("span", { class: "ci", title: "95% interval" }, ` ${interval(lo, hi)}`)]);
 // The label of a target that was not reached, saying how many rows a 95% claim needs when that is the reason.
+// A plan (jev/calibrate.py plan()) says how many more labeled rows like these would show the target, if the
+// gate it names keeps its accuracy and share automated; it is an estimate, so the chip's title says so.
 function unreached(t, bound, labeled) {
+  const p = t.plan;
+  if (bound === "lower" && p) {
+    const at = p.gates ? Object.entries(p.gates).map(([q, g]) => `${q} ≥ ${g.toFixed(2)}`).join(", ") : `≥ ${p.threshold.toFixed(2)}`;
+    return `${pct(t.target)} at 95% confidence: label about ${num(p.more)} more rows like these (if ${at} stays near ${pct(p.accuracy)} accurate, automating ${pct(p.coverage)})`;
+  }
   if (bound === "lower" && labeled < t.needed) return `${pct(t.target)} at 95% confidence: needs ${t.needed}+ automated rows, all right (${labeled} labeled)`;
   return `${pct(t.target)} accurate${bound === "lower" ? " at 95% confidence" : ""}: not reached on these rows`;
 }

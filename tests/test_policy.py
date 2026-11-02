@@ -152,6 +152,12 @@ class TuneTests(unittest.TestCase):
         for target in (0.95, 0.99):
             self.assertIsNone(by[target]["gates"])
             self.assertEqual(by[target]["needed"], policy.calibrate.rows_needed(target))
+        # The plan for 95% keeps the 70 clean rows, q2 raised past the five wrong ones, and labels more like them.
+        plan = by[0.95]["plan"]
+        self.assertEqual(plan["gates"]["q1"], 0.0)
+        self.assertEqual(plan["gates"]["q2"], 0.31)  # the bad rows' q2 confidence is |2 * 0.65 - 1| = 0.3
+        self.assertEqual(plan["more"], policy.calibrate.plan([(70, 70)], 75, 0.95)["more"])
+        self.assertIsNone(by[0.9]["plan"])
         with self.assertRaises(policy.CalibrationError):
             policy.tune(clean, ["q1"], bound="vibes")
 

@@ -13,7 +13,8 @@ Correctness per type:
 Accuracy measured on a few dozen rows is itself uncertain, so each accuracy carries a 95% Wilson
 score interval. Targets can be met by the measured accuracy ("estimate") or, more cautiously, by the
 interval's lower bound ("lower"): then a threshold counts only when these rows show, with 95%
-confidence, that the gate is at least that accurate.
+confidence, that the gate is at least that accurate. When they do not, plan() estimates how many more
+labeled rows like these would, if the gate keeps the accuracy and share automated it has now.
 """
 
 from __future__ import annotations
@@ -58,6 +59,52 @@ def rows_needed(target: float) -> int:
     while wilson(n, n)[0] + _EPS < target:  # guard the closed form against float rounding
         n += 1
     return n
+
+
+def automated_needed(accuracy: float, target: float) -> Optional[int]:
+    """The fewest automated rows at this accuracy whose 95% Wilson lower bound reaches the target.
+
+    None when the accuracy is not above the target, since no number of rows can show it then. The lower bound
+    rises with n at a fixed accuracy and approaches it, so doubling n finds a bound, then bisection the fewest."""
+    if accuracy <= target + _EPS:
+        return None
+
+    def ok(n: int) -> bool:
+        return wilson(accuracy * n, n)[0] + _EPS >= target
+
+    hi = 1
+    while not ok(hi):
+        hi *= 2
+    lo = hi // 2  # ok(lo) is false, or lo is 0
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if ok(mid):
+            hi = mid
+        else:
+            lo = mid
+    return hi
+
+
+def plan(candidates: List[Tuple[int, int]], labeled: int, target: float) -> Optional[dict]:
+    """How many more labeled rows would show the target at 95% confidence, if the gate keeps its share automated
+    and its accuracy. candidates: (automated, correct) on these `labeled` rows, one per threshold setting.
+
+    The accuracy is smoothed toward a coin flip, (correct + 1) / (automated + 2), so a gate that got its three
+    automated rows right is not taken to be perfect. Returns the setting that needs the fewest more rows:
+    {"more", "automated", "accuracy", "coverage", "index"}, index into candidates, or None if none can."""
+    best = None
+    for index, (automated, correct) in enumerate(candidates):
+        if not automated or not labeled:
+            continue
+        accuracy = (correct + 1) / (automated + 2)
+        need = automated_needed(accuracy, target)
+        if need is None:
+            continue
+        coverage = automated / labeled
+        more = max(1, ceil(need / coverage - _EPS) - labeled)
+        if best is None or (more, -coverage) < (best["more"], -best["coverage"]):
+            best = {"more": more, "automated": need, "accuracy": accuracy, "coverage": coverage, "index": index}
+    return best
 
 
 def check_bound(bound: str) -> str:
@@ -199,14 +246,22 @@ def sweep(rows: List[dict]) -> List[dict]:
 def targets(points: List[dict], bound: str = "estimate") -> List[dict]:
     """The lowest threshold whose automated rows reach each target accuracy, and what it automates.
 
-    `needed` is the fewest automated rows, all right, that could show the target at 95% confidence."""
+    `needed` is the fewest automated rows, all right, that could show the target at 95% confidence. A target
+    that is not shown at 95% confidence carries a `plan` (see plan()), with the threshold it assumes."""
+    labeled = points[0]["automated"] if points else 0  # threshold 0 automates every scored row
     out = []
     for target in TARGETS:
         hit = next((p for p in points if meets(p["correct"], p["automated"], target, bound)), None)
-        out.append({"target": target, "threshold": hit and hit["threshold"],
-                    "coverage": hit["coverage"] if hit else 0.0, "automated": hit["automated"] if hit else 0,
-                    "accuracy": hit and hit["accuracy"], "low": hit and hit["low"], "high": hit and hit["high"],
-                    "needed": rows_needed(target)})
+        entry = {"target": target, "threshold": hit and hit["threshold"],
+                 "coverage": hit["coverage"] if hit else 0.0, "automated": hit["automated"] if hit else 0,
+                 "accuracy": hit and hit["accuracy"], "low": hit and hit["low"], "high": hit and hit["high"],
+                 "needed": rows_needed(target), "plan": None}
+        if bound == "lower" and hit is None:
+            found = plan([(p["automated"], p["correct"]) for p in points], labeled, target)
+            if found:
+                found["threshold"] = points[found.pop("index")]["threshold"]
+                entry["plan"] = found
+        out.append(entry)
     return out
 
 
