@@ -2164,7 +2164,12 @@ async function rerule() {
   try {
     const report = await api("/api/workbench/rules", { rules: text, rows: policyRowsAll(), questions: b.ranQuestions || undefined });
     if (seq === ruleSeq) Object.assign(r, { report, error: null, applied: text });
-  } catch (e) { if (seq === ruleSeq) Object.assign(r, { report: null, error: e.message || String(e), applied: "" }); }
+  } catch (e) {
+    if (seq !== ruleSeq) return;
+    r.error = e.message || String(e);
+    // A refused edit keeps the rules accepted before it; rules that no longer fit this run are dropped.
+    if (text === r.applied) Object.assign(r, { report: null, applied: "" });
+  }
 }
 // Every answered row with all its answers and labels, for the rules report.
 function policyRowsAll() {
@@ -2200,7 +2205,8 @@ function renderRules() {
         h("button", { class: "btn sm", onclick: applyRules }, icon("check"), stale ? "Check rules" : "Check again"),
         h("label", { for: "rules-hold", class: "pol-check" }, hold, h("span", {}, "Policy sends rows that break a rule to review")),
         stale && r.text.trim() ? h("span", { class: "faint" }, "Edited since the last check. Check rules to apply them.") : null),
-      r.error ? h("p", { style: { color: "var(--critical-text)", fontSize: "12.5px" } }, r.error) : null,
+      r.error ? h("p", { style: { color: "var(--critical-text)", fontSize: "12.5px" } }, r.error,
+        r.applied ? " Policy keeps the rules accepted before this edit, shown below." : "") : null,
       r.report ? rulesReport(r.report) : null));
 }
 
@@ -2259,9 +2265,10 @@ function activeGates() {
   return Object.fromEntries(Object.entries(W.bulk.policy.gates).filter(([, g]) => g.on).map(([q, g]) => [q, g.t]));
 }
 // The rules Policy applies: the text the last rules report accepted, while "send to review" is on; else "".
+// An edit the server refuses leaves the accepted rules in force until a corrected edit replaces them.
 function policyRules() {
   const r = W.bulk.rules;
-  return r.hold && r.report && !r.error && r.report.rules.length ? r.applied : "";
+  return r.hold && r.applied && r.report?.rules.length ? r.applied : "";
 }
 function policyRows(qids) {
   const b = W.bulk;
@@ -2365,7 +2372,9 @@ function renderPolicy() {
 
 function policyCode(rep) {
   const signal = rep.signal;
-  const lines = ["def held_by(result):", '    """The gated questions that are unsure about this result. An empty list means act on it."""',
+  const rules = rep.rules.length ? ["# Policy also sends rows whose answers break one of these rules to review. This snippet checks only",
+    "# the thresholds; Export as a module writes a gate that checks the rules too.", ...rep.rules.map((x) => `#   ${x}`), ""] : [];
+  const lines = [...rules, "def held_by(result):", '    """The gated questions that are unsure about this result. An empty list means act on it."""',
     "    # 1e-9 absorbs float rounding, so a signal equal to its threshold clears it, as in the Workbench.", "    held = []"];
   for (const q of rep.questions) {
     const key = JSON.stringify(q.qid);

@@ -87,6 +87,9 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(r["broken_rows"], [0, 1, 2])
         self.assertEqual((r["labeled_broken"], r["wrong_broken"], r["labeled_kept"], r["wrong_kept"]), (2, 2, 3, 2))
         self.assertEqual(r["labels_break"], [6])
+        # The labels break the rule even where the answers do not apply it: no refund answered, a refund labeled.
+        quiet = row(7, {"dept": "none", "refund": True}, dept="none")
+        self.assertEqual(rules.report(RULE, rows + [quiet], Q)["rules"][0]["labels_break"], [6, 7])
         self.assertEqual(r["p"], drift.fisher_exact(2, 0, 2, 1))
         self.assertEqual((rep["broken_any"], rep["broken_rows"]), (3, [0, 1, 2]))
 

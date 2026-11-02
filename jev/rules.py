@@ -224,6 +224,9 @@ def report(text: Any, rows: Any, question_set: Any = None) -> dict:
         labels_break: List[int] = []
         for row in rows:
             labels = row.get("labels") if isinstance(row.get("labels"), dict) else {}
+            truth = _labels_shown(row["answers"], labels, qids)
+            if truth is not None and broken(rule, truth):  # the labels' own verdict, whatever the answers say
+                labels_break.append(row.get("index"))
             shown = shown_answers(row["answers"], qids)
             result = broken(rule, shown)
             if result is None:
@@ -238,14 +241,11 @@ def report(text: Any, rows: Any, question_set: Any = None) -> dict:
                 any_broken.add(row.get("index"))
             else:
                 kept_n += 1
-            truth = _labels_shown(row["answers"], labels, qids)
             if truth is None:
                 continue
             side = labeled["broken" if result else "kept"]
             side[0] += 1
             side[1] += any(shown[q] != truth[q] for q in qids)
-            if broken(rule, truth):
-                labels_break.append(row.get("index"))
         (bn, bw), (kn, kw) = labeled["broken"], labeled["kept"]
         out_rules.append({
             "line": rule["line"], "text": rule["text"], "questions": qids,
