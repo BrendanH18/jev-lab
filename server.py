@@ -20,7 +20,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, envfile, examples, find, gate, hello, holdout, images,
+from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
                  lint, policy, review, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
@@ -544,6 +544,13 @@ def api_wb_check_run(body):
     return checks.run(client, str(body.get("id", "")), model or None)
 
 
+def api_wb_check_drift(body):
+    model = str(body.get("model") or "").strip()
+    if model:
+        check_model(model)
+    return drift.run(client, str(body.get("id", "")), body.get("rows"), model or None)
+
+
 def api_wb_gate_export(body):
     if body.get("dataset"):
         return gate.export_check(str(body["dataset"]))
@@ -610,6 +617,7 @@ ROUTES = {
     ("POST", "/api/workbench/checks"): api_wb_check_save,
     ("POST", "/api/workbench/checks/delete"): api_wb_check_delete,
     ("POST", "/api/workbench/checks/run"): api_wb_check_run,
+    ("POST", "/api/workbench/checks/drift"): api_wb_check_drift,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,

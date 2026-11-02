@@ -594,6 +594,65 @@ change, for example in GitHub Actions:
 | `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
 | `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, `answered_by`, and `notes` |
 
+## Compare new rows with a check's dataset
+
+A check's accuracy holds for rows like the ones it was tuned on. Its intervals assume the labeled rows
+are a random sample of the items the gate will see, and traffic changes: a new product, a new channel, a
+wholesale campaign. Then the gate can quietly automate fewer rows, or rows of a kind nobody labeled.
+**Compare new rows**, beside **Run check** under a dataset that holds a check, tells you whether new
+rows still look like the dataset, without labeling them first.
+
+Paste up to 200 rows, one per line as in the rows box, or press **Use the rows box**. Labels on them are
+ignored. **Compare** sends the dataset's rows and the new rows to the check's model, or the one typed
+beside **Run check**, one call per row, and compares the two runs through the check's gate. Nothing is
+saved, and nothing from an earlier run is reused. The report shows:
+
+- **Automated**: the share of each set the gate automates, with 95% intervals, and Fisher's exact test of
+  whether they differ, followed by whether the new rows meet the check's minimum.
+- **Answers**, for every Choice, Noul, and Score question: the answers whose share moved most, and a
+  chi-square test of whether the mix differs. Answers too rare for chi-square are pooled; with fewer than
+  three groups left, Fisher's exact test compares the most common answer with the rest.
+- **Median confidence**, or top probability if the check reads that, for each question, and a
+  Mann-Whitney U test of whether it moved. A question that is less sure on the new rows is often the
+  first sign of inputs it was not written for.
+- **Estimated accuracy on the new rows.** Each new automated row borrows the accuracy of the labeled,
+  automated dataset rows like it: those with the same gated answers and in the same confidence band
+  (below 0.90, 0.90 to 0.99, 0.99 and up) when at least five share both, those with the same gated answers
+  when at least five do, and all of them otherwise. The 95% interval resamples the new rows and draws each
+  borrowed accuracy from its Beta posterior, so 40 of 40 right reads as about 94% to 100%, not exactly
+  100%. It is compared with the check's accuracy target, using the interval's lower bound when the check
+  uses [targets at 95% confidence](#targets-at-95-confidence).
+- **Worth labeling**: the new automated rows whose gated answers fewer than five labeled rows share.
+  Their estimate leans on unlike rows; label some and add them to the dataset.
+- **The check on the dataset**: whether the gate still meets its targets on the dataset run, as **Run
+  check** would report.
+
+Every p-value is adjusted for the number of tests in the report with Holm's method, and a test counts as a
+shift when its adjusted p-value is below 0.05. The report says **Shifted** when any test does or the new
+rows miss a target, **Looks like the dataset** otherwise, and **Not compared** when rows got no answer.
+When the two runs were answered by different versions, it says so, since the difference may then come
+from the model rather than the rows.
+
+A shift says the rows differ, not that the gate is wrong on them. The estimate assumes a row with the
+same answers and confidence is as often right in both sets, which a new kind of input can break, for
+example messages that look like billing but are not. "Looks like the dataset" is not proof either: a
+small set of new rows may not show a real change. Label a sample of the new rows before you rely on
+the gate for them.
+
+From a terminal, name the dataset and the file of new rows:
+
+```sh
+uv run --locked scripts/check.py support-tickets --drift new.jsonl
+```
+
+It prints the same report and exits 0 when the new rows look like the dataset and its check passes, 1 when
+they shifted or the check fails, and 2 when the runs could not be compared. `--model` and `--out` work as
+for checks.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/checks/drift` | `id`, `rows` (text, one row per line, or a list), optional `model` | `status` (`steady`, `shift`, or `error`), `reasons`, `reference` and `new` (rows, routed, automated, share with interval; `reference` also has the accuracy), `automation` (`p`, `p_adjusted`, `shifted`), `questions` (`mix`, `distance`, `mix_p_adjusted`, `mix_shifted`, and `signal` medians and test), `estimate` (`accuracy`, `low`, `high`, and how many rows borrowed at each level), `targets`, `thin` (up to 20 rows worth labeling), `check_status`, `check_reasons`, `notes`, `cost_usd`, `calls`, and `answered_by` |
+
 ## Export a gate as code
 
 A gate is only useful once your application applies it. **Export as a module**, under Policy's gate
@@ -813,6 +872,7 @@ request with one file part per picture.
 | Imported CSV | 2,000,000 characters and 100 columns; the first 200 rows with state |
 | Saved dataset | 200 nonempty rows and 2,000,000 characters as JSON |
 | Check | One per dataset; up to 10 gated questions; one call per row on every run |
+| Compare new rows | 200 new rows, plus the dataset's rows: up to 400 calls per comparison |
 | Calibrate, Costs, Review, Slices, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Prices | $0 to $1,000,000 each; up to 100 priced mistakes |
 | Policy gated questions | 10 |

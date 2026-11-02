@@ -336,6 +336,22 @@ class HttpTests(unittest.TestCase):
             rep = json.loads(body)
             self.assertEqual((rep["status"], rep["model"], rep["automated"], rep["labeled"]), ("pass", "jev-1.14.0", 2, 2))
             self.assertEqual(fake.models, ["jev-1.14.0"] * 2)
+            forged, _, _ = self.request("POST", "/api/workbench/checks/drift", json.dumps({"id": "refunds", "rows": "refund me"}),
+                                        {"Content-Type": "application/json"})
+            self.assertEqual(forged, 403, "comparing new rows spends budget, so it needs the session token")
+            with patch.object(server.client, "system_one", side_effect=fake.system_one):
+                status, _, body = self.request("POST", "/api/workbench/checks/drift",
+                                               json.dumps({"id": "refunds", "rows": "refund me\nrefund please\nlove it"}),
+                                               self.post_headers())
+            self.assertEqual(status, 200, body)
+            rep = json.loads(body)
+            self.assertEqual((rep["reference"]["routed"], rep["new"]["routed"], rep["calls"]), (2, 3, 5))
+            self.assertIn(rep["status"], ("steady", "shift"))
+            self.assertEqual(rep["check_status"], "pass")
+            bad, _, err = self.request("POST", "/api/workbench/checks/drift", json.dumps({"id": "refunds", "rows": ""}),
+                                       self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("Paste the new rows", json.loads(err)["error"])
             status, _, body = self.request("POST", "/api/workbench/checks/delete", json.dumps({"id": "refunds"}),
                                            self.post_headers())
             self.assertTrue(json.loads(body)["removed"])

@@ -33,6 +33,8 @@ uv run scripts/validate.py                    # run every built-in scenario agai
 uv run scripts/check.py                       # rerun the checks saved in Workbench datasets against the
                                                # LIVE model (one call per row); exits 1 when a gate misses
                                                # its targets. Needs TYPESAFE_API_KEY. --list makes no calls.
+                                               # <id> --drift rows.jsonl compares unlabeled rows with that
+                                               # dataset through its gate (jev/drift.py); exits 1 on a shift.
 ```
 
 Lint with `uv run --locked ruff check` (configured in `pyproject.toml`; CI runs it). No formatter is
@@ -120,6 +122,7 @@ Bulk rows and their `_expect` labels as datasets under `data/workbench/datasets/
 only — never answers, per the no-replay rule below), keeps a tuned Policy gate with a dataset as a *check*
 (`jev/checks.py`: gates, model, the versioned id that answered the tuning run as `tuned_on`, and
 user-chosen targets, never measured results) that the Datasets panel and `scripts/check.py` rerun live,
+compares unlabeled new rows with a check's dataset through its gate (`jev/drift.py`, both sides run live),
 runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
 `SpendGuard`), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a

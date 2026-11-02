@@ -70,7 +70,7 @@ issue real refunds, or transfer money.
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, export the gate as code, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. **Open in Workbench**, in the same drawer, puts that exact request in
@@ -137,6 +137,11 @@ conditions.
   `uv run --locked scripts/check.py` does the same from a terminal or CI and exits nonzero on a miss.
   A check saved from a run of an alias such as `jev-latest` asks the version that answered that run, so
   the gate stays on the version it was tuned on when the alias moves. Only targets are saved, never answers.
+- **Compare new rows:** paste rows a check's gate will see now, unlabeled, and see whether they still look like
+  the dataset it was tuned on. Both sets of rows are sent to the model again, then compared through the gate:
+  the share automated, each question's answers and confidence, each with a significance test, and an
+  estimated accuracy on the new rows from the labeled rows like them. It lists the new rows worth labeling.
+  `scripts/check.py <dataset> --drift new.jsonl` does the same from a terminal.
 - **Export a gate:** write Policy's gate, or a saved check, as a Python or JavaScript file. Its `decide(state)`
   asks the questions in one call and routes the row to `auto` or `review` by the tuned thresholds, reading
   each answer as Policy does. Run it as a script to route rows from standard input. It makes no model call.
@@ -221,6 +226,7 @@ nonzero when a gate misses its targets:
 
 ```sh
 uv run --locked scripts/check.py
+uv run --locked scripts/check.py support-tickets --drift new.jsonl  # compare unlabeled rows with that dataset
 ```
 
 `validate.py` makes paid API calls using the configured key and prints observed results. Its exit status
