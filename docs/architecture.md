@@ -95,9 +95,10 @@ without another call, the same way Shield reweights.
 - Workbench items are written to `data/workbench/<id>.json`. They persist across restarts and are
   intentionally available for version control. They contain input data and expectations.
 - `.env` stores optional local configuration and an API key; it must stay gitignored and untracked.
-- Workbench pictures are saved in `data/workbench/images/`, named by a hash of their bytes.
+- Workbench pictures are saved in `data/workbench/images/`, named by a hash of their bytes: a saved test's
+  images, and the pictures **Add pictures** stores for Bulk rows, which name them under `_image`.
 - Workbench datasets are written to `data/workbench/datasets/<id>.json`: Bulk rows, their `_expect`
-  labels, optionally the question set, and optionally a check: gates, a model, and targets. They hold
+  labels, optionally the question set, consistency rules, and a check: gates, a model, targets, and rules. They hold
   no answers, and are also meant for version control.
 - Bundled sample documents and rows live in `data/samples/`; the Bulk tickets in `tickets.jsonl`
   carry `_expect` labels for Calibrate. Sample pictures live in `static/img/samples/` and are drawn

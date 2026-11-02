@@ -201,6 +201,7 @@ def run(client: JevClient, out: dict) -> None:
         out["calibrate"][qid] = {k: report[k] for k in ("accuracy", "labeled", "ece", "targets", "confusion", "classes")}
 
 
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", help="write the full answers as JSON here")

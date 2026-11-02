@@ -170,9 +170,35 @@ is sent as its own state. The same question set is evaluated for every row, with
 calls. The results can be sorted and exported as CSV.
 
 Empty rows are removed, and only the first 200 remaining rows are processed. Each row uses a
-separate model call. Rows are text or JSON, so Box questions cannot run in bulk. A missing-key or
-budget error stops new work where possible; already admitted calls may complete. Per-row errors
-remain visible in the results.
+separate model call. A missing-key or budget error stops new work where possible; already admitted
+calls may complete. Per-row errors remain visible in the results.
+
+### Picture rows
+
+A JSON row can carry a picture under `"_image"`: the name of a bundled sample (`torn-bag`,
+`intact-bag`, `crushed-box`, `grinder-ok`) or of a picture added with **Add pictures**. The picture is
+sent with the row as an image asset, and the row's state names it under `photo`, so a question can
+ask about `` `photo` `` as Claims's questions do. `"_image"` never reaches the model as text, and a
+picture row cannot have its own `photo` field.
+
+```json
+{"customer_note": "The bag arrived torn.", "_image": "torn-bag", "_expect": {"damage_visible": true, "damage_box": {"left": 0.45, "top": 0.36, "right": 0.68, "bottom": 0.58}}}
+```
+
+**Add pictures** resizes the chosen PNG or JPEG files in the browser, as Build does, stores them under
+`data/workbench/images/` by a hash of their bytes, and adds one row per picture. Review those files
+before committing them. To try it without photos of your own, name the samples in rows and open the Claims
+demo's request in the Workbench (**Inspect JSON**, then **Open in Workbench**) for its photo questions, Box
+included.
+
+Box questions run in Bulk when every row has a picture. Label a Box with its four edges, as fractions
+of the picture's width and height. Calibrate counts a Box answer as right when it overlaps its label
+with an intersection over union (IoU) of at least 0.5, as a saved test's default does, and shows the
+mean overlap. A Box has no options, so its gate reads its confidence under either signal, and it has no
+confusion matrix. Policy, the costs, and the check on unseen rows read Choice, Noul, and Score answers
+only, and an exported gate cannot include a Box question, since it sends no picture. A dataset saved
+with Box questions needs a picture on every row. Images are dreamer-ready in TypeSafe's terms, and each
+picture adds image tokens to its row's call.
 
 ## Import a CSV
 

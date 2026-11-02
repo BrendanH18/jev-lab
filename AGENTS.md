@@ -127,7 +127,8 @@ checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B 
 Tune, cost, cross-validation, checks, drift and the exported gate send rows that break one to review),
 runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
-`SpendGuard`), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a
+`SpendGuard`; a row's `_image` picture travels as an asset named `photo` in its state, so Box questions run
+too), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a
 Python or JavaScript module whose `decide(state)` routes a row (`jev/gate.py`).
 
 ## Conventions

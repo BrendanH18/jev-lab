@@ -9,6 +9,8 @@ Correctness per type:
   * Choice: the selected option equals the label.
   * Noul: P(yes) >= 0.5 agrees with a yes/no label.
   * Score: the most likely level equals the labeled level.
+  * Box: the answer's box overlaps the labeled box with an intersection over union of at least IOU_RIGHT. A Box
+    has no options, so its gate reads its confidence under either signal, and it has no confusion matrix.
 
 A Score's levels are ordered, so for Score questions ordinal() also says how far off the answers are: how
 often the most likely level is within one of the label, the mean error of that level and of the expected
@@ -35,6 +37,9 @@ STEPS = 100  # threshold resolution: 0.00, 0.01, ... 1.00
 BINS = 10
 MAX_ROWS = 1000
 MAX_CLASSES = 255  # the Workbench's Choice option limit; Score allows fewer levels
+TYPES = ("choice", "noul", "score", "box")
+IOU_RIGHT = 0.5  # a Box answer is right when it overlaps its label at least this much, as a Workbench test's default
+EDGES = ("left", "top", "right", "bottom")
 _EPS = 1e-9
 
 
@@ -151,8 +156,33 @@ def _choice_formula(probs: Dict[str, float]) -> float:
     return max(0.0, (max(probs.values()) - 1 / n) / (1 - 1 / n))
 
 
+def _edges(raw: Any, what: str) -> Dict[str, float]:
+    """A box as four edge fractions, left < right and top < bottom, or ValueError."""
+    if not isinstance(raw, dict) or not all(k in raw for k in EDGES):
+        raise ValueError("%s must be a box with left, top, right, and bottom" % what)
+    box = {k: _unit(raw[k], "%s %s" % (what, k)) for k in EDGES}
+    if not (box["left"] < box["right"] and box["top"] < box["bottom"]):
+        raise ValueError("%s must have left < right and top < bottom" % what)
+    return box
+
+
+def iou(a: Dict[str, float], b: Dict[str, float]) -> float:
+    """Intersection over union of two boxes: 1 is identical, 0 is disjoint."""
+    w = max(0.0, min(a["right"], b["right"]) - max(a["left"], b["left"]))
+    h = max(0.0, min(a["bottom"], b["bottom"]) - max(a["top"], b["top"]))
+    inter = w * h
+    union = sum((x["right"] - x["left"]) * (x["bottom"] - x["top"]) for x in (a, b)) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _right(qtype: str, label: Any, predicted: Any) -> bool:
+    return iou(label, predicted) + _EPS >= IOU_RIGHT if qtype == "box" else label == predicted
+
+
 def _label(qtype: str, raw: Any, answer: dict) -> Any:
     """The label in the answer's own terms, or ValueError with a reason a person can act on."""
+    if qtype == "box":
+        return _edges(raw, "label")
     if qtype == "choice":
         options = list(_probs(answer))
         if isinstance(raw, str) and raw in options:
@@ -181,6 +211,9 @@ def _label(qtype: str, raw: Any, answer: dict) -> Any:
 
 def _read(qtype: str, answer: dict, signal: str) -> Tuple[Any, float, float]:
     """(prediction, gating signal, probability the prediction is right as the model states it)."""
+    if qtype == "box":
+        stated = _unit(answer.get("confidence"), "confidence")
+        return _edges(answer.get("box"), "box"), stated, stated
     if qtype == "noul":
         p = _unit(answer.get("noul"), "noul")
         predicted = p >= 0.5
@@ -210,19 +243,23 @@ def _read(qtype: str, answer: dict, signal: str) -> Tuple[Any, float, float]:
 def _show(qtype: str, value: Any) -> str:
     if qtype == "noul":
         return "yes" if value else "no"
+    if qtype == "box":
+        return ", ".join("%.2f" % value[k] for k in EDGES)
     return str(value)
 
 
 def read(answer: dict, signal: str = "confidence") -> Tuple[str, float]:
     """(prediction as Calibrate shows it, gating signal) for one answer. ValueError if unreadable."""
     qtype = answer.get("type")
-    if qtype not in ("choice", "noul", "score"):
-        raise ValueError("Calibrate works on Choice, Noul, and Score answers")
+    if qtype not in TYPES:
+        raise ValueError("Calibrate works on Choice, Noul, Score, and Box answers")
     predicted, gate, _ = _read(qtype, answer, signal)
     return _show(qtype, predicted), gate
 
 
 def _classes(qtype: str, answer: dict) -> List[str]:
+    if qtype == "box":
+        return []
     if qtype == "noul":
         return ["yes", "no"]
     keys = list(_probs(answer))
@@ -364,14 +401,15 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
     scored: List[dict] = []
     invalid: List[dict] = []
     ordinal_pairs: List[Tuple[int, int, Optional[float]]] = []
+    overlaps: List[float] = []
     signals: Dict[str, float] = {}  # every readable row, labeled or not, so a view can route all of them
     unlabeled = 0
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("answer"), dict):
             continue
         answer = row["answer"]
-        if answer.get("type") not in ("choice", "noul", "score"):
-            raise CalibrationError("Calibrate works on Choice, Noul, and Score answers")
+        if answer.get("type") not in TYPES:
+            raise CalibrationError("Calibrate works on Choice, Noul, Score, and Box answers")
         if qtype is None:
             qtype = answer["type"]
         elif answer["type"] != qtype:
@@ -394,10 +432,13 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
         noul_p = float(answer["noul"]) if qtype == "noul" else None
         if qtype == "score":
             ordinal_pairs.append((label, predicted, _expected(answer)))
+        right = _right(qtype, label, predicted)
+        if qtype == "box":
+            overlaps.append(iou(label, predicted))
         scored.append({"index": index, "label": _show(qtype, label), "predicted": _show(qtype, predicted),
-                       "correct": label == predicted, "signal": gate, "top": top,
+                       "correct": right, "signal": gate, "top": top,
                        # Noul calibration compares P(yes) with how often the label is yes.
-                       "pair": (noul_p, label) if qtype == "noul" else (top, label == predicted)})
+                       "pair": (noul_p, label) if qtype == "noul" else (top, right)})
     if qtype is None:
         raise CalibrationError("No answers to calibrate. Run Bulk first.")
     classes = _classes(qtype, first) if first else []
@@ -420,4 +461,6 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
         "sweep": points, "targets": targets(points, bound) if scored else [],
         "rows": scored, "signals": signals,
         "ordinal": ordinal(ordinal_pairs, [int(c) for c in classes]) if qtype == "score" and scored else None,
+        # Box: the mean overlap with the labels, and the overlap that counts as right.
+        "iou_mean": sum(overlaps) / len(overlaps) if overlaps else None, "iou_right": IOU_RIGHT if qtype == "box" else None,
     }

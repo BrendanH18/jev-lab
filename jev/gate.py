@@ -36,6 +36,8 @@ FIELD = "text"  # a Bulk text row becomes {"text": row}; checks.run sends rows t
 def validate(questions: Any, gates: Any, signal: Any, model: Any) -> tuple:
     """(questions, gates, signal, model) checked, or WorkbenchError."""
     questions = workbench.bulk_questions(questions)
+    if workbench.has_box(questions):
+        raise WorkbenchError("The gate sends no picture, so its questions cannot include a Box question. Remove it first.")
     # In a JavaScript object literal, a "__proto__" key sets the prototype instead of adding the key, so the
     # exported module would silently lose that question, gate, or option.
     if "__proto__" in questions or any("__proto__" in q["criteria"] for q in questions.values()

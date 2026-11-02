@@ -572,6 +572,14 @@ def api_wb_bulk_sample(_body):
             "terse_questions": examples.TERSE_BULK_QUESTIONS}
 
 
+def api_wb_pictures_save(body):
+    return {"names": workbench.save_pictures(body.get("pictures"))}
+
+
+def api_wb_pictures_load(body):
+    return {"pictures": workbench.load_pictures(body.get("names"))}
+
+
 ROUTES = {
     ("GET", "/api/status"): api_status,
     ("POST", "/api/key"): api_key,
@@ -614,6 +622,8 @@ ROUTES = {
     ("POST", "/api/workbench/items/run"): api_wb_run_items,
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
+    ("POST", "/api/workbench/pictures"): api_wb_pictures_save,
+    ("POST", "/api/workbench/pictures/load"): api_wb_pictures_load,
     ("POST", "/api/workbench/import"): api_wb_import,
     ("GET", "/api/workbench/datasets"): api_wb_datasets,
     ("POST", "/api/workbench/datasets"): api_wb_dataset_save,

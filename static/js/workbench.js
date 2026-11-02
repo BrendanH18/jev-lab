@@ -11,6 +11,8 @@ const W = {
   lint: null,
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
   bulk: { rowsText: "", result: null, sortKey: null, sortDir: -1, source: "current", sampleQuestions: null, labels: {},
+    // Row pictures (a row's "_image"): their image URLs by name, for thumbnails.
+    pictures: {},
     // Saved datasets (data/workbench/datasets/): rows and labels only, never answers. savedText is the rows box as
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
@@ -633,6 +635,44 @@ function replaceRows(text, what) {
   b.rowsText = b.savedText = text;
   b.labelsDirty = false;
   return true;
+}
+
+// Store chosen pictures under data/workbench/images (resized as Build resizes them) and add a row for each.
+async function addPictures(input) {
+  const files = [...input.files];
+  input.value = "";
+  if (!files.length) return;
+  try {
+    // One picture per request: a few detailed photos together could pass the server's request size limit.
+    const names = [];
+    for (const file of files.slice(0, 20)) {
+      const picture = await prepareImage(file);
+      const [name] = (await api("/api/workbench/pictures", { pictures: [{ data_base64: picture.data_base64 }] })).names;
+      W.bulk.pictures[name] = picture.url;
+      names.push(name);
+    }
+    const b = W.bulk;
+    const added = names.map((name) => ({ note: "", _image: name }));
+    const current = rowsPayload();  // a JSON array stays an array of rows; lines stay lines
+    b.rowsText = Array.isArray(current) ? rowsText([...current, ...added])
+      : [b.rowsText.trim(), ...added.map((x) => JSON.stringify(x))].filter(Boolean).join("\n");
+    markUnsaved();
+    if (files.length > 20) toast("Added the first 20 pictures; add the rest in another batch.", "error");
+    else toast(`Added ${names.length} picture row${names.length > 1 ? "s" : ""}. Saved under data/workbench/images.`);
+    render();
+  } catch (e) { handleError(e); }
+}
+// Image URLs for the pictures rows name: samples from static files, uploads fetched once.
+async function loadPictureUrls(results) {
+  const b = W.bulk;
+  const names = [...new Set(results.map((r) => r.row?._image).filter((n) => typeof n === "string" && !b.pictures[n]))];
+  const files = names.filter((n) => !/^[a-z-]+$/.test(n));
+  for (const n of names) if (/^[a-z-]+$/.test(n)) b.pictures[n] = sampleUrl(n);
+  if (!files.length) return;
+  try {
+    const { pictures } = await api("/api/workbench/pictures/load", { names: files });
+    for (const [n, x] of Object.entries(pictures)) b.pictures[n] = `data:image/${x.format === "jpg" ? "jpeg" : "png"};base64,${x.data_base64}`;
+  } catch (e) { handleError(e); }
 }
 
 async function loadSampleRows() {
@@ -1278,10 +1318,14 @@ function renderBulk() {
       h("div", { class: "panel bulk" },
         h("div", { class: "panel-head" }, h("h2", {}, `Rows · ${nRows}`), h("div", { class: "spacer" }),
           h("button", { class: "btn sm ghost", onclick: () => { b.csv.open = !b.csv.open; render(); if (b.csv.open) $("#csv-import")?.scrollIntoView({ behavior: "smooth", block: "start" }); } }, "Import CSV"),
+          h("button", { class: "btn sm ghost", onclick: () => $("#bulk-pictures").click(), title: "Each picture becomes a row whose state names it as photo" }, "Add pictures"),
+          h("input", { type: "file", id: "bulk-pictures", accept: "image/png,image/jpeg", multiple: true, hidden: true, onchange: (e) => addPictures(e.target) }),
           h("button", { class: "btn sm ghost", onclick: loadSampleRows }, "Load sample rows")),
         h("div", { class: "panel-body" }, rows,
           h("p", { class: "faint", style: { fontSize: "12px", marginTop: "8px" } }, "Put labels on a JSON row under ", h("code", {}, "\"_expect\""), ", keyed by question id: ",
-            h("code", {}, "{\"text\": \"…\", \"_expect\": {\"department\": \"billing\", \"wants_refund\": true}}"), ". Labels never reach the model; Calibrate scores the answers against them."))),
+            h("code", {}, "{\"text\": \"…\", \"_expect\": {\"department\": \"billing\", \"wants_refund\": true}}"), ". Labels never reach the model; Calibrate scores the answers against them. ",
+            "A row's ", h("code", {}, "\"_image\""), " names a picture, sent with the row as ", h("code", {}, "photo"), ", so questions can ask about ", h("code", {}, "`photo`"),
+            " and Box questions can run. Label a Box with its edges: ", h("code", {}, "{\"left\": 0.4, \"top\": 0.3, \"right\": 0.7, \"bottom\": 0.6}"), "."))),
       h("div", { class: "grid", style: { gap: "16px" } },
         renderDatasets(),
         h("div", { class: "panel" },
@@ -1335,7 +1379,7 @@ async function runBulk() {
       && answerClasses(asked[m.question]).includes(m.label) && answerClasses(asked[m.question]).includes(m.answer));
     b.cal.qid = chooseCalQuestion();
     resetPolicy();
-    await Promise.all([recalibrate(), repolicy()]);
+    await Promise.all([recalibrate(), repolicy(), loadPictureUrls(b.result.results)]);
     if (b.result.stopped) toast(b.result.stopped, "error");
     render();
     $("#calibrate")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1347,6 +1391,7 @@ function cellValue(answers, qid) {
   if (!a) return { sort: -1, text: "" };
   if (a.type === "choice") return { sort: a.choice, text: a.choice, sub: pct(a.probabilities[a.choice]) };
   if (a.type === "score") return { sort: a.score, text: a.score.toFixed(2), heat: a.score / Math.max(1, Object.keys(a.legend).length - 1) };
+  if (a.type === "box") return { sort: a.confidence ?? -1, text: ["left", "top", "right", "bottom"].map((k) => a.box[k].toFixed(2)).join(" "), sub: a.confidence === undefined ? "" : pct(a.confidence) };
   return { sort: a.noul, text: pct(a.noul), heat: a.noul };
 }
 
@@ -1359,6 +1404,10 @@ function labelSelect(r, qid) {
   const b = W.bulk;
   const answer = r.answers?.[qid];
   if (!answer) return null;
+  if (answer.type === "box") {  // a Box label is four edges, written in the row's "_expect"
+    const label = b.labels[r.index]?.[qid];
+    return label && typeof label === "object" ? h("span", { class: "mono faint", style: { fontSize: "11.5px" } }, ["left", "top", "right", "bottom"].map((k) => Number(label[k]).toFixed(2)).join(" ")) : null;
+  }
   const current = labelText(b.labels[r.index]?.[qid], answer.type);
   const classes = answerClasses(answer);
   const extra = current && !classes.includes(current) ? [h("option", { value: current, selected: true }, `${current} (invalid)`)] : [];
@@ -1419,7 +1468,8 @@ function renderBulkTable() {
         calQ ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), h("th", {}, "route")] : null)),
       h("tbody", {}, rows.map((r) => h("tr", { "data-index": String(r.index) },
         h("td", { class: "num" }, String(r.index + 1)),
-        h("td", { class: "row" }, rowText(r.row), r.error ? h("div", { style: { color: "var(--critical-text)", fontSize: "12px" } }, r.error) : null),
+        h("td", { class: "row" }, b.pictures[r.row?._image] ? h("img", { src: b.pictures[r.row._image], alt: r.row._image, class: "row-thumb" }) : null,
+          rowText(r.row), r.error ? h("div", { style: { color: "var(--critical-text)", fontSize: "12px" } }, r.error) : null),
         qids.map((q) => {
           const v = cellValue(r.answers, q);
           return h("td", { class: q === calQ ? "cal-col" : "" }, v.heat !== undefined
@@ -1505,6 +1555,7 @@ function answerClasses(answer) {
 }
 function labelText(value, type) {
   if (value === undefined || value === null || value === "") return "";
+  if (type === "box" && typeof value === "object") return JSON.stringify(value);
   if (type === "noul") {
     if (value === true || /^(yes|true|1|y)$/i.test(String(value))) return "yes";
     if (value === false || /^(no|false|0|n)$/i.test(String(value))) return "no";
@@ -1604,8 +1655,10 @@ function renderCalibrate() {
             h("td", {}, p.accuracy === null ? "—" : pct(p.accuracy)), h("td", {}, interval(p.low, p.high) || "—"))))))),
       h("div", { id: "cal-cost", class: "grid", style: { gap: "10px" } }),
       h("div", { id: "cal-slices", class: "grid", style: { gap: "8px" } }, sliceBody("cal")),
-      holdoutPanel(c, "cal-holdout", () => [c.qid]),
-      h("div", { class: "cal-tables" }, confusionTable(rep), reliabilityTable(rep)),
+      rep.type === "box" ? null : holdoutPanel(c, "cal-holdout", () => [c.qid]),
+      rep.type === "box" ? h("div", { class: "stat-row" }, stat("mean overlap with the label (IoU)", rep.iou_mean === null ? "—" : rep.iou_mean.toFixed(2)),
+        stat("counts as right at", `IoU ≥ ${rep.iou_right}`)) : null,
+      h("div", { class: "cal-tables" }, rep.type === "box" ? null : confusionTable(rep), reliabilityTable(rep)),
       rep.ordinal ? ordinalBlock(rep.ordinal, c.qid) : null,
       h("div", { class: "code" }, h("pre", { id: "cal-code" }),
         h("button", { class: "btn sm copy", onclick: () => copyText($("#cal-code").textContent) }, icon("copy"), "Copy")),
@@ -1618,7 +1671,9 @@ function renderCalibrate() {
         rep.invalid.length ? invalidNote(rep) : null,
         h("p", { class: "faint" }, rep.type === "noul"
           ? "A Noul has no confidence field; Calibrate uses |2p − 1|, so 0.40 is the docs' starting band of P(yes) ≥ 0.7 or ≤ 0.3. Right means P(yes) ≥ 0.5 agrees with the label."
-          : rep.type === "score" ? "Right means the most likely level equals the labeled level." : "Right means the selected option equals the label."))));
+          : rep.type === "score" ? "Right means the most likely level equals the labeled level."
+            : rep.type === "box" ? `Right means the answer's box overlaps the labeled box with an IoU of at least ${rep.iou_right}. A Box has no options, so the gate reads its confidence either way.`
+              : "Right means the selected option equals the label."))));
 }
 
 // A Score's levels are ordered, so say how far off its answers are, and which cut on the expected score
@@ -1666,9 +1721,9 @@ function confusionTable(rep) {
 function reliabilityTable(rep) {
   const noul = rep.type === "noul";
   return h("div", { class: "scroll" },
-    h("h3", { class: "cal-h" }, noul ? "When Jev says P(yes) is…, the label is yes…" : "When Jev's top probability is…, it is right…"),
+    h("h3", { class: "cal-h" }, noul ? "When Jev says P(yes) is…, the label is yes…" : rep.type === "box" ? "When Jev's confidence is…, the box is right…" : "When Jev's top probability is…, it is right…"),
     h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, h("th", {}, noul ? "P(yes)" : "top probability"), h("th", {}, "rows"), h("th", {}, "average stated"), h("th", {}, noul ? "label yes" : "right"))),
+      h("thead", {}, h("tr", {}, h("th", {}, noul ? "P(yes)" : rep.type === "box" ? "confidence" : "top probability"), h("th", {}, "rows"), h("th", {}, "average stated"), h("th", {}, noul ? "label yes" : "right"))),
       h("tbody", {}, rep.reliability.map((bin) => h("tr", {},
         h("td", { class: "mono" }, `${pct(bin.lo)}–${pct(bin.hi)}`), h("td", {}, String(bin.count)), h("td", {}, pct(bin.stated)),
         h("td", {}, `${pct(bin.observed)} (${bin.hits}/${bin.count})`))))));
@@ -1677,6 +1732,7 @@ function reliabilityTable(rep) {
 function calCode(rep, qid, signal, t) {
   // Fixed local names: a question id such as "level" must not shadow the answer.
   const key = JSON.stringify(qid);
+  if (rep.type === "box") return `answer = result.boxes[${key}]\nif answer.confidence >= ${t.toFixed(2)}:\n    act_on(answer.box)  # left, top, right, bottom as fractions\nelse:\n    send_to_review()\n`;
   if (rep.type === "noul") {
     const hi = Math.max(0.5, signal === "confidence" ? (1 + t) / 2 : t);
     return `p = result.nouls[${key}].noul\nif p >= ${hi.toFixed(3)}:\n    act_on_yes()\nelif p <= ${(1 - hi).toFixed(3)}:\n    act_on_no()\nelse:\n    send_to_review()\n`;
