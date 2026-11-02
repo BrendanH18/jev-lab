@@ -91,22 +91,16 @@ class PictureRowTests(unittest.TestCase):
                 workbench.save_pictures(bad)
 
     def test_datasets_keep_picture_rows_and_box_questions(self):
-        rows = workbench.sample_picture_rows()
-        saved = workbench.save_dataset({"name": "Photos", "rows": rows, "questions": claims.questions()})
-        self.assertEqual([r["_image"] for r in saved["rows"]], [ex["sample"] for ex in claims.EXAMPLES])
+        rows = [{"note": "torn", "_image": "torn-bag", "_expect": {"damaged": True}}, {"note": "fine", "_image": "intact-bag"}]
+        saved = workbench.save_dataset({"name": "Photos", "rows": rows, "questions": Q})
+        self.assertEqual([r["_image"] for r in saved["rows"]], ["torn-bag", "intact-bag"])
         with self.assertRaises(workbench.WorkbenchError):
-            workbench.save_dataset({"name": "Photos", "rows": ["text"], "questions": claims.questions()})
+            workbench.save_dataset({"name": "Photos", "rows": ["text"], "questions": Q})
 
-    def test_sample_picture_rows_are_the_claims_states_with_labels(self):
-        rows = workbench.sample_picture_rows()
-        self.assertEqual(len(rows), len(claims.EXAMPLES))
-        for row, ex in zip(rows, claims.EXAMPLES):
-            self.assertEqual((row["_image"], row["customer_note"], row["order"]["id"]), (ex["sample"], ex["note"], ex["order"]))
-            self.assertNotIn("photo", row)
-            labels = row["_expect"]
-            self.assertEqual(labels["damage_visible"], "damage_box" in labels)
+    def test_claims_photo_questions_run_on_picture_rows(self):
+        rows = [{"order": {"items": "2 bags"}, "customer_note": ex["note"], "_image": ex["sample"]} for ex in claims.EXAMPLES]
         res = workbench.run_bulk(FakeClient(), rows, claims.questions())
-        self.assertEqual(res["completed"], 4)
+        self.assertEqual(res["completed"], len(claims.EXAMPLES))
 
     def test_calibrate_scores_box_answers_by_overlap(self):
         label = {"left": 0.4, "top": 0.3, "right": 0.7, "bottom": 0.6}
@@ -125,9 +119,6 @@ class RouteTests(unittest.TestCase):
     def test_routes(self):
         import server
 
-        self.assertIs(server.ROUTES[("GET", "/api/workbench/bulk/sample-pictures")], server.api_wb_bulk_sample_pictures)
-        sample = server.api_wb_bulk_sample_pictures({})
-        self.assertIn("damage_box", sample["questions"])
         self.assertIs(server.ROUTES[("POST", "/api/workbench/pictures")], server.api_wb_pictures_save)
         self.assertIn("torn-bag", server.api_wb_pictures_load({"names": ["torn-bag"]})["pictures"])
 
