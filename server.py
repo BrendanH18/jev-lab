@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
-                 lint, policy, review, security, shield, slices, workbench)
+                 lint, policy, review, rules, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -477,22 +477,27 @@ def api_wb_calibrate(body):
 
 
 def api_wb_policy(body):
-    return policy.evaluate(body.get("rows"), body.get("gates"), str(body.get("signal") or "confidence"))
+    return policy.evaluate(body.get("rows"), body.get("gates"), str(body.get("signal") or "confidence"), body.get("rules"))
 
 
 def api_wb_policy_tune(body):
     return policy.tune(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                       str(body.get("bound") or "estimate"))
+                       str(body.get("bound") or "estimate"), body.get("rules"))
 
 
 def api_wb_holdout(body):
     return holdout.evaluate(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                            str(body.get("bound") or "estimate"), body.get("folds", holdout.FOLDS), body.get("costs"))
+                            str(body.get("bound") or "estimate"), body.get("folds", holdout.FOLDS), body.get("costs"),
+                            body.get("rules"))
 
 
 def api_wb_cost(body):
     return cost.evaluate(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                         body.get("costs"), body.get("gates"), body.get("tune") is not False)
+                         body.get("costs"), body.get("gates"), body.get("tune") is not False, body.get("rules"))
+
+
+def api_wb_rules(body):
+    return rules.report(body.get("rules"), body.get("rows"), body.get("questions"))
 
 
 def api_wb_review(body):
@@ -555,7 +560,7 @@ def api_wb_gate_export(body):
     if body.get("dataset"):
         return gate.export_check(str(body["dataset"]))
     return gate.export(body.get("questions"), body.get("gates"), body.get("signal", "confidence"),
-                       body.get("model") or client.model)
+                       body.get("model") or client.model, rules=body.get("rules"))
 
 
 def api_wb_import(body):
@@ -620,6 +625,7 @@ ROUTES = {
     ("POST", "/api/workbench/checks/drift"): api_wb_check_drift,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,
+    ("POST", "/api/workbench/rules"): api_wb_rules,
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,
     ("POST", "/api/workbench/holdout"): api_wb_holdout,
     ("POST", "/api/workbench/review"): api_wb_review,

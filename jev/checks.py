@@ -12,6 +12,9 @@ because an alias moves when TypeSafe ships a new version and thresholds tuned on
 the next (https://docs.typesafe.ai/models#aliases). A check that still asks an alias carries a note saying so,
 and a run answered by another version than the one the gate was tuned on says that too.
 
+A check may also hold Policy's consistency rules (jev/rules.py) as text: then rows whose answers break one go to
+review on every run, as they did when the gate was tuned.
+
 A check holds targets, never answers or results from an earlier run, so every number a run reports comes
 from that run. Run checks from the Workbench's Datasets panel, or with scripts/check.py, which exits
 nonzero when a check fails so a CI job can rerun them after a change to wording or model.
@@ -25,7 +28,7 @@ import time
 from math import isfinite
 from typing import Any, Dict, List, Optional
 
-from . import calibrate, policy, workbench
+from . import calibrate, policy, rules as rulebook, workbench
 from .calibrate import CalibrationError
 from .client import JevClient, is_versioned
 from .workbench import WorkbenchError
@@ -73,6 +76,15 @@ def validate_check(spec: Any, questions: Any) -> dict:
     out = {"gates": gates, "signal": signal, "bound": bound, "model": model,
            "min_accuracy": _unit(spec.get("min_accuracy"), "min_accuracy", 0.5),
            "min_coverage": _unit(spec.get("min_coverage", 0), "min_coverage")}
+    text = spec.get("rules")
+    if text not in (None, ""):
+        try:
+            parsed = rulebook.parse(text)
+            rulebook.check(parsed, rulebook.kinds_from_questions(questions))
+        except CalibrationError as err:
+            raise WorkbenchError(str(err)) from err
+        if parsed:
+            out["rules"] = "\n".join(r["text"] for r in parsed)
     tuned_on = spec.get("tuned_on")
     if tuned_on is not None:  # checks saved before this field existed have none
         if not isinstance(tuned_on, str) or not is_versioned(tuned_on.strip()):
@@ -133,7 +145,7 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
     check: some rows got no answer, or no row is labeled for every gated question."""
     gates = check["gates"]
     qids = list(gates)
-    rows = [{"index": r["index"], "answers": {q: r["answers"][q] for q in qids if q in r["answers"]},
+    rows = [{"index": r["index"], "answers": r["answers"],  # every answer: a rule may read a question no gate does
              "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates}}
             for r in results if isinstance(r.get("answers"), dict)]
     missing = [r["index"] for r in results if not isinstance(r.get("answers"), dict)]
@@ -147,7 +159,7 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
                        % (len(missing), len(results)))
     if rows:
         try:
-            rep = policy.evaluate(rows, gates, check["signal"])
+            rep = policy.evaluate(rows, gates, check["signal"], check.get("rules"))
         except CalibrationError as err:
             reasons.append(str(err))
     if rep is not None and rep["skipped"]:

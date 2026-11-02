@@ -20,7 +20,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import server  # noqa: E402
-from jev import calibrate, examples, gate, policy, workbench  # noqa: E402
+from jev import calibrate, examples, gate, policy, rules, workbench  # noqa: E402
 
 try:
     import httpx2
@@ -42,6 +42,21 @@ def answers(department=0.9, urgent=0.9, frustration=0.8):
         "is_urgent": {"type": "noul", "noul": urgent},
         "wants_refund": {"type": "noul", "noul": 0.2},
     }
+
+
+# Consistency rules over the same answers: the first breaks when is_urgent is no, the second never does on CASES,
+# and the third compares Score levels and writes a Noul's value as `false`.
+RULES = ("if department = billing then is_urgent = yes\n"
+         "if wants_refund = no and frustration >= 1 then department in billing, shipping\n"
+         "if frustration > 1 then wants_refund = false")
+
+
+def expected_rules(answer_set):
+    """The rules Policy holds this row by, as written."""
+    parsed = rules.parse(RULES)
+    rules.check(parsed, rules.kinds_from_questions(QUESTIONS))
+    lines = rules.holding(parsed, answer_set)
+    return [r["text"] for r in parsed if r["line"] in lines]
 
 
 # Rows on both sides of every threshold, with ties, and a Noul whose confidence is |2p - 1|.
@@ -128,7 +143,8 @@ class ExportTests(unittest.TestCase):
                 for case in CASES:
                     decision = module["decide"]({"text": "hi"}, self.client(case))
                     held = expected(case, signal=signal)
-                    self.assertEqual(decision, {"route": "review" if held else "auto", "held": held, "answers": shown(case)})
+                    self.assertEqual(decision, {"route": "review" if held else "auto", "held": held, "rules": [],
+                                                "answers": shown(case)})
 
     @staticmethod
     def client(raw):
@@ -136,6 +152,37 @@ class ExportTests(unittest.TestCase):
         group = lambda t: {k: SimpleNamespace(**a) for k, a in raw.items() if a["type"] == t}  # noqa: E731
         result = SimpleNamespace(choices=group("choice"), nouls=group("noul"), scores=group("score"))
         return SimpleNamespace(system_one=lambda state, questions, model=None: result)
+
+    def test_rules_route_as_policy_does(self):
+        partial = {k: v for k, v in answers().items() if k != "is_urgent"}  # the first rule cannot be checked
+        angry = dict(answers(), frustration=dict(answers()["frustration"], probabilities={"0": 0.1, "1": 0.2, "2": 0.7}))
+        cases = CASES + [partial, angry, dict(angry, wants_refund={"type": "noul", "noul": 0.9})]  # the last breaks rule 3
+        module = self.python_module(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0", rules=RULES)["python"])
+        seen = set()
+        for case in cases:
+            decision = module["decide"]({"text": "hi"}, self.client(case))
+            want = expected_rules(case)
+            seen.update(want)
+            self.assertEqual(decision["rules"], want)
+            if want:
+                self.assertEqual(decision["route"], "review")
+        self.assertEqual(len(seen), 2, "the cases break the first and third rules")
+        # Policy agrees row by row: labeled on department alone, with its threshold at 0, only a rule holds a row.
+        rows = [{"index": i, "answers": c, "labels": {"department": "billing"}} for i, c in enumerate(cases)]
+        rep = policy.evaluate(rows, {"department": 0.0}, "confidence", RULES)
+        self.assertEqual([not r["automated"] for r in rep["rows"]], [bool(expected_rules(c)) for c in cases])
+        if shutil.which("node"):
+            package = self.tmp / "node_modules" / "@typesafe-ai" / "sdk"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text(json.dumps({"name": "@typesafe-ai/sdk", "type": "module", "main": "index.mjs"}))
+            (package / "index.mjs").write_text(FAKE_JS_SDK)
+            (self.tmp / "run.mjs").write_text(JS_RUNNER)
+            (self.tmp / "gate.mjs").write_text(gate.export(QUESTIONS, GATES, "confidence", "m", rules=RULES)["javascript"])
+            out = json.loads(subprocess.run(["node", "run.mjs", json.dumps(cases)], capture_output=True, text=True,
+                                            check=True, cwd=self.tmp).stdout)
+            self.assertEqual([d["rules"] for d in out], [expected_rules(c) for c in cases])
+        with self.assertRaises(workbench.WorkbenchError):
+            gate.export(QUESTIONS, GATES, "confidence", "m", rules="if department = refunds then is_urgent = yes")
 
     def test_a_missing_answer_holds_its_question(self):
         module = self.python_module(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0")["python"])
@@ -170,7 +217,7 @@ class ExportTests(unittest.TestCase):
         exec(compile(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0")["python"], "gate.py", "exec"), namespace)
         client = typesafe_sdk.TypeSafeClient(api_key="sk-test", transport=httpx2.MockTransport(handler), compression=False)
         decision = namespace["decide"]({"text": "hi"}, client)
-        self.assertEqual(decision, {"route": "review", "held": ["department"], "answers": shown(CASES[1])})
+        self.assertEqual(decision, {"route": "review", "held": ["department"], "rules": [], "answers": shown(CASES[1])})
         (request,) = sent
         self.assertEqual(request["model"], "jev-1.14.0")
         self.assertEqual(request["questions"], workbench.bulk_questions(QUESTIONS), "the SDK sends the questions as the Workbench does")
@@ -190,7 +237,7 @@ class ExportTests(unittest.TestCase):
                 want = []
                 for case in CASES:
                     held = expected(case, signal=signal)
-                    want.append({"route": "review" if held else "auto", "held": held, "answers": shown(case)})
+                    want.append({"route": "review" if held else "auto", "held": held, "rules": [], "answers": shown(case)})
                 self.assertEqual(json.loads(out), want)
         # An answer the model left out holds its question, even when its id names an inherited property, and an
         # unreadable signal (here a Choice answer without its confidence) holds its question too.

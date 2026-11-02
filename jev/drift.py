@@ -30,7 +30,7 @@ from itertools import combinations
 from math import comb, erfc, exp, lgamma, pi, sqrt
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import calibrate, checks, policy, workbench
+from . import calibrate, checks, policy, rules as rulebook, workbench
 from .client import JevClient
 from .workbench import WorkbenchError
 
@@ -209,10 +209,16 @@ def _band(value: float) -> int:
     return sum(1 for cut in BANDS if value + calibrate._EPS >= cut)
 
 
-def _route(rows: List[dict], gates: Dict[str, float]) -> Tuple[List[dict], List[dict]]:
-    """(routed rows, automated rows). A row is routed when every gated answer is readable."""
+def _route(rows: List[dict], gates: Dict[str, float], rules: Optional[List[dict]] = None) -> Tuple[List[dict], List[dict]]:
+    """(routed rows, automated rows). A row is routed when every gated answer is readable, and automated when every
+    signal clears its threshold and no rule holds it (jev/rules.py)."""
     routed = [r for r in rows if all(q in r["read"] for q in gates)]
-    auto = [r for r in routed if all(r["read"][q][1] + policy.EPS >= t for q, t in gates.items())]
+
+    def kept(r: dict) -> bool:
+        shown = {q: v[0] for q, v in r["read"].items()}
+        return all(rulebook.broken(rule, shown) is False for rule in rules or [])
+
+    auto = [r for r in routed if all(r["read"][q][1] + policy.EPS >= t for q, t in gates.items()) and kept(r)]
     return routed, auto
 
 
@@ -301,18 +307,20 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
     qtypes = {q: questions[q]["type"] for q in gates}
     qtypes.update({q: s["type"] for q, s in questions.items() if s["type"] in policy.TYPES and q not in qtypes})
     ref_rows, new_rows = _read(reference, qtypes, signal), _read(new, qtypes, signal)
-    ref_routed, ref_auto = _route(ref_rows, gates)
-    new_routed, new_auto = _route(new_rows, gates)
+    parsed = rulebook.parse(check.get("rules"))
+    rulebook.check(parsed, rulebook.kinds_from_questions(questions))
+    ref_routed, ref_auto = _route(ref_rows, gates, parsed)
+    new_routed, new_auto = _route(new_rows, gates, parsed)
 
     # Which labeled dataset rows the gate automates, and whether each is right, scored as the check scores them.
     labeled: List[Tuple[tuple, int, bool]] = []
     accuracy = {"accuracy": None, "accuracy_low": None, "accuracy_high": None, "labeled_automated": 0}
-    scored_rows = [{"index": r["index"], "answers": {q: r["answers"][q] for q in gates if q in r["answers"]},
+    scored_rows = [{"index": r["index"], "answers": r["answers"],
                     "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates}}
                    for r in reference if isinstance(r.get("answers"), dict)]
     if scored_rows:
         try:
-            rep = policy.evaluate(scored_rows, gates, signal)
+            rep = policy.evaluate(scored_rows, gates, signal, check.get("rules"))
         except calibrate.CalibrationError:
             rep = None
         if rep is not None:
