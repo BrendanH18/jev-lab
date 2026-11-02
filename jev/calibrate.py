@@ -294,8 +294,11 @@ CUT_STEP = 0.05  # resolution of the expected-score cuts
 def _expected(answer: dict) -> Optional[float]:
     """The answer's expected score, or None when it has none: Jev's `score`, else the probability-weighted level."""
     raw = answer.get("score")
-    if not isinstance(raw, bool) and isinstance(raw, (int, float)) and isfinite(raw):
-        return float(raw)
+    try:
+        if not isinstance(raw, bool) and isinstance(raw, (int, float)) and isfinite(raw):
+            return float(raw)
+    except OverflowError:  # an integer too large for a float: use the weighted level instead
+        pass
     try:
         probs = _probs(answer)
         total = sum(probs.values())
@@ -318,6 +321,8 @@ def ordinal(pairs: List[Tuple[int, int, Optional[float]]], levels: List[int]) ->
     expected = [(label, e) for label, _, e in pairs if e is not None]
     cuts = []
     top = max(levels) if levels else 0
+    if top > MAX_CLASSES:  # levels count from 0, so a level this high is a malformed answer; no grid that large
+        levels, top = [], 0
     grid = [round(i * CUT_STEP, 2) for i in range(int(round(top / CUT_STEP)) + 1)]
     for k in sorted(levels)[1:]:
         actual = sum(1 for label, _ in expected if label >= k)

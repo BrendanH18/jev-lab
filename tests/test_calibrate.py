@@ -129,6 +129,12 @@ class InputTests(unittest.TestCase):
         # A level no row is labeled at or above gets no cut: any cut past the data would score 100%.
         lone = calibrate.evaluate(rows((score([0.8, 0.1, 0.1], 0.3), 0), (score([0.2, 0.7, 0.1], 0.9), 1)))
         self.assertEqual([c["level"] for c in lone["ordinal"]["cuts"]], [1])
+        # A malformed answer neither crashes nor builds a huge grid: an integer too large for a float falls back to
+        # the weighted level, and a level number far past any real Score gets no cuts.
+        huge = calibrate.evaluate(rows((score([0.8, 0.1, 0.1], 10 ** 400), 0), (score([0.1, 0.1, 0.8], 2.0), 2)))
+        self.assertAlmostEqual(huge["ordinal"]["expected_error"], (0.3 + 0) / 2)
+        far = {"type": "score", "probabilities": {"0": 0.5, "100000000": 0.5}, "confidence": 0.5, "score": 1.0}
+        self.assertEqual(calibrate.evaluate(rows((far, 0)))["ordinal"]["cuts"], [])
         # Choice and Noul questions have no ordinal block.
         self.assertIsNone(calibrate.evaluate(rows((choice("billing", 0.9), "billing")))["ordinal"])
 
