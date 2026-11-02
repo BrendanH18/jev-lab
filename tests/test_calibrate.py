@@ -103,6 +103,35 @@ class NoulAndScoreTests(unittest.TestCase):
 
 
 class InputTests(unittest.TestCase):
+    def test_score_reports_how_far_off_it_is(self):
+        def score(probs, expected=None):
+            out = {"type": "score", "probabilities": {str(i): p for i, p in enumerate(probs)}, "confidence": 0.5}
+            if expected is not None:
+                out["score"] = expected
+            return out
+        # Most likely levels 0, 1, 2, 0 against labels 0, 2, 2, 2: within one on three rows, off by 0, 1, 0, 2.
+        r = calibrate.evaluate(rows((score([0.8, 0.1, 0.1], 0.3), 0), (score([0.2, 0.5, 0.3], 1.1), 2),
+                                    (score([0.1, 0.1, 0.8], 1.7), 2), (score([0.5, 0.0, 0.5]), 2)))
+        o = r["ordinal"]
+        self.assertEqual((o["within_one"], o["within_one_accuracy"]), (3, 0.75))
+        self.assertEqual((o["within_one_low"], o["within_one_high"]), calibrate.wilson(3, 4))
+        self.assertAlmostEqual(o["mean_error"], 3 / 4)
+        # The fourth row has no `score`, so its expected score is the weighted level, 1.0.
+        self.assertEqual(o["expected_rows"], 4)
+        self.assertAlmostEqual(o["expected_error"], (0.3 + 0.9 + 0.3 + 1.0) / 4)
+        cuts = {c["level"]: c for c in o["cuts"]}
+        self.assertEqual(sorted(cuts), [1, 2])
+        # Label >= 1 holds on rows 2-4, whose expected scores are 1.1, 1.7, and 1.0; row 1 sits at 0.3. Every cut
+        # above 0.3 and up to 1.0 is right on all four, and the tie goes to the one nearest 0.5.
+        self.assertEqual((cuts[1]["cut"], cuts[1]["correct"], cuts[1]["flagged"], cuts[1]["actual"]), (0.5, 4, 3, 3))
+        self.assertEqual(cuts[2]["correct"], 4)
+        self.assertTrue(0.3 < cuts[2]["cut"] <= 1.0)
+        # A level no row is labeled at or above gets no cut: any cut past the data would score 100%.
+        lone = calibrate.evaluate(rows((score([0.8, 0.1, 0.1], 0.3), 0), (score([0.2, 0.7, 0.1], 0.9), 1)))
+        self.assertEqual([c["level"] for c in lone["ordinal"]["cuts"]], [1])
+        # Choice and Noul questions have no ordinal block.
+        self.assertIsNone(calibrate.evaluate(rows((choice("billing", 0.9), "billing")))["ordinal"])
+
     def test_bad_labels_are_reported_not_scored(self):
         r = calibrate.evaluate(rows((choice("billing", 0.9), "refunds"), ({"type": "choice", "choice": "x"}, "x"),
                                     (choice("billing", 0.9), "billing")))

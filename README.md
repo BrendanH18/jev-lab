@@ -115,7 +115,9 @@ conditions.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. A target your rows cannot show yet estimates how many more
-  rows you would need to label. It reuses the Bulk answers, so it makes no extra calls.
+  rows you would need to label. For a Score question it also shows how far off the answers are, and
+  the cut on the expected score that best flags each level. It reuses the Bulk answers, so it makes no
+  extra calls.
 - **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
   in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
   answers.

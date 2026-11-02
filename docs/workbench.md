@@ -250,6 +250,20 @@ gate on `confidence` (the answer's own field; a Noul uses |2p − 1|, so 0.40 ma
 or ≤ 0.3) or on the top probability. See TypeSafe's
 [confidence guide](https://docs.typesafe.ai/confidence) for both measures.
 
+A Score's levels are ordered, so answering 1 for a 2 is closer than answering 0. For a Score
+question, Calibrate also shows how far off its answers are:
+
+- how often the most likely level is within one level of the label, with a 95% interval;
+- the mean error, in levels, of the most likely level and of the expected score (the
+  probability-weighted level the answer returns as `score`);
+- for each level k above the lowest, the cut on the expected score that best decides "the label is k
+  or above" on these rows: an application that escalates when `score >= 1.5` acts on such a cut.
+  The table gives the cut's accuracy over every labeled row, how many rows it flags, and how many are
+  labeled k or above. A level with no rows on one side of it gets no cut.
+
+A cut is chosen on the same rows it is measured on, so its accuracy is optimistic; check it on rows
+it was not chosen on before relying on it.
+
 To label rows in the browser, use the label column in the results table. **Keep labels in rows**
 rewrites the rows box as JSON lines that carry your labels, so the next run keeps them. To keep
 labels past a reload, [save the rows as a dataset](#save-rows-and-labels). Thresholds
