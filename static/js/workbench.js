@@ -751,7 +751,8 @@ function checkTargetsText(c) {
 
 function checkItem(x) {
   const c = x.check;
-  const run = W.bulk.checkRuns[x.id] || (W.bulk.checkRuns[x.id] = { running: false, report: null, model: "" });
+  const run = W.bulk.checkRuns[x.id] || (W.bulk.checkRuns[x.id] = { running: false, report: null, model: "",
+    drift: { open: false, text: "", running: false, report: null } });
   const model = h("input", { class: "input sm", list: "cmp-models", value: run.model, spellcheck: "false", style: { maxWidth: "190px" },
     placeholder: `model: ${c.model}`, "aria-label": `Model to ask for the ${x.id} check` });
   model.addEventListener("focus", loadModels);
@@ -764,12 +765,17 @@ function checkItem(x) {
       h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}${c.tuned_on && c.tuned_on !== c.model ? ` · tuned on ${c.tuned_on}` : ""}`)),
     (x.check_notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm", disabled: run.running, onclick: () => runCheck(x.id) },
+      h("button", { class: "btn sm", disabled: run.running || run.drift.running, onclick: () => runCheck(x.id) },
         run.running ? [h("span", { class: "spin" }), " Checking…"] : [icon("layers"), `Run check · ${n} call${n === 1 ? "" : "s"}`]),
       model,
+      h("button", { class: `btn sm${run.drift.open ? " active" : ""}`, "aria-expanded": String(run.drift.open),
+        title: "Do new, unlabeled rows still look like the rows this gate was tuned on?",
+        onclick: () => { run.drift.open = !run.drift.open; render(); } }, icon("search"), "Compare new rows"),
       h("button", { class: "btn sm", onclick: () => exportGate({ dataset: x.id }, `the check saved with “${x.name || x.id}”`) }, icon("code"), "Export as code"),
       h("button", { class: "btn sm ghost", disabled: run.running, onclick: () => removeCheck(x.id) }, "Remove check")),
-    run.report ? checkReport(run.report) : null);
+    run.report ? checkReport(run.report) : null,
+    run.drift.open ? driftForm(x, run) : null,
+    run.drift.report ? driftReport(run.drift.report) : null);
 }
 
 // ---------- Gate export ----------
@@ -868,6 +874,101 @@ function checkReport(rep) {
           h("td", {}, Object.entries(m.wrong).map(([q, a]) => h("div", { style: { fontSize: "12px" } },
             h("span", { class: "mono" }, q), `: ${a.answer}, label ${a.label} `, h("span", { class: "faint mono" }, `(${a.signal.toFixed(2)})`))))))))),
       rep.mistakes_total > 5 ? h("span", { class: "faint", style: { fontSize: "12px" } }, `…and ${rep.mistakes_total - 5} more. Load the dataset and run it in Bulk to see every row.`) : null) : null);
+}
+
+// ---------- Drift ----------
+// jev/drift.py runs the dataset's rows and the new rows, both live, and compares them through the check's gate: the share
+// automated, each question's answers and confidence, and an estimated accuracy on the new rows, which need no labels.
+// The rows box's formats: one row per line, or a JSON array of rows (rowsPayload parses it as Bulk does).
+const lineCount = (text) => { const rows = rowsPayload(text); return Array.isArray(rows) ? rows.length : rows.split("\n").filter((l) => l.trim()).length; };
+
+function driftForm(x, run) {
+  const d = run.drift;
+  const calls = () => {
+    const extra = lineCount(d.text);
+    return `Compare · ${Math.min(x.rows, 200) + Math.min(extra, 200)} calls`;
+  };
+  const label = h("span", {}, calls());
+  const area = h("textarea", { class: "input", spellcheck: "false", rows: "5", "aria-label": `New rows to compare with ${x.id}`,
+    placeholder: "New rows, one per line, as in the rows box: text, or a JSON object. They need no labels; any _expect labels are ignored." }, d.text);
+  area.addEventListener("input", () => { d.text = area.value; mount(label, calls()); });
+  const fromBox = () => { d.text = W.bulk.rowsText || ""; render(); };
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("p", { class: "muted", style: { fontSize: "12.5px", margin: 0 } },
+      "Paste rows the gate will see now, such as this week's traffic. Both the dataset's rows and these are sent to ",
+      h("code", {}, run.model.trim() || x.check.model), ", one call per row, and compared through the gate: what share it automates, how each question answers and how sure it is, and, from the labeled dataset rows like them, how accurate it is likely to be on them."),
+    area,
+    h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: run.running || d.running, onclick: () => runDrift(x.id) },
+        d.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), label]),
+      h("button", { class: "btn sm ghost", onclick: fromBox, title: "Copy the Bulk rows box into this box" }, "Use the rows box"),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "Up to 200 new rows. Nothing is saved.")));
+}
+
+async function runDrift(id) {
+  const run = W.bulk.checkRuns[id];
+  if (!lineCount(run.drift.text)) return toast("Paste the new rows to compare, one per line", "error");
+  run.drift.running = true;
+  run.drift.report = null;
+  render();
+  try {
+    run.drift.report = await api("/api/workbench/checks/drift", { id, rows: rowsPayload(run.drift.text), model: run.model.trim() || undefined });
+  } catch (e) { handleError(e); }
+  run.drift.running = false;
+  render();
+}
+
+const DRIFT_BADGE = { steady: ["good", "check", "Looks like the dataset"], shift: ["warning", "alert", "Shifted"], error: ["warning", "eye", "Not compared"] };
+const pval = (p) => (p === null || p === undefined ? "—" : p < 0.001 ? "< 0.001" : p.toFixed(3));
+const pctOr = (p, digits = 0) => (p === null || p === undefined ? "—" : pct(p, digits));
+
+function driftReport(rep) {
+  const [tone, ic, label] = DRIFT_BADGE[rep.status];
+  const [ctone, , clabel] = CHECK_BADGE[rep.check_status];
+  const ref = rep.reference, nu = rep.new, e = rep.estimate, t = rep.targets;
+  const mark = (ok) => h("span", { class: `badge ${ok ? "good" : "critical"}` }, ok ? "meets" : "misses");
+  const shift = (on) => (on ? h("span", { class: "badge warning", style: { marginLeft: "4px" } }, "shift") : null);
+  const moves = (q) => [...q.mix].sort((a, b) => Math.abs((b.new_share ?? 0) - (b.reference_share ?? 0)) - Math.abs((a.new_share ?? 0) - (a.reference_share ?? 0)))
+    .slice(0, 3).filter((m) => m.reference || m.new);
+  const median = (s) => (s.median === null ? "—" : s.median.toFixed(2));
+  const pline = (p, on) => h("div", { class: "faint", style: { whiteSpace: "nowrap" } }, p === null ? "no test" : `adjusted p ${pval(p)}`, shift(on));
+  return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("span", { class: `badge ${tone}` }, icon(ic), label),
+      h("span", { class: `badge ${ctone}`, title: "The check, judged on the dataset run" }, `check on the dataset: ${clabel}`),
+      h("span", { class: "faint", style: { fontSize: "12px" } },
+        `${ref.rows} dataset rows · ${nu.rows} new rows · asked ${rep.model}${rep.answered_by?.length ? `, answered by ${rep.answered_by.join(", ")}` : ""}`)),
+    h("div", { class: "stat-row" },
+      stat("automated, dataset", ref.share === null ? "—" : withCI(`${ref.automated} of ${ref.routed} · ${pct(ref.share)}`, ref.share_low, ref.share_high)),
+      stat("automated, new rows", nu.share === null ? "—" : [withCI(`${nu.automated} of ${nu.routed} · ${pct(nu.share)}`, nu.share_low, nu.share_high),
+        t.coverage ? [" ", mark(t.coverage.ok)] : null]),
+      stat("adjusted p", rep.automation.p_adjusted === null ? "—" : [pval(rep.automation.p_adjusted), shift(rep.automation.shifted)]),
+      stat("accuracy when automated, dataset", ref.accuracy === null ? "—" : withCI(pct(ref.accuracy, 1), ref.accuracy_low, ref.accuracy_high)),
+      stat("estimated, new rows", e.accuracy === null ? "—" : [withCI(pct(e.accuracy, 1), e.low, e.high), t.accuracy ? [" ", mark(t.accuracy.ok)] : null]),
+      stat("cost", `${usd(rep.cost_usd)} · ${rep.calls} calls`)),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "question"), h("th", {}, "answers, dataset → new"),
+        h("th", {}, `median ${rep.signal === "confidence" ? "confidence" : "top probability"}`))),
+      h("tbody", {}, rep.questions.map((q) => h("tr", {},
+        h("td", {}, h("div", { class: "mono" }, q.qid), q.gated ? h("div", { class: "faint mono", style: { fontSize: "12px" } }, `gate ≥ ${q.threshold.toFixed(2)}`) : null),
+        h("td", { style: { fontSize: "12px" } }, moves(q).map((m) => h("div", { style: { whiteSpace: "nowrap" } },
+          h("span", { class: "mono" }, m.answer), ` ${pctOr(m.reference_share)} → ${pctOr(m.new_share)}`)), pline(q.mix_p_adjusted, q.mix_shifted)),
+        h("td", { style: { fontSize: "12px" } }, h("div", { class: "mono", style: { whiteSpace: "nowrap" } }, `${median(q.signal.reference)} → ${median(q.signal.new)}`),
+          pline(q.signal.p_adjusted, q.signal.shifted))))))),
+    rep.reasons.length || rep.check_reasons.length ? h("ul", { class: "muted", style: { fontSize: "12.5px", margin: 0, paddingLeft: "18px" } },
+      rep.check_reasons.map((r) => h("li", {}, `The check: ${r}`)), rep.reasons.map((r) => h("li", {}, r))) : null,
+    (rep.notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
+    rep.thin.length ? h("div", { class: "grid", style: { gap: "4px" } },
+      h("span", { class: "faint", style: { fontSize: "12px" } }, `Worth labeling: new automated rows few labeled rows are like · ${rep.thin_total}`),
+      h("div", { class: "scroll" }, h("table", { class: "table" },
+        h("tbody", {}, rep.thin.slice(0, 5).map((r) => h("tr", {},
+          h("td", { class: "num" }, String(r.index + 1)),
+          h("td", { class: "row", style: { maxWidth: "300px" } }, r.row),
+          h("td", { class: "mono", style: { fontSize: "12px" } }, r.answers))))))) : null,
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      `Each p-value is adjusted for the ${rep.tests} tests in this report (Holm); a shift is an adjusted p below ${rep.alpha}. `,
+      "The estimate gives each new automated row the accuracy of the labeled, automated dataset rows with the same gated answers, and the same confidence band when enough share it. ",
+      "It assumes rows with the same answers are as often right in both sets, so label a sample of the new rows before relying on it."));
 }
 
 // The versioned id that answered every row of the last Bulk run (from each response's "model" field), or null.
@@ -1142,8 +1243,7 @@ function countRows(text) {
 }
 
 // The rows box as the server takes it: a JSON array, or the text itself (one row per line).
-function rowsPayload() {
-  const rows = W.bulk.rowsText;
+function rowsPayload(rows = W.bulk.rowsText) {
   if (/^\[/.test(rows.trim())) { try { return JSON.parse(rows); } catch { /* keep text */ } }
   return rows;
 }
