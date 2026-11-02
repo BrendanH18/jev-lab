@@ -1598,6 +1598,7 @@ function renderCalibrate() {
       h("div", { id: "cal-slices", class: "grid", style: { gap: "8px" } }, sliceBody("cal")),
       holdoutPanel(c, "cal-holdout", () => [c.qid]),
       h("div", { class: "cal-tables" }, confusionTable(rep), reliabilityTable(rep)),
+      rep.ordinal ? ordinalBlock(rep.ordinal, c.qid) : null,
       h("div", { class: "code" }, h("pre", { id: "cal-code" }),
         h("button", { class: "btn sm copy", onclick: () => copyText($("#cal-code").textContent) }, icon("copy"), "Copy")),
       h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } },
@@ -1610,6 +1611,29 @@ function renderCalibrate() {
         h("p", { class: "faint" }, rep.type === "noul"
           ? "A Noul has no confidence field; Calibrate uses |2p − 1|, so 0.40 is the docs' starting band of P(yes) ≥ 0.7 or ≤ 0.3. Right means P(yes) ≥ 0.5 agrees with the label."
           : rep.type === "score" ? "Right means the most likely level equals the labeled level." : "Right means the selected option equals the label."))));
+}
+
+// A Score's levels are ordered, so say how far off its answers are, and which cut on the expected score
+// (the weighted .score) best decides "at least level k" on these rows (jev/calibrate.py ordinal()).
+function ordinalBlock(o, qid) {
+  const key = JSON.stringify(qid);
+  return h("div", { class: "grid", style: { gap: "10px" } },
+    h("h3", { class: "cal-h" }, "How far off: Score levels are ordered"),
+    h("div", { class: "stat-row" },
+      stat("within one level", withCI(pct(o.within_one_accuracy, 1), o.within_one_low, o.within_one_high)),
+      stat("mean error, most likely level", `${o.mean_error.toFixed(2)} levels`),
+      stat("mean error, expected score", o.expected_error === null ? "—" : `${o.expected_error.toFixed(2)} levels`)),
+    o.cuts.length ? h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "to flag a label of"), h("th", {}, "act when the expected score is"),
+        h("th", {}, "accuracy, every row"), h("th", {}, "flagged"), h("th", {}, "labeled at that level or above"))),
+      h("tbody", {}, o.cuts.map((c) => h("tr", {},
+        h("td", {}, `${c.level} or above`), h("td", { class: "mono" }, `≥ ${c.cut.toFixed(2)}`),
+        h("td", {}, withCI(`${pct(c.accuracy, 1)} (${c.correct}/${c.rows})`, c.low, c.high)),
+        h("td", {}, String(c.flagged)), h("td", {}, String(c.actual))))))) : null,
+    o.cuts.length ? h("p", { class: "faint", style: { fontSize: "12.5px" } },
+      "An application often acts on the expected score rather than one level, for example ",
+      h("code", {}, `result.scores[${key}].score >= ${o.cuts[o.cuts.length - 1].cut.toFixed(2)}`),
+      ". Each cut is the one on a 0.05 grid that agrees best with the labels on these rows, so its accuracy is optimistic until you check it on rows it was not chosen on. The coarse grid keeps a cut from fitting the gap between two rows.") : null);
 }
 
 function invalidNote(rep) {

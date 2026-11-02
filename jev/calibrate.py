@@ -10,6 +10,11 @@ Correctness per type:
   * Noul: P(yes) >= 0.5 agrees with a yes/no label.
   * Score: the most likely level equals the labeled level.
 
+A Score's levels are ordered, so for Score questions ordinal() also says how far off the answers are: how
+often the most likely level is within one of the label, the mean error of that level and of the expected
+score (the probability-weighted level Jev returns as `score`), and for each "label is at least level k"
+decision, the cut on the expected score that decides it best on these rows.
+
 Accuracy measured on a few dozen rows is itself uncertain, so each accuracy carries a 95% Wilson
 score interval. Targets can be met by the measured accuracy ("estimate") or, more cautiously, by the
 interval's lower bound ("lower"): then a threshold counts only when these rows show, with 95%
@@ -19,7 +24,7 @@ labeled rows like these would, if the gate keeps the accuracy and share automate
 
 from __future__ import annotations
 
-from math import ceil, sqrt
+from math import ceil, isfinite, sqrt
 from typing import Any, Dict, List, Optional, Tuple
 
 SIGNALS = ("confidence", "top_probability")
@@ -283,6 +288,67 @@ def reliability(pairs: List[Tuple[float, bool]]) -> Tuple[List[dict], Optional[f
     return out, (ece if pairs else None)
 
 
+CUT_STEP = 0.05  # resolution of the expected-score cuts
+
+
+def _expected(answer: dict) -> Optional[float]:
+    """The answer's expected score, or None when it has none: Jev's `score`, else the probability-weighted level."""
+    raw = answer.get("score")
+    try:
+        if not isinstance(raw, bool) and isinstance(raw, (int, float)) and isfinite(raw):
+            return float(raw)
+    except OverflowError:  # an integer too large for a float: use the weighted level instead
+        pass
+    try:
+        probs = _probs(answer)
+        total = sum(probs.values())
+        return sum(int(k) * v for k, v in probs.items()) / total if total else None
+    except (TypeError, ValueError):
+        return None
+
+
+def ordinal(pairs: List[Tuple[int, int, Optional[float]]], levels: List[int]) -> dict:
+    """How far off a Score's answers are. pairs: (label, most likely level, expected score or None) per scored row.
+
+    `cuts` has one entry per level k above the lowest, when some rows are labeled below k and some at or above
+    it: the cut c on the expected score for which "score >= c" best agrees with "label >= k" on these rows, its
+    accuracy with a 95% interval, and how many rows it flags.
+    Ties go to the cut nearest k - 0.5, halfway to the level below. A cut chosen on these rows fits them, so
+    its accuracy is optimistic until checked on other rows."""
+    n = len(pairs)
+    within = sum(1 for label, level, _ in pairs if abs(label - level) <= 1)
+    low, high = wilson(within, n)
+    expected = [(label, e) for label, _, e in pairs if e is not None]
+    cuts = []
+    top = max(levels) if levels else 0
+    if top > MAX_CLASSES:  # levels count from 0, so a level this high is a malformed answer; no grid that large
+        levels, top = [], 0
+    grid = [round(i * CUT_STEP, 2) for i in range(int(round(top / CUT_STEP)) + 1)]
+    for k in sorted(levels)[1:]:
+        actual = sum(1 for label, _ in expected if label >= k)
+        if not 0 < actual < len(expected):
+            continue  # every row on one side: any cut past the data scores perfectly, so none is worth naming
+        best = None
+        for c in grid:
+            right = sum(1 for label, e in expected if (e + _EPS >= c) == (label >= k))
+            key = (right, -abs(c - (k - 0.5)))
+            if best is None or key > best[0]:
+                best = (key, c, right)
+        _, cut, right = best
+        lo, hi = wilson(right, len(expected))
+        cuts.append({"level": k, "cut": cut, "correct": right, "rows": len(expected), "accuracy": right / len(expected),
+                     "low": lo, "high": hi, "flagged": sum(1 for _, e in expected if e + _EPS >= cut),
+                     "actual": actual})
+    return {
+        "within_one": within, "within_one_accuracy": within / n if n else None,
+        "within_one_low": low, "within_one_high": high,
+        "mean_error": sum(abs(label - level) for label, level, _ in pairs) / n if n else None,
+        "expected_rows": len(expected),
+        "expected_error": sum(abs(label - e) for label, e in expected) / len(expected) if expected else None,
+        "cuts": cuts,
+    }
+
+
 def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> dict:
     """rows: [{"index": int, "answer": {...}, "label": ...}] for one question. Unlabeled rows are counted, not scored.
     bound: what must reach each target accuracy, the measured accuracy or its 95% lower bound."""
@@ -297,6 +363,7 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
     first: Optional[dict] = None
     scored: List[dict] = []
     invalid: List[dict] = []
+    ordinal_pairs: List[Tuple[int, int, Optional[float]]] = []
     signals: Dict[str, float] = {}  # every readable row, labeled or not, so a view can route all of them
     unlabeled = 0
     for row in rows:
@@ -325,6 +392,8 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
             invalid.append({"index": index, "reason": str(err).strip("'\"")})
             continue
         noul_p = float(answer["noul"]) if qtype == "noul" else None
+        if qtype == "score":
+            ordinal_pairs.append((label, predicted, _expected(answer)))
         scored.append({"index": index, "label": _show(qtype, label), "predicted": _show(qtype, predicted),
                        "correct": label == predicted, "signal": gate, "top": top,
                        # Noul calibration compares P(yes) with how often the label is yes.
@@ -350,4 +419,5 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
         "reliability": bins, "ece": ece,
         "sweep": points, "targets": targets(points, bound) if scored else [],
         "rows": scored, "signals": signals,
+        "ordinal": ordinal(ordinal_pairs, [int(c) for c in classes]) if qtype == "score" and scored else None,
     }
