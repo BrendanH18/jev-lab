@@ -121,9 +121,10 @@ class QueueTests(Temp):
             json.dumps({"route": "maybe", "answers": {}, "row": {"text": "x"}}),
             json.dumps({"route": "auto", "held": [], "rules": [], "answers": {"color": "red"}, "row": {"text": "x"}}),
             json.dumps({"route": "auto", "held": [], "rules": [], "answers": {}, "row": "plain text"}),
+            json.dumps({"route": "review", "held": [["department"]], "rules": [], "answers": {}, "row": {"text": "y"}}),
         ])
         out = decisions.queue("tickets", text)
-        self.assertEqual([p["line"] for p in out["problems"]], [2, 3, 4, 5, 6])
+        self.assertEqual([p["line"] for p in out["problems"]], [2, 3, 4, 5, 6, 7])
         messages = " | ".join(p["message"] for p in out["problems"])
         self.assertIn("Line 2 is not JSON", messages)
         self.assertIn("Export the gate again", messages)

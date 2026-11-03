@@ -100,8 +100,8 @@ def _decision(line: str, questions: Dict[str, dict]) -> dict:
                          % ", ".join(unknown[:3]))
     held = d.get("held") or []
     broken = d.get("rules") or []
-    if not isinstance(held, list) or not isinstance(broken, list):
-        raise ValueError("has held or rules that are not lists")
+    if not isinstance(held, list) or not isinstance(broken, list) or not all(isinstance(q, str) for q in held):
+        raise ValueError("has held or rules that are not lists of text")
     return {"route": d["route"], "row": row, "answers": d["answers"],
             "held": [q for q in held if q in questions], "rules": [str(r) for r in broken]}
 
