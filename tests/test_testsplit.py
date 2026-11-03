@@ -68,6 +68,9 @@ class LockTests(Temp):
                                                                  for i in range(5)), "questions": Q})
         with self.assertRaisesRegex(WorkbenchError, "Label more rows first"):
             testsplit.lock("few", 0.2)
+        workbench.save_dataset({"name": "Ten", "rows": "\n".join(json.dumps({"text": "y%d" % i, "_expect": {"refund": True}})
+                                                                 for i in range(10)), "questions": Q})
+        self.assertEqual(len(testsplit.test_indexes(testsplit.lock("ten", 0.25, seed=1))), 3, "2.5 rounds up, as the page counts")
 
     def test_marker_must_be_true(self):
         with self.assertRaisesRegex(WorkbenchError, "_test must be true"):

@@ -649,7 +649,7 @@ delivers on rows it did not see. But after many rounds of rewording and retuning
 themselves fit those rows, and no number measured on them shows it. A test split keeps some labeled rows out of all
 of it, so they can give that number.
 
-**Hold out test rows…**, beside a saved dataset with at least four labeled rows, marks 20%, 25%, or a third of its
+**Hold out test rows…**, beside a saved dataset with enough labeled rows to leave at least two on each side, marks 20%, 25%, or a third of its
 labeled rows, drawn at random, as test rows. Each gets `"_test": true` in the dataset file, so the split is visible
 and survives a commit. Then:
 

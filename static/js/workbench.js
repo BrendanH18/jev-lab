@@ -1686,10 +1686,12 @@ function testControl(x) {
       `test: ${x.test.rows} rows · ${looks} look${looks === 1 ? "" : "s"}`),
     h("button", { class: "btn sm ghost", onclick: () => removeTest(x.id) }, "Remove test split")];
   }
-  if (x.labeled < 4) return null;
+  // Only shares that leave at least two labeled rows on each side, as jev/testsplit.py's lock requires.
+  const shares = [0.2, 0.25, 0.33].filter((share) => { const n = Math.round(share * x.labeled); return n >= 2 && x.labeled - n >= 2; });
+  if (!shares.length) return null;
   const sel = h("select", { class: "input sm", "aria-label": `Hold out test rows from ${x.id}`, style: { width: "auto" } },
     h("option", { value: "" }, "Hold out test rows…"),
-    [0.2, 0.25, 0.33].map((share) => h("option", { value: String(share) }, `${Math.round(share * 100)}% of ${x.labeled} labeled rows`)));
+    shares.map((share) => h("option", { value: String(share) }, `${Math.round(share * 100)}% of ${x.labeled} labeled rows`)));
   sel.addEventListener("change", () => { if (sel.value) lockTest(x.id, Number(sel.value)); sel.value = ""; });
   return sel;
 }

@@ -47,7 +47,7 @@ def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
     if test_indexes(dataset):
         raise WorkbenchError("The dataset already has test rows. Remove the split first to draw a new one.")
     labeled = [i for i, row in enumerate(dataset["rows"]) if _labeled(row)]
-    n = round(share * len(labeled))
+    n = int(share * len(labeled) + 0.5)  # half up, as the page's Math.round counts it
     if n < MIN_ROWS or len(labeled) - n < MIN_ROWS:
         raise WorkbenchError("Label more rows first: a test split needs at least %d labeled rows on each side, and "
                              "%d of %d labeled rows would leave %d and %d." % (MIN_ROWS, round(share * 100),
