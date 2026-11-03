@@ -87,12 +87,14 @@ def _cell(value: Any) -> str:
 def sample_csv(items: List[dict], questions: Dict[str, dict]) -> str:
     """The sample as CSV for a spreadsheet: row_id, the row's fields, and an empty label:<id> column per question.
 
-    Rows that are objects of fields get a column per field; otherwise a single `row` column holds the row, its text or
-    its JSON. A cell is left as "-" where the first labels have none, since that label is not compared."""
+    Rows that are objects of fields get a column per field; otherwise, or when a field is named like a label column, a
+    single `row` column holds the row, its text or its JSON. A cell is left as "-" where the first labels have none, since that label is not compared."""
     fields: List[str] = []
     if items and all(isinstance(i["row"], dict) for i in items):
         for item in items:
             fields.extend(k for k in item["row"] if k not in fields)
+    if any(f in (ROW_ID, csvimport.ROW_COLUMN) or csvimport._label_target(f) is not None for f in fields):
+        fields = []  # a field named like a label column would be read back as one: put each row in one column instead
     names = [ROW_ID] + (fields or [csvimport.ROW_COLUMN]) + ["label:" + q for q in questions]
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")

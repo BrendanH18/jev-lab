@@ -3,6 +3,7 @@
 No key, no network: every dataset lives in a temp directory, and nothing here calls the model.
 """
 
+import io
 import json
 import shutil
 import sys
@@ -25,6 +26,12 @@ ROWS = [
     "No labels on this one",
     {"text": "Refund the broken grinder", "channel": "email", "_expect": {"department": "billing", "frustration": 2}},
 ]
+
+
+def io_csv(header, cells):
+    out = io.StringIO()
+    csvimport.csv.writer(out, lineterminator="\n").writerow(cells)
+    return header + "\n" + out.getvalue()
 
 
 class Temp(unittest.TestCase):
@@ -100,6 +107,16 @@ class SampleTests(Temp):
         self.assertEqual(names.split(",")[:3], ["row_id", "text", "x"])
         self.assertEqual(agreement.sample_csv([{"row_id": "r", "row": "plain", "questions": []}], {"a": {}}),
                          "row_id,row,label:a\nr,plain,-\n")
+
+    def test_a_field_named_like_a_label_column_is_not_read_as_one(self):
+        self.save([{"text": "a", "label:department": "none", "_expect": {"department": "none"}}])
+        text = agreement.sample("tickets")["csv"]
+        self.assertTrue(text.startswith("row_id,row,label:department,"), text)
+        filled = text.splitlines()
+        cells = next(iter(csvimport.csv.reader([filled[1]])))
+        cells[2] = "billing"
+        out = io_csv(filled[0], cells)
+        self.assertEqual(agreement.compare("tickets", text=out)["questions"]["department"]["agree"], 0)
 
     def test_refusals(self):
         self.save()

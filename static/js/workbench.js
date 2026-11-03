@@ -943,7 +943,7 @@ function agreeSampleView(x, a) {
 
 // The questions as the model reads them, so the second person labels by the same instructions and options.
 function agreeQuestions(questions) {
-  const options = (q) => (q.type === "noul" ? [] : q.type === "score"
+  const options = (q) => (q.type === "noul" ? [["yes", q.criteria?.true], ["no", q.criteria?.false]].filter(([, d]) => d) : q.type === "score"
     ? q.criteria.map((d, i) => [String(i), d]) : Object.entries(q.criteria || {}));
   return h("details", { open: true },
     h("summary", { class: "muted", style: { fontSize: "12.5px" } }, "The questions, as the model reads them"),
