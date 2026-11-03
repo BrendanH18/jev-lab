@@ -20,7 +20,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, checks, claims, compare, cost, csvimport, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
+from jev import (calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
                  lint, policy, review, rules, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
@@ -556,6 +556,14 @@ def api_wb_check_drift(body):
     return drift.run(client, str(body.get("id", "")), body.get("rows"), model or None)
 
 
+def api_wb_decisions(body):
+    return decisions.queue(str(body.get("id", "")), body.get("text"), body.get("audit", 0), body.get("seed", 0))
+
+
+def api_wb_decisions_add(body):
+    return decisions.append(str(body.get("id", "")), body.get("items"))
+
+
 def api_wb_gate_export(body):
     if body.get("dataset"):
         return gate.export_check(str(body["dataset"]))
@@ -633,6 +641,8 @@ ROUTES = {
     ("POST", "/api/workbench/checks/delete"): api_wb_check_delete,
     ("POST", "/api/workbench/checks/run"): api_wb_check_run,
     ("POST", "/api/workbench/checks/drift"): api_wb_check_drift,
+    ("POST", "/api/workbench/checks/decisions"): api_wb_decisions,
+    ("POST", "/api/workbench/checks/decisions/add"): api_wb_decisions_add,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,
     ("POST", "/api/workbench/rules"): api_wb_rules,

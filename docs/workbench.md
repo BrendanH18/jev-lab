@@ -771,11 +771,12 @@ The Python file (`gate.py`) needs `typesafe-sdk` on Python 3.10+. The JavaScript
 needs `@typesafe-ai/sdk` on Node 22+, and its `decide` returns a promise. Both read
 `TYPESAFE_API_KEY`. Run either as a script to route rows the way Bulk reads them, one per line: a
 JSON object is sent without its `_expect` labels, and other text becomes `{"text": line}`. Each row's decision is printed
-as a line of JSON:
+as a line of JSON, with the row it was asked about under `row`, so the [review queue](#label-the-rows-a-gate-routed)
+can add it to a dataset once it is labeled:
 
 ```sh
-python gate.py < rows.jsonl
-node gate.mjs < rows.jsonl
+python gate.py < rows.jsonl > decisions.jsonl
+node gate.mjs < rows.jsonl > decisions.jsonl
 ```
 
 A file exported from a check says which dataset and targets the thresholds came from. A file exported
@@ -787,6 +788,51 @@ Policy does.
 `POST /api/workbench/gate/export` takes `questions`, `gates`, `signal` (default `confidence`), and
 `model` (default: the current model), or `dataset`, the ID of a dataset whose check to export. It
 returns `python` and `javascript`.
+
+## Label the rows a gate routed
+
+A gate in your application sends some rows to review, and a person decides them there. Those decisions are
+labels, and they are the rows the gate finds hardest. **Review queue**, beside a saved check's **Export as
+code**, turns them into rows of the check's dataset. It also measures how often the rows the gate automated
+were right, which nothing else in the Workbench can tell you about your own traffic.
+
+1. Route rows with the exported gate and keep what it prints:
+   `python gate.py < rows.jsonl > decisions.jsonl`. Each line is a decision with its `row`.
+2. Paste the lines, or choose the file, and pick how many automated rows to audit. **Read decisions**.
+3. Label the rows in the queue. A row is ready once every gated question has a label.
+4. **Add labeled rows** appends the ready rows, with their labels, to the dataset.
+
+Questions no gate reads start empty on every row. The gate never judged them, so filling them in would save
+the model's answers as your labels; label them yourself if you want them in Calibrate.
+
+The queue lists every row the gate sent to review, in file order, then the audit sample. Rows the dataset
+already has are left out, and a row that appears twice is listed once. Lines that are not a decision of this
+check's gate, such as a line without its `row` from a gate exported before the row was printed, are listed
+with their line numbers and skipped.
+
+| Row | Starts with | Why |
+| --- | --- | --- |
+| Sent to review | The gated answers that cleared their thresholds, as labels you can change. Its held questions, and the questions a broken rule reads, start empty and are marked | The gate was sure of the rest; the marked ones are what it could not settle |
+| Audit | No labels, and the gate's answers hidden until every gated question has a label | A label chosen after reading the answer tends to agree with it, so the audit would measure agreement, not the gate |
+
+The audit sample is drawn at random from the automated rows, so it stands for all of them. When rows with
+an audit sample are added, the queue reports how many of the audited rows the gate got right, as Policy
+scores a row (every gated answer matches its label), with a 95% interval, against the check's accuracy
+target. A few audited rows give a wide interval; audit more before you rely on the number.
+
+The rows sent to review are the hard ones, so a dataset that grows mostly from them automates a smaller
+share than your traffic does, and its accuracy describes harder rows. Add audit rows too, and read the
+check's coverage target with that in mind. A dataset holds up to 200 rows, and the queue says how much
+room is left.
+
+Reading the decisions and adding rows make no model calls. The answers the queue shows are the ones your
+gate returned, read from your file; the dataset keeps rows and labels only, never answers, so **Run check**
+asks the model again.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/checks/decisions` | `id`, `text` (the decision lines), optional `audit` (0 to 200, default 0) and `seed` | `items`, each with its `line`, `kind` (`review` or `audit`), `row`, `route`, `held`, `rules`, `answers`, `labels` to start from, and `open` questions; the dataset's `questions` and the check's `gates`; `counts` (`decisions`, `review`, `auto`, `in_dataset`, `repeated`, `queued`, `audit`, `dropped`); `problems` by line; and `room` |
+| `POST /api/workbench/checks/decisions/add` | `id`, `items`, each with its `row`, `labels`, and, for the audit, `kind` and `answers` | `dataset`: the summary; `added`; `already`, rows the dataset had; and `audit`: `rows`, `correct`, `accuracy` with `accuracy_low` and `accuracy_high`, the `target` and whether it is met (`ok`), and the `wrong` rows, or `null` without audited rows |
 
 ## Compare two variants
 

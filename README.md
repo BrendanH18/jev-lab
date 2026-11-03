@@ -70,7 +70,7 @@ issue real refunds, or transfer money.
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, label the rows it routed and audit the ones it automated, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. **Open in Workbench**, in the same drawer, puts that exact request in
@@ -156,6 +156,10 @@ conditions.
 - **Export a gate:** write Policy's gate, or a saved check, as a Python or JavaScript file. Its `decide(state)`
   asks the questions in one call and routes the row to `auto` or `review` by the tuned thresholds, reading
   each answer as Policy does. Run it as a script to route rows from standard input. It makes no model call.
+- **Review queue:** paste what the exported gate printed. Label the rows it sent to review, which start from
+  the gated answers it was sure of, and a random sample of the rows it automated, labeled before you see its
+  answers. Then add them to the check's dataset. The audit says how often the gate's automated decisions
+  were right on your traffic, with a 95% interval. It makes no model call.
 - **Compare:** run two variants, each a question set and a model, over the same labeled rows. See
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
   significance test, and the rows where the variants disagree. **Reverse A's options** makes variant B an
