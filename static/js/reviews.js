@@ -142,13 +142,22 @@ function renderResult() {
 
 // ---------- policy: re-decide without a call ----------
 function renderPolicy() {
+  const els = {};
+  const set = (key, value) => {  // in place, so a slider being dragged is not rebuilt under the pointer
+    S.policy[key] = value;
+    els[key].input.value = value;
+    els[key].out.textContent = els[key].fmt(value);
+  };
   const slider = (key, label, min, max, step, fmt = (v) => v.toFixed(2)) => {
     const out = h("output", {}, fmt(S.policy[key]));
     const input = h("input", { type: "range", min, max, step, value: S.policy[key], "aria-label": label });
+    els[key] = { input, out, fmt };
     input.addEventListener("input", () => {
-      S.policy[key] = Number(input.value);
+      set(key, Number(input.value));
+      // P1 never sits below P2 (jev/reviews.py enforces it too): moving one cut past the other moves both.
+      if (key === "p1_at" && S.policy.p1_at < S.policy.p2_at) set("p2_at", S.policy.p1_at);
+      if (key === "p2_at" && S.policy.p2_at > S.policy.p1_at) set("p1_at", S.policy.p2_at);
       S.policyRev++;
-      out.textContent = fmt(S.policy[key]);
       redecide();
     });
     return h("div", { class: "slider" }, h("span", { class: "name" }, label), input, out);

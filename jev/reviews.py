@@ -205,9 +205,12 @@ def check_answers(answers: Any) -> Dict[str, dict]:
 def _num(policy: Optional[dict], key: str) -> float:
     value = (policy or {}).get(key, DEFAULT_POLICY[key])
     try:
-        return float(value)
+        value = float(value)
     except (TypeError, ValueError):
-        return DEFAULT_POLICY[key]
+        value = DEFAULT_POLICY[key]
+    if key == "p1_at":  # P1 is never below P2, so a P1 review always reaches the P2 cut that gets a reply
+        value = max(value, _num(policy, "p2_at"))
+    return value
 
 
 def full_policy(policy: Optional[dict] = None) -> dict:

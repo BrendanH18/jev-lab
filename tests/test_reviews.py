@@ -138,6 +138,14 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(reviews.triage(a, five, {"mismatch_gap": 1.5})["flags"], ["rating_mismatch"])
         self.assertEqual(reviews.triage(a, five, {"thank_tone_at": 2.0})["action"], "thank")
 
+    def test_p1_never_sits_below_p2(self):
+        out = reviews.redecide(answers(severity=1.5, tone=3.5, wants_reply=0.1), dict(REVIEW, stars=4),
+                               {"p1_at": 1.0, "p2_at": 2.0})
+        self.assertEqual(out["policy"]["p1_at"], 2.0, "a P1 cut below P2 is raised to it")
+        self.assertEqual((out["triage"]["priority"], out["triage"]["action"]), ("P3", "thank"),
+                         "never a P1 review that gets the automatic thank-you")
+        self.assertEqual(reviews.priority(2.0, {"p1_at": 1.0, "p2_at": 2.0}), "P1")
+
     def test_bad_policy_values_fall_back_to_defaults(self):
         out = reviews.redecide(answers(), REVIEW, {"p2_at": "lots", "safety_at": None})
         self.assertEqual(out["policy"], reviews.DEFAULT_POLICY)
