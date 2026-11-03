@@ -1173,6 +1173,16 @@ async function addQueued(id) {
     rep.room = Math.max(0, rep.room - out.added);
     q.audit_report = out.audit;
     b.datasets = (await api("/api/workbench/datasets")).datasets;
+    if (b.dataset.id === id) {
+      // The rows box holds this dataset as it was loaded, and saving replaces the file, so a stale box would drop the
+      // added rows. Refresh it when it has no unsaved edits; otherwise unlink it, so a save under this name asks first.
+      if (!bulkUnsaved()) {
+        b.rowsText = b.savedText = rowsText((await api("/api/workbench/datasets/load", { id })).dataset.rows);
+      } else {
+        b.dataset.id = null;
+        toast("The rows box has unsaved edits, so it still shows this dataset without the added rows. Saving it under the same name asks before it replaces the file.", "error");
+      }
+    }
     toast(`Added ${out.added} row${out.added === 1 ? "" : "s"} to data/workbench/datasets/${id}.json${out.already ? ` (${out.already} already there)` : ""}. Run the check to see the gate on them.`);
   } catch (e) { handleError(e); }
   q.busy = false;
