@@ -1109,6 +1109,7 @@ function queueView(x, q) {
   const c = rep.counts;
   const gates = rep.gates;
   const ready = rep.items.filter((i) => queueReady(i, gates));
+  const adding = Math.min(ready.length, rep.room);
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const summary = [
     `${plural(c.decisions, "decision")}: ${c.review} to review, ${c.auto} automated`,
@@ -1149,18 +1150,19 @@ function queueView(x, q) {
     rep.items.length ? h("div", { class: "queue-list" }, rep.items.map(card))
       : h("div", { class: "empty" }, "Nothing to label: the dataset already has every row these decisions name."),
     rep.items.length ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm primary", disabled: q.busy || !ready.length, onclick: () => addQueued(x.id) },
-        icon("save"), `Add ${plural(ready.length, "labeled row")} to “${x.name || x.id}”`),
+      h("button", { class: "btn sm primary", disabled: q.busy || !adding, onclick: () => addQueued(x.id) },
+        icon("save"), `Add ${adding < ready.length ? `${adding} of ${ready.length}` : adding} labeled row${ready.length === 1 ? "" : "s"} to “${x.name || x.id}”`),
       h("span", { class: "faint", style: { fontSize: "12px" } },
-        `A row is ready once every gated question (${Object.keys(gates).join(", ")}) has a label. Room for ${rep.room} more rows. Rows and labels are saved, never answers.`)) : null);
+        `A row is ready once every gated question (${Object.keys(gates).join(", ")}) has a label. Room for ${rep.room} more rows; ready rows past that stay here. Rows and labels are saved, never answers.`)) : null);
 }
 
 async function addQueued(id) {
   const b = W.bulk;
   const q = b.checkRuns[id].queue;
   const rep = q.report;
-  const ready = rep.items.filter((i) => queueReady(i, rep.gates));
-  if (ready.length > rep.room && !confirm(`The dataset has room for ${rep.room} more rows, and ${ready.length} are ready. Add them anyway? The save will be refused.`)) return;
+  // Only as many ready rows as the dataset has room for, in queue order; the rest stay in the queue with their labels.
+  const ready = rep.items.filter((i) => queueReady(i, rep.gates)).slice(0, rep.room);
+  if (!ready.length) return toast("The dataset is full: it holds 200 rows. Save these rows as a new dataset instead.", "error");
   q.busy = true;
   render();
   try {
@@ -1171,7 +1173,7 @@ async function addQueued(id) {
     rep.room = Math.max(0, rep.room - out.added);
     q.audit_report = out.audit;
     b.datasets = (await api("/api/workbench/datasets")).datasets;
-    toast(`Added ${out.added} rows to data/workbench/datasets/${id}.json${out.already ? ` (${out.already} were already there)` : ""}. Run the check to see the gate on them.`);
+    toast(`Added ${out.added} row${out.added === 1 ? "" : "s"} to data/workbench/datasets/${id}.json${out.already ? ` (${out.already} already there)` : ""}. Run the check to see the gate on them.`);
   } catch (e) { handleError(e); }
   q.busy = false;
   render();

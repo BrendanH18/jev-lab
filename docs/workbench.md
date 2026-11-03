@@ -823,7 +823,8 @@ target. A few audited rows give a wide interval; audit more before you rely on t
 The rows sent to review are the hard ones, so a dataset that grows mostly from them automates a smaller
 share than your traffic does, and its accuracy describes harder rows. Add audit rows too, and read the
 check's coverage target with that in mind. A dataset holds up to 200 rows, and the queue says how much
-room is left.
+room is left. When more rows are ready than fit, **Add** takes the first ones in queue order and leaves the
+rest in the queue with their labels.
 
 Reading the decisions and adding rows make no model calls. The answers the queue shows are the ones your
 gate returned, read from your file; the dataset keeps rows and labels only, never answers, so **Run check**
