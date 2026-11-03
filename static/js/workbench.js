@@ -1730,6 +1730,9 @@ async function removeTest(id) {
   } catch (e) { handleError(e); }
 }
 
+// The policy a test score measured: a score shows only while Policy still has these gates, signal, and rules.
+const testPolicyKey = () => canon({ gates: activeGates(), signal: W.bulk.policy.signal, rules: policyRules() });
+
 function testBlocker(tests) {
   const b = W.bulk;
   const d = b.dataset;
@@ -1748,7 +1751,7 @@ function testBody(rep) {
   if (blocker) return [title, h("p", { class: "faint", style: { fontSize: "12.5px" } }, blocker)];
   const looks = b.datasets.find((x) => x.id === b.dataset.id).test.looks;
   const gates = activeGates();
-  const s = b.testScore;
+  const s = b.testScore?.key === testPolicyKey() ? b.testScore.report : null;  // never beside a gate it did not measure
   return [title,
     h("p", { class: "faint", style: { fontSize: "12.5px" } },
       `Everything above was measured on the ${rep.labeled} labeled rows that tuning reads, so it favors choices that fit them. The ${tests.length} test rows were held out of all of it. `,
@@ -1768,11 +1771,13 @@ async function scoreTest() {
   const looks = b.datasets.find((x) => x.id === b.dataset.id).test.looks;
   if (looks && !confirm(`These test rows were scored ${looks} time${looks === 1 ? "" : "s"} before. If an earlier score changed the gate, the test rows helped choose it, and this score is optimistic too. Score again?`)) return;
   const gates = activeGates();
+  const key = testPolicyKey();
   b.testBusy = true;
   updatePolicy();
   try {
-    b.testScore = await api("/api/workbench/datasets/test/score", { id: b.dataset.id, rows: policyRows(Object.keys(gates), tests), gates,
+    const report = await api("/api/workbench/datasets/test/score", { id: b.dataset.id, rows: policyRows(Object.keys(gates), tests), gates,
       signal: b.policy.signal, rules: policyRules() || undefined, model: b.runModel || undefined });
+    b.testScore = { key, report };
     b.datasets = (await api("/api/workbench/datasets")).datasets;
   } catch (e) { handleError(e); }
   b.testBusy = false;
