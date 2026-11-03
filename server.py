@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
-                 lint, policy, review, rules, security, shield, slices, upgrade, workbench)
+                 lint, policy, review, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -556,6 +556,20 @@ def api_wb_check_drift(body):
     return drift.run(client, str(body.get("id", "")), body.get("rows"), model or None)
 
 
+def api_wb_test_lock(body):
+    share = body.get("share", testsplit.DEFAULT_SHARE)
+    return {"dataset": workbench.dataset_summary(testsplit.lock(str(body.get("id", "")), share))}
+
+
+def api_wb_test_remove(body):
+    return {"removed": testsplit.remove(str(body.get("id", "")))}
+
+
+def api_wb_test_score(body):
+    return testsplit.score(str(body.get("id", "")), body.get("rows"), body.get("gates"),
+                           str(body.get("signal") or "confidence"), body.get("rules"), body.get("model"))
+
+
 def api_wb_check_upgrade(body):
     model = str(body.get("model") or "").strip()
     check_model(model)
@@ -655,6 +669,9 @@ ROUTES = {
     ("POST", "/api/workbench/datasets"): api_wb_dataset_save,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
+    ("POST", "/api/workbench/datasets/test/lock"): api_wb_test_lock,
+    ("POST", "/api/workbench/datasets/test/remove"): api_wb_test_remove,
+    ("POST", "/api/workbench/datasets/test/score"): api_wb_test_score,
     ("POST", "/api/workbench/datasets/agreement/sample"): api_wb_agreement_sample,
     ("POST", "/api/workbench/datasets/agreement"): api_wb_agreement,
     ("POST", "/api/workbench/datasets/agreement/settle"): api_wb_agreement_settle,

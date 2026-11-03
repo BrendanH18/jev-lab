@@ -183,12 +183,12 @@ def run(client: JevClient, dataset_id: str, candidate: Any) -> dict:
     if candidate == current:
         raise WorkbenchError("The check was tuned on %s already. Name another version to try." % current)
     questions = workbench.bulk_questions(dataset["questions"])
-    ran = {"current": workbench.run_bulk(client, dataset["rows"], questions, model=current)}
+    ran = {"current": workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=current)}
     if ran["current"]["stopped"]:  # a missing key or the budget: the candidate would stop too
-        ran["candidate"] = {"results": [], "rows": len(dataset["rows"]), "completed": 0,
+        ran["candidate"] = {"results": [], "rows": len(workbench.tuning_rows(dataset)), "completed": 0,
                             "stopped": ran["current"]["stopped"], "cost_usd": 0.0, "input_tokens": 0, "wall_ms": 0.0}
     else:
-        ran["candidate"] = workbench.run_bulk(client, dataset["rows"], questions, model=candidate)
+        ran["candidate"] = workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=candidate)
     report = compare(ran["current"], ran["candidate"], check)
     sides = {"current": _side(ran["current"], current), "candidate": _side(ran["candidate"], candidate)}
     notes: List[str] = []

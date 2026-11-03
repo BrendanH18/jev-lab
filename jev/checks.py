@@ -216,7 +216,7 @@ def run(client: JevClient, dataset_id: str, model: Optional[str] = None) -> dict
         raise WorkbenchError("The dataset %r has no check. Save one from the Workbench's Policy panel." % dataset_id)
     check = validate_check(dataset["check"], dataset.get("questions"))
     asked = (model or "").strip() or check["model"]
-    bulk = workbench.run_bulk(client, dataset["rows"], dataset["questions"], model=asked)
+    bulk = workbench.run_bulk(client, workbench.tuning_rows(dataset), dataset["questions"], model=asked)
     done = [r for r in bulk["results"] if "answers" in r]
     latencies = [r["meta"]["latency_ms"] for r in done]
     report = evaluate(bulk["results"], check, bulk["stopped"])

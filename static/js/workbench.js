@@ -25,6 +25,8 @@ const W = {
     ranQuestions: null, runModel: null, pin: true, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
     // agreeRuns: per dataset id, a blind second-labeling sample, its labels, and the comparison (jev/agreement.py).
     agreeRuns: {},
+    // testScore: the last report of a gate scored on the loaded dataset's test rows (jev/testsplit.py); testBusy while it runs.
+    testScore: null, testBusy: false,
     // gateExport: Policy's gate or a saved check exported as a module (jev/gate.py), and the language shown.
     gateExport: null,
     // CSV import (jev/csvimport.py): the file or pasted text, the column uses chosen so far, and the server's report.
@@ -781,6 +783,7 @@ function renderDatasets() {
         h("div", { style: { display: "flex", gap: "6px" } },
           h("button", { class: "btn sm", onclick: () => loadDataset(x.id) }, "Load"),
           x.labeled && x.questions ? agreeButton(x) : null,
+          testControl(x),
           h("button", { class: "btn sm ghost danger", "aria-label": `Delete ${x.id}`, onclick: () => deleteDataset(x.id) }, icon("trash"))),
         x.check ? checkItem(x) : null,
         b.agreeRuns[x.id]?.open ? agreePanel(x) : null))
@@ -809,7 +812,7 @@ function checkItem(x) {
     placeholder: `model: ${c.model}`, "aria-label": `Model to ask for the ${x.id} check` });
   model.addEventListener("focus", loadModels);
   model.addEventListener("input", () => { run.model = model.value; });
-  const n = Math.min(x.rows, 200);
+  const n = Math.min(x.rows - (x.test?.rows || 0), 200);  // a check reruns the rows its gate was tuned on, not the test rows
   return h("div", { class: "check-item" },
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
       h("span", { class: "badge info" }, icon("check"), "Check"),
@@ -1191,7 +1194,7 @@ function upgradeForm(x, run) {
     placeholder: "jev-latest or jev-1.15.0", "aria-label": `Model to try for the ${x.id} check` });
   model.addEventListener("focus", loadModels);
   model.addEventListener("input", () => { u.model = model.value; });
-  const n = 2 * Math.min(x.rows, 200);
+  const n = 2 * Math.min(x.rows - (x.test?.rows || 0), 200);
   return h("div", { class: "grid", style: { gap: "6px" } },
     h("p", { class: "muted", style: { fontSize: "12.5px", margin: 0 } },
       "Every saved row is sent to ", h("code", {}, current), ", the version this gate was tuned on, and to the version you name, one call per row each. ",
@@ -1292,7 +1295,7 @@ function driftForm(x, run) {
   const d = run.drift;
   const calls = () => {
     const extra = lineCount(d.text);
-    return `Compare · ${Math.min(x.rows, 200) + Math.min(extra, 200)} calls`;
+    return `Compare · ${Math.min(x.rows - (x.test?.rows || 0), 200) + Math.min(extra, 200)} calls`;
   };
   const label = h("span", {}, calls());
   const area = h("textarea", { class: "input", spellcheck: "false", rows: "5", "aria-label": `New rows to compare with ${x.id}`,
@@ -1672,6 +1675,132 @@ async function saveCheck() {
   } catch (e) { handleError(e); }
 }
 
+// ---------- Test rows ----------
+// jev/testsplit.py marks a random share of a dataset's labeled rows "_test": true. The marker never reaches the model,
+// no tuning panel or Compare reads those rows, and their answers stay hidden in the results table. Scoring Policy's gate
+// on them is a deliberate step the dataset file counts, since every look at a test result can steer the next choice.
+function testControl(x) {
+  if (x.test) {
+    const looks = x.test.looks;
+    return [h("span", { class: "badge", title: "Rows held out of every tuning panel and Compare. Score a gate on them from Policy." },
+      `test: ${x.test.rows} rows · ${looks} look${looks === 1 ? "" : "s"}`),
+    h("button", { class: "btn sm ghost", onclick: () => removeTest(x.id) }, "Remove test split")];
+  }
+  if (x.labeled < 4) return null;
+  const sel = h("select", { class: "input sm", "aria-label": `Hold out test rows from ${x.id}`, style: { width: "auto" } },
+    h("option", { value: "" }, "Hold out test rows…"),
+    [0.2, 0.25, 0.33].map((share) => h("option", { value: String(share) }, `${Math.round(share * 100)}% of ${x.labeled} labeled rows`)));
+  sel.addEventListener("change", () => { if (sel.value) lockTest(x.id, Number(sel.value)); sel.value = ""; });
+  return sel;
+}
+
+// The dataset file changed under the rows box: reload it, and drop a run whose rows no longer match the file.
+async function reloadAfterSplit(id) {
+  const b = W.bulk;
+  b.datasets = (await api("/api/workbench/datasets")).datasets;
+  if (b.dataset.id === id) {
+    b.savedText = b.rowsText;  // nothing unsaved here: the caller checked, so the reload need not ask
+    b.labelsDirty = false;
+    await loadDataset(id);
+    b.result = null;
+    b.testScore = null;
+  }
+  render();
+}
+
+async function lockTest(id, share) {
+  const b = W.bulk;
+  if (b.dataset.id === id && bulkUnsaved()) return toast("Save the rows and labels first: the split is drawn from the saved file.", "error");
+  if (!confirm(`Hold out ${Math.round(share * 100)}% of the labeled rows in “${id}” as test rows, drawn at random?\n\n`
+    + "No tuning panel or Compare will read them, and their answers stay hidden. Score a gate on them from Policy when you have chosen it; each score is counted.")) return;
+  try {
+    const { dataset } = await api("/api/workbench/datasets/test/lock", { id, share });
+    await reloadAfterSplit(id);
+    toast(`${dataset.test.rows} rows are test rows now.${b.dataset.id === id ? " Run the rows again to get answers." : ""}`);
+  } catch (e) { handleError(e); }
+}
+
+async function removeTest(id) {
+  const b = W.bulk;
+  if (b.dataset.id === id && bulkUnsaved()) return toast("Save the rows and labels first: removing the split rewrites the saved file.", "error");
+  if (!confirm(`Put the test rows of “${id}” back among the rest, and forget how often they were scored? Tuning will then read them, so they can no longer give an unbiased number.`)) return;
+  try {
+    await api("/api/workbench/datasets/test/remove", { id });
+    await reloadAfterSplit(id);
+  } catch (e) { handleError(e); }
+}
+
+function testBlocker(tests) {
+  const b = W.bulk;
+  const d = b.dataset;
+  if (!d.id || !b.datasets.find((x) => x.id === d.id)?.test) return "These rows carry test markers, but no saved dataset with a test split is loaded. Load the dataset to score its test rows.";
+  if (bulkUnsaved() || b.runText !== b.savedText) return `Run the rows saved in “${d.name}” unchanged: the score is recorded in that file.`;
+  if (tests.some((r) => !r.answers)) return "Some test rows got no answer. Run the rows again: a gate is scored on every test row or not at all.";
+  return null;
+}
+
+function testBody(rep) {
+  const b = W.bulk;
+  const tests = b.result.results.filter(isTest);
+  if (!tests.length) return [];
+  const title = h("h3", { class: "cal-h" }, "Test rows");
+  const blocker = testBlocker(tests);
+  if (blocker) return [title, h("p", { class: "faint", style: { fontSize: "12.5px" } }, blocker)];
+  const looks = b.datasets.find((x) => x.id === b.dataset.id).test.looks;
+  const gates = activeGates();
+  const s = b.testScore;
+  return [title,
+    h("p", { class: "faint", style: { fontSize: "12.5px" } },
+      `Everything above was measured on the ${rep.labeled} labeled rows that tuning reads, so it favors choices that fit them. The ${tests.length} test rows were held out of all of it. `,
+      "Score the gate on them once you have chosen it: the result is what to expect on rows nobody tuned on. Each score is counted in the dataset, and only per-question accuracy is shown, not which rows were wrong, so the test rows cannot be fixed one by one."),
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: b.testBusy || !Object.keys(gates).length, onclick: scoreTest },
+        b.testBusy ? [h("span", { class: "spin" }), " Scoring…"] : [icon("eye"), `Score this gate on ${tests.length} test rows · look ${looks + 1}`]),
+      looks ? h("span", { class: "faint", style: { fontSize: "12px" } }, `${looks} earlier look${looks === 1 ? "" : "s"} at these rows`) : null),
+    s ? testReport(s, rep) : null];
+}
+
+async function scoreTest() {
+  const b = W.bulk;
+  const tests = b.result.results.filter(isTest);
+  const blocker = testBlocker(tests);
+  if (blocker) return toast(blocker, "error");
+  const looks = b.datasets.find((x) => x.id === b.dataset.id).test.looks;
+  if (looks && !confirm(`These test rows were scored ${looks} time${looks === 1 ? "" : "s"} before. If an earlier score changed the gate, the test rows helped choose it, and this score is optimistic too. Score again?`)) return;
+  const gates = activeGates();
+  b.testBusy = true;
+  updatePolicy();
+  try {
+    b.testScore = await api("/api/workbench/datasets/test/score", { id: b.dataset.id, rows: policyRows(Object.keys(gates), tests), gates,
+      signal: b.policy.signal, rules: policyRules() || undefined, model: b.runModel || undefined });
+    b.datasets = (await api("/api/workbench/datasets")).datasets;
+  } catch (e) { handleError(e); }
+  b.testBusy = false;
+  render();
+}
+
+function testReport(s, rep) {
+  const gatesText = Object.entries(s.gates).map(([q, v]) => `${q} ≥ ${v.toFixed(2)}`).join(" · ");
+  const vs = (value) => (value === null ? "—" : pct(value, 1));
+  return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("span", { class: `badge ${s.look === 1 ? "good" : "warning"}` }, icon("eye"), `look ${s.look}`),
+      h("span", { class: "mono faint", style: { fontSize: "12px" } }, gatesText)),
+    h("div", { class: "stat-row" },
+      stat("accuracy when automated, test rows", s.accuracy === null ? "nothing automated" : withCI(pct(s.accuracy, 1), s.accuracy_low, s.accuracy_high)),
+      stat("on the tuning rows", vs(rep.accuracy)),
+      stat("automated, test rows", `${s.automated} of ${s.labeled} · ${pct(s.coverage)}`),
+      stat("on the tuning rows", pct(rep.coverage))),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "gated question"), h("th", {}, "accuracy on every test row"))),
+      h("tbody", {}, s.questions.map((q) => h("tr", {}, h("td", { class: "mono" }, q.qid),
+        h("td", {}, q.accuracy === null ? "—" : withCI(pct(q.accuracy, 1), q.accuracy_low, q.accuracy_high))))))),
+    s.unlabeled || s.invalid.length || s.skipped ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
+      `${s.unlabeled + s.invalid.length + s.skipped} test rows lack a usable label or answer for a gated question and are not scored.`) : null,
+    s.look > 1 ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"),
+      ` This is look ${s.look} at these rows. A gate or wording changed after an earlier look was chosen partly on them, so this number is optimistic too. For an unbiased one, label new rows and hold them out.`) : null);
+}
+
 // ---------- CSV import ----------
 // The server reads the CSV and checks label columns against the questions selected to run (jev/csvimport.py); no
 // model calls. The import panel shows each column's use, the labels found, and the values that fit no answer.
@@ -1909,6 +2038,7 @@ async function runBulk() {
     b.runModel = runModel;
     b.pin = true;
     b.checkForm = { accuracy: null, coverage: null };
+    b.testScore = null;
     b.labelsDirty = false;
     b.sortKey = null;
     b.labels = {};
@@ -1975,10 +2105,12 @@ function renderBulkTable() {
   const calQ = b.cal.qid;
   const scored = new Map((b.cal.report?.rows || []).map((r) => [r.index, r]));
   let rows = res.results.slice();
+  const shown = (r) => (isTest(r) ? null : r.answers);  // a test row's answers stay hidden, even from sorting
+  const tests = res.results.filter(isTest).length;
   if (b.sortKey) {
     rows.sort((x, y) => {
-      const vx = b.sortKey === "__row" ? x.index : cellValue(x.answers, b.sortKey).sort;
-      const vy = b.sortKey === "__row" ? y.index : cellValue(y.answers, b.sortKey).sort;
+      const vx = b.sortKey === "__row" ? x.index : cellValue(shown(x), b.sortKey).sort;
+      const vy = b.sortKey === "__row" ? y.index : cellValue(shown(y), b.sortKey).sort;
       return (vx > vy ? 1 : vx < vy ? -1 : 0) * b.sortDir;
     });
   }
@@ -1989,7 +2121,7 @@ function renderBulkTable() {
     const labeled = qids.filter((q) => labeledQids(b).has(q));
     const lines = [["row", ...qids, ...labeled.map((q) => `label:${q}`)].map(esc).join(",")];
     for (const r of res.results) {
-      lines.push([typeof r.row === "string" ? r.row : JSON.stringify(r.row), ...qids.map((q) => cellValue(r.answers, q).text),
+      lines.push([typeof r.row === "string" ? r.row : JSON.stringify(r.row), ...qids.map((q) => cellValue(shown(r), q).text),
         ...labeled.map((q) => labelText(b.labels[r.index]?.[q], r.answers?.[q]?.type))].map(esc).join(","));
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
@@ -2004,14 +2136,18 @@ function renderBulkTable() {
         h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd))),
         h("button", { class: "btn sm", onclick: () => keepLabels(), title: "Rewrite the rows box as JSON lines that carry these labels, so the next run keeps them" }, "Keep labels in rows"),
         h("button", { class: "btn sm", onclick: csv }, "Download CSV"))),
+    tests ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: "8px 16px 0" } }, icon("eye"),
+      ` ${tests} test row${tests === 1 ? "" : "s"}: their answers stay hidden and no tuning panel reads them. Score a gate on them from Policy's Test rows.`) : null,
     h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
       h("thead", {}, h("tr", {}, th("__row", "#"), h("th", {}, "row"), qids.map((q) => th(q, q)),
         calQ ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), h("th", {}, "route")] : null)),
       h("tbody", {}, rows.map((r) => h("tr", { "data-index": String(r.index) },
         h("td", { class: "num" }, String(r.index + 1)),
         h("td", { class: "row" }, b.pictures[r.row?._image] ? h("img", { src: b.pictures[r.row._image], alt: r.row._image, class: "row-thumb" }) : null,
+          isTest(r) ? h("span", { class: "badge", style: { marginRight: "6px" } }, "test") : null,
           rowText(r.row), r.error ? h("div", { style: { color: "var(--critical-text)", fontSize: "12px" } }, r.error) : null),
         qids.map((q) => {
+          if (isTest(r) && r.answers?.[q]) return h("td", { class: `faint${q === calQ ? " cal-col" : ""}`, title: "A test row's answers stay hidden" }, "hidden");
           const v = cellValue(r.answers, q);
           return h("td", { class: q === calQ ? "cal-col" : "" }, v.heat !== undefined
             ? h("span", {}, h("span", { class: "pill-num" }, v.text), h("span", { class: "heat" }, h("i", { style: { width: pct(v.heat, 1) } })))
@@ -2022,8 +2158,17 @@ function renderBulkTable() {
           h("td", { class: "route" })] : null))))));
 }
 
-// A row that is only {"text": ...} reads as its text; anything else shows as JSON.
+// A test row (jev/testsplit.py): held out of every tuning panel and Compare, and its answers stay hidden here.
+const isTest = (r) => !!r.row && typeof r.row === "object" && !Array.isArray(r.row) && r.row._test === true;
+// The rows every tuning panel reads: answered, and not test rows.
+const tuningResults = (res) => res.results.filter((r) => r.answers && !isTest(r));
+
+// A row that is only {"text": ...} reads as its text; anything else shows as JSON. A test row's marker is not shown.
 function rowText(row) {
+  if (row && typeof row === "object" && !Array.isArray(row) && "_test" in row) {
+    const { _test, ...rest } = row;
+    row = rest;
+  }
   if (typeof row === "string") return row;
   if (row && typeof row === "object" && !Array.isArray(row) && Object.keys(row).length === 1 && typeof row.text === "string") return row.text;
   return JSON.stringify(row);
@@ -2131,7 +2276,7 @@ async function calibrateQuestion() {
   const qid = b.cal.qid;
   const seq = ++calSeq;  // only the latest request may install its report
   clearHoldout(b.cal);
-  const rows = qid ? b.result.results.filter((r) => r.answers?.[qid])
+  const rows = qid ? tuningResults(b.result).filter((r) => r.answers[qid])
     .map((r) => ({ index: r.index, answer: r.answers[qid], label: b.labels[r.index]?.[qid] ?? null })) : [];
   b.cal.report = null;
   if (!rows.length) return;
@@ -2776,7 +2921,7 @@ async function rerule() {
 // Every answered row with all its answers and labels, for the rules report.
 function policyRowsAll() {
   const b = W.bulk;
-  return b.result.results.filter((r) => r.answers).map((r) => ({ index: r.index, answers: r.answers, labels: b.labels[r.index] || {} }));
+  return tuningResults(b.result).map((r) => ({ index: r.index, answers: r.answers, labels: b.labels[r.index] || {} }));
 }
 async function applyRules() {
   await repolicy();
@@ -2872,10 +3017,10 @@ function policyRules() {
   const r = W.bulk.rules;
   return r.hold && r.applied && r.report?.rules.length ? r.applied : "";
 }
-function policyRows(qids) {
+function policyRows(qids, results = tuningResults(W.bulk.result)) {
   const b = W.bulk;
   const rules = policyRules();
-  return b.result.results.filter((r) => r.answers).map((r) => ({
+  return results.map((r) => ({
     index: r.index,
     key: rowText(r.row),  // the row's input names it for Holdout's folds, so a rerun or reorder keeps the split
     // With rules, every answer: a rule may read a question no gate does.
@@ -2969,7 +3114,8 @@ function renderPolicy() {
       h("div", { id: "pol-tunes", class: "chips" }),
       h("div", { id: "pol-out", class: "grid", style: { gap: "14px" } }),
       nOn ? holdoutPanel(p, "pol-holdout", () => Object.keys(activeGates())) : null,
-      h("div", { id: "pol-check", class: "holdout" })));
+      h("div", { id: "pol-check", class: "holdout" }),
+      h("div", { id: "pol-test", class: "holdout" })));
 }
 
 function policyCode(rep) {
@@ -3066,9 +3212,10 @@ function updatePolicy() {
     await rescorePolicy();
     render();
   }));
-  if (!rep) { mount("#pol-check"); return mount("#pol-out"); }
+  if (!rep) { mount("#pol-check"); mount("#pol-test"); return mount("#pol-out"); }
   const n = rep.labeled;
   mount("#pol-check", ...(n ? checkSaveBody(rep) : []));
+  mount("#pol-test", ...testBody(rep));
   if (n) sliceSoon.pol();
   const notes = [
     n && n < 100 ? h("p", { class: "faint" }, `With ${n} labeled rows, one row moves accuracy by ${(100 / n).toFixed(1)} points. Tuned thresholds fit these rows; confirm them on more labeled rows before you rely on them.`) : null,
@@ -3635,6 +3782,7 @@ function renderCompareReport() {
     h("div", { class: "panel-body grid", style: { gap: "14px" } },
       h("div", { class: "stat-row" },
         stat("rows", String(res.rows)), stat("labeled", String(res.labeled)),
+        res.held_out ? stat("test rows left out", String(res.held_out)) : null,
         stat("wall", ms(res.wall_ms), true), stat("cost, both variants", usd(res.cost_usd))),
       agreementBlock(res),
       ordersBlock(res),

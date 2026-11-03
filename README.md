@@ -132,6 +132,9 @@ conditions.
   95% interval, and Cohen's kappa, the agreement beyond chance. Then settle each difference and save it to
   the dataset. Accuracy is measured against labels, so it means little above the share two people agree on.
   It makes no model call.
+- **Test rows:** hold a random share of a dataset's labeled rows out of every tuning panel and Compare, with their
+  answers hidden, then score the chosen gate on them for a number no choice was fit to. Each score is counted in
+  the dataset, since a gate changed after a look is partly tuned on the test rows too.
 - **Rules:** write what a row's answers may say together, such as
   `if wants_refund = yes then department in billing, shipping`. See which rows break each rule, even
   unlabeled, since a broken rule means a wrong answer or a wrong rule. Where rows are labeled, see
@@ -149,7 +152,7 @@ conditions.
   not tuned on. Five-fold cross-validation tunes on four fifths of the labeled rows and routes the fifth,
   then compares that accuracy with the accuracy on the tuning rows. It also reuses the Bulk answers.
 - **Checks:** keep a tuned gate with its dataset, with the model and two targets: an accuracy and a
-  share automated. **Run check** reruns every saved row and says whether the gate still meets them;
+  share automated. **Run check** reruns every saved row but the test rows and says whether the gate still meets them;
   `uv run --locked scripts/check.py` does the same from a terminal or CI and exits nonzero on a miss.
   A check saved from a run of an alias such as `jev-latest` asks the version that answered that run, so
   the gate stays on the version it was tuned on when the alias moves. Only targets are saved, never answers.

@@ -513,7 +513,7 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
     fresh = new_rows(rows)
     questions = workbench.bulk_questions(dataset["questions"])
     asked = (model or "").strip() or check["model"]
-    ref = workbench.run_bulk(client, dataset["rows"], questions, model=asked)
+    ref = workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=asked)
     if ref["stopped"]:  # a missing key or the budget: the new rows would stop too
         new = {"results": [], "rows": len(fresh), "completed": 0, "stopped": None, "cost_usd": 0.0,
                "input_tokens": 0, "wall_ms": 0.0}

@@ -641,6 +641,49 @@ held-out folds), `gap`, `below`, `spread`, `unreached`, and the per-fold `parts`
 `gap` in cost per 1,000 rows, `worse`, `review_folds` (folds whose cheapest choice is to review every row),
 `spread`, and `parts`.
 
+## Hold out test rows
+
+Calibrate, Policy, the costs, Review labels, Rules, and Compare all choose something on the labeled rows they report
+on: a threshold, a wording, a variant. [Check on unseen rows](#check-on-unseen-rows) says what one tuning run
+delivers on rows it did not see. But after many rounds of rewording and retuning against the same rows, the choices
+themselves fit those rows, and no number measured on them shows it. A test split keeps some labeled rows out of all
+of it, so they can give that number.
+
+**Hold out test rows…**, beside a saved dataset with at least four labeled rows, marks 20%, 25%, or a third of its
+labeled rows, drawn at random, as test rows. Each gets `"_test": true` in the dataset file, so the split is visible
+and survives a commit. Then:
+
+- the marker is removed before the call, so the model sees the row as it was;
+- Bulk runs the test rows, but the results table shows their answers as **hidden**, and the CSV leaves them blank;
+- Calibrate, Policy, Tune, the costs, Review labels, Rules, By slice, and the check on unseen rows read only the other
+  rows, and Compare leaves test rows out without asking them;
+- a saved check, **Try a new version**, and **Compare new rows** rerun only the other rows, since the gate was tuned
+  on them, so no report lists a test row's answers.
+
+Once Policy's gate is chosen, **Score this gate on N test rows**, under Policy, measures it on the test rows'
+answers from this run: accuracy when automated with a 95% interval, the share automated, and each gated question's
+accuracy, beside the same numbers on the tuning rows. A gate tuned on the tuning rows usually does a little worse
+on the test rows; much worse means it fits the tuning rows more than the task. The report never says which test
+rows were wrong, so they cannot be fixed one by one. Load the dataset and run its saved rows unchanged first: the
+score needs an answer for every test row.
+
+Each score is a **look**, and the dataset file records it under `"test"`: the time, the gates, the signal, and the
+model, never the answers or the result. The page shows the count, and asks before a second look. A gate or
+wording changed after a look was chosen partly on the test rows, so the next look is optimistic too. For an
+unbiased number after that, label new rows and hold them out. **Remove test split** puts the test rows back among
+the rest and forgets the looks.
+
+A test split is drawn once. Rows added later, from the Review queue, Label agreement, or the rows box, are tuning
+rows unless you mark them `"_test": true` yourself. Saving the rows box keeps the markers and the record of looks.
+With a few dozen labeled rows, a quarter held out is only a handful of rows, so the interval is wide: the split
+pays off as the dataset grows.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/datasets/test/lock` | `id`, `share` (0.1 to 0.5, default 0.25) | `dataset`: the summary, with `test` (`rows`, `looks`, `locked_at`) |
+| `POST /api/workbench/datasets/test/score` | `id`, `rows` (Policy's rows for every test row), `gates`, optional `signal`, `rules`, and `model` | Policy's counts and accuracy over the test rows, per-question `accuracy` with intervals, `look` (this look's number), and `earlier` looks |
+| `POST /api/workbench/datasets/test/remove` | `id` | `removed`: whether the dataset had test rows |
+
 ## Keep a gate as a check
 
 Policy's thresholds are chosen on one run. When you later reword a question or move to a new model,
@@ -698,7 +741,8 @@ A check holds targets, never answers or results from an earlier run. Saving the 
 its check while every gated question is still among the saved questions, so adding rows or labels
 keeps it; otherwise the check is removed and the page says why.
 
-**Run check**, under the dataset in **Datasets**, sends every saved row to the model again, one call
+**Run check**, under the dataset in **Datasets**, sends every saved row but its [test rows](#hold-out-test-rows)
+to the model again, one call
 per row, and scores the answers with the check's gates. Type a model name beside it to ask that model
 instead. The report shows **Passed** when both targets hold, **Failed** when one does not, and **Not
 judged** when some rows got no answer or no row is labeled for every gated question, since a check is
@@ -736,7 +780,7 @@ change, for example in GitHub Actions:
 
 When TypeSafe ships a new version, a pinned check keeps asking the version it was tuned on. **Try a new
 version**, under the dataset, answers whether the check can move, and with which thresholds. Name the version to
-try, such as `jev-1.15.0`, or an alias such as `jev-latest`. **Compare** sends every saved row to the version the
+try, such as `jev-1.15.0`, or an alias such as `jev-latest`. **Compare** sends every saved row but its test rows to the version the
 check was tuned on (its `tuned_on`, or its model for a check saved before that was recorded) and to the one you
 named: one call per row each, so 40 rows make 80 live calls. Both sides are asked now, so run-to-run variation
 shows up on both and nothing comes from an earlier run. The report shows:
@@ -779,7 +823,7 @@ wholesale campaign. Then the gate can quietly automate fewer rows, or rows of a 
 rows still look like the dataset, without labeling them first.
 
 Paste up to 200 rows, one per line as in the rows box, or press **Use the rows box**. Labels on them are
-ignored. **Compare** sends the dataset's rows and the new rows to the check's model, or the one typed
+ignored. **Compare** sends the dataset's rows, its test rows left out, and the new rows to the check's model, or the one typed
 beside **Run check**, one call per row, and compares the two runs through the check's gate. Nothing is
 saved, and nothing from an earlier run is reused. The report shows:
 

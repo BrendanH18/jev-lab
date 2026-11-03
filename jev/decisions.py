@@ -39,7 +39,7 @@ LABEL_TYPES = ("choice", "noul", "score")  # a Box label is edges, which a gate 
 
 def _key(row: Any) -> str:
     """One row's identity, labels left out: a text row and {"text": row} are the same row, as Bulk sends them."""
-    state, _labels = workbench.split_labels(row, 0) if isinstance(row, dict) and workbench.LABEL_KEY in row else (row, None)
+    state = workbench.without_marks(row)  # a test row is the same row
     if isinstance(state, str):
         state = {"text": state}
     return json.dumps(state, sort_keys=True, ensure_ascii=False)

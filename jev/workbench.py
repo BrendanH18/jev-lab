@@ -38,6 +38,9 @@ LABEL_KEY = "_expect"  # a bulk row's labels: removed before the call, returned 
 # and the row's state names it under PHOTO_FIELD, so questions can say `photo` as Claims's do.
 IMAGE_KEY = "_image"
 PHOTO_FIELD = "photo"
+# A dataset row held out as a test row (jev/testsplit.py): the marker is removed before the call, and the Workbench
+# leaves the row out of every tuning panel and Compare, so thresholds and wording are never chosen on it.
+TEST_KEY = "_test"
 MAX_SAVED_PICTURES = 20  # pictures stored per request
 
 
@@ -334,7 +337,8 @@ def validate_rows(rows: Any) -> List[Any]:
             raise WorkbenchError("Row %d must be text, a JSON object, or a JSON array" % number)
         state, _labels = split_labels(row, number)
         try:
-            validate_state(state)
+            row_test(state)
+            validate_state(without_marks(state))
             row_picture(state)
         except WorkbenchError as err:
             raise WorkbenchError("Row %d: %s" % (number, err))
@@ -347,6 +351,28 @@ def picture_name(name: Any) -> str:
         return name
     raise WorkbenchError("%s must name a sample picture (%s) or a picture saved with Add pictures"
                          % (IMAGE_KEY, ", ".join(images.SAMPLES)))
+
+
+def row_test(row: Any) -> bool:
+    """Whether a row is held out as a test row. The marker must be true, on an object row."""
+    if not isinstance(row, dict) or TEST_KEY not in row:
+        return False
+    if row[TEST_KEY] is not True:
+        raise WorkbenchError("%s must be true, or left out" % TEST_KEY)
+    return True
+
+
+def tuning_rows(dataset: dict) -> List[Any]:
+    """A saved dataset's rows that tuning reads: every row but its test rows. A check reruns these, as its gate was
+    tuned on them, so a check's report never shows a test row's answers."""
+    return [row for row in dataset["rows"] if not (isinstance(row, dict) and row.get(TEST_KEY) is True)]
+
+
+def without_marks(row: Any) -> Any:
+    """A row without its labels and test marker: what identifies it, as the model sees it apart from its picture."""
+    if not isinstance(row, dict):
+        return row
+    return {k: v for k, v in row.items() if k not in (LABEL_KEY, TEST_KEY)}
 
 
 def row_picture(row: Any) -> Optional[str]:
@@ -415,12 +441,16 @@ def dataset_summary(dataset: dict) -> dict:
             for qid, value in labels.items():
                 if value is not None:
                     labeled[qid] = labeled.get(qid, 0) + 1
+    test = dataset.get("test") if isinstance(dataset.get("test"), dict) else None
+    test_rows = sum(1 for row in rows if isinstance(row, dict) and row.get(TEST_KEY) is True)
     check = dataset.get("check")
     check = check if isinstance(check, dict) else None
     pin = pin_note(str(check.get("model") or ""), check.get("tuned_on")) if check else None
     return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
             "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
-            "questions": len(dataset.get("questions") or {}), "check": check, "check_notes": [pin] if pin else []}
+            "questions": len(dataset.get("questions") or {}), "check": check, "check_notes": [pin] if pin else [],
+            "test": {"rows": test_rows, "looks": len(test.get("looks") or []) if test else 0,
+                     "locked_at": test.get("locked_at") if test else None} if test_rows else None}
 
 
 def _dataset_text(dataset: dict) -> str:
@@ -442,13 +472,18 @@ def write_dataset(dataset: dict) -> None:
     partial.replace(path)
 
 
-def _prior_check(dataset_id: str) -> Any:
-    """The check saved in the dataset file this save replaces, or None."""
+def _prior(dataset_id: str, key: str) -> Any:
+    """The object saved under `key` in the dataset file this save replaces, or None."""
     try:
-        check = json.loads(_dataset_path(dataset_id).read_text(encoding="utf-8")).get("check")
+        value = json.loads(_dataset_path(dataset_id).read_text(encoding="utf-8")).get(key)
     except (OSError, ValueError, AttributeError):
         return None
-    return check if isinstance(check, dict) else None
+    return value if isinstance(value, dict) else None
+
+
+def _prior_check(dataset_id: str) -> Any:
+    """The check saved in the dataset file this save replaces, or None."""
+    return _prior(dataset_id, "check")
 
 
 def save_dataset(spec: dict) -> dict:
@@ -486,6 +521,11 @@ def save_dataset(spec: dict) -> dict:
         except WorkbenchError as err:
             dropped = str(err)
     dataset["rows"] = validate_rows(spec.get("rows"))
+    if any(row_test(split_labels(r, i + 1)[0]) for i, r in enumerate(dataset["rows"])):
+        # Keep the record of how often the test rows were scored; a dataset saved with test rows and no record starts one.
+        prior = _prior(dataset["id"], "test") or {}
+        dataset["test"] = {"locked_at": prior.get("locked_at") or dataset["saved_at"],
+                           "looks": prior.get("looks") if isinstance(prior.get("looks"), list) else []}
     if dataset.get("questions"):  # a dataset reruns its questions, so a Box question needs a picture on every row
         _need_pictures([split_labels(r, i + 1) for i, r in enumerate(dataset["rows"])], dataset["questions"])
     write_dataset(dataset)
@@ -629,6 +669,7 @@ def _split_rows(rows: List[Any]) -> List[tuple]:
     split = [split_labels(row, i + 1) for i, row in enumerate(rows)]
     for i, (row, _) in enumerate(split):
         try:
+            row_test(row)
             row_picture(row)
         except WorkbenchError as err:
             raise WorkbenchError("Row %d: %s" % (i + 1, err)) from err
@@ -644,6 +685,10 @@ def _state(split: List[tuple], index: int, field: str) -> Any:
     """The state a row is sent as: a JSON row as it is, a text row under `field`. A picture row's IMAGE_KEY is
     replaced by PHOTO_FIELD naming its image (see _picture)."""
     row = split[index][0]
+    if isinstance(row, dict) and TEST_KEY in row:
+        row = {k: v for k, v in row.items() if k != TEST_KEY}
+        if set(row) == {"text"} and isinstance(row["text"], str):
+            row = row["text"]  # a text row marked as a test row is sent as the text row it was
     picture = row_picture(row)
     if picture is not None:
         row = {k: v for k, v in row.items() if k != IMAGE_KEY}
@@ -774,6 +819,10 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     models = [v["model"] or client.model for v in variants]
     asked = [[v["questions"]] + ([orders.reverse_options(v["questions"])] if v["average_orders"] else []) for v in variants]
     split = _split_rows(rows)
+    held_out = sum(1 for row, _ in split if row_test(row))
+    split = [s for s in split if not row_test(s[0])]  # test rows never choose between variants
+    if not split:
+        raise WorkbenchError("Every row is a test row. Compare chooses between variants, so it leaves test rows out.")
     for v in variants:
         _need_pictures(split, v["questions"])
     started = time.perf_counter()
@@ -807,7 +856,7 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
                           "cost_usd": sum(m["cost_usd"] for m in spent),
                           "input_tokens": sum(m["input_tokens"] for m in spent),
                           "latency_ms_median": statistics.median(latencies) if latencies else None})
-    return {"variants": summaries, "results": results, "rows": len(split), "stopped": stopped,
+    return {"variants": summaries, "results": results, "rows": len(split), "held_out": held_out, "stopped": stopped,
             "agreement": compare.agreement(results, [v["questions"] for v in variants], models[0] == models[1],
                                            [v["perturb"] for v in variants], [v["average_orders"] for v in variants]),
             "labeled": sum(1 for r in results if r.get("expect")),
