@@ -20,7 +20,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
+from jev import (agreement, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
                  lint, policy, review, rules, security, shield, slices, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
@@ -564,6 +564,18 @@ def api_wb_decisions_add(body):
     return decisions.append(str(body.get("id", "")), body.get("items"))
 
 
+def api_wb_agreement_sample(body):
+    return agreement.sample(str(body.get("id", "")), body.get("rows", 30), body.get("seed", 0))
+
+
+def api_wb_agreement(body):
+    return agreement.compare(str(body.get("id", "")), body.get("items"), body.get("text"))
+
+
+def api_wb_agreement_settle(body):
+    return agreement.settle(str(body.get("id", "")), body.get("items"))
+
+
 def api_wb_gate_export(body):
     if body.get("dataset"):
         return gate.export_check(str(body["dataset"]))
@@ -637,6 +649,9 @@ ROUTES = {
     ("POST", "/api/workbench/datasets"): api_wb_dataset_save,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
+    ("POST", "/api/workbench/datasets/agreement/sample"): api_wb_agreement_sample,
+    ("POST", "/api/workbench/datasets/agreement"): api_wb_agreement,
+    ("POST", "/api/workbench/datasets/agreement/settle"): api_wb_agreement_settle,
     ("POST", "/api/workbench/checks"): api_wb_check_save,
     ("POST", "/api/workbench/checks/delete"): api_wb_check_delete,
     ("POST", "/api/workbench/checks/run"): api_wb_check_run,

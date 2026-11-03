@@ -407,6 +407,55 @@ each label joins Calibrate's scored rows.
 `distance` to the threshold, and whether it is `above` it; and per-question counts of labeled,
 disagreeing, strong, and invalid labels.
 
+## Measure label agreement
+
+Review labels finds labels the model disagrees with. It cannot tell you how often two careful people would
+label the same row differently, and every accuracy in the Workbench is measured against one person's labels.
+When two people agree on 85% of a question's labels, an accuracy measured near 85% or above depends on who
+labeled the rows as much as on the model. **Label agreement**, beside a saved dataset that has labels and
+questions, measures that.
+
+1. Pick how many labeled rows to sample, up to 200, and **Draw sample**. Rows are drawn at random, and a
+   row saved twice is drawn once.
+2. Have someone who did not write the saved labels label the sample, either in the page or in the CSV
+   from **Download CSV**. The saved labels stay hidden. Each row asks only the questions its saved labels
+   cover, since only those are compared. If the dataset is loaded in the rows box, its labels show there,
+   so label from the sample's list.
+3. **Compare** the labels given in the page, or **Compare a filled-in CSV**.
+4. Settle each difference: keep the saved label, take the second, choose another, or leave the row
+   unlabeled for that question. **Save settled labels** writes the changes to the dataset.
+
+The CSV has a `row_id` column, the row's fields (or one `row` column when the rows are not all objects),
+and an empty `label:<question>` column for each question. A `-` marks a label the saved labels do not have.
+Keep the `row_id` column; other columns are only there to read. Label values are read as Import reads them,
+so `Yes`, `y`, and `1` are a Noul's yes, and a Choice option's case is forgiven. A value that fits no answer
+is listed and skipped. Send the person labeling the questions' instructions and option descriptions too,
+since those are what the model reads.
+
+The report shows:
+
+- **Labels that agree**, over every question, and **rows that agree on every question**, with a 95% interval.
+- For each Choice, Noul, and Score question: the rows both labeled, how many agree, with a 95% interval,
+  **Cohen's kappa**, and the most common difference. Kappa is 1 when the two always agree, 0 when they agree
+  only as often as two people labeling at random with the same mix of labels would, and below 0 when they
+  agree less. It is blank when both gave every row the same label, since chance agreement is then complete.
+  A question with one common answer can show high agreement and a low kappa; read both.
+- Every row where the labels differ, with both labels.
+
+Rows are matched by a hash of their content without labels, so a sample stays valid while the dataset gains
+rows or labels. A row whose content changed since the sample is counted as not found rather than matched to
+another row. Box questions are not compared, since two people rarely draw the same edges. Nothing is saved
+until you save settled labels, and only labels that change are written. A difference is often a question
+that can be read two ways; sharpen its instructions or option descriptions as well as settling the label.
+
+It makes no model calls.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/datasets/agreement/sample` | `id`, optional `rows` (1 to 200, default 30) and `seed` | `items`, each with its `row_id`, 1-based `number`, `row` without labels, and the `questions` compared; the dataset's labelable `questions`; how many rows were `eligible`; and the `csv` to download |
+| `POST /api/workbench/datasets/agreement` | `id`, and `items` (each a `row_id` and `labels`) or `text` (the CSV filled in) | `questions`: per question `rows`, `agree`, `agreement` with `low` and `high`, `kappa`, and `mixups`; `overall`; `disagreements` (up to 500) with `disagreements_total`; `counts` (`rows`, `matched`, `not_found`, `repeated`, `unlabeled`, `compared`, `all_agree`, `only_second`); and `problems` |
+| `POST /api/workbench/datasets/agreement/settle` | `id`, `items`, each a `row_id` and `labels` (`null` removes a label) | `dataset`: the summary; `changed`, the labels written; and `rows` changed |
+
 ## Check answers against each other
 
 Each question is asked on its own, so nothing stops a row from coming back as a refund request

@@ -25,7 +25,8 @@ adds that token to requests, builds shared UI elements, and renders model answer
 trace drawer's **Open in Workbench** passes the inspected request to the Workbench through the
 browser's `localStorage` ([`static/js/handoff.js`](../static/js/handoff.js)); it adds no server route.
 Compare's **Reverse A's options** builds its order-check variant in the browser
-([`static/js/variants.js`](../static/js/variants.js)). Both modules have no DOM code, so `tests/js` tests them under Node.
+([`static/js/variants.js`](../static/js/variants.js)), and Label agreement shapes the labels it sends
+([`static/js/agreement.js`](../static/js/agreement.js)). These modules have no DOM code, so `tests/js` tests them under Node.
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,
@@ -64,6 +65,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/gate.py`](../jev/gate.py) | Gate export: a Policy gate or a saved check written as a Python or JavaScript module whose `decide(state)` asks the questions and routes the row by the thresholds |
 | [`jev/slices.py`](../jev/slices.py) | Accuracy by slice: scored rows grouped by a field of their input, with intervals and a one-sided Fisher exact test against the other slices |
 | [`jev/rules.py`](../jev/rules.py) | Consistency rules: "if A = x then B in y, z" over one row's answers, which rows break each rule, and on labeled rows whether those rows' answers are wrong more often; Policy and its relatives send rows that break one to review |
+| [`jev/agreement.py`](../jev/agreement.py) | Label agreement: a seeded random sample of a dataset's labeled rows without their labels (also as CSV), a second person's labels compared per question (agreement with a 95% interval, Cohen's kappa, the rows that differ), and settled labels written back; rows matched by a hash of their content |
 | [`jev/review.py`](../jev/review.py) | Label review: answers that disagree with their labels, ranked by the probability the label got, and unlabeled rows ranked by distance to a threshold |
 | [`jev/compare.py`](../jev/compare.py) | Side-by-side calibration of two variants, paired right/wrong counts, McNemar's test, disagreements, a cascade sweep, and agreement by question, including the order check for reordered Choice options and the input check for perturbed rows |
 | [`jev/orders.py`](../jev/orders.py) | Order averaging: a question set's Choice options reversed, and the two calls' answers averaged option by option, for a Compare variant that asks in both orders |

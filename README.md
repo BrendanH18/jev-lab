@@ -127,6 +127,11 @@ conditions.
   disagreements first, since those are often labeling mistakes, and the unlabeled rows nearest
   Calibrate's threshold, whose labels decide whether it can move. Fix or label them in place. It also
   reuses the Bulk answers.
+- **Label agreement:** have a second person label a random sample of a dataset's rows without seeing the
+  saved labels, in the page or in a downloaded CSV. See, for each question, how often the two agree, with a
+  95% interval, and Cohen's kappa, the agreement beyond chance. Then settle each difference and save it to
+  the dataset. Accuracy is measured against labels, so it means little above the share two people agree on.
+  It makes no model call.
 - **Rules:** write what a row's answers may say together, such as
   `if wants_refund = yes then department in billing, shipping`. See which rows break each rule, even
   unlabeled, since a broken rule means a wrong answer or a wrong rule. Where rows are labeled, see
