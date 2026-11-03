@@ -803,7 +803,8 @@ function checkTargetsText(c) {
 function checkItem(x) {
   const c = x.check;
   const run = W.bulk.checkRuns[x.id] || (W.bulk.checkRuns[x.id] = { running: false, report: null, model: "",
-    drift: { open: false, text: "", running: false, report: null }, queue: newQueue() });
+    drift: { open: false, text: "", running: false, report: null }, queue: newQueue(),
+    upgrade: { open: false, model: "", running: false, report: null } });
   const model = h("input", { class: "input sm", list: "cmp-models", value: run.model, spellcheck: "false", style: { maxWidth: "190px" },
     placeholder: `model: ${c.model}`, "aria-label": `Model to ask for the ${x.id} check` });
   model.addEventListener("focus", loadModels);
@@ -816,18 +817,23 @@ function checkItem(x) {
       h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}${c.tuned_on && c.tuned_on !== c.model ? ` · tuned on ${c.tuned_on}` : ""}`)),
     (x.check_notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm", disabled: run.running || run.drift.running, onclick: () => runCheck(x.id) },
+      h("button", { class: "btn sm", disabled: run.running || run.drift.running || run.upgrade.running, onclick: () => runCheck(x.id) },
         run.running ? [h("span", { class: "spin" }), " Checking…"] : [icon("layers"), `Run check · ${n} call${n === 1 ? "" : "s"}`]),
       model,
       h("button", { class: `btn sm${run.drift.open ? " active" : ""}`, "aria-expanded": String(run.drift.open),
         title: "Do new, unlabeled rows still look like the rows this gate was tuned on?",
         onclick: () => { run.drift.open = !run.drift.open; render(); } }, icon("search"), "Compare new rows"),
+      h("button", { class: `btn sm${run.upgrade.open ? " active" : ""}`, "aria-expanded": String(run.upgrade.open),
+        title: "Ask the version this gate was tuned on and a newer one the same rows, and see whether the check can move",
+        onclick: () => { run.upgrade.open = !run.upgrade.open; render(); } }, icon("layers"), "Try a new version"),
       h("button", { class: "btn sm", onclick: () => exportGate({ dataset: x.id }, `the check saved with “${x.name || x.id}”`) }, icon("code"), "Export as code"),
       h("button", { class: `btn sm${run.queue.open ? " active" : ""}`, "aria-expanded": String(run.queue.open),
         title: "Label the rows the exported gate sent to review, and a sample it automated, then add them to this dataset",
         onclick: () => { run.queue.open = !run.queue.open; render(); } }, icon("check"), "Review queue"),
       h("button", { class: "btn sm ghost", disabled: run.running, onclick: () => removeCheck(x.id) }, "Remove check")),
     run.report ? checkReport(run.report) : null,
+    run.upgrade.open ? upgradeForm(x, run) : null,
+    run.upgrade.report ? upgradeReport(x, run.upgrade.report) : null,
     run.drift.open ? driftForm(x, run) : null,
     run.drift.report ? driftReport(run.drift.report) : null,
     run.queue.open ? queueForm(x, run.queue) : null,
@@ -1167,6 +1173,113 @@ function checkReport(rep) {
           h("td", {}, Object.entries(m.wrong).map(([q, a]) => h("div", { style: { fontSize: "12px" } },
             h("span", { class: "mono" }, q), `: ${a.answer}, label ${a.label} `, h("span", { class: "faint mono" }, `(${a.signal.toFixed(2)})`))))))))),
       rep.mistakes_total > 5 ? h("span", { class: "faint", style: { fontSize: "12px" } }, `…and ${rep.mistakes_total - 5} more. Load the dataset and run it in Bulk to see every row.`) : null) : null);
+}
+
+// ---------- Upgrade ----------
+// jev/upgrade.py asks the version the check was tuned on and a candidate every saved row, both live, and compares them:
+// the saved gate on each side, the rows each side gets right, the answers that changed, and the gate tuned again on the
+// candidate's answers at the check's own targets. Moving the check saves it through the ordinary check endpoint, pinned
+// to the version that answered; only thresholds and targets are saved, never answers.
+const UPGRADE_BADGE = { keep: ["good", "check", "Can move as it is"], retune: ["info", "layers", "Can move with new thresholds"],
+  stay: ["critical", "stop", "Stay on the tuned version"], error: ["warning", "eye", "Not judged"] };
+
+function upgradeForm(x, run) {
+  const u = run.upgrade;
+  const c = x.check;
+  const current = c.tuned_on || c.model;
+  const model = h("input", { class: "input sm", list: "cmp-models", value: u.model, spellcheck: "false", style: { maxWidth: "190px" },
+    placeholder: "jev-latest or jev-1.15.0", "aria-label": `Model to try for the ${x.id} check` });
+  model.addEventListener("focus", loadModels);
+  model.addEventListener("input", () => { u.model = model.value; });
+  const n = 2 * Math.min(x.rows, 200);
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("p", { class: "muted", style: { fontSize: "12.5px", margin: 0 } },
+      "Every saved row is sent to ", h("code", {}, current), ", the version this gate was tuned on, and to the version you name, one call per row each. ",
+      "The report judges the saved gate on both, compares them row by row, and tunes the gate again on the new version's answers at this check's targets. Nothing is saved until you move the check."),
+    h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+      model,
+      h("button", { class: "btn sm", disabled: run.running || run.drift.running || u.running, onclick: () => runUpgrade(x.id) },
+        u.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), `Compare · ${n} calls`])));
+}
+
+async function runUpgrade(id) {
+  const u = W.bulk.checkRuns[id].upgrade;
+  if (!u.model.trim()) return toast("Name the version to try, such as jev-latest or jev-1.15.0", "error");
+  u.running = true;
+  u.report = null;
+  render();
+  try {
+    u.report = await api("/api/workbench/checks/upgrade", { id, model: u.model.trim() });
+  } catch (e) { handleError(e); }
+  u.running = false;
+  render();
+}
+
+async function moveCheck(id, check, what) {
+  if (!confirm(`Move the check saved with “${id}” to ${check.model}, ${what}? It then asks ${check.model} on every run.`)) return;
+  try {
+    await api("/api/workbench/checks", { id, check });
+    W.bulk.datasets = (await api("/api/workbench/datasets")).datasets;
+    delete W.bulk.checkRuns[id];
+    toast(`Moved the check to ${check.model}`);
+    render();
+  } catch (e) { handleError(e); }
+}
+
+function upgradeReport(x, rep) {
+  const [tone, ic, label] = UPGRADE_BADGE[rep.verdict];
+  const s = rep.sides, p = rep.paired, t = rep.retuned;
+  const gatesText = (g) => Object.entries(g).map(([q, v]) => `${q} ≥ ${v.toFixed(2)}`).join(" · ");
+  const judged = (j) => (!j.targets || !j.targets.accuracy ? h("span", { class: "badge warning" }, "not judged")
+    : [h("span", { class: `badge ${j.status === "pass" ? "good" : "critical"}` }, j.status === "pass" ? "meets" : "misses"), " ",
+      j.accuracy === null ? "none automated" : `${pct(j.accuracy, 1)} accurate · ${pct(j.coverage)} automated`]);
+  const side = (k) => `${s[k].model}${s[k].answered_by.length && s[k].answered_by.join(", ") !== s[k].model ? `, answered by ${s[k].answered_by.join(", ")}` : ""}`;
+  const unseen = t.unseen;
+  return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("span", { class: `badge ${tone}` }, icon(ic), label),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, `${s.current.rows} rows · ${side("current")} → ${side("candidate")}`)),
+    h("span", { class: "faint", style: { fontSize: "12px" } }, `Targets: ${checkTargetsText(rep.check)}`),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "gate"), h("th", {}, "answers from"), h("th", {}, "targets"))),
+      h("tbody", {},
+        h("tr", {}, h("td", { class: "mono" }, gatesText(rep.check.gates)), h("td", {}, s.current.model), h("td", {}, judged(rep.current))),
+        h("tr", {}, h("td", { class: "mono" }, gatesText(rep.check.gates)), h("td", {}, s.candidate.model), h("td", {}, judged(rep.candidate))),
+        h("tr", {}, h("td", { class: "mono" }, t.gates ? gatesText(t.gates) : "—"), h("td", {}, `${s.candidate.model}, tuned again`),
+          h("td", {}, t.report ? judged(t.report) : (t.problem || `No thresholds reach ${pct(rep.check.min_accuracy, 1)} on these answers`)))))),
+    unseen && t.gates ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
+      `The new thresholds were tuned on these rows, so their accuracy here is optimistic. Tuned on four fifths and routing the rest (${unseen.folds}-fold), the same tuning automates ${pct(unseen.coverage)} at `,
+      unseen.accuracy === null ? "no measurable accuracy" : withCI(pct(unseen.accuracy, 1), unseen.low, unseen.high), unseen.below ? ", below the target." : ".") : null,
+    p.rows ? h("div", { class: "stat-row" },
+      stat(`every gated answer right, ${s.current.model}`, withCI(pct(p.current.accuracy, 1), p.current.low, p.current.high)),
+      stat(`every gated answer right, ${s.candidate.model}`, withCI(pct(p.candidate.accuracy, 1), p.candidate.low, p.candidate.high)),
+      stat("right only on one", `${p.current_only} · ${p.candidate_only}`),
+      stat("McNemar p", pval(p.p)),
+      stat("cost", `${usd(rep.cost_usd)} · ${rep.calls} calls`)) : null,
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "gated question"), h("th", {}, "answer changed"))),
+      h("tbody", {}, rep.changed.questions.map((q) => h("tr", {},
+        h("td", { class: "mono" }, q.qid),
+        h("td", {}, q.rows ? withCI(`${q.changed} of ${q.rows} · ${pct(q.share)}`, q.low, q.high) : "—")))))),
+    rep.changed.rows.length ? h("div", { class: "grid", style: { gap: "4px" } },
+      h("span", { class: "faint", style: { fontSize: "12px" } }, `Rows whose answers changed · ${rep.changed.rows_total}`),
+      h("div", { class: "scroll" }, h("table", { class: "table" },
+        h("tbody", {}, rep.changed.rows.slice(0, 5).map((r) => h("tr", {},
+          h("td", { class: "num" }, String(r.index + 1)),
+          h("td", { class: "row", style: { maxWidth: "260px" } }, r.row),
+          h("td", {}, Object.entries(r.changed).map(([q, a]) => h("div", { style: { fontSize: "12px" } },
+            h("span", { class: "mono" }, q), `: ${a.current} → ${a.candidate}`,
+            r.label[q] === null || r.label[q] === undefined ? null : h("span", { class: "faint" }, `, label ${r.label[q]}`)))))))))) : null,
+    rep.reasons.length ? h("ul", { class: "muted", style: { fontSize: "12.5px", margin: 0, paddingLeft: "18px" } },
+      rep.reasons.map((r) => h("li", {}, r))) : null,
+    (rep.notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
+    rep.proposals.saved || rep.proposals.retuned ? h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+      rep.proposals.saved ? h("button", { class: `btn sm${rep.verdict === "keep" ? " primary" : ""}`,
+        onclick: () => moveCheck(x.id, rep.proposals.saved, "keeping its thresholds") }, icon("check"), `Move to ${rep.proposals.saved.model}, same thresholds`) : null,
+      rep.proposals.retuned ? h("button", { class: `btn sm${rep.verdict === "retune" ? " primary" : ""}`,
+        onclick: () => moveCheck(x.id, rep.proposals.retuned, `with thresholds ${gatesText(rep.proposals.retuned.gates)}`) },
+        icon("check"), `Move to ${rep.proposals.retuned.model}, new thresholds`) : null,
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "Saves the thresholds and the version, with the same targets. No answers are saved.")) : null);
 }
 
 // ---------- Drift ----------

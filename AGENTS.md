@@ -35,6 +35,8 @@ uv run scripts/check.py                       # rerun the checks saved in Workbe
                                                # its targets. Needs TYPESAFE_API_KEY. --list makes no calls.
                                                # <id> --drift rows.jsonl compares unlabeled rows with that
                                                # dataset through its gate (jev/drift.py); exits 1 on a shift.
+                                               # --upgrade-to <version> asks each check's tuned-on version and
+                                               # <version> every row (jev/upgrade.py); exits 1 if one should stay.
 ```
 
 Lint with `uv run --locked ruff check` (configured in `pyproject.toml`; CI runs it). No formatter is
@@ -122,7 +124,9 @@ Bulk rows and their `_expect` labels as datasets under `data/workbench/datasets/
 only — never answers, per the no-replay rule below), keeps a tuned Policy gate with a dataset as a *check*
 (`jev/checks.py`: gates, model, the versioned id that answered the tuning run as `tuned_on`, and
 user-chosen targets, never measured results) that the Datasets panel and `scripts/check.py` rerun live,
-compares unlabeled new rows with a check's dataset through its gate (`jev/drift.py`, both sides run live),
+compares unlabeled new rows with a check's dataset through its gate (`jev/drift.py`, both sides run live), asks a
+check's tuned-on version and a newer one the same rows and retunes the gate on the newer one's answers
+(`jev/upgrade.py`, both sides run live; moving the check saves thresholds and the version, never answers),
 measures how often a second person's blind labels agree with a dataset's and writes the settled ones back
 (`jev/agreement.py`, no model calls), checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
 Tune, cost, cross-validation, checks, drift and the exported gate send rows that break one to review),

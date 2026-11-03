@@ -338,16 +338,17 @@ def _pairs(levels: List[List[int]], right: List[bool], steps: List[int], target:
     return best
 
 
-def search(levels: List[List[int]], right: List[bool], bound: str = "estimate") -> List[Optional[List[int]]]:
-    """For each target accuracy, the grid steps (threshold * STEPS per question) that automate the most rows the
+def search(levels: List[List[int]], right: List[bool], bound: str = "estimate",
+           targets: Tuple[float, ...] = TARGETS) -> List[Optional[List[int]]]:
+    """For each target accuracy (TARGETS unless given), the grid steps (threshold * STEPS per question) that automate the most rows the
     search finds, or None when no thresholds reach the target. levels[i][q] is _level() of row i's signal on
     question q; right[i] says whether every gated answer on row i is right."""
     if not levels:
-        return [None] * len(TARGETS)
+        return [None] * len(targets)
     k = len(levels[0])
     path = _greedy(levels, right, k)
     out: List[Optional[List[int]]] = []
-    for target in TARGETS:
+    for target in targets:
         # Relax every state on the path that reaches the target, not only the first: a later move can drop the
         # rows an earlier one was raised for, and relaxing then gives the earlier threshold back.
         best = None

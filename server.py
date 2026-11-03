@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
-                 lint, policy, review, rules, security, shield, slices, workbench)
+                 lint, policy, review, rules, security, shield, slices, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -556,6 +556,12 @@ def api_wb_check_drift(body):
     return drift.run(client, str(body.get("id", "")), body.get("rows"), model or None)
 
 
+def api_wb_check_upgrade(body):
+    model = str(body.get("model") or "").strip()
+    check_model(model)
+    return upgrade.run(client, str(body.get("id", "")), model)
+
+
 def api_wb_decisions(body):
     return decisions.queue(str(body.get("id", "")), body.get("text"), body.get("audit", 0), body.get("seed", 0))
 
@@ -656,6 +662,7 @@ ROUTES = {
     ("POST", "/api/workbench/checks/delete"): api_wb_check_delete,
     ("POST", "/api/workbench/checks/run"): api_wb_check_run,
     ("POST", "/api/workbench/checks/drift"): api_wb_check_drift,
+    ("POST", "/api/workbench/checks/upgrade"): api_wb_check_upgrade,
     ("POST", "/api/workbench/checks/decisions"): api_wb_decisions,
     ("POST", "/api/workbench/checks/decisions/add"): api_wb_decisions_add,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,

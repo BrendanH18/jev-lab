@@ -691,8 +691,8 @@ A saved check that asks an alias says so under the dataset and in `scripts/check
 `tuned_on` differs from the version the alias points at now, the note says the alias has moved since
 the gate was tuned, and that running the check shows whether the gate still holds. A run answered
 by a version other than `tuned_on`, an alias's or one typed beside **Run check**, says so in its
-report. To pin a check after it passes on the new version, load the dataset, run it in Bulk, and save
-the check again. The notes never change whether a check passes.
+report. To move a check to the new version, use [Try a new version](#move-a-check-to-a-new-version). The
+notes never change whether a check passes.
 
 A check holds targets, never answers or results from an earlier run. Saving the dataset again keeps
 its check while every gated question is still among the saved questions, so adding rows or labels
@@ -731,6 +731,44 @@ change, for example in GitHub Actions:
 | `POST /api/workbench/checks` | `id`, `check`: `gates`, `min_accuracy` (0.5–1), optional `min_coverage` (default 0), `signal`, `bound`, `model` (default: the current model), and optional `tuned_on` (the versioned id that answered the tuning run) | `dataset`: the summary, with the `check` and `check_notes` |
 | `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
 | `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, `answered_by`, and `notes` |
+
+### Move a check to a new version
+
+When TypeSafe ships a new version, a pinned check keeps asking the version it was tuned on. **Try a new
+version**, under the dataset, answers whether the check can move, and with which thresholds. Name the version to
+try, such as `jev-1.15.0`, or an alias such as `jev-latest`. **Compare** sends every saved row to the version the
+check was tuned on (its `tuned_on`, or its model for a check saved before that was recorded) and to the one you
+named: one call per row each, so 40 rows make 80 live calls. Both sides are asked now, so run-to-run variation
+shows up on both and nothing comes from an earlier run. The report shows:
+
+- the saved gate judged on each side's answers against the check's targets, as **Run check** judges it;
+- the gate tuned again on the new version's answers, at the check's own accuracy target and bound, as Policy's
+  Tune would choose it, and judged against both targets. Those thresholds were chosen on the rows they are
+  measured on, so the report also gives what five-fold cross-validation says the same tuning delivers on rows it
+  was not tuned on, as [Check on unseen rows](#check-on-unseen-rows) does;
+- over the labeled rows both answered, how often each version gets every gated answer right, with 95% intervals,
+  how many rows only one of them gets right, and the exact McNemar test of that split, as Compare reports it;
+- for each gated question, on how many rows the answer changed, labeled or not, and the first of those rows.
+
+The verdict is **Can move as it is** when the saved thresholds still meet both targets on the new version,
+**Can move with new thresholds** when they do not but the retuned ones do, and **Stay on the tuned version** when
+neither does. It is **Not judged** when a run stopped or left rows without an answer, or when the new version's
+rows were answered by more than one version, so there is no one version to pin to. A report whose two sides were
+answered by the same version says so, since it then shows only run-to-run variation.
+
+**Move to …, same thresholds** and **Move to …, new thresholds** appear for each gate that meets the targets. Either
+one saves the check with those thresholds, the same targets, signal, and rules, and the version that answered the
+new run as both its model and `tuned_on`, so the check stays pinned. It saves thresholds and the version only,
+never answers. Nothing changes until you choose one. When the saved thresholds meet the targets, keeping them
+changes the least; the retuned ones may automate more, and the cross-validated numbers say how far to trust that.
+
+From a terminal, `scripts/check.py --upgrade-to jev-1.15.0` runs the same comparison for every check, or for the
+ids you name, and prints each verdict. It never changes a check. It exits 0 when every check can move, 1 when any
+should stay, and 2 when one could not be judged. `--out` writes the reports, which include rows.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/checks/upgrade` | `id`, `model` (the version to try) | `verdict` (`keep`, `retune`, `stay`, or `error`), `reasons`, `current` and `candidate` (the saved gate judged on each side: `status`, `targets`, `accuracy`, `coverage`, and counts), `retuned` (`gates`, its `report`, and `unseen`, the cross-validated `accuracy` and `coverage`), `paired` (the four row counts, `p`, and each side's accuracy), `changed` (per gated question and the first rows), `sides` (each side's `model`, `answered_by`, cost, and median latency), `proposals` (`saved` and `retuned`: a check to save with `POST /api/workbench/checks`, or `null`), `notes`, `cost_usd`, and `calls` |
 
 ## Compare new rows with a check's dataset
 
@@ -1058,6 +1096,7 @@ request with one file part per picture.
 | Saved dataset | 200 nonempty rows and 2,000,000 characters as JSON |
 | Check | One per dataset; up to 10 gated questions; one call per row on every run |
 | Compare new rows | 200 new rows, plus the dataset's rows: up to 400 calls per comparison |
+| Try a new version | The dataset's rows, asked of two versions: up to 400 calls per comparison |
 | Calibrate, Costs, Review, Slices, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Prices | $0 to $1,000,000 each; up to 100 priced mistakes |
 | Policy gated questions | 10 |

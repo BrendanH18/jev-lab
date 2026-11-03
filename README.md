@@ -153,6 +153,10 @@ conditions.
   `uv run --locked scripts/check.py` does the same from a terminal or CI and exits nonzero on a miss.
   A check saved from a run of an alias such as `jev-latest` asks the version that answered that run, so
   the gate stays on the version it was tuned on when the alias moves. Only targets are saved, never answers.
+- **Try a new version:** when TypeSafe ships a new Jev version, ask the version a check was tuned on and the new one
+  every saved row, and see whether the saved gate still meets its targets there, what thresholds tuned on the new
+  version would deliver, cross-validated, and which answers changed. Then move the check, pinned to the new version,
+  with the thresholds that meet its targets. `scripts/check.py --upgrade-to <version>` does the same from a terminal.
 - **Compare new rows:** paste rows a check's gate will see now, unlabeled, and see whether they still look like
   the dataset it was tuned on. Both sets of rows are sent to the model again, then compared through the gate:
   the share automated, each question's answers and confidence, each with a significance test, and an

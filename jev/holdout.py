@@ -21,7 +21,7 @@ With Policy's `rules`, rows a rule holds are dealt into folds like the rest and 
 from __future__ import annotations
 
 import hashlib
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from . import calibrate, cost, policy
 from .calibrate import STEPS, TARGETS, CalibrationError
@@ -60,11 +60,11 @@ def _measure(right: List[bool], auto: List[int], n: int) -> dict:
 
 
 def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate", folds: Any = FOLDS,
-             costs: Any = None, rules: Any = None) -> dict:
+             costs: Any = None, rules: Any = None, targets: Tuple[float, ...] = TARGETS) -> dict:
     """rows: Policy's rows, each optionally with "key", a string naming its input. For each target accuracy:
     the thresholds tuned on every labeled row and what they automate there, and what thresholds tuned without a
-    row automate when they route it, pooled over the folds. With `costs` (as jev/cost.py takes them), the same for
-    the cheapest thresholds, under "cost"."""
+    row automate when they route it, pooled over the folds. targets: the accuracies to tune for, TARGETS unless
+    given. With `costs` (as jev/cost.py takes them), the same for the cheapest thresholds, under "cost"."""
     calibrate.check_bound(bound)
     folds = _folds(folds)
     prices = cost.parse(costs) if costs is not None else None
@@ -81,16 +81,16 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
     members = [[i for i in range(len(scored)) if fold_of[i] == f] for f in range(folds)]
     sizes = [fold_all.count(f) for f in range(folds)]
     # Thresholds tuned on every row, then on each fold's complement: one search per fold covers every target.
-    whole = policy.search(levels, right, bound)
+    whole = policy.search(levels, right, bound, targets)
     per_fold = []
     for f in range(folds):
         train = [i for i in range(len(scored)) if fold_of[i] != f]
-        per_fold.append(policy.search([levels[i] for i in train], [right[i] for i in train], bound))
+        per_fold.append(policy.search([levels[i] for i in train], [right[i] for i in train], bound, targets))
 
     def gates(steps: Optional[List[int]]) -> Optional[dict]:
         return None if steps is None else {q: steps[j] / STEPS for j, q in enumerate(qids)}
 
-    for t, target in enumerate(TARGETS):
+    for t, target in enumerate(targets):
         seen = whole[t]
         unseen: List[int] = []
         parts = []

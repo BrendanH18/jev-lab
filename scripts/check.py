@@ -6,6 +6,7 @@
     uv run scripts/check.py --model jev-1.14.0 # ask another model than the checks name
     uv run scripts/check.py --list             # show the checks, and any that ask a moving alias; no model calls
     uv run scripts/check.py support-tickets --drift new.jsonl  # do these unlabeled rows still look like the dataset?
+    uv run scripts/check.py --upgrade-to jev-1.15.0  # can each check move to this version, and with which thresholds?
 
 A check (jev/checks.py) gates some of a dataset's questions at fixed thresholds and names two targets: the
 accuracy the automated rows must reach and the share of labeled rows that must be automated. This script
@@ -20,6 +21,12 @@ box, and compares them through the check's gate: the share automated, each quest
 and an estimated accuracy on the new rows, which need no labels. It makes one call per dataset row and one per
 new row. Exit status: 0 when the new rows look like the dataset and the check passes on it, 1 when they differ
 or the check fails, 2 when the runs could not be compared.
+
+--upgrade-to MODEL (jev/upgrade.py) asks each check's dataset of the version the check was tuned on and of MODEL,
+compares the two row by row, and tunes the gates again on MODEL's answers at the check's own targets. It makes two
+calls per row and never changes a check: to move one, save it from the Workbench. Exit status: 0 when every check
+can move (KEEP, with its saved thresholds, or RETUNE, with new ones), 1 when any should stay on its version (STAY),
+2 when a comparison could not be judged.
 """
 
 from __future__ import annotations
@@ -32,7 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jev import checks, drift, workbench  # noqa: E402
+from jev import checks, drift, upgrade, workbench  # noqa: E402
 from jev.client import JevClient, JevError  # noqa: E402
 
 MISTAKES_PRINTED = 5
@@ -145,6 +152,81 @@ def print_drift(rep: dict) -> None:
     print("  %s" % rep["status"].upper())
 
 
+def side_text(side: dict, sums: dict) -> str:
+    if not sums.get("targets"):
+        return "%s, not judged" % sums["status"].upper()
+    return "%s  accuracy %s, %s automated" % (sums["status"].upper(), pct(sums["accuracy"]).strip(), pct(sums["coverage"]).strip())
+
+
+def print_upgrade(rep: dict) -> None:
+    c, s = rep["check"], rep["sides"]
+    print("\n%s  (%d rows; %s, answered by %s -> %s, answered by %s)" % (
+        rep["id"], s["current"]["rows"], s["current"]["model"], ", ".join(s["current"]["answered_by"]) or "none",
+        s["candidate"]["model"], ", ".join(s["candidate"]["answered_by"]) or "none"))
+    print("  gate: %s on %s; targets: %s" % (gates_text(c), c["signal"], targets_text(c)))
+    print("  saved gate, tuned-on version:  %s" % side_text(s["current"], rep["current"]))
+    print("  saved gate, candidate:         %s" % side_text(s["candidate"], rep["candidate"]))
+    t = rep["retuned"]
+    if t["gates"] is not None:
+        print("  retuned gate: %s  %s" % (", ".join("%s>=%.2f" % kv for kv in t["gates"].items()),
+                                         side_text(s["candidate"], t["report"])))
+        u = t["unseen"]
+        if u:
+            print("    on unseen rows (%d-fold): accuracy %s, %s automated" % (
+                u["folds"], pct(u["accuracy"]).strip(), pct(u["coverage"]).strip()))
+    elif t["problem"]:
+        print("  retuned gate: %s" % t["problem"])
+    else:
+        print("  retuned gate: no thresholds reach %s on the candidate's answers" % pct(c["min_accuracy"]).strip())
+    p = rep["paired"]
+    if p["rows"]:
+        print("  every gated answer right, %d labeled rows: %s -> %s  (only tuned-on %d, only candidate %d, McNemar p %s)" % (
+            p["rows"], pct(p["current"]["accuracy"]).strip(), pct(p["candidate"]["accuracy"]).strip(),
+            p["current_only"], p["candidate_only"], p_text(p["p"]).strip()))
+    for q in rep["changed"]["questions"]:
+        if q["rows"]:
+            print("  %s changed its answer on %d of %d rows" % (q["qid"], q["changed"], q["rows"]))
+    print("  cost $%.5f · %d calls · %d input tokens" % (rep["cost_usd"], rep["calls"], rep["input_tokens"]))
+    for reason in rep["reasons"]:
+        print("  - " + reason)
+    for note in rep["notes"]:
+        print("  note: " + note)
+    print("  %s" % rep["verdict"].upper())
+
+
+def run_upgrade(args, ids) -> int:
+    client = JevClient()
+    if not client.configured:
+        print("No API key. Set TYPESAFE_API_KEY or add it to .env.")
+        return 2
+    print("%d check%s, two calls per row, via %s" % (len(ids), "" if len(ids) == 1 else "s", client.backend))
+    started = time.perf_counter()
+    reports = []
+    try:
+        for dataset_id in ids:
+            try:
+                rep = upgrade.run(client, dataset_id, args.upgrade_to)
+            except workbench.WorkbenchError as err:
+                rep = {"id": dataset_id, "verdict": "error", "reasons": [str(err)]}
+                print("\n%s\n  - %s\n  ERROR" % (dataset_id, err))
+            else:
+                print_upgrade(rep)
+            reports.append(rep)
+    except JevError as err:
+        print("\nStopped: %s" % err)
+        reports.append({"verdict": "error", "reasons": [str(err)]})
+    finally:
+        s = client.guard.snapshot()
+        print("\n%d live calls · %d input tokens · $%.5f · %.1f s" % (
+            s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started))
+        if args.out:
+            Path(args.out).write_text(json.dumps(reports, indent=1, default=str))
+    verdicts = [r["verdict"] for r in reports]
+    if "error" in verdicts:
+        return 2
+    return 1 if "stay" in verdicts else 0
+
+
 def run_drift(args, with_checks: dict) -> int:
     ids = args.ids or sorted(with_checks)
     if len(ids) != 1:
@@ -192,6 +274,8 @@ def main(argv=None) -> int:
     parser.add_argument("--list", action="store_true", help="list the checks and exit, without model calls")
     parser.add_argument("--out", help="write the reports as JSON here (they include rows and answers)")
     parser.add_argument("--drift", metavar="FILE", help="compare the unlabeled rows in FILE with one check's dataset")
+    parser.add_argument("--upgrade-to", metavar="MODEL",
+                        help="ask each check's tuned-on version and MODEL every row, and say whether the check can move")
     args = parser.parse_args(argv)
 
     with_checks = {d["id"]: d for d in checks.listed()}
@@ -206,6 +290,11 @@ def main(argv=None) -> int:
     if args.list:
         print_list(with_checks[i] for i in ids)
         return 0
+    if args.drift is not None and args.upgrade_to is not None:
+        print("--drift and --upgrade-to each run the dataset again; run them one at a time.")
+        return 2
+    if args.upgrade_to is not None:
+        return run_upgrade(args, ids)
     if args.drift is not None:  # an empty path is an error, not a request for the ordinary check
         return run_drift(args, with_checks)
 
