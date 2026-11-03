@@ -123,7 +123,8 @@ only — never answers, per the no-replay rule below), keeps a tuned Policy gate
 (`jev/checks.py`: gates, model, the versioned id that answered the tuning run as `tuned_on`, and
 user-chosen targets, never measured results) that the Datasets panel and `scripts/check.py` rerun live,
 compares unlabeled new rows with a check's dataset through its gate (`jev/drift.py`, both sides run live),
-checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
+measures how often a second person's blind labels agree with a dataset's and writes the settled ones back
+(`jev/agreement.py`, no model calls), checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
 Tune, cost, cross-validation, checks, drift and the exported gate send rows that break one to review),
 runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
