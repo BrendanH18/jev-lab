@@ -658,7 +658,8 @@ and survives a commit. Then:
 - Calibrate, Policy, Tune, the costs, Review labels, Rules, By slice, and the check on unseen rows read only the other
   rows, and Compare leaves test rows out without asking them;
 - a saved check, **Try a new version**, and **Compare new rows** rerun only the other rows, since the gate was tuned
-  on them, so no report lists a test row's answers.
+  on them, and **Compare new rows** leaves out any new row marked as a test row, such as one copied from the rows
+  box, so no report lists a test row's answers.
 
 Once Policy's gate is chosen, **Score this gate on N test rows**, under Policy, measures it on the test rows'
 answers from this run: accuracy when automated with a 95% interval, the share automated, and each gated question's

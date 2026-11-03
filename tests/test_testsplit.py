@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from helpers import FakeClient, fake_answers  # noqa: E402
-from jev import agreement, checks, decisions, testsplit, workbench  # noqa: E402
+from jev import agreement, checks, decisions, drift, testsplit, workbench  # noqa: E402
 from jev.workbench import TEST_KEY, WorkbenchError  # noqa: E402
 
 Q = {"refund": {"type": "noul", "instructions": "Does the sender want money back?"}}
@@ -100,6 +100,9 @@ class ModelTests(Temp):
         res = workbench.run_bulk(fake, rows, Q)
         self.assertEqual([state for state, _ in fake.calls], [{"text": "refund me"}, {"text": "hi", "lang": "en"}])
         self.assertEqual(res["results"][0]["row"], {"text": "refund me", TEST_KEY: True}, "the browser sees the marker")
+        fake.calls.clear()
+        workbench.run_bulk(fake, [{"text": "refund me"}, {"text": "refund me", TEST_KEY: True}], Q, field="message")
+        self.assertEqual([state for state, _ in fake.calls], [{"text": "refund me"}] * 2, "a marked object keeps its fields")
 
     def test_compare_leaves_test_rows_out(self):
         fake = FakeClient(picker)
@@ -115,6 +118,15 @@ class ModelTests(Temp):
         fake = FakeClient(picker)
         rep = checks.run(fake, "tickets")
         self.assertEqual((len(fake.calls), rep["rows"]), (16, 16))
+
+    def test_compare_new_rows_leaves_test_rows_out(self):
+        checks.save_check("tickets", {"gates": {"refund": 0.5}, "model": "jev-1.14.0", "min_accuracy": 0.9})
+        fake = FakeClient(picker)
+        rep = drift.run(fake, "tickets", [{"text": "refund new"}, {"text": "held", TEST_KEY: True}])
+        self.assertNotIn({"text": "held"}, [state for state, _ in fake.calls], "the test row was never asked")
+        self.assertIn("1 of the new rows is a test row", " ".join(rep["notes"]))
+        with self.assertRaisesRegex(WorkbenchError, "Every new row is a test row"):
+            drift.run(fake, "tickets", [{"text": "held", TEST_KEY: True}])
 
     def test_a_marked_row_is_the_same_row(self):
         self.assertEqual(decisions._key({"text": "x", TEST_KEY: True, "_expect": {"refund": True}}), decisions._key("x"))

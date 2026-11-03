@@ -686,9 +686,7 @@ def _state(split: List[tuple], index: int, field: str) -> Any:
     replaced by PHOTO_FIELD naming its image (see _picture)."""
     row = split[index][0]
     if isinstance(row, dict) and TEST_KEY in row:
-        row = {k: v for k, v in row.items() if k != TEST_KEY}
-        if set(row) == {"text"} and isinstance(row["text"], str):
-            row = row["text"]  # a text row marked as a test row is sent as the text row it was
+        row = {k: v for k, v in row.items() if k != TEST_KEY}  # the object as it was, whatever Bulk's text field
     picture = row_picture(row)
     if picture is not None:
         row = {k: v for k, v in row.items() if k != IMAGE_KEY}
