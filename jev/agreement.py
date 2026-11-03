@@ -64,7 +64,7 @@ def _labels(row: Any, questions: Dict[str, dict]) -> Dict[str, Any]:
 
 
 def _state(row: Any) -> Any:
-    return {k: v for k, v in row.items() if k != LABEL_KEY} if isinstance(row, dict) else row
+    return workbench.without_marks(row)  # a test row is the same row, and a second labeler need not see the marker
 
 
 def _index(dataset: dict) -> Dict[str, List[int]]:

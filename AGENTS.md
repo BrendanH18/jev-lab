@@ -128,7 +128,9 @@ compares unlabeled new rows with a check's dataset through its gate (`jev/drift.
 check's tuned-on version and a newer one the same rows and retunes the gate on the newer one's answers
 (`jev/upgrade.py`, both sides run live; moving the check saves thresholds and the version, never answers),
 measures how often a second person's blind labels agree with a dataset's and writes the settled ones back
-(`jev/agreement.py`, no model calls), checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
+(`jev/agreement.py`, no model calls), holds a random share of a dataset's labeled rows out of tuning as `"_test": true` test rows, scored only on request and
+counted (`jev/testsplit.py`; the marker never reaches the model, and checks, drift and upgrade rerun only the other
+rows), checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
 Tune, cost, cross-validation, checks, drift and the exported gate send rows that break one to review),
 runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same

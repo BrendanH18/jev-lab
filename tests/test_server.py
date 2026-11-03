@@ -279,7 +279,7 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(json.loads(body)["dataset"], {"id": "tickets", "name": "Tickets", "notes": "",
                                                            "saved_at": json.loads(body)["dataset"]["saved_at"], "rows": 2,
                                                            "labeled": 1, "labels": {"dept": 1}, "questions": 0,
-                                                           "check": None, "check_notes": []})
+                                                           "check": None, "check_notes": [], "test": None})
             status, _, body = self.request("GET", "/api/workbench/datasets")
             self.assertEqual([d["id"] for d in json.loads(body)["datasets"]], ["tickets"])
             status, _, body = self.request("POST", "/api/workbench/datasets/load", json.dumps({"id": "tickets"}),
@@ -296,6 +296,26 @@ class HttpTests(unittest.TestCase):
                                            self.post_headers())
             self.assertTrue(json.loads(body)["deleted"])
             self.assertEqual(list(Path(folder, "datasets").iterdir()), [])
+
+    def test_test_split_over_http(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            rows = "\n".join(json.dumps({"text": "row %d" % i, "_expect": {"refund": i % 2 == 0}}) for i in range(8))
+            self.request("POST", "/api/workbench/datasets", json.dumps({"name": "Tickets", "rows": rows}), self.post_headers())
+            forged, _, _ = self.request("POST", "/api/workbench/datasets/test/lock", json.dumps({"id": "tickets"}),
+                                        {"Content-Type": "application/json"})
+            self.assertEqual(forged, 403, "locking rewrites the dataset, so it needs the session token")
+            status, _, body = self.request("POST", "/api/workbench/datasets/test/lock", json.dumps({"id": "tickets", "share": 0.25}),
+                                           self.post_headers())
+            self.assertEqual(status, 200, body)
+            self.assertEqual(json.loads(body)["dataset"]["test"]["rows"], 2)
+            bad, _, err = self.request("POST", "/api/workbench/datasets/test/score",
+                                       json.dumps({"id": "tickets", "rows": [], "gates": {"refund": 0.5}}), self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("2 test rows and 0 came with answers", json.loads(err)["error"])
+            status, _, body = self.request("POST", "/api/workbench/datasets/test/remove", json.dumps({"id": "tickets"}),
+                                           self.post_headers())
+            self.assertTrue(json.loads(body)["removed"])
 
     def test_checks_over_http(self):
         questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}

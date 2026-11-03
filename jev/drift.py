@@ -511,9 +511,13 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
         raise WorkbenchError("The dataset %r has no check. Save one from the Workbench's Policy panel." % dataset_id)
     check = checks.validate_check(dataset["check"], dataset.get("questions"))
     fresh = new_rows(rows)
+    held_out = sum(1 for row in fresh if workbench.row_test(row))
+    fresh = [row for row in fresh if not workbench.row_test(row)]  # a test row's answers are shown only when scored
+    if not fresh:
+        raise WorkbenchError("Every new row is a test row. Test rows are left out, so their answers stay hidden.")
     questions = workbench.bulk_questions(dataset["questions"])
     asked = (model or "").strip() or check["model"]
-    ref = workbench.run_bulk(client, dataset["rows"], questions, model=asked)
+    ref = workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=asked)
     if ref["stopped"]:  # a missing key or the budget: the new rows would stop too
         new = {"results": [], "rows": len(fresh), "completed": 0, "stopped": None, "cost_usd": 0.0,
                "input_tokens": 0, "wall_ms": 0.0}
@@ -527,6 +531,9 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
     by = {side: sorted({r["meta"].get("model") for r in bulk["results"] if "answers" in r and r["meta"].get("model")})
           for side, bulk in (("reference", ref), ("new", new))}
     notes = checks.run_notes(check, by["reference"])
+    if held_out:
+        notes.append("%d of the new rows %s test rows, left out so their answers stay hidden."
+                     % (held_out, "is a" if held_out == 1 else "are"))
     if by["reference"] and by["new"] and by["reference"] != by["new"]:
         notes.append("The dataset rows were answered by %s and the new rows by %s, so a difference may come from the "
                      "model rather than the rows. Run it again." % (", ".join(by["reference"]), ", ".join(by["new"])))
