@@ -38,6 +38,15 @@
     .tests .item, .datasets .item { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); align-items: center; }
     .check-item { grid-column: 1 / -1; display: grid; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); }
     .check-report { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+    .queue-list { display: grid; gap: 8px; max-height: 560px; overflow: auto; }
+    .queue-item { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .queue-item.done { border-color: var(--good); }
+    .queue-item .row-text { font-size: 13px; overflow-wrap: anywhere; }
+    .queue-labels { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+    .queue-label { display: grid; gap: 3px; font-size: 12px; }
+    .queue-label select { min-width: 150px; }
+    .queue-label select.open { border-color: var(--warning); }
+    .queue-label .differs { color: var(--critical-text); }
     .tests .checks { font: 11.5px var(--mono); color: var(--muted); }
     .bulk textarea { min-height: 180px; font-family: var(--mono); font-size: 12.5px; }
     .csv-import textarea { font-family: var(--mono); font-size: 12.5px; }

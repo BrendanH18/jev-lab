@@ -129,7 +129,11 @@ runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
 `SpendGuard`; a row's `_image` picture travels as an asset named `photo` in its state, so Box questions run
 too), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a
-Python or JavaScript module whose `decide(state)` routes a row (`jev/gate.py`).
+Python or JavaScript module whose `decide(state)` routes a row (`jev/gate.py`). Run as a script, that module prints
+each decision with its `row`; the Review queue (`jev/decisions.py`) reads those lines back, so a person labels the rows
+it sent to review and a random audit sample of the rows it automated, and appends them to the check's dataset.
+The queue shows answers read from the user's own decisions file, which their own gate produced; that is their data,
+not a canned answer, so never bundle a sample decisions file for the UI to show.
 
 ## Conventions
 

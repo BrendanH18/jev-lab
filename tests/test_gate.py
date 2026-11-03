@@ -203,6 +203,7 @@ class ExportTests(unittest.TestCase):
         sent = [json.loads(line) for line in (self.tmp / "states.jsonl").read_text().splitlines()]
         self.assertEqual(sent, [{"text": "Order A-1041 arrived damaged."}, {"text": "Refund please", "channel": "email"},
                                 {"text": "42"}], "labels never reach the model")
+        self.assertEqual([json.loads(line)["row"] for line in out], sent, "each decision carries the row it was asked about")
 
     @unittest.skipUnless(typesafe_sdk, "the TypeSafe SDK needs Python 3.10+")
     def test_python_with_the_real_sdk(self):
@@ -258,6 +259,7 @@ class ExportTests(unittest.TestCase):
         self.assertEqual([json.loads(line)["route"] for line in out], ["auto", "review"])
         sent = [json.loads(line) for line in (self.tmp / "states.jsonl").read_text().splitlines()]
         self.assertEqual(sent, [{"text": "Order A-1041 arrived damaged."}, {"text": "Refund please"}], "labels never reach the model")
+        self.assertEqual([json.loads(line)["row"] for line in out], sent, "each decision carries the row it was asked about")
 
 
 class ValidationTests(unittest.TestCase):

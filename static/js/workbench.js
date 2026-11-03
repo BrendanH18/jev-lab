@@ -798,7 +798,7 @@ function checkTargetsText(c) {
 function checkItem(x) {
   const c = x.check;
   const run = W.bulk.checkRuns[x.id] || (W.bulk.checkRuns[x.id] = { running: false, report: null, model: "",
-    drift: { open: false, text: "", running: false, report: null } });
+    drift: { open: false, text: "", running: false, report: null }, queue: newQueue() });
   const model = h("input", { class: "input sm", list: "cmp-models", value: run.model, spellcheck: "false", style: { maxWidth: "190px" },
     placeholder: `model: ${c.model}`, "aria-label": `Model to ask for the ${x.id} check` });
   model.addEventListener("focus", loadModels);
@@ -818,10 +818,16 @@ function checkItem(x) {
         title: "Do new, unlabeled rows still look like the rows this gate was tuned on?",
         onclick: () => { run.drift.open = !run.drift.open; render(); } }, icon("search"), "Compare new rows"),
       h("button", { class: "btn sm", onclick: () => exportGate({ dataset: x.id }, `the check saved with “${x.name || x.id}”`) }, icon("code"), "Export as code"),
+      h("button", { class: `btn sm${run.queue.open ? " active" : ""}`, "aria-expanded": String(run.queue.open),
+        title: "Label the rows the exported gate sent to review, and a sample it automated, then add them to this dataset",
+        onclick: () => { run.queue.open = !run.queue.open; render(); } }, icon("check"), "Review queue"),
       h("button", { class: "btn sm ghost", disabled: run.running, onclick: () => removeCheck(x.id) }, "Remove check")),
     run.report ? checkReport(run.report) : null,
     run.drift.open ? driftForm(x, run) : null,
-    run.drift.report ? driftReport(run.drift.report) : null);
+    run.drift.report ? driftReport(run.drift.report) : null,
+    run.queue.open ? queueForm(x, run.queue) : null,
+    run.queue.open && run.queue.report ? queueView(x, run.queue) : null,
+    run.queue.audit_report ? auditReport(run.queue.audit_report) : null);
 }
 
 // ---------- Gate export ----------
@@ -1015,6 +1021,187 @@ function driftReport(rep) {
       `Each p-value is adjusted for the ${rep.tests} tests in this report (Holm); a shift is an adjusted p below ${rep.alpha}. `,
       "The estimate gives each new automated row the accuracy of the labeled, automated dataset rows with the same gated answers, and the same confidence band when enough share it. ",
       "It assumes rows with the same answers are as often right in both sets, so label a sample of the new rows before relying on it."));
+}
+
+// ---------- Review queue ----------
+// jev/decisions.py reads the lines an exported gate prints (gate.py or gate.mjs run as a script: one decision per row,
+// with the row) and lists the rows to label: every row the gate sent to review, and an audit sample of rows it
+// automated, drawn at random. A review row starts from the answers its gate cleared; its held questions, and those a
+// broken rule reads, start empty. An audit row starts empty and hides the gate's answers until its gated questions are
+// labeled, so the audit measures the gate rather than agreement with it. Labeled rows join the dataset, rows and labels
+// only. Nothing here calls the model: the answers shown are the ones the user's own gate returned.
+function newQueue() {
+  return { open: false, text: "", audit: "10", busy: false, report: null, audit_report: null };
+}
+
+function queueClasses(question) {
+  if (question.type === "noul") return ["yes", "no"];
+  if (question.type === "score") return question.criteria.map((_c, i) => String(i));
+  return Object.keys(question.criteria);
+}
+
+// An answer or label as the gate shows it: a Noul's yes or no is a boolean.
+function shownAnswer(value) {
+  if (value === null || value === undefined) return "no answer";
+  return typeof value === "boolean" ? (value ? "yes" : "no") : String(value);
+}
+
+function queueReady(item, gates) {
+  return Object.keys(gates).every((q) => item.labels[q] !== null && item.labels[q] !== undefined);
+}
+
+function queueForm(x, q) {
+  const area = h("textarea", { class: "input", spellcheck: "false", rows: "5", "aria-label": `Gate decisions for ${x.id}`,
+    placeholder: '{"route": "review", "held": ["department"], "rules": [], "answers": {...}, "row": {"text": "..."}}' }, q.text);
+  area.addEventListener("input", () => { q.text = area.value; });
+  const file = h("input", { type: "file", accept: ".jsonl,.json,.txt,.log", style: { display: "none" } });
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    if (!f) return;
+    q.text = await f.text();
+    render();
+    readQueue(x.id);
+  });
+  const audit = h("input", { class: "input sm", type: "number", min: "0", max: "200", step: "1", value: q.audit, style: { width: "70px" },
+    "aria-label": "Automated rows to audit" });
+  audit.addEventListener("input", () => { q.audit = audit.value; });
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("p", { class: "muted", style: { fontSize: "12.5px", margin: 0 } },
+      "Paste what the exported gate printed (", h("code", {}, "python gate.py < rows.jsonl > decisions.jsonl"),
+      "), one decision per line. The queue lists every row it sent to review, and a random sample of rows it automated to audit. Label them and add them to this dataset, so the next check run, Policy, and Calibrate learn from your traffic. Reading the file makes no model call."),
+    area,
+    h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: q.busy, onclick: () => readQueue(x.id) },
+        q.busy ? [h("span", { class: "spin" }), " Reading…"] : [icon("layers"), "Read decisions"]),
+      h("button", { class: "btn sm ghost", onclick: () => file.click() }, "Choose file"), file,
+      h("label", { class: "faint", style: { fontSize: "12px", display: "flex", gap: "6px", alignItems: "center" } },
+        "Audit", audit, "automated rows")));
+}
+
+async function readQueue(id) {
+  const q = W.bulk.checkRuns[id].queue;
+  if (!q.text.trim()) return toast("Paste the gate's decisions, one JSON line per row", "error");
+  const audit = Number(q.audit || 0);
+  if (!Number.isInteger(audit) || audit < 0 || audit > 200) return toast("Audit a whole number of rows, from 0 to 200", "error");
+  q.busy = true;
+  render();
+  try {
+    q.report = await api("/api/workbench/checks/decisions", { id, text: q.text, audit });
+    q.audit_report = null;
+  } catch (e) { handleError(e); }
+  q.busy = false;
+  render();
+}
+
+function queueSelect(item, qid, question, onChange) {
+  const current = labelText(item.labels[qid], question.type);
+  const open = item.open.includes(qid) && !current;
+  const sel = h("select", { class: `input label-sel${open ? " open" : ""}`, "aria-label": `Label ${qid} for line ${item.line}` },
+    h("option", { value: "", selected: !current }, "—"),
+    queueClasses(question).map((c) => h("option", { value: c, selected: c === current },
+      question.type === "score" ? `${c} · ${String(question.criteria[Number(c)] ?? "").slice(0, 32)}` : c)));
+  sel.addEventListener("change", () => { item.labels[qid] = labelValue(sel.value, question.type); onChange(); });
+  return sel;
+}
+
+function queueView(x, q) {
+  const rep = q.report;
+  const c = rep.counts;
+  const gates = rep.gates;
+  const ready = rep.items.filter((i) => queueReady(i, gates));
+  const adding = Math.min(ready.length, rep.room);
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const summary = [
+    `${plural(c.decisions, "decision")}: ${c.review} to review, ${c.auto} automated`,
+    c.in_dataset ? `${c.in_dataset} already in the dataset` : null,
+    c.repeated ? `${c.repeated} repeated` : null,
+    `queued ${c.queued - c.audit} to review and ${c.audit} to audit`,
+    c.dropped ? `${c.dropped} more to review than fit; add these and read the file again` : null,
+  ].filter(Boolean).join(" · ");
+  const card = (item) => {
+    const done = queueReady(item, gates);
+    const reveal = item.kind === "review" || done;  // an audit row shows the gate's answers once its gated questions are labeled
+    const why = item.kind === "audit" ? h("span", { class: "badge info", title: "Label it before you read the gate's answers" }, "audit · label blind")
+      : [item.held.length ? h("span", { class: "badge warning" }, `held: ${item.held.join(", ")}`) : null,
+        item.rules.map((r) => h("span", { class: "badge warning", title: r }, "breaks a rule"))];
+    return h("div", { class: `queue-item${done ? " done" : ""}` },
+      h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+        h("span", { class: "faint mono", style: { fontSize: "11.5px" } }, `line ${item.line}`), why,
+        done ? h("span", { class: "badge good" }, icon("check"), "ready") : null),
+      h("div", { class: "row-text" }, rowText(item.row)),
+      h("div", { class: "queue-labels" }, Object.entries(rep.questions).map(([qid, question]) => {
+        const answer = item.answers[qid];
+        const label = item.labels[qid];
+        const differs = reveal && label !== null && label !== undefined && labelText(label, question.type) !== labelText(answer, question.type);
+        return h("label", { class: "queue-label" },
+          h("span", { class: "mono" }, qid, qid in gates ? h("span", { class: "faint" }, " · gated") : null),
+          queueSelect(item, qid, question, render),
+          reveal ? h("span", { class: `faint${differs ? " differs" : ""}`, style: { fontSize: "11.5px" } },
+            `gate: ${shownAnswer(answer)}`) : null);
+      })));
+  };
+  return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    h("div", { class: "faint", style: { fontSize: "12px" } }, summary),
+    rep.problems_total ? h("details", {},
+      h("summary", { class: "muted", style: { fontSize: "12.5px" } }, `${plural(rep.problems_total, "line")} not read`),
+      h("ul", { class: "faint", style: { fontSize: "12px", margin: "4px 0 0", paddingLeft: "18px" } },
+        rep.problems.map((p) => h("li", {}, p.message)),
+        rep.problems_total > rep.problems.length ? h("li", {}, `…and ${rep.problems_total - rep.problems.length} more`) : null)) : null,
+    rep.items.length ? h("div", { class: "queue-list" }, rep.items.map(card))
+      : h("div", { class: "empty" }, "Nothing to label: the dataset already has every row these decisions name."),
+    rep.items.length ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm primary", disabled: q.busy || !adding, onclick: () => addQueued(x.id) },
+        icon("save"), `Add ${adding < ready.length ? `${adding} of ${ready.length}` : adding} labeled row${ready.length === 1 ? "" : "s"} to “${x.name || x.id}”`),
+      h("span", { class: "faint", style: { fontSize: "12px" } },
+        `A row is ready once every gated question (${Object.keys(gates).join(", ")}) has a label. Room for ${rep.room} more rows; ready rows past that stay here. Rows and labels are saved, never answers.`)) : null);
+}
+
+async function addQueued(id) {
+  const b = W.bulk;
+  const q = b.checkRuns[id].queue;
+  const rep = q.report;
+  // Only as many ready rows as the dataset has room for, in queue order; the rest stay in the queue with their labels.
+  const ready = rep.items.filter((i) => queueReady(i, rep.gates)).slice(0, rep.room);
+  if (!ready.length) return toast("The dataset is full: it holds 200 rows. Save these rows as a new dataset instead.", "error");
+  q.busy = true;
+  render();
+  try {
+    const items = ready.map((i) => ({ row: i.row, kind: i.kind, answers: i.answers,
+      labels: Object.fromEntries(Object.entries(i.labels).filter(([, v]) => v !== null && v !== undefined)) }));
+    const out = await api("/api/workbench/checks/decisions/add", { id, items });
+    rep.items = rep.items.filter((i) => !ready.includes(i));
+    rep.room = Math.max(0, rep.room - out.added);
+    q.audit_report = out.audit;
+    b.datasets = (await api("/api/workbench/datasets")).datasets;
+    if (b.dataset.id === id) {
+      // The rows box holds this dataset as it was loaded, and saving replaces the file, so a stale box would drop the
+      // added rows. Refresh it when it has no unsaved edits; otherwise unlink it, so a save under this name asks first.
+      if (!bulkUnsaved()) {
+        b.rowsText = b.savedText = rowsText((await api("/api/workbench/datasets/load", { id })).dataset.rows);
+      } else {
+        b.dataset.id = null;
+        toast("The rows box has unsaved edits, so it still shows this dataset without the added rows. Saving it under the same name asks before it replaces the file.", "error");
+      }
+    }
+    toast(`Added ${out.added} row${out.added === 1 ? "" : "s"} to data/workbench/datasets/${id}.json${out.already ? ` (${out.already} already there)` : ""}. Run the check to see the gate on them.`);
+  } catch (e) { handleError(e); }
+  q.busy = false;
+  render();
+}
+
+function auditReport(a) {
+  const mark = a.ok === null ? null : h("span", { class: `badge ${a.ok ? "good" : "critical"}` }, a.ok ? "meets" : "misses");
+  return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    h("div", { class: "stat-row" },
+      stat("automated decisions right, audited", [withCI(`${a.correct} of ${a.rows} · ${pct(a.accuracy, 1)}`, a.accuracy_low, a.accuracy_high), " ", mark]),
+      a.target === null ? null : stat(a.bound === "lower" ? "target, 95% lower bound" : "target", pct(a.target, 1))),
+    a.wrong.length ? h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("tbody", {}, a.wrong.map((w) => h("tr", {},
+        h("td", { class: "row", style: { maxWidth: "300px" } }, rowText(w.row)),
+        h("td", {}, Object.entries(w.wrong).map(([qid, v]) => h("div", { style: { fontSize: "12px" } },
+          h("span", { class: "mono" }, qid), `: gate ${shownAnswer(v.answer)}, label ${shownAnswer(v.label)}`)))))))) : null,
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      `A row is right when every gated answer matches its label, as Policy scores it. The sample was drawn at random from the automated rows, so it stands for them. ${a.rows < 100 ? `${a.rows} row${a.rows === 1 ? " gives" : "s give"} a wide interval, so audit more before you rely on it.` : "Read the interval, not only the share."}`));
 }
 
 // The versioned id that answered every row of the last Bulk run (from each response's "model" field), or null.

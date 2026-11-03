@@ -15,7 +15,8 @@ as Calibrate and Policy read it, and returns:
 A signal equal to its threshold clears it, as in the Workbench. An answer the model did not return holds
 its question, so an incomplete result goes to review rather than being acted on. Run as a script, each
 file reads rows from standard input, one per line, as Bulk does: a JSON object is sent as it is, and
-other text becomes {"text": line}. A row's "_expect" labels are removed first, as Bulk removes them. It prints one decision per line as JSON.
+other text becomes {"text": line}. A row's "_expect" labels are removed first, as Bulk removes them. It prints one decision per line as JSON,
+with the row it was asked about under "row", so the Workbench's Review queue (jev/decisions.py) can label it.
 
 Exporting makes no model call. The thresholds are only as good as the labeled rows they were tuned on;
 the file says where they came from.
@@ -251,7 +252,9 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "    client = TypeSafeClient(model=MODEL)",
         "    for line in sys.stdin:",
         "        if line.strip():",
-        "            print(json.dumps(decide(_row(line.strip()), client)), flush=True)",
+        "            row = _row(line.strip())",
+        "            # The row goes with its decision, so Jev Lab's Review queue can add it to the dataset once labeled.",
+        "            print(json.dumps(dict(decide(row, client), row=row)), flush=True)",
         "",
         "",
         "if __name__ == \"__main__\":",
@@ -376,7 +379,10 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "",
         "if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {",
         "  for await (const line of createInterface({ input: process.stdin })) {",
-        "    if (line.trim()) console.log(JSON.stringify(await decide(row(line.trim()))));",
+        "    if (!line.trim()) continue;",
+        "    const state = row(line.trim());",
+        "    // The row goes with its decision, so Jev Lab's Review queue can add it to the dataset once labeled.",
+        "    console.log(JSON.stringify({ ...(await decide(state)), row: state }));",
         "  }",
         "}",
     ]
