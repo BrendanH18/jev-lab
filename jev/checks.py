@@ -100,8 +100,9 @@ def run_notes(check: dict, answered_by: List[str]) -> List[str]:
     if not answered_by:
         return []
     if tuned_on and answered_by != [tuned_on]:
-        return ["Answered by %s, but these thresholds were tuned on answers from %s. If the check passes, pin it "
-                "to the new version: run the dataset in Bulk and save the check again." % (", ".join(answered_by), tuned_on)]
+        return ["Answered by %s, but these thresholds were tuned on answers from %s. To see whether the check can move "
+                "to the new version, and with which thresholds, use Try a new version under the dataset, or "
+                "scripts/check.py --upgrade-to." % (", ".join(answered_by), tuned_on)]
     if not is_versioned(check["model"]):
         return ["Asks %s, an alias; this run was answered by %s. To keep the check on that version, run the dataset "
                 "in Bulk and save the check again." % (check["model"], ", ".join(answered_by))]

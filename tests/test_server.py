@@ -348,6 +348,21 @@ class HttpTests(unittest.TestCase):
             self.assertEqual((rep["reference"]["routed"], rep["new"]["routed"], rep["calls"]), (2, 3, 5))
             self.assertIn(rep["status"], ("steady", "shift"))
             self.assertEqual(rep["check_status"], "pass")
+            forged, _, _ = self.request("POST", "/api/workbench/checks/upgrade", json.dumps({"id": "refunds", "model": "jev-1.15.0"}),
+                                        {"Content-Type": "application/json"})
+            self.assertEqual(forged, 403, "trying a new version spends budget, so it needs the session token")
+            fake.models.clear()
+            with patch.object(server.client, "system_one", side_effect=fake.system_one):
+                status, _, body = self.request("POST", "/api/workbench/checks/upgrade",
+                                               json.dumps({"id": "refunds", "model": "jev-1.15.0"}), self.post_headers())
+            self.assertEqual(status, 200, body)
+            rep = json.loads(body)
+            self.assertEqual(fake.models, [server.client.model] * 2 + ["jev-1.15.0"] * 2)
+            self.assertEqual((rep["calls"], rep["current"]["status"], rep["candidate"]["status"]), (4, "pass", "pass"))
+            bad, _, err = self.request("POST", "/api/workbench/checks/upgrade", json.dumps({"id": "refunds", "model": "no-such-model"}),
+                                       self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("not available to this key", json.loads(err)["error"])
             bad, _, err = self.request("POST", "/api/workbench/checks/drift", json.dumps({"id": "refunds", "rows": ""}),
                                        self.post_headers())
             self.assertEqual(bad, 400)
