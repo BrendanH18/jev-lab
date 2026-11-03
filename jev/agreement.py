@@ -34,6 +34,7 @@ ROW_ID = "row_id"
 ROW_ID_CHARS = 12
 SHOWN = 500  # disagreements listed
 PROBLEMS_SHOWN = 20
+FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
 
 
 def row_id(row: Any) -> str:
@@ -81,7 +82,10 @@ def _count(n: Any, what: str, least: int, most: int) -> int:
 
 
 def _cell(value: Any) -> str:
-    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    """A row field as a CSV cell. Text a spreadsheet would run as a formula gets a leading ', so a ticket that starts
+    with = opens as text; only row_id and the label columns are read back, so the prefix never reaches a label."""
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return "'" + text if isinstance(value, str) and text[:1] in FORMULA_STARTS else text
 
 
 def sample_csv(items: List[dict], questions: Dict[str, dict]) -> str:

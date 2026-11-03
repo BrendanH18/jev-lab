@@ -108,6 +108,13 @@ class SampleTests(Temp):
         self.assertEqual(agreement.sample_csv([{"row_id": "r", "row": "plain", "questions": []}], {"a": {}}),
                          "row_id,row,label:a\nr,plain,-\n")
 
+    def test_text_a_spreadsheet_would_run_opens_as_text(self):
+        self.save([{"text": "=1+1", "n": -3, "_expect": {"department": "none"}}])
+        line = agreement.sample("tickets")["csv"].splitlines()[1]
+        self.assertIn(",'=1+1,-3,", line)
+        out = agreement.compare("tickets", text="row_id,label:department\n%s,none\n" % line.split(",")[0])
+        self.assertEqual(out["questions"]["department"]["agree"], 1)  # the prefix is on a row cell, never a label
+
     def test_a_field_named_like_a_label_column_is_not_read_as_one(self):
         self.save([{"text": "a", "label:department": "none", "_expect": {"department": "none"}}])
         text = agreement.sample("tickets")["csv"]

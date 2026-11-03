@@ -873,7 +873,7 @@ async function drawAgreeSample(id) {
   const a = agreeRun(id);
   const n = Number(a.rows || 0);
   if (!Number.isInteger(n) || n < 1 || n > 200) return toast("Sample a whole number of rows, from 1 to 200", "error");
-  if (a.sample && secondItems(a.sample.items, a.labels).length && !confirm("Draw a new sample? The labels given on this one are lost.")) return;
+  if (a.sample && (secondItems(a.sample.items, a.labels).length || Object.keys(a.choices).length) && !confirm("Draw a new sample? The labels given on this one are lost.")) return;
   a.busy = true;
   render();
   try {
@@ -892,7 +892,7 @@ function agreeSampleView(x, a) {
   const s = a.sample;
   const given = secondItems(s.items, a.labels).length;
   const card = (item) => {
-    const labels = a.labels[item.row_id] || (a.labels[item.row_id] = {});
+    const labels = a.labels[item.row_id] || (a.labels[item.row_id] = Object.create(null));  // a question id may be __proto__
     const done = item.questions.every((q) => labels[q] !== null && labels[q] !== undefined);
     const picture = W.bulk.pictures[item.row?._image];
     return h("div", { class: `queue-item${done ? " done" : ""}` },
@@ -943,15 +943,16 @@ function agreeSampleView(x, a) {
 
 // The questions as the model reads them, so the second person labels by the same instructions and options.
 function agreeQuestions(questions) {
+  const text = (v) => (v === null || v === undefined || typeof v === "string" ? v || "" : JSON.stringify(v));  // instructions may be JSON
   const options = (q) => (q.type === "noul" ? [["yes", q.criteria?.true], ["no", q.criteria?.false]].filter(([, d]) => d) : q.type === "score"
     ? q.criteria.map((d, i) => [String(i), d]) : Object.entries(q.criteria || {}));
   return h("details", { open: true },
     h("summary", { class: "muted", style: { fontSize: "12.5px" } }, "The questions, as the model reads them"),
     h("dl", { style: { fontSize: "12.5px", margin: "6px 0 0" } }, Object.entries(questions).map(([qid, q]) => [
       h("dt", { class: "mono" }, qid, h("span", { class: "faint" }, ` · ${q.type === "noul" ? "yes or no" : q.type}`)),
-      h("dd", { style: { margin: "2px 0 8px 14px" } }, q.instructions || "",
+      h("dd", { style: { margin: "2px 0 8px 14px" } }, text(q.instructions),
         options(q).length ? h("ul", { class: "faint", style: { margin: "2px 0 0", paddingLeft: "18px" } },
-          options(q).map(([name, d]) => h("li", {}, h("b", {}, name), d && d !== name ? ` · ${d}` : ""))) : null)])));
+          options(q).map(([name, d]) => h("li", {}, h("b", {}, name), d && d !== name ? ` · ${text(d)}` : ""))) : null)])));
 }
 
 async function compareAgreement(id, text = null) {
@@ -1048,16 +1049,19 @@ async function saveSettled(id) {
   render();
   try {
     const out = await api("/api/workbench/datasets/agreement/settle", { id, items });
+    // The rows box holds the labels as they were, and saving it replaces the file: unlink it until fresh rows are in,
+    // so a failed refresh below cannot leave a save that undoes the settled labels.
+    const loaded = b.dataset.id === id;
+    if (loaded) b.dataset.id = null;
     a.report.disagreements = a.report.disagreements.filter((d) => !Object.prototype.hasOwnProperty.call(a.choices, settleKey(d.row_id, d.question)));
     a.choices = {};
     b.datasets = (await api("/api/workbench/datasets")).datasets;
-    if (b.dataset.id === id) {
-      // Saving the rows box replaces the file, so a stale box would undo these labels. Refresh it when it has no unsaved
-      // edits; otherwise unlink it, so a save under this name asks first.
+    if (loaded) {
+      // Refresh the box when it has no unsaved edits; otherwise it stays unlinked, so a save under this name asks first.
       if (!bulkUnsaved()) {
         b.rowsText = b.savedText = rowsText((await api("/api/workbench/datasets/load", { id })).dataset.rows);
+        b.dataset.id = id;
       } else {
-        b.dataset.id = null;
         toast("The rows box has unsaved edits, so it still shows this dataset with its old labels. Saving it under the same name asks before it replaces the file.", "error");
       }
     }
