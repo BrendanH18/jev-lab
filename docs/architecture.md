@@ -50,6 +50,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/dispatch.py`](../jev/dispatch.py) | Candidate extraction, typed action resolution, policy checks, and confidence thresholds |
 | [`jev/autopilot.py`](../jev/autopilot.py) | Combined Shield/Dispatch requests, comparison worlds, approvals, and call benchmark |
 | [`jev/claims.py`](../jev/claims.py) | Photo questions, a Box for the damage, order facts, and the refund decision |
+| [`jev/reviews.py`](../jev/reviews.py) | Review questions about the words alone, the topic-to-team table, priority cuts, the stars-versus-tone mismatch, and the triage action |
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
 | [`jev/workbench.py`](../jev/workbench.py) | Request validation, saved tests, expectations, saved datasets of labeled rows, bulk calls, and code exports |
@@ -91,6 +92,8 @@ The explicit benchmark makes five calls: two sequential, two parallel, and one m
 When an email has a photo attached, Claims' photo questions join the same merged request, and an
 emailed damage refund needs the photo to show the damage it describes. Claims changes its policy
 without another call, the same way Shield reweights.
+Reviews does too, and so does changing a review's stars: they never reach the request, because
+code compares them with the tone Jev reads from the words.
 
 ## State and persistence
 

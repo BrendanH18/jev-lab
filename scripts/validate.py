@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jev import calibrate, claims, dispatch, examples, find, hello, images, play, shield, workbench  # noqa: E402
+from jev import calibrate, claims, dispatch, examples, find, hello, images, play, reviews, shield, workbench  # noqa: E402
 from jev.autopilot import Autopilot  # noqa: E402
 from jev.client import JevClient, JevError  # noqa: E402
 from jev.scenarios import COMMANDS, INBOX  # noqa: E402
@@ -158,6 +158,31 @@ def run(client: JevClient, out: dict) -> None:
             r["meta"]["latency_ms"]))
         out["claims"].append({"label": ex["label"], "expect": ex["expect"], "decision": v["decision"],
                               "evidence": ev, "location": loc, "meta": r["meta"]})
+
+    section("Reviews · sample reviews, triage vs what a person would decide")
+    out["reviews"] = []
+    matched = 0
+    for ex in reviews.EXAMPLES:
+        try:
+            r = reviews.check(client, ex)
+        except JevError as err:
+            print("%-18s error: %s" % (ex["label"], err))
+            continue
+        t, ev = r["triage"], r["triage"]["evidence"]
+        got = {"action": t["action"], "team": t["team"], "flags": t["flags"]}
+        ok = got == ex["expect"]
+        matched += ok
+        print("%-18s expect=%-8s %-17s -> %-8s %-17s %s %s flags=%s" % (
+            ex["label"], ex["expect"]["action"], ex["expect"]["team"], t["action"], t["team"], t["priority"],
+            "ok" if ok else "??", ",".join(t["flags"]) or "-"))
+        print("%20s topic=%s(%s) severity=%.2f tone=%.2f stars=%d gap=%.2f safety=%s reply=%s about_us=%s (%d ms)" % (
+            "", ev["topic"], pct(ev["topic_prob"]), ev["severity"], ev["tone"], ev["stars"], ev["rating_gap"],
+            pct(ev["safety"]), pct(ev["wants_reply"]), pct(ev["about_us"]), r["meta"]["latency_ms"]))
+        if not ok and ex["expect"]["flags"] != t["flags"]:
+            print("%20s expected flags=%s" % ("", ",".join(ex["expect"]["flags"]) or "-"))
+        out["reviews"].append({"label": ex["label"], "expect": ex["expect"], "got": got, "priority": t["priority"],
+                               "evidence": ev, "meta": r["meta"]})
+    print("matched %d / %d" % (matched, len(reviews.EXAMPLES)))
 
     section("Play · scripted game, secret = giraffe")
     games = play.Games(client, words=[{"word": "giraffe", "category": "animal"}])

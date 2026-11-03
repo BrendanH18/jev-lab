@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import server  # noqa: E402
 from helpers import fake_answers  # noqa: E402
-from jev import examples, lint, workbench  # noqa: E402
+from jev import examples, lint, reviews, workbench  # noqa: E402
 from jev.client import SpendGuard, choice, noul, score  # noqa: E402
 from jev.scenarios import INBOX  # noqa: E402
 
@@ -209,6 +209,8 @@ class BuiltInRequestTests(unittest.TestCase):
         yield "find", last(lambda: server.api_find({"queries": ["When do we roast?", "Who handles refunds?"]}))
         yield "play", last(lambda: server.api_play_ask({"id": game["id"], "text": "Is it alive?"}))
         yield "claims", last(lambda: server.api_claims_check({"order": order, "note": "The bag tore.", "image": {"sample": "torn-bag"}}))
+        for ex in reviews.EXAMPLES:
+            yield "reviews " + ex["label"], last(lambda: server.api_reviews_check({"review": ex}))
 
     def test_no_demo_or_example_has_a_problem(self):
         requests = list(self.demo_requests())

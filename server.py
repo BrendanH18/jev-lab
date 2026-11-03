@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
-                 lint, policy, review, rules, security, shield, slices, testsplit, upgrade, workbench)
+                 lint, policy, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -32,7 +32,8 @@ from jev.world import TEMPLATES, World
 VERSION = "0.2.0"
 STATIC = PROJECT_ROOT / "static"
 PAGES = {"/": "index.html", "/shield": "shield.html", "/dispatch": "dispatch.html", "/autopilot": "autopilot.html",
-         "/claims": "claims.html", "/find": "find.html", "/play": "play.html", "/workbench": "workbench.html"}
+         "/claims": "claims.html", "/reviews": "reviews.html", "/find": "find.html", "/play": "play.html",
+         "/workbench": "workbench.html"}
 MAX_BODY_BYTES = 12 * 1024 * 1024  # room for a few base64 photos
 
 settings = Settings()
@@ -366,6 +367,30 @@ def api_claims_decide(body):
     return out
 
 
+def api_reviews_setup(_body):
+    return {"examples": reviews.EXAMPLES, "policy": reviews.DEFAULT_POLICY, "teams": reviews.TEAMS,
+            "topic_teams": reviews.TOPIC_TEAM, "channels": reviews.CHANNELS, "actions": reviews.ACTIONS}
+
+
+def api_reviews_check(body):
+    try:
+        review, policy = reviews.clean_review(body.get("review")), reviews.check_policy(body.get("policy"))
+    except ValueError as err:
+        raise BadRequest(str(err))
+    return reviews.check(client, review, policy)
+
+
+def api_reviews_decide(body):
+    """Re-apply a changed policy to existing answers. Pure code: no Jev call."""
+    started = time.perf_counter()
+    try:
+        out = reviews.redecide(body.get("answers"), body.get("review"), body.get("policy"))
+    except ValueError as err:
+        raise BadRequest(str(err))
+    out["compute_ms"] = round((time.perf_counter() - started) * 1000, 3)
+    return out
+
+
 def api_find_sample(_body):
     return {"text": find.load_sample(), "queries": find.SAMPLE_QUERIES}
 
@@ -645,6 +670,9 @@ ROUTES = {
     ("GET", "/api/claims/setup"): api_claims_setup,
     ("POST", "/api/claims/check"): api_claims_check,
     ("POST", "/api/claims/decide"): api_claims_decide,
+    ("GET", "/api/reviews/setup"): api_reviews_setup,
+    ("POST", "/api/reviews/check"): api_reviews_check,
+    ("POST", "/api/reviews/decide"): api_reviews_decide,
     ("GET", "/api/find/sample"): api_find_sample,
     ("POST", "/api/find"): api_find,
     ("POST", "/api/play/new"): api_play_new,

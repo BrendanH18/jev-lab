@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import server  # noqa: E402
 from helpers import fake_answers  # noqa: E402
-from jev import images, workbench  # noqa: E402
+from jev import images, reviews, workbench  # noqa: E402
 from jev.client import SpendGuard  # noqa: E402
 from jev.scenarios import INBOX  # noqa: E402
 
@@ -61,7 +61,7 @@ class OpenInWorkbenchTests(unittest.TestCase):
         self.assertEqual({ref: a["data"] for ref, a in assets.items()}, {ref: a["data"] for ref, a in (sent.get("assets") or {}).items()})
         return assets
 
-    def test_playground_shield_dispatch_find_and_play(self):
+    def test_playground_shield_dispatch_find_play_and_reviews(self):
         def play():
             game = server.api_play_new({"seed": 1})
             server.api_play_ask({"id": game["id"], "text": "Is it alive?"})
@@ -73,6 +73,7 @@ class OpenInWorkbenchTests(unittest.TestCase):
             "dispatch": lambda: server.api_dispatch({"text": "Pay PackRight's open invoice"})["trace"],
             "find": lambda: server.api_find({"queries": ["When do we roast?", "Who handles refunds?"]})["trace"],
             "play": play,
+            "reviews": lambda: server.api_reviews_check({"review": reviews.EXAMPLES[0]})["trace"],
         }
         for name, call in demos.items():
             with self.subTest(demo=name):
