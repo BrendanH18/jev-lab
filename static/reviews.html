@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reviews · Jev Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .reviews-grid { grid-template-columns: 320px minmax(0, 1fr) 300px; align-items: start; }
+    .field { display: grid; gap: 6px; }
+    .field > span { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .field textarea { min-height: 140px; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .result-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .decision { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .decision .team { font-weight: 600; }
+    .reasons { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: grid; gap: 3px; }
+    .checks { display: grid; gap: 6px; }
+    .check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
+    .check .icon { margin-top: 1px; }
+    .check .ok { color: var(--good-text); } .check .no { color: var(--warning-text); } .check .blk { color: var(--critical-text); } .check .info { color: var(--series); }
+    .scale-note { color: var(--muted); font-size: 12.5px; }
+    .slider { display: grid; grid-template-columns: 1fr 52px; gap: 2px 10px; align-items: center; font-size: 12.5px; }
+    .slider .name { color: var(--muted); grid-column: 1 / -1; }
+    .slider output { font: 500 12px var(--mono); text-align: right; }
+    .redecide-note { font-size: 12px; color: var(--accent-text); min-height: 18px; }
+    .rules { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+    @media (max-width: 1220px) { .reviews-grid { grid-template-columns: 300px minmax(0, 1fr); } .reviews-policy { grid-column: 1 / -1; } }
+    @media (max-width: 900px) { .reviews-grid, .result-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">App 5 · Reviews</div>
+        <h1>Triage a public review</h1>
+        <p class="lede">Reviews of Harbor Coffee Co. arrive from its website, its app, and a map listing. One Jev call reads the words: what the review is about, how serious the problem is, its tone, whether it reports a safety risk, whether the reviewer wants a reply, and whether it is about the shop at all. Code compares the tone with the stars, picks the team and priority, and decides what happens. Changing the policy, or the stars, re-decides without another call.</p>
+      </div>
+    </div>
+
+    <div class="grid reviews-grid">
+      <section class="panel">
+        <div class="panel-head"><h2>Review</h2></div>
+        <div class="panel-body grid" style="gap:14px" id="review-form"></div>
+      </section>
+
+      <section class="grid" style="gap:16px">
+        <div class="panel" id="result"><div class="empty">Pick or write a review and triage it.</div></div>
+      </section>
+
+      <aside class="grid reviews-policy" style="gap:16px">
+        <div class="panel">
+          <div class="panel-head"><h2>Policy (code you control)</h2></div>
+          <div class="panel-body grid" style="gap:14px" id="policy"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>How the decision is made</h2></div>
+          <div class="panel-body grid" style="gap:10px; font-size:12.5px">
+            <ol class="rules muted">
+              <li>A safety or health risk at or above its threshold escalates to quality &amp; safety as P1, with no public reply.</li>
+              <li>A review that is not about the shop is held for moderation.</li>
+              <li>Otherwise the topic picks the team, from a table in code, and the severity score picks the priority.</li>
+              <li>A person replies when the reviewer asks for it, when the severity reaches the P2 cut, or when the stars and the words disagree.</li>
+              <li>A positive review with nothing flagged may get the thank-you template. Anything else is logged.</li>
+            </ol>
+            <p class="muted">The stars never reach Jev. Tone is judged from the words alone, and code maps 1–5 stars onto the 0–4 tone scale to find a mismatch.</p>
+            <p class="muted">Jev never writes a reply. It only answers typed questions; people and templates do the writing.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="/js/reviews.js"></script>
+</body>
+</html>

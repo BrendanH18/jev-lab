@@ -131,6 +131,11 @@ const STATUS = {
   unchecked: ["", "minus", "No expectation"],
   approve: ["good", "check", "Approve automatically"],
   retake: ["info", "image", "Ask for another photo"],
+  escalate: ["critical", "alert", "Escalate"],
+  moderate: ["info", "eye", "Hold for moderation"],
+  reply: ["warning", "hand", "A person replies"],
+  thank: ["good", "check", "Thank-you template"],
+  log: ["", "list", "Log only"],
 };
 export function statusBadge(kind, label, extra = "") {
   const [tone, ic, text] = STATUS[kind] || ["", "minus", kind];
@@ -451,7 +456,7 @@ function modelPicker() {
 
 // ---------- nav ----------
 const LINKS = [["/", "Overview"], ["/shield", "Shield"], ["/dispatch", "Dispatch"], ["/autopilot", "Autopilot"],
-  ["/claims", "Claims"], ["/find", "Find"], ["/play", "Play"], ["/workbench", "Workbench"]];
+  ["/claims", "Claims"], ["/reviews", "Reviews"], ["/find", "Find"], ["/play", "Play"], ["/workbench", "Workbench"]];
 
 export async function initChrome(active) {
   const bar = h("header", { class: "topbar" },

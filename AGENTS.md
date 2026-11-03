@@ -2,7 +2,7 @@
 
 ## What this is
 
-Jev Lab: six small demo apps (Shield, Dispatch, Autopilot, Claims, Find, Play) plus a
+Jev Lab: seven small demo apps (Shield, Dispatch, Autopilot, Claims, Reviews, Find, Play) plus a
 Workbench for building your own, all showing what TypeSafe's Jev model (a "System One" model —
 typed questions in, typed answers + calibrated probabilities out, no generated prose) can do
 inside ordinary software. A stdlib Python HTTP server (`server.py`) serves vanilla JS/CSS pages
@@ -64,10 +64,10 @@ response) for the UI's "Inspect JSON" drawer. No other module should reach the n
 primitives (helpers in `jev/client.py`), send them in one `system_one()` call, then let plain
 Python turn the typed answers into a decision.** Math, dates, regex extraction, and business rules
 always stay in code — Jev is only ever asked for a judgment. Each app's module
-(`jev/shield.py`, `jev/dispatch.py`, `jev/claims.py`, `jev/find.py`, `jev/play.py`; Claims also uses
-the `box` primitive) follows this same shape:
+(`jev/shield.py`, `jev/dispatch.py`, `jev/claims.py`, `jev/reviews.py`, `jev/find.py`, `jev/play.py`; Claims
+also uses the `box` primitive) follows this same shape:
 `questions(...)` builds the request, then a separate pure function (e.g. `shield.verdict()`,
-`dispatch.plan()`) turns already-fetched answers into the decision — that separation is what lets
+`dispatch.plan()`, `reviews.triage()`) turns already-fetched answers into the decision — that separation is what lets
 `/api/shield/rescore` re-score saved answers with new weights/thresholds without spending another
 API call. Workbench test runs (`/api/workbench/items/run`) are different: they send each saved item
 to the model again and spend API budget.
