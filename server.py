@@ -102,7 +102,9 @@ def api_key(body):
             try:
                 envfile.write_key(PROJECT_ROOT, key)
                 client.reload_settings()
-                client.set_api_key(None)  # the file is now the source of truth
+                # Environment settings still take precedence over .env. Keep the validated key
+                # active for this run when the launching shell supplied a different one.
+                client.set_api_key(key if client.settings.api_key != key else None)
                 status["saved"] = True
             except envfile.EnvFileError as err:
                 status["save_error"] = str(err)  # key stays in memory for this run

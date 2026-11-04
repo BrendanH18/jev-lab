@@ -531,9 +531,11 @@ function renderSaveForm() {
 
 async function saveTest() {
   try {
+    const questions = toQuestions(W.questions);
+    const expect = Object.fromEntries(Object.entries(W.expect).filter(([qid]) => Object.hasOwn(questions, qid)));
     const { item } = await api("/api/workbench/items", {
       id: W.editingId || undefined, name: W.saveName, notes: W.saveNotes, state: parseState(W.stateText),
-      questions: toQuestions(W.questions), expect: W.expect, images: imagesPayload(),
+      questions, expect, images: imagesPayload(),
     });
     W.items = (await api("/api/workbench/items")).items;
     W.editingId = item.id;

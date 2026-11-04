@@ -190,6 +190,30 @@ class ExportTests(unittest.TestCase):
         decision = module["decide"]({"text": "hi"}, self.client(partial))
         self.assertEqual((decision["route"], decision["held"], decision["answers"]["is_urgent"]), ("review", ["is_urgent"], None))
 
+    def test_python_gate_refuses_picture_rows_before_calling_the_model(self):
+        module = self.python_module(gate.export(QUESTIONS, GATES, model="jev-1.14.0")["python"])
+        client = self.client(answers())
+        with patch.object(client, "system_one", side_effect=AssertionError("Unexpected model call")):
+            row = {"text": "Torn bag", "_image": "torn-bag"}
+            with self.assertRaisesRegex(ValueError, "picture"):
+                module["decide"](row, client)
+            with self.assertRaisesRegex(ValueError, "picture"):
+                module["decide"](module["_row"](json.dumps(row)), client)
+
+    @unittest.skipUnless(shutil.which("node"), "Node is not installed")
+    def test_javascript_gate_refuses_picture_rows_before_calling_the_model(self):
+        package = self.tmp / "node_modules" / "@typesafe-ai" / "sdk"
+        package.mkdir(parents=True)
+        (package / "package.json").write_text(json.dumps({"type": "module", "main": "index.mjs"}))
+        (package / "index.mjs").write_text('export class TypeSafeClient { constructor() { throw Error("Unexpected client"); } }')
+        (self.tmp / "gate.mjs").write_text(gate.export(QUESTIONS, GATES, model="jev-1.14.0")["javascript"])
+        runner = '''import { decide } from "./gate.mjs";
+import assert from "node:assert/strict";
+await assert.rejects(() => decide({ _image: "torn-bag" }), /picture/);
+'''
+        (self.tmp / "run.mjs").write_text(runner)
+        subprocess.run(["node", "run.mjs"], cwd=self.tmp, capture_output=True, text=True, check=True)
+
     def test_python_runs_as_a_script_over_rows(self):
         (self.tmp / "typesafe_sdk.py").write_text(FAKE_SDK)
         (self.tmp / "gate.py").write_text(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0")["python"])
@@ -319,6 +343,14 @@ class RouteTests(unittest.TestCase):
         out = server.api_wb_gate_export({"dataset": "tickets"})
         self.assertIn("MODEL = 'jev-1.13.0'", out["python"])
         self.assertIn('dataset "Tickets", whose targets are 90% accuracy on automated rows and at least 50%', out["python"])
+
+    def test_image_dataset_cannot_export_a_text_only_gate(self):
+        from jev import checks
+        questions = {"damaged": {"type": "noul", "instructions": "Is the packaging in `photo` damaged?"}}
+        workbench.save_dataset({"name": "Photos", "rows": [{"_image": "torn-bag"}], "questions": questions})
+        checks.save_check("photos", {"gates": {"damaged": 0.8}, "model": "jev-1.14.0", "min_accuracy": 0.9})
+        with self.assertRaisesRegex(workbench.WorkbenchError, "picture"):
+            server.api_wb_gate_export({"dataset": "photos"})
 
 
 if __name__ == "__main__":

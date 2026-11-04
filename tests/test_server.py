@@ -11,10 +11,36 @@ from unittest.mock import patch
 
 import server
 from helpers import FakeClient, fake_answers
-from jev.client import JevError
+from jev.client import JevClient, JevError
+from jev.config import Settings
 
 
 class HttpTests(unittest.TestCase):
+    def test_saved_replacement_key_stays_active_over_environment_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".gitignore").write_text(".env\n")
+            settings = Settings(environ={"TYPESAFE_API_KEY": "synthetic-old-key"}, env_file=root / ".env")
+            client = JevClient(settings)
+            validated = []
+
+            def models():
+                validated.append(client.api_key)
+                return {"models": []}
+
+            with patch.object(server, "PROJECT_ROOT", root), patch.object(server, "settings", settings), \
+                    patch.object(server, "client", client), patch.object(client, "models", side_effect=models):
+                status, _, body = self.request("POST", "/api/key", json.dumps({
+                    "key": "synthetic-new-key", "save": True}), self.post_headers())
+                self.assertEqual(status, 200, body)
+                self.assertTrue(json.loads(body)["saved"])
+                self.assertEqual(validated, ["synthetic-new-key"])
+                self.assertEqual(client.api_key, "synthetic-new-key")
+                self.assertEqual(settings.file_values["TYPESAFE_API_KEY"], "synthetic-new-key")
+                self.assertEqual(settings.environ["TYPESAFE_API_KEY"], "synthetic-old-key")
+                self.request("POST", "/api/key/forget", "{}", self.post_headers())
+                self.assertFalse(client.configured)
+
     @classmethod
     def setUpClass(cls):
         class QuietHandler(server.Handler):

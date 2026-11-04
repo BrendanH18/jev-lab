@@ -16,8 +16,9 @@ import statistics
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from . import compare, images, orders, perturb
 from .client import JevClient, JevError, pin_note
@@ -269,6 +270,9 @@ def save_item(spec: dict) -> dict:
     }
     if not isinstance(item["expect"], dict):
         raise WorkbenchError("expect must be an object keyed by question id")
+    unknown = [qid for qid in item["expect"] if qid not in questions]
+    if unknown:
+        raise WorkbenchError("Expectation refers to unknown question %r" % unknown[0])
     stored = _store_images(state, questions, spec.get("images"))
     if stored:
         item["images"] = stored
@@ -312,6 +316,20 @@ def delete_item(item_id: str) -> bool:
 
 def datasets_dir() -> Path:
     return WORKBENCH_DIR / "datasets"
+
+
+_DATASET_LOCK = threading.RLock()
+
+
+@contextmanager
+def dataset_update() -> Iterator[None]:
+    """Serialize a complete dataset mutation within this server, including its initial read.
+
+    Atomic replacement protects readers from partial JSON; this lock also keeps concurrent
+    appends, label edits, checks, and test looks from replacing each other's changes.
+    """
+    with _DATASET_LOCK:
+        yield
 
 
 def _dataset_path(dataset_id: str) -> Path:
@@ -460,6 +478,7 @@ def _dataset_text(dataset: dict) -> str:
     return head[:-2] + ',\n  "rows": [\n' + rows + "\n  ]\n}\n"
 
 
+@dataset_update()
 def write_dataset(dataset: dict) -> None:
     """Replace data/workbench/datasets/<id>.json with `dataset`, atomically."""
     text = _dataset_text(dataset)
@@ -486,6 +505,7 @@ def _prior_check(dataset_id: str) -> Any:
     return _prior(dataset_id, "check")
 
 
+@dataset_update()
 def save_dataset(spec: dict) -> dict:
     """Write a dataset named spec["name"]; a dataset with the same id is replaced.
 
@@ -561,6 +581,7 @@ def load_dataset(dataset_id: str) -> dict:
     return dict(dataset, id=dataset_id)
 
 
+@dataset_update()
 def delete_dataset(dataset_id: str) -> bool:
     path = _dataset_path(dataset_id)
     if path.exists():
@@ -578,17 +599,24 @@ def run_item(client: JevClient, item: dict) -> dict:
         return {"id": item.get("id"), "name": item.get("name"), "error": str(err), "ok": False,
                 "results": {}, "elapsed_ms": (time.perf_counter() - started) * 1000}
     results = {}
+    expectations = item.get("expect") or {}
     ok = True
-    for qid, answer in result.answers.items():
-        expect = (item.get("expect") or {}).get(qid)
-        if expect:
+    for qid in dict.fromkeys([*item["questions"], *expectations, *result.answers]):
+        answer = result.answers.get(qid)
+        expect = expectations.get(qid)
+        if qid in expectations and qid not in item["questions"]:
+            verdict = {"ok": False, "checks": ["expectation refers to an unknown question"]}
+        elif answer is None:
+            verdict = {"ok": False, "checks": ["missing answer"]}
+        elif expect:
             try:
                 verdict = check_expectation(answer, expect)
             except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as err:
                 verdict = {"ok": False, "checks": ["invalid expectation %s: %r" % (json.dumps(expect)[:120], err)]}
-            ok &= verdict["ok"]
         else:
             verdict = {"ok": None, "checks": ["no expectation"]}
+        if verdict["ok"] is False:
+            ok = False
         results[qid] = dict(verdict, answer=answer)
     return {"id": item.get("id"), "name": item.get("name"), "ok": bool(ok), "results": results,
             "meta": result.meta(), "trace": result.trace(), "elapsed_ms": (time.perf_counter() - started) * 1000}
@@ -953,17 +981,18 @@ def export_python(state: Any, questions: Dict[str, dict], model: str, refs: Dict
             "                           extra_headers={\"TypeSafe-Danger-Zone-Images\": \"true\"})", ""]
     else:
         lines += ["", "result = client.system_one(state, questions)", ""]
+    lines.append("answers = {")
     for qid, q in questions.items():
         if q["type"] == "box":
-            lines.append("%s = result.boxes[%r]     # .box.left/.top/.right/.bottom, .confidence" % (_ident(qid), qid))
+            lines.append("    %r: result.boxes[%r],     # .box.left/.top/.right/.bottom, .confidence" % (qid, qid))
         elif q["type"] == "choice":
-            lines.append("%s = result.choices[%r]   # .choice, .probabilities, .confidence" % (_ident(qid), qid))
+            lines.append("    %r: result.choices[%r],   # .choice, .probabilities, .confidence" % (qid, qid))
         elif q["type"] == "score":
-            lines.append("%s = result.scores[%r]    # .score, .probabilities, .confidence" % (_ident(qid), qid))
+            lines.append("    %r: result.scores[%r],    # .score, .probabilities, .confidence" % (qid, qid))
         else:
-            lines.append("%s = result.nouls[%r]     # .noul is P(yes)" % (_ident(qid), qid))
-    lines += ["", "# Your code owns the decision. For example:",
-              "# if %s.confidence < 0.6: route_to_human()" % _ident(next(iter(questions)))]
+            lines.append("    %r: result.nouls[%r],     # .noul is P(yes)" % (qid, qid))
+    lines += ["}", "", "# Your code owns the decision. Read answers by question id:",
+              "# answer = answers[%r]" % next(iter(questions))]
     return "\n".join(lines) + "\n"
 
 
@@ -1007,11 +1036,6 @@ def export_curl(state: Any, questions: Dict[str, dict], model: str, refs: Dict[s
             "  -H \"Authorization: Bearer $TYPESAFE_API_KEY\" \\\n"
             "  -H \"TypeSafe-Danger-Zone-Images: true\" \\\n"
             "  -F 'request=<request.json;type=application/json'%s\n" % (body, files))
-
-
-def _ident(qid: str) -> str:
-    ident = re.sub(r"[^0-9a-zA-Z_]", "_", qid)
-    return ident if ident and not ident[0].isdigit() else "q_" + ident
 
 
 def export(state: Any, questions: Any, model: str, image_specs: Any = None) -> dict:
