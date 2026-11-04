@@ -456,7 +456,7 @@ function modelPicker() {
 
 // ---------- nav ----------
 const LINKS = [["/", "Overview"], ["/shield", "Shield"], ["/dispatch", "Dispatch"], ["/autopilot", "Autopilot"],
-  ["/claims", "Claims"], ["/reviews", "Reviews"], ["/find", "Find"], ["/play", "Play"], ["/workbench", "Workbench"]];
+  ["/claims", "Claims"], ["/reviews", "Reviews"], ["/find", "Find"], ["/play", "Play"], ["/counter", "Counter"], ["/workbench", "Workbench"]];
 
 export async function initChrome(active) {
   const bar = h("header", { class: "topbar" },

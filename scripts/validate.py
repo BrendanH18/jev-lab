@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jev import calibrate, claims, dispatch, examples, find, hello, images, play, reviews, shield, workbench  # noqa: E402
+from jev import calibrate, claims, counter, dispatch, examples, find, hello, images, play, reviews, shield, workbench  # noqa: E402
 from jev.autopilot import Autopilot  # noqa: E402
 from jev.client import JevClient, JevError  # noqa: E402
 from jev.scenarios import COMMANDS, INBOX  # noqa: E402
@@ -158,6 +158,24 @@ def run(client: JevClient, out: dict) -> None:
             r["meta"]["latency_ms"]))
         out["claims"].append({"label": ex["label"], "expect": ex["expect"], "decision": v["decision"],
                               "evidence": ev, "location": loc, "meta": r["meta"]})
+
+    section("Counter · sample conversations, decisions vs what a person would decide")
+    out["counter"] = []
+    for ex in counter.EXAMPLES:
+        transcript, saved, got = [], [], []
+        for text in ex["turns"]:
+            transcript.append({"speaker": "customer", "text": text})
+            try:
+                r = counter.turn(client, transcript, saved)
+            except JevError as err:
+                print("%s error: %s" % (ex["label"], err))
+                break
+            saved.append(r["answers"])
+            d = r["decisions"][-1]
+            got.append(d["action"])
+            transcript.append({"speaker": "bot", "text": d["text"]})
+            out["counter"].append({"label": ex["label"], "turn": len(saved), "decision": d, "meta": r["meta"]})
+        print("%s expect=%s got=%s %s" % (ex["label"], ex["expect"], got, "ok" if got == ex["expect"] else "??"))
 
     section("Reviews · sample reviews, triage vs what a person would decide")
     out["reviews"] = []

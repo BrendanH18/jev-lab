@@ -50,6 +50,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/dispatch.py`](../jev/dispatch.py) | Candidate extraction, typed action resolution, policy checks, and confidence thresholds |
 | [`jev/autopilot.py`](../jev/autopilot.py) | Combined Shield/Dispatch requests, comparison worlds, approvals, and call benchmark |
 | [`jev/claims.py`](../jev/claims.py) | Photo questions, a Box for the damage, order facts, and the refund decision |
+| [`jev/counter.py`](../jev/counter.py) | Per-turn chat judgments, fixed reply templates, and a pure replay of the frustration streak, missed count, and sticky handoff policy |
 | [`jev/reviews.py`](../jev/reviews.py) | Review questions about the words alone, the topic-to-team table, priority cuts, the stars-versus-tone mismatch, and the triage action |
 | [`jev/find.py`](../jev/find.py) | Document line IDs, ranking, and answer-existence judgments |
 | [`jev/play.py`](../jev/play.py) | Game sessions, hidden words, turn limits, and probability-based replies |
@@ -136,3 +137,5 @@ with a dataset, which says when those rows stop looking like it, not whether the
 
 For setup and contribution checks, see [CONTRIBUTING.md](../CONTRIBUTING.md). For trust boundaries,
 key handling, and the limitations of estimated spending guards, see [SECURITY.md](../SECURITY.md).
+
+Counter sends the labeled conversation and latest customer message in one request per turn. The browser owns the transcript; the server stores no chats. `/api/counter/decide` replays saved answers without a call. Policy replay shows alternative decisions without rewriting sent replies or the context of later judgments.

@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
-                 lint, policy, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
+                 counter, lint, policy, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -32,7 +32,7 @@ from jev.world import TEMPLATES, World
 VERSION = "0.2.0"
 STATIC = PROJECT_ROOT / "static"
 PAGES = {"/": "index.html", "/shield": "shield.html", "/dispatch": "dispatch.html", "/autopilot": "autopilot.html",
-         "/claims": "claims.html", "/reviews": "reviews.html", "/find": "find.html", "/play": "play.html",
+         "/claims": "claims.html", "/reviews": "reviews.html", "/counter": "counter.html", "/find": "find.html", "/play": "play.html",
          "/workbench": "workbench.html"}
 MAX_BODY_BYTES = 12 * 1024 * 1024  # room for a few base64 photos
 
@@ -367,6 +367,27 @@ def api_claims_decide(body):
     return out
 
 
+def api_counter_setup(_body):
+    return {"examples": counter.EXAMPLES, "policy": counter.DEFAULT_POLICY}
+
+
+def api_counter_turn(body):
+    try:
+        return counter.turn(client, body.get("transcript"), body.get("turn_answers", []), body.get("policy"))
+    except ValueError as err:
+        raise BadRequest(str(err))
+
+
+def api_counter_decide(body):
+    started = time.perf_counter()
+    try:
+        p = counter.full_policy(body.get("policy"))
+        decisions = counter.decide(body.get("turn_answers"), p)
+    except ValueError as err:
+        raise BadRequest(str(err))
+    return {"decisions": decisions, "policy": p, "compute_ms": round((time.perf_counter() - started) * 1000, 3)}
+
+
 def api_reviews_setup(_body):
     return {"examples": reviews.EXAMPLES, "policy": reviews.DEFAULT_POLICY, "teams": reviews.TEAMS,
             "topic_teams": reviews.TOPIC_TEAM, "channels": reviews.CHANNELS, "actions": reviews.ACTIONS}
@@ -670,6 +691,9 @@ ROUTES = {
     ("GET", "/api/claims/setup"): api_claims_setup,
     ("POST", "/api/claims/check"): api_claims_check,
     ("POST", "/api/claims/decide"): api_claims_decide,
+    ("GET", "/api/counter/setup"): api_counter_setup,
+    ("POST", "/api/counter/turn"): api_counter_turn,
+    ("POST", "/api/counter/decide"): api_counter_decide,
     ("GET", "/api/reviews/setup"): api_reviews_setup,
     ("POST", "/api/reviews/check"): api_reviews_check,
     ("POST", "/api/reviews/decide"): api_reviews_decide,

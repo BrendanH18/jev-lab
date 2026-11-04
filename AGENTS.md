@@ -2,7 +2,7 @@
 
 ## What this is
 
-Jev Lab: seven small demo apps (Shield, Dispatch, Autopilot, Claims, Reviews, Find, Play) plus a
+Jev Lab: eight small demo apps (Shield, Dispatch, Autopilot, Claims, Reviews, Find, Play, Counter) plus a
 Workbench for building your own, all showing what TypeSafe's Jev model (a "System One" model —
 typed questions in, typed answers + calibrated probabilities out, no generated prose) can do
 inside ordinary software. A stdlib Python HTTP server (`server.py`) serves vanilla JS/CSS pages
@@ -64,7 +64,7 @@ response) for the UI's "Inspect JSON" drawer. No other module should reach the n
 primitives (helpers in `jev/client.py`), send them in one `system_one()` call, then let plain
 Python turn the typed answers into a decision.** Math, dates, regex extraction, and business rules
 always stay in code — Jev is only ever asked for a judgment. Each app's module
-(`jev/shield.py`, `jev/dispatch.py`, `jev/claims.py`, `jev/reviews.py`, `jev/find.py`, `jev/play.py`; Claims
+(`jev/shield.py`, `jev/dispatch.py`, `jev/claims.py`, `jev/reviews.py`, `jev/counter.py`, `jev/find.py`, `jev/play.py`; Claims
 also uses the `box` primitive) follows this same shape:
 `questions(...)` builds the request, then a separate pure function (e.g. `shield.verdict()`,
 `dispatch.plan()`, `reviews.triage()`) turns already-fetched answers into the decision — that separation is what lets

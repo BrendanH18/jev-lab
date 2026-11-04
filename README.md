@@ -8,7 +8,7 @@
 
 Jev Lab demonstrates how to build software with [TypeSafe's Jev](https://docs.typesafe.ai/introduction).
 Send a state and typed questions; receive choices, scores, and probabilities that your code can
-use directly. Explore seven focused demos, a homepage playground, and a Workbench for your own data.
+use directly. Explore eight focused demos, a homepage playground, and a Workbench for your own data.
 
 The application uses a Python standard-library web server, the official TypeSafe SDK, and vanilla
 JavaScript. There is no frontend build step, database, or embedding index.
@@ -69,6 +69,7 @@ issue real refunds, or transfer money.
 | **Autopilot** | Process an inbox with Shield and Dispatch combined; attached photos join the same call; compare with Dispatch alone and benchmark separate versus merged requests. | Composition and sender-aware policy checks |
 | **Claims** | Check a customer's damage photo: does it show the order, is damage visible, how bad is it, and where; then let code decide the refund. Upload your own photo or use a sample drawing. | Images, Box, and code-owned policy |
 | **Reviews** | Triage a public review from the website, the app, or a map listing: escalate a safety report, hold spam, flag stars that disagree with the words, and route the rest to a team with a priority; move a policy slider or the stars and it re-decides without another call. | Text judgments, code-owned routing, and a mismatch computed in code |
+| **Counter** | Step a support chat turn by turn: fixed replies, clarification, resolution, and a handoff when a customer asks, stays frustrated, or the bot repeatedly misses the point. Policy sliders replay the saved judgments without another call. | Sequential judgments, streaks, and code-owned handoff |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
 | **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, label the rows it routed and audit the ones it automated, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
