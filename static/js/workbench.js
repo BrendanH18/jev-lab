@@ -2623,8 +2623,8 @@ function calChart(rep, t) {
 const SETTABLE = new Set(["choice", "noul", "score"]);
 const SET_COVERAGES = [0.8, 0.9, 0.95, 0.99];
 const SETS_SHOWN = 8;
-// The cut as shown and copied: rounded down, so a copied rule never leaves out an option the panel's sets include.
-const cutText = (cut) => (Math.floor(cut * 1000 + 1e-9) / 1000).toFixed(3);
+// The cut as shown; the copied rule uses the full cut and the server's tolerance, so it builds the same sets.
+const cutText = (cut) => cut.toFixed(3);
 let setSeq = 0;
 async function answerSets() {
   const b = W.bulk;
@@ -2737,12 +2737,13 @@ function setSlices(rep) {
 
 function setsCode(rep, qid) {
   const key = JSON.stringify(qid);
-  const at = cutText(rep.cut);
+  const at = String(rep.cut);  // the shortest text that reads back as the same number, as Python's repr
   const read = rep.type === "noul"
     ? `p = result.nouls[${key}].noul\noptions = {"yes": p, "no": 1 - p}`
     : rep.type === "choice" ? `options = result.choices[${key}].probabilities` : `options = result.scores[${key}].probabilities`;
-  return `# Answer set for ${key}: every option at or above ${at} (fitted to hold the right answer ${pct(rep.coverage_target)} of the time)\n${read}\n`
-    + `answer_set = sorted((k for k, p in options.items() if p >= ${at}), key=lambda k: -options[k])\n`
+  return `# Answer set for ${key}: every option at or above the cut (fitted to hold the right answer ${pct(rep.coverage_target)} of the time)\n`
+    + `CUT = ${at}\n${read}\n`
+    + `answer_set = sorted((k for k, p in options.items() if p + 1e-9 >= CUT), key=lambda k: -options[k])\n`
     + `if len(answer_set) == 1:\n    act_on(answer_set[0])\nelif answer_set:\n    send_to_review(choices=answer_set)  # a person picks from these\nelse:\n    send_to_review(choices=list(options))  # no option reached the cut\n`;
 }
 

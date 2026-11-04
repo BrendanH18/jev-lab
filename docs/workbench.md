@@ -384,8 +384,8 @@ The promise is about rows on average:
   often the sets hold the right answer, and marks a slice that holds it less often than the rest by more
   than chance explains (one-sided Fisher exact test, p < 0.05).
 - **Single answers are measured, not promised.** The share of single-answer rows that are right is measured
-  on these rows, with a 95% interval. To guarantee the accuracy of the rows you act on, use Calibrate's
-  threshold or Policy.
+  on these rows, with a 95% interval. To tune and measure the accuracy of the rows you act on, use Calibrate's
+  threshold or Policy, and check it on rows it was not tuned on.
 - **The cut fits these rows.** Coverage measured on the rows the cut came from is optimistic. With at least
   ten labeled rows, the panel also shows the same numbers on unseen rows: each of five folds gets its sets from
   a cut fitted on the other four, using the same folds as [Check on unseen rows](#check-on-unseen-rows).
