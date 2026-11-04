@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello, holdout, images,
-                 counter, lint, policy, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
+                 counter, lint, policy, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -518,6 +518,10 @@ def api_wb_compare_score(body):
                             str(body.get("bound") or "estimate"))
 
 
+def api_wb_recalibrate(body):
+    return recalibrate.evaluate(body.get("rows"), str(body.get("signal") or "confidence"))
+
+
 def api_wb_calibrate(body):
     return calibrate.evaluate(body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("bound") or "estimate"))
 
@@ -734,6 +738,7 @@ ROUTES = {
     ("POST", "/api/workbench/checks/upgrade"): api_wb_check_upgrade,
     ("POST", "/api/workbench/checks/decisions"): api_wb_decisions,
     ("POST", "/api/workbench/checks/decisions/add"): api_wb_decisions_add,
+    ("POST", "/api/workbench/recalibrate"): api_wb_recalibrate,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,
     ("POST", "/api/workbench/rules"): api_wb_rules,

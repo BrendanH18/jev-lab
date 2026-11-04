@@ -297,6 +297,42 @@ labels past a reload, [save the rows as a dataset](#save-rows-and-labels). Thres
 from a few dozen rows are a first look: each row of 40 moves accuracy by 2.5 points. Label more of
 your own data before relying on a threshold, and pin the model version when you compare runs.
 
+### Recalibrate probabilities
+
+In Calibrate, choose a question and signal, then **Fit and check probability maps**.
+This reuses the current Bulk answers and labels with no extra model calls. Test rows
+(`"_test": true`) are excluded and no answers or maps are persisted. Choice, Noul and
+Score are supported; Box is excluded. At least 20 valid labeled rows are needed,
+including both right and wrong answers. Invalid labels are excluded as in Calibrate.
+
+Recalibration is for code that uses the number itself: a weighted sum like Shield's
+verdict, an expected score, a product of confidences, cost-based expected loss, or a
+probability shown to a person. It is not about routing. Calibrate and Policy already
+choose thresholds against measured accuracy; monotone maps preserve ordering, though
+flat portions can merge signals. Keep thresholds on the raw signals as tuned.
+
+The input is exactly Calibrate's selected signal and whether its prediction was right.
+Confidence may be a margin (Noul confidence is `abs(2*p-1)`), so this estimates the
+probability of a correct prediction, not P(yes), a new class distribution, or a
+replacement for Score's expected level. Top probability uses the predicted option's
+probability (Score uses its most likely level).
+
+Platt fits a nonnegative logistic slope on the signal's logit, with a small ridge,
+clamping and Newton backtracking. Isotonic pools adjacent violations, groups tied
+signals, clips outputs away from zero and one, and interpolates linearly between
+knots (constant beyond the endpoints). The table compares ECE, Brier score and log
+loss on fitting rows and pooled five-fold cross-validation. Lower is better.
+Folds use the same input-key hash and round-robin convention as **Check on unseen
+rows**. Every cross-validated prediction comes from a map fitted on the other folds.
+
+Only cross-validated log loss selects the recommendation. A map must beat raw by
+at least 0.01 and 1% of raw log loss; otherwise **Keep raw** is recommended. The
+chart and expanded reliability tables show raw and mapped reliability. Small samples
+remain uncertain; repeated selection on the same labels can still overfit.
+**Copy map** gives standalone Python and JavaScript `calibrated(p)` functions for
+the recommended map refitted on all tuning rows, or identity for keep raw. Pass the
+same signal used here. Gate exports and saved checks continue to use raw signals.
+
 ### Targets at 95% confidence
 
 Accuracy measured on a sample is itself uncertain. Every accuracy in Calibrate, Policy, and Compare
