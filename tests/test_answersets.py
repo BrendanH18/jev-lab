@@ -2,6 +2,8 @@
 
 import random
 import sys
+import time
+from math import ceil
 import unittest
 from pathlib import Path
 
@@ -42,6 +44,16 @@ class CutTests(unittest.TestCase):
             n = answersets.needed(c)
             self.assertIsNone(answersets.cut([0.1] * (n - 1), c))
             self.assertIsNotNone(answersets.cut([0.1] * n, c))
+
+    def test_needed_is_immediate_near_full_coverage(self):
+        start = time.monotonic()
+        n = answersets.needed(0.999999999)
+        self.assertLess(time.monotonic() - start, 0.1)
+        self.assertLessEqual(ceil((n + 1) * 0.999999999 - 1e-9), n)
+        self.assertGreater(ceil(n * 0.999999999 - 1e-9), n - 1)  # n - 1 rows would not do
+        for c in [i / 1000 for i in range(500, 1000)] + [0.9999, 0.99999]:  # the closed form is the fewest rows
+            n = answersets.needed(c)
+            self.assertTrue(ceil((n + 1) * c - 1e-9) <= n and (n == 1 or ceil(n * c - 1e-9) > n - 1), c)
 
     def test_cut_is_the_conformal_quantile(self):
         # Ten scores, 90% coverage: the ceil(11 * 0.9) = 10th smallest, 0.9, so the cut is 0.1.

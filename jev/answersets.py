@@ -35,10 +35,13 @@ EPS = calibrate._EPS  # a probability equal to the cut joins the set, as a signa
 
 
 def needed(coverage: float) -> int:
-    """The fewest labeled rows whose cut can promise this coverage: n with ceil((n + 1) * coverage) <= n."""
-    n = 1
-    while ceil((n + 1) * coverage - EPS) > n:
+    """The fewest labeled rows whose cut can promise this coverage: n with ceil((n + 1) * coverage) <= n, which holds
+    exactly when n >= coverage / (1 - coverage)."""
+    n = max(1, ceil(coverage / (1 - coverage) - EPS))
+    while ceil((n + 1) * coverage - EPS) > n:  # float rounding can put the closed form a few rows off either way
         n += 1
+    while n > 1 and ceil(n * coverage - EPS) <= n - 1:
+        n -= 1
     return n
 
 
