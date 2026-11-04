@@ -2312,7 +2312,7 @@ function probabilityMapsPanel() {
   } }, "Fit and check probability maps");
   const output = h("div", { class: "grid", style: { gap: "10px" }, "aria-live": "polite" });
   box.append(h("h3", {}, "Recalibrate probabilities"),
-    h("p", { class: "muted" }, "Use honest probability values in weighted sums (like Shield), expected scores, products of confidences, expected loss, or when showing a probability to a person. This does not tune routing: thresholds already use measured accuracy. Confidence can be a margin rather than a probability; the selected signal is mapped to the chance the prediction is right. At least 20 labeled rows with both right and wrong answers; no extra model calls."), button, output);
+    h("p", { class: "muted" }, "Map the selected signal to the chance the answer is right, for code that uses that chance itself: the expected cost of acting on an answer, a product of two answers' chances of being right, or a chance shown to a person. It is not P(yes) or a class probability, so do not put it in a weighted sum of P(yes) values such as Shield's. This does not tune routing: thresholds already use measured accuracy. Confidence can be a margin rather than a probability; the selected signal is mapped to the chance the prediction is right. At least 20 labeled rows with both right and wrong answers; no extra model calls."), button, output);
   return box;
 }
 function probabilityMapsReport(rep) {
@@ -2340,8 +2340,8 @@ function probabilityMapsReport(rep) {
     h("details", {}, h("summary", {}, "Reliability tables (fit and cross-validated)"),
       Object.entries(rep.methods).map(([name, m]) => h("div", {}, h("h4", {}, names[name]),
         ["fit", "cv"].map((part) => h("div", {}, h("p", {}, part === "fit" ? "Fitting rows" : "Cross-validated rows"), reliabilityTable({ ...m[part], probabilityMap: true })))))),
-    h("div", { class: "code" }, h("pre", {}, `# Python\n${code.python}\n// JavaScript\n${code.javascript}`),
-      h("button", { class: "btn sm copy", onclick: () => copyText(`# Python\n${code.python}\n// JavaScript\n${code.javascript}`) }, icon("copy"), "Copy map")));
+    ["python", "javascript"].map((lang) => h("div", { class: "code" }, h("pre", {}, code[lang]),
+      h("button", { class: "btn sm copy", onclick: () => copyText(code[lang]) }, icon("copy"), lang === "python" ? "Copy Python" : "Copy JavaScript"))));
 }
 
 function renderCalibrate() {

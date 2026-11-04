@@ -186,7 +186,7 @@ conditions.
   the answers in code, so the report shows what the second call per row buys. A cascade shows what asking one
   variant first, and the other only when it is unsure, would cost and how accurate it would be.
 - **Recalibrate probabilities:** fit Platt or isotonic maps from Bulk labels, compare on unseen folds,
-  and copy Python/JavaScript for code that uses the probability value. Routing stays on raw signals.
+  and copy Python or JavaScript for code that uses the chance an answer is right. Routing stays on raw signals.
 - **Open a demo's request:** **Open in Workbench**, in any demo's **Inspect JSON** drawer, opens the
   exact request that demo sent in a new Workbench tab, with its pictures. Its answers stay behind;
   **Run** asks the model again.

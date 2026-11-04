@@ -305,9 +305,11 @@ This reuses the current Bulk answers and labels with no extra model calls. Test 
 Score are supported; Box is excluded. At least 20 valid labeled rows are needed,
 including both right and wrong answers. Invalid labels are excluded as in Calibrate.
 
-Recalibration is for code that uses the number itself: a weighted sum like Shield's
-verdict, an expected score, a product of confidences, cost-based expected loss, or a
-probability shown to a person. It is not about routing. Calibrate and Policy already
+Recalibration is for code that uses the chance an answer is right itself: the expected
+cost of acting on an answer, a product of two answers' chances of being right, or a
+chance shown to a person. The map returns that chance, not P(yes) or a class
+probability, so it does not belong in a weighted sum of P(yes) values such as Shield's
+verdict. It is not about routing. Calibrate and Policy already
 choose thresholds against measured accuracy; monotone maps preserve ordering, though
 flat portions can merge signals. Keep thresholds on the raw signals as tuned.
 
@@ -329,7 +331,7 @@ Only cross-validated log loss selects the recommendation. A map must beat raw by
 at least 0.01 and 1% of raw log loss; otherwise **Keep raw** is recommended. The
 chart and expanded reliability tables show raw and mapped reliability. Small samples
 remain uncertain; repeated selection on the same labels can still overfit.
-**Copy map** gives standalone Python and JavaScript `calibrated(p)` functions for
+**Copy Python** and **Copy JavaScript** each give a standalone `calibrated(p)` function for
 the recommended map refitted on all tuning rows, or identity for keep raw. Pass the
 same signal used here. Gate exports and saved checks continue to use raw signals.
 
