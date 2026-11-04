@@ -109,6 +109,7 @@ def run_notes(check: dict, answered_by: List[str]) -> List[str]:
     return []
 
 
+@workbench.dataset_update()
 def save_check(dataset_id: str, spec: Any) -> dict:
     """Add or replace the check in a saved dataset; the rows, labels, and questions stay as they are."""
     dataset = workbench.load_dataset(dataset_id)
@@ -119,6 +120,7 @@ def save_check(dataset_id: str, spec: Any) -> dict:
     return dataset
 
 
+@workbench.dataset_update()
 def remove_check(dataset_id: str) -> bool:
     dataset = workbench.load_dataset(dataset_id)
     if "check" not in dataset:
@@ -168,6 +170,9 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
                        "on every row. Run it again." % (rep["skipped"], len(results)))
     if rep is not None and not rep["labeled"]:
         reasons.append("No row is labeled for every gated question (%s), so accuracy is unknown." % ", ".join(qids))
+    if rep is not None and rep["invalid"]:
+        reasons.append("%d rows have invalid labels. Fix them before judging the check: %s"
+                       % (len(rep["invalid"]), rep["invalid"][0]["reason"]))
     targets: Dict[str, dict] = {}
     if rep is not None and rep["labeled"]:
         bound = check["bound"]
@@ -187,7 +192,7 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
         if not coverage_ok:
             reasons.append("It automated %s of labeled rows, below the %s minimum."
                            % (_pct(rep["coverage"]), _pct(check["min_coverage"])))
-    if stopped or missing or not targets or rep["skipped"]:
+    if stopped or missing or not targets or rep["skipped"] or rep["invalid"]:
         status = "error"
     else:
         status = "pass" if all(t["ok"] for t in targets.values()) else "fail"

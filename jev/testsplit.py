@@ -39,6 +39,7 @@ def test_indexes(dataset: dict) -> List[int]:
     return [i for i, row in enumerate(dataset["rows"]) if isinstance(row, dict) and row.get(TEST_KEY) is True]
 
 
+@workbench.dataset_update()
 def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None) -> dict:
     """Mark a random `share` of the dataset's labeled rows as test rows. seed: for tests; None draws at random."""
     if isinstance(share, bool) or not isinstance(share, (int, float)) or not MIN_SHARE <= share <= MAX_SHARE:
@@ -60,6 +61,7 @@ def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
     return dataset
 
 
+@workbench.dataset_update()
 def remove(dataset_id: str) -> bool:
     """Put the test rows back among the rest, and forget the looks. False when the dataset has none."""
     dataset = workbench.load_dataset(dataset_id)
@@ -73,6 +75,7 @@ def remove(dataset_id: str) -> bool:
     return True
 
 
+@workbench.dataset_update()
 def score(dataset_id: str, rows: Any, gates: Any, signal: str = "confidence", rules: Any = None,
           model: Optional[str] = None) -> dict:
     """Policy's report for `gates` over the test rows' answers, and the look recorded.

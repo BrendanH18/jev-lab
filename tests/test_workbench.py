@@ -4,13 +4,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from helpers import FakeClient  # noqa: E402
 from jev import examples, images, workbench  # noqa: E402
-from jev.client import JevError  # noqa: E402
+from jev.client import JevError, JevResult  # noqa: E402
 
 Q = {
     "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "money", "tech": None}},
@@ -101,6 +102,23 @@ class ItemTests(unittest.TestCase):
     def tearDown(self):
         workbench.WORKBENCH_DIR = self._orig
         shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_missing_expected_answers_fail_the_run(self):
+        item = {"id": "missing", "state": "x", "questions": Q, "expect": {"urgent": {"min": 0.9}}}
+        for answers in ({}, {"dept": {"type": "choice", "choice": "billing"}}):
+            with self.subTest(answers=answers), patch.object(
+                    FakeClient, "system_one", return_value=JevResult({}, {"answers": answers}, 0)):
+                report = workbench.run_items(FakeClient(), [item])
+            self.assertEqual((report["passed"], report["failed"]), (0, 1))
+            self.assertFalse(report["runs"][0]["results"]["urgent"]["ok"])
+
+    def test_stale_expectations_are_refused_on_save_and_fail_existing_tests(self):
+        item = {"name": "Stale", "state": "x", "questions": Q, "expect": {"removed": {"min": 0.9}}}
+        with self.assertRaisesRegex(workbench.WorkbenchError, "removed"):
+            workbench.save_item(item)
+        result = workbench.run_item(FakeClient(), item)
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["results"]["removed"]["ok"])
 
     def test_a_malformed_expectation_fails_its_question_not_the_suite(self):
         q = {"urgent": {"type": "noul", "instructions": "Urgent?"},
@@ -263,6 +281,20 @@ class DatasetTests(unittest.TestCase):
 
 
 class BulkAndExportTests(unittest.TestCase):
+    def test_python_export_accepts_keyword_reserved_and_colliding_ids(self):
+        ids = ("class", "result", "answers", "True", "a-b", "a_b", "1x")
+        questions = {qid: Q["urgent"] for qid in ids}
+        returned = {qid: SimpleNamespace(noul=i / 10) for i, qid in enumerate(ids)}
+        client = SimpleNamespace(system_one=lambda *args: SimpleNamespace(nouls=returned))
+        constructor = lambda **kwargs: kwargs  # noqa: E731
+        sdk = SimpleNamespace(TypeSafeClient=lambda **kwargs: client, Choice=constructor, Noul=constructor,
+                              NoulCriteria=constructor, Score=constructor)
+        code = workbench.export("x", questions, "jev-1.14.0")["python"]
+        namespace = {}
+        with patch.dict(sys.modules, typesafe_sdk=sdk):
+            exec(compile(code, "export.py", "exec"), namespace)
+        self.assertEqual(namespace["answers"], returned)
+
     def test_bulk_runs_every_row(self):
         client = FakeClient(lambda s, q: {"dept": "tech" if "bug" in s["text"] else "billing", "urgent": 0.6})
         report = workbench.run_bulk(client, ["bug in app", "charged twice", ""], Q)

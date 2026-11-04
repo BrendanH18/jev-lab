@@ -153,8 +153,10 @@ Expectations are keyed by question ID:
 | Score | `min`/`max` bound the returned numeric score |
 | Box | `box` holds the expected edges; `iou_min` (default `0.5`) is the least overlap, as intersection over union, that passes |
 
-Bounds are inclusive. An answer without an expectation is marked unchecked and does not fail
-the run. Rerunning saved tests makes new API calls. Pin `TYPESAFE_DEFAULT_MODEL` to a specific
+Bounds are inclusive. A returned answer without an expectation is marked unchecked and does not fail
+the run. Missing answers and expectations for questions no longer in the saved request fail the run.
+Saving rejects unknown expectation IDs; the editor drops expectations for questions you removed.
+Rerunning saved tests makes new API calls. Pin `TYPESAFE_DEFAULT_MODEL` to a specific
 version when you want to compare wording changes against the same model.
 
 Tests persist in `data/workbench/` as JSON containing state, questions, expectations, and notes.
@@ -196,7 +198,8 @@ of the picture's width and height. Calibrate counts a Box answer as right when i
 with an intersection over union (IoU) of at least 0.5, as a saved test's default does, and shows the
 mean overlap. A Box has no options, so its gate reads its confidence under either signal, and it has no
 confusion matrix. Policy, the costs, and the check on unseen rows read Choice, Noul, and Score answers
-only, and an exported gate cannot include a Box question, since it sends no picture. A dataset saved
+only. Exported gates send no pictures: exporting a dataset with picture rows or Box questions is
+refused, and the generated modules reject `_image` rows before calling the model. A dataset saved
 with Box questions needs a picture on every row. Images are dreamer-ready in TypeSafe's terms, and each
 picture adds image tokens to its row's call.
 
@@ -827,7 +830,7 @@ keeps it; otherwise the check is removed and the page says why.
 to the model again, one call
 per row, and scores the answers with the check's gates. Type a model name beside it to ask that model
 instead. The report shows **Passed** when both targets hold, **Failed** when one does not, and **Not
-judged** when some rows got no answer or no row is labeled for every gated question, since a check is
+judged** when some rows got no answer, a gated label is invalid, or no row is labeled for every gated question, since a check is
 measured on every row or not at all. It lists the accuracy with its interval, the share automated,
 the cost and median latency, and the automated rows with a wrong answer.
 

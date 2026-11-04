@@ -110,6 +110,8 @@ def export_check(dataset_id: str) -> dict:
     check = dataset.get("check")
     if not isinstance(check, dict):
         raise WorkbenchError("Dataset %r has no check to export. Save one from Policy first." % dataset_id)
+    if any(isinstance(row, dict) and workbench.IMAGE_KEY in row for row in dataset["rows"]):
+        raise WorkbenchError("Exported gates do not send pictures. Use a text-only dataset to export a gate.")
     source = {"dataset": dataset.get("name") or dataset_id, "min_accuracy": check.get("min_accuracy"),
               "min_coverage": check.get("min_coverage"), "bound": check.get("bound")}
     return export(dataset.get("questions"), check.get("gates"), check.get("signal", "confidence"), check.get("model"),
@@ -225,6 +227,8 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "",
         "def decide(state, client=None):",
         '    """{"route": "auto" or "review", "held": [...], "rules": [...], "answers": {...}} for one state. One model call."""',
+        "    if isinstance(state, dict) and %r in state:" % workbench.IMAGE_KEY,
+        "        raise ValueError(\"This gate does not send pictures; _image rows cannot be routed.\")",
         "    client = client or TypeSafeClient(model=MODEL)  # reads TYPESAFE_API_KEY",
         "    result = client.system_one(state, questions, model=MODEL)",
         "    held = held_by(result)",
@@ -357,7 +361,11 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "let shared;",
         "",
         "// {route: \"auto\" or \"review\", held: [...], rules: [...], answers: {...}} for one state. One model call.",
-        "export async function decide(state, client = (shared ??= new TypeSafeClient())) {",
+        "export async function decide(state, client) {",
+        "  if (state && typeof state === \"object\" && Object.hasOwn(state, %s)) {" % json.dumps(workbench.IMAGE_KEY),
+        "    throw new Error(\"This gate does not send pictures; _image rows cannot be routed.\");",
+        "  }",
+        "  client ??= (shared ??= new TypeSafeClient());",
         "  const { answers } = await client.systemOne({ state, model: MODEL, questions });",
         "  const held = heldBy(answers);",
         "  const shown = Object.fromEntries(Object.entries(TYPES).map(([id, type]) =>",

@@ -271,6 +271,7 @@ def compare(dataset_id: str, items: Any = None, text: Any = None) -> dict:
             "problems": problems[:PROBLEMS_SHOWN], "problems_total": len(problems)}
 
 
+@workbench.dataset_update()
 def settle(dataset_id: str, items: Any) -> dict:
     """Write settled labels to the dataset: items [{"row_id", "labels": {qid: label, or None to remove it}}].
 

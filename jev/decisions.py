@@ -241,6 +241,7 @@ def audit_report(items: List[dict], questions: Dict[str, dict], check: dict) -> 
             "wrong": wrong[:PROBLEMS_SHOWN], "wrong_total": len(wrong)}
 
 
+@workbench.dataset_update()
 def append(dataset_id: str, items: Any) -> dict:
     """Add labeled rows to the dataset, rows and labels only, and score the audit rows among them.
 

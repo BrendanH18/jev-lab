@@ -163,6 +163,13 @@ def results(probs_labels):
 
 
 class EvaluateTests(unittest.TestCase):
+    def test_invalid_labels_prevent_a_passing_check(self):
+        rep = checks.evaluate(results([(0.98, True), (0.05, "removed-option")]),
+                              self.check(min_accuracy=1, min_coverage=1))
+        self.assertEqual(rep["status"], "error")
+        self.assertEqual(len(rep["invalid"]), 1)
+        self.assertTrue(any("invalid label" in reason for reason in rep["reasons"]))
+
     def check(self, **kw):
         return checks.validate_check(dict(CHECK, **kw), Q)
 

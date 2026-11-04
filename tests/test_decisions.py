@@ -10,8 +10,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -147,6 +150,42 @@ class QueueTests(Temp):
 
 
 class AppendTests(Temp):
+    def test_concurrent_dataset_mutations_preserve_both_updates(self):
+        for other in ("append", "check"):
+            with self.subTest(other=other):
+                self.save()
+                start = threading.Barrier(2)
+                loaded = threading.Barrier(2)
+                load = workbench.load_dataset
+
+                def overlapping_load(dataset_id):
+                    dataset = load(dataset_id)
+                    try:
+                        # Without serialization both callers read the old file. A lock makes the
+                        # first time out here, then lets the second read the newly committed file.
+                        loaded.wait(timeout=0.5)
+                    except threading.BrokenBarrierError:
+                        pass
+                    return dataset
+
+                def update(which):
+                    start.wait(timeout=5)
+                    if which == 1 and other == "check":
+                        return checks.save_check("tickets", dict(CHECK, min_accuracy=0.95))
+                    return decisions.append("tickets", [{"row": {"text": "new %d" % which},
+                                                          "labels": {"department": "billing"}}])
+
+                with patch.object(workbench, "load_dataset", side_effect=overlapping_load), ThreadPoolExecutor(2) as pool:
+                    results = list(pool.map(update, range(2)))
+                saved = load("tickets")
+                self.assertEqual(results[0]["added"], 1)
+                self.assertIn({"text": "new 0", "_expect": {"department": "billing"}}, saved["rows"])
+                if other == "append":
+                    self.assertEqual(results[1]["added"], 1)
+                    self.assertEqual(len(saved["rows"]), len(SAVED) + 2)
+                else:
+                    self.assertEqual(saved["check"]["min_accuracy"], 0.95)
+
     def queued(self):
         self.save()
         return decisions.queue("tickets", self.route(), audit=2)
