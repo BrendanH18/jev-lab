@@ -1,10 +1,11 @@
 import { api, callStats, debounce, h, handleError, initChrome, inspect, mount } from "./common.js";
 
-const S = { setup: null, policy: {}, transcript: [], turns: [], decisions: [], sample: null, running: false, rev: 0, note: "" };
+// draft: the customer message being typed. It survives re-renders and failed sends; a sent turn or a new chat clears it.
+const S = { setup: null, policy: {}, transcript: [], turns: [], decisions: [], sample: null, running: false, rev: 0, note: "", draft: "" };
 
 function reset(sample) {
   S.rev++;
-  Object.assign(S, { transcript: [], turns: [], decisions: [], sample, note: "" });
+  Object.assign(S, { transcript: [], turns: [], decisions: [], sample, note: "", draft: "" });
   render();
 }
 function render() {
@@ -15,17 +16,19 @@ function render() {
     h("b", {}, "Bot · fixed template"), h("p", {}, S.transcript[i * 2 + 1].text),
     h("p", { class: "muted" }, `Current policy: ${S.decisions[i].action} · ${S.decisions[i].reason}`),
     callStats(t.meta, () => inspect(t.trace, `Counter · turn ${i + 1}`)))) : h("p", { class: "empty" }, "Pick a sample and step through it, or write a customer message."));
-  const terminal = ["handoff", "close"].includes(S.decisions.at(-1)?.action);
+  const terminal = S.decisions.at(-1)?.action === "handoff";  // a closed chat may bring a new need; a handoff is final
   const stopped = S.running || S.turns.length >= 20 || terminal;
   const input = h("textarea", { class: "input", maxlength: 2000, "aria-label": "Customer message", disabled: stopped });
-  const send = h("button", { class: "btn primary", disabled: stopped, onclick: () => run(input.value) }, S.running ? "Reading…" : "Send customer turn");
+  input.value = S.draft;
+  input.addEventListener("input", () => { S.draft = input.value; });
+  const send = h("button", { class: "btn primary", disabled: stopped, onclick: () => run(input.value, true) }, S.running ? "Reading…" : "Send customer turn");
   const next = S.sample?.turns[S.turns.length];
   mount("#compose", h("p", { class: "muted" }, "Up to 20 customer turns, 2,000 characters each. Each send makes one live call."),
     next ? h("button", { class: "btn", disabled: stopped, onclick: () => run(next) }, `Next sample turn: ${next}`) : null,
     input, send);
   renderResult();
 }
-async function run(text) {
+async function run(text, typed = false) {
   if (!text.trim() || S.running) return;
   S.running = true;
   render();
@@ -36,6 +39,7 @@ async function run(text) {
     S.turns.push(r);
     S.transcript = [...transcript, { speaker: "bot", text: r.decisions.at(-1).text }];
     S.decisions = r.decisions;
+    if (typed) S.draft = "";
     S.rev++;
     await decideAgain();
   } catch (e) { handleError(e); } finally { S.running = false; render(); }
