@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Counter · Jev Lab</title><link rel="stylesheet" href="/css/app.css">
+  <style>
+    .counter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items:start; }
+    .slider { display:grid; grid-template-columns:1fr 60px; gap:6px; } .slider label { grid-column:1/-1; }
+    .chat-turn { border-bottom:1px solid var(--border); padding:12px 0; }
+    textarea { width:100%; min-height:90px; } svg { width:100%; height:auto; }
+    @media(max-width:900px) { .counter-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body><main class="page">
+  <div class="page-head"><div><div class="eyebrow">App 8 · Counter</div>
+    <h1>Know when a chat needs a person</h1>
+    <p class="lede">One Jev call after each customer turn reads the conversation. Code chooses a fixed reply, asks for detail, closes a resolved chat, or hands it to a person. A streak of frustration matters more than one spike. Jev never writes the replies.</p>
+  </div></div>
+  <div class="grid counter-grid">
+    <section class="panel"><div class="panel-head"><h2>Harbor Coffee Co. · support chat</h2></div>
+      <div class="panel-body grid" style="gap:14px"><div id="samples" class="chips"></div><div id="chat"></div><div id="compose"></div></div>
+    </section>
+    <aside class="grid" style="gap:16px">
+      <section class="panel"><div class="panel-head"><h2>Judgments over time</h2></div><div id="result" class="panel-body"></div></section>
+      <section class="panel"><div class="panel-head"><h2>Policy (code you control)</h2></div><div id="policy" class="panel-body grid" style="gap:14px"></div></section>
+      <p class="muted">Rules run in order: existing handoff, request for a person, frustration streak, repeated misses, resolution, then intent confidence. Handoff stays in effect. A closed chat may start a new need. Misses accumulate across the chat; a calm turn resets the frustration streak.</p>
+      <p class="muted">Sliders replay the saved judgments without a Jev call. They show alternative decisions; replies already sent stay in the transcript. Later judgments still describe that actual conversation.</p>
+    </aside>
+  </div>
+</main><script type="module" src="/js/counter.js"></script></body></html>

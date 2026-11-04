@@ -68,6 +68,7 @@ class OpenInWorkbenchTests(unittest.TestCase):
             return server.api_play_giveup({"id": game["id"]})["traces"][-1]  # traces are released at reveal
 
         demos = {
+            "counter": lambda: server.api_counter_turn({"transcript": [{"speaker": "customer", "text": "When will it ship?"}]})["trace"],
             "playground": lambda: server.api_hello({"text": "My order A-1041 arrived damaged. Refund please."})["trace"],
             "shield": lambda: server.api_shield({"message": dict(INBOX[0])})["trace"],
             "dispatch": lambda: server.api_dispatch({"text": "Pay PackRight's open invoice"})["trace"],
