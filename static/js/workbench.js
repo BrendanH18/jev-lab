@@ -41,7 +41,9 @@ const W = {
     // Policy sends rows that break one to review. Saved with a dataset and a check.
     rules: { text: "", applied: "", checked: "", report: null, error: null, hold: true },
     // Accuracy by slice (jev/slices.py), for Calibrate at its threshold and for Policy at its gates. One field for both.
-    slice: { field: null, cal: null, pol: null } },
+    slice: { field: null, cal: null, pol: null },
+    // Answer sets (jev/answersets.py) for Calibrate's question: the coverage asked for and the last report.
+    sets: { coverage: 0.9, report: null } },
   compare: { variants: [{ text: "", model: "", perturb: "", average: false }, { text: "", model: "", perturb: "", average: false }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
@@ -2022,6 +2024,7 @@ function renderBulk() {
     b.gateExport ? renderGateExport() : null,
     b.result ? renderCosts() : null,
     b.result ? renderCalibrate() : null,
+    b.result ? renderAnswerSets() : null,
     b.result ? renderReview() : null,
     b.result ? renderRules() : null,
     b.result ? renderPolicy() : null,
@@ -2275,7 +2278,7 @@ function chooseCalQuestion() {
 }
 // Labels or Calibrate's question or signal changed: rescore it, and re-review labels, which follow both.
 async function recalibrate() {
-  await Promise.all([calibrateQuestion(), rereview(), costCalibrate()]);
+  await Promise.all([calibrateQuestion(), rereview(), costCalibrate(), answerSets()]);
 }
 let calSeq = 0;
 async function calibrateQuestion() {
@@ -2611,6 +2614,137 @@ function calChart(rep, t) {
   hit.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); $("#cal-tip").hidden = true; });
   hit.addEventListener("click", (e) => { W.bulk.cal.threshold = at(e); updateCal(); });
   return root;
+}
+
+// ---------- Answer sets ----------
+// For Calibrate's question, the shortest list of answers that holds the right one as often as asked (jev/answersets.py):
+// every option at or above a cut fitted on the labeled rows joins a row's set. One answer can be acted on; a longer
+// set goes to review with only those answers. The server does the arithmetic and cross-validates it; no model calls.
+const SETTABLE = new Set(["choice", "noul", "score"]);
+const SET_COVERAGES = [0.8, 0.9, 0.95, 0.99];
+const SETS_SHOWN = 8;
+// The cut as shown; the copied rule uses the full cut and the server's tolerance, so it builds the same sets.
+const cutText = (cut) => cut.toFixed(3);
+let setSeq = 0;
+async function answerSets() {
+  const b = W.bulk;
+  const s = b.sets;
+  const qid = b.cal.qid;
+  const seq = ++setSeq;  // only the latest request may install its report
+  s.report = null;
+  if (!qid || !SETTABLE.has(bulkQuestionsForResult(b.result)[qid]?.type)) return;
+  const rows = tuningResults(b.result).filter((r) => r.answers[qid])
+    .map((r) => ({ index: r.index, key: rowText(r.row), row: r.row, answer: r.answers[qid], label: b.labels[r.index]?.[qid] ?? null }));
+  if (!rows.length) return;
+  try {
+    const report = await api("/api/workbench/answersets", { rows, coverage: s.coverage, field: b.slice.field });
+    if (seq === setSeq) s.report = report;
+  } catch (e) { if (seq === setSeq) handleError(e); }
+}
+async function refreshSets() {
+  await answerSets();
+  if ($("#answer-sets")) $("#answer-sets").replaceWith(renderAnswerSets());
+}
+
+function renderAnswerSets() {
+  const b = W.bulk;
+  const s = b.sets;
+  const qid = b.cal.qid;
+  const type = bulkQuestionsForResult(b.result)[qid]?.type;
+  if (!qid || !type) return null;
+  const covSel = h("select", { class: "input", "aria-label": "How often a set must hold the right answer" },
+    SET_COVERAGES.map((c) => h("option", { value: c, selected: c === s.coverage }, `hold the right answer ${pct(c)} of the time`)));
+  covSel.addEventListener("change", () => { s.coverage = Number(covSel.value); refreshSets(); });
+  const head = h("div", { class: "panel-head" }, icon("list"), h("h2", {}, "Answer sets"),
+    h("span", { class: "faint", style: { fontSize: "12px" } }, `for “${qid}”, the question Calibrate shows; no extra calls`), h("div", { class: "spacer" }),
+    SETTABLE.has(type) ? h("div", { class: "cal-controls" }, covSel) : null);
+  const panel = (...body) => h("div", { class: "panel", id: "answer-sets" }, head, h("div", { class: "panel-body grid", style: { gap: "12px" } }, ...body));
+  const note = (...text) => h("p", { class: "faint", style: { fontSize: "12.5px" } }, ...text);
+  if (!SETTABLE.has(type)) return panel(h("p", { class: "muted" }, "A Box answer has no options to list, so it has no answer set. Choose a Choice, Noul, or Score question in Calibrate."));
+  const rep = s.report;
+  if (!rep || !rep.labeled) return panel(h("p", { class: "muted" }, `No labels for “${qid}” yet. Label rows in the table below to fit a set.`));
+  const target = pct(rep.coverage_target);
+  if (rep.cut === null) {
+    return panel(h("p", { class: "muted" }, `A set that holds the right answer ${target} of the time needs at least ${rep.needed} labeled rows, and “${qid}” has ${rep.labeled}. Label more rows, or ask for a lower share.`));
+  }
+  const m = rep.summary;
+  const u = rep.holdout;
+  const perReview = (x) => (x.listed_per_review === null ? "—" : `${x.listed_per_review.toFixed(1)} of ${x.options} options`);
+  const single = (x) => (x.single_accuracy === null ? "none" : withCI(`${pct(x.single_share)} · ${pct(x.single_accuracy, 1)} right`, x.single_low, x.single_high));
+  const line = (label, x) => h("tr", {}, h("td", {}, label), h("td", {}, withCI(pct(x.coverage, 1), x.low, x.high)),
+    h("td", {}, single(x)), h("td", {}, `${x.short} short · ${x.none} every option`), h("td", {}, perReview(x)));
+  const sizes = Object.entries(m.sizes).sort(([a], [c]) => (a === "none") - (c === "none") || Number(a) - Number(c));
+  const shown = rep.rows.filter((r) => r.size >= 2).slice(0, SETS_SHOWN);
+  const rowsBy = new Map(b.result.results.map((r) => [r.index, r.row]));
+  const at = cutText(rep.cut);
+  return panel(
+    h("p", { style: { fontSize: "13px" } }, "Every option Jev gives ", h("b", { class: "mono" }, `≥ ${at}`),
+      ` joins a row's set. A set of one answer can be acted on; a longer set goes to review with only those answers to choose from; a row where no option reaches ${at} goes to review with every option.`),
+    h("div", { class: "stat-row" },
+      stat("holds the right answer", withCI(pct(m.coverage, 1), m.low, m.high), true),
+      stat("single answer", `${m.single} of ${m.rows} · ${pct(m.single_share)}`),
+      stat("single answers right", m.single_accuracy === null ? "—" : withCI(pct(m.single_accuracy, 1), m.single_low, m.single_high)),
+      stat("a reviewer reads", perReview(m))),
+    h("div", { class: "chips" }, sizes.map(([k, n]) => h("span", { class: "chip", style: { cursor: "default" } },
+      `${k === "none" ? "every option" : k === "1" ? "1 answer" : `${k} answers`}: ${n}`))),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}), h("th", {}, "holds the right answer"), h("th", {}, "single answer · right"),
+        h("th", {}, "sent to review"), h("th", {}, "a reviewer reads"))),
+      h("tbody", {}, line("on these rows", m),
+        u.rows ? line(`on unseen rows, ${u.folds} folds`, u)
+          : h("tr", {}, h("td", {}, "on unseen rows"), h("td", { colspan: 4, class: "faint" }, `Needs at least ${u.minimum} labeled rows to hold some out.`))))),
+    u.rows ? note(`On unseen rows, each fold's sets come from a cut fitted on the other folds`,
+      u.spread ? ` (cuts from ${cutText(u.spread[0])} to ${cutText(u.spread[1])})` : "",
+      u.unreached ? `; ${u.unreached} of ${u.folds} folds had too few rows to promise ${target} and sent every row to review with every option` : "",
+      ". Coverage there below the target, or cuts that swing between folds, mean the cut fits these rows more than the question.") : null,
+    shown.length ? h("div", { class: "grid", style: { gap: "6px" } }, h("h3", { class: "cal-h" }, "Rows a person would choose for, from a short list"),
+      h("div", { class: "scroll" }, h("table", { class: "table" },
+        h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "the set"), h("th", {}, "label"))),
+        h("tbody", {}, shown.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.index + 1)),
+          h("td", { class: "faint", style: { maxWidth: "340px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, rowText(rowsBy.get(r.index))),
+          h("td", {}, r.set.map((k) => h("span", { class: "chip", style: { cursor: "default", marginRight: "4px" } }, `${k} ${pct(r.probabilities[k])}`))),
+          h("td", {}, r.covered ? h("code", {}, r.label) : [h("code", {}, r.label), " ", statusBadge("fail", "Not in the set")]))))))) : null,
+    setSlices(rep.slices),
+    h("div", { class: "code" }, h("pre", { id: "sets-code" }, setsCode(rep, qid)),
+      h("button", { class: "btn sm copy", onclick: () => copyText($("#sets-code").textContent) }, icon("copy"), "Copy")),
+    note(`The cut is split conformal prediction: on new rows drawn like these labeled rows, a set holds the right answer at least ${target} of the time, on average, whether or not Jev's probabilities are calibrated. `,
+      "It is a promise about rows on average, not about each kind of row, so check the slices; and the share of single answers that are right is measured here, not promised. ",
+      type === "noul" ? "A Noul has two options, so its set is one answer or both, and this works like a threshold on P(yes). " : "",
+      rep.unlabeled ? `${rep.unlabeled} answered rows have no label for “${qid}” and are not used. ` : "",
+      rep.invalid.length ? `${rep.invalid.length} labels were ignored. ` : ""),
+  );
+}
+
+// Coverage for each value of a row field (jev/slices.py over the sets): a set can hold the right answer less often
+// on one kind of row even when it meets the target on average.
+function setSlices(rep) {
+  if (!rep?.field) return null;
+  const sel = h("select", { class: "input", "aria-label": "Field to slice by", style: { width: "auto" } },
+    rep.fields.map((f) => h("option", { value: f.name, selected: f.name === rep.field }, `${f.name} (${f.values} values)`)));
+  sel.addEventListener("change", () => { W.bulk.slice.field = sel.value; reslice("cal"); reslice("pol"); refreshSets(); });
+  const cov = (v, lo, hi) => (v === null ? "—" : withCI(pct(v, 1), lo, hi));
+  const row = (label, x, mark) => h("tr", { class: mark ? "slice-below" : "" }, h("td", {}, label), h("td", { class: "num" }, String(x.rows)),
+    h("td", {}, cov(x.accuracy, x.accuracy_low, x.accuracy_high)), h("td", {}, `${x.automated} · ${pct(x.coverage)}`),
+    h("td", {}, cov(x.automated_accuracy, x.automated_low, x.automated_high)),
+    h("td", {}, mark ? h("span", { class: "badge warning", title: `One-sided Fisher exact test against every other slice together: p = ${x.p_all.toFixed(3)}` }, "Holds it less often") : null));
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" } }, h("h3", { class: "cal-h" }, "By slice"), sel),
+    h("div", { class: "scroll" }, h("table", { class: "table slices" },
+      h("thead", {}, h("tr", {}, h("th", {}, rep.field), h("th", {}, "rows"), h("th", {}, "holds the right answer"), h("th", {}, "single answer"),
+        h("th", {}, "single answers right"), h("th", {}))),
+      h("tbody", {}, rep.slices.map((x) => row(h("code", {}, x.value), x, x.below_all)), row(h("b", {}, "all"), rep.overall, false)))));
+}
+
+function setsCode(rep, qid) {
+  const key = JSON.stringify(qid);
+  const at = String(rep.cut);  // the shortest text that reads back as the same number, as Python's repr
+  const read = rep.type === "noul"
+    ? `p = result.nouls[${key}].noul\noptions = {"yes": p, "no": 1 - p}`
+    : rep.type === "choice" ? `options = result.choices[${key}].probabilities` : `options = result.scores[${key}].probabilities`;
+  return `# Answer set for ${key}: every option at or above the cut (fitted to hold the right answer ${pct(rep.coverage_target)} of the time)\n`
+    + `CUT = ${at}\n${read}\n`
+    + `answer_set = sorted((k for k, p in options.items() if p + 1e-9 >= CUT), key=lambda k: -options[k])\n`
+    + `if len(answer_set) == 1:\n    act_on(answer_set[0])\nelif answer_set:\n    send_to_review(choices=answer_set)  # a person picks from these\nelse:\n    send_to_review(choices=list(options))  # no option reached the cut\n`;
 }
 
 // ---------- Costs ----------
@@ -3360,7 +3494,7 @@ function sliceBody(kind) {
   }
   const sel = h("select", { class: "input", "aria-label": "Field to slice by", style: { width: "auto" } },
     rep.fields.map((f) => h("option", { value: f.name, selected: f.name === rep.field }, `${f.name} (${f.values} values)`)));
-  sel.addEventListener("change", () => { b.slice.field = sel.value; reslice("cal"); reslice("pol"); });
+  sel.addEventListener("change", () => { b.slice.field = sel.value; reslice("cal"); reslice("pol"); refreshSets(); });
   const o = rep.overall;
   const acc = (v, lo, hi) => (v === null ? "—" : withCI(pct(v, 1), lo, hi));
   const mark = (s) => {

@@ -434,6 +434,20 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("folds", json.loads(err)["error"])
 
+    def test_answersets_over_http_is_pure_code(self):
+        rows = [{"index": i, "answer": {"type": "choice", "choice": "a", "probabilities": {"a": 0.5 + 0.04 * i, "b": 0.5 - 0.04 * i}},
+                 "label": "a" if i % 4 else "b", "key": "row %d" % i} for i in range(12)]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/answersets", json.dumps({"rows": rows, "coverage": 0.8}),
+                                           self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/answersets", json.dumps({"rows": rows, "coverage": 1}),
+                                       self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual((report["labeled"], report["summary"]["rows"], report["holdout"]["rows"]), (12, 12, 12))
+        self.assertEqual(bad, 400)
+        self.assertIn("coverage", json.loads(err)["error"])
+
     def test_cost_over_http_is_pure_code(self):
         rows = [{"index": i, "answers": {"u": {"type": "noul", "noul": p}}, "labels": {"u": label}, "key": "row %d" % i}
                 for i, (p, label) in enumerate([(0.95, True), (0.9, False), (0.8, True), (0.7, True), (0.6, False), (0.55, True)]

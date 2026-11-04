@@ -361,6 +361,49 @@ The interval treats your labeled rows as a random sample of the items the gate w
 threshold from the same rows still favors thresholds that happen to fit them, so confirm the
 threshold on rows you did not tune on before you rely on it.
 
+## Send review a short list: answer sets
+
+A gate either acts on the top answer or sends the whole row to a person, who then reads every option. Often
+Jev is unsure between two or three options, and the right one is almost always among them. **Answer sets**,
+below Calibrate, works on the question Calibrate shows. It fits a cut on the stated probability from the
+labeled rows, and every option at or above the cut joins a row's set:
+
+- a set of one answer can be acted on;
+- a longer set goes to review with only those answers to choose from;
+- a row where no option reaches the cut goes to review with every option.
+
+Choose how often a set must hold the right answer: 80%, 90%, 95%, or 99%. The cut comes from split
+conformal prediction. Each labeled row scores 1 minus the probability Jev gave its label. With n labeled rows
+and a target of 90%, the cut is 1 minus the ⌈(n + 1) × 0.9⌉-th smallest score. On new rows drawn like the
+labeled ones, a set then holds the right answer at least 90% of the time on average, whether or not Jev's
+probabilities are calibrated. That takes at least 4, 9, 19, or 99 labeled rows for the four targets.
+
+The promise is about rows on average:
+
+- **It does not cover each kind of row.** The **By slice** table shows, for each value of a row field, how
+  often the sets hold the right answer, and marks a slice that holds it less often than the rest by more
+  than chance explains (one-sided Fisher exact test, p < 0.05).
+- **Single answers are measured, not promised.** The share of single-answer rows that are right is measured
+  on these rows, with a 95% interval. To tune and measure the accuracy of the rows you act on, use Calibrate's
+  threshold or Policy, and check it on rows it was not tuned on.
+- **The cut fits these rows.** Coverage measured on the rows the cut came from is optimistic. With at least
+  ten labeled rows, the panel also shows the same numbers on unseen rows: each of five folds gets its sets from
+  a cut fitted on the other four, using the same folds as [Check on unseen rows](#check-on-unseen-rows).
+
+For each of these, the panel shows how often the list a person sees holds the right answer, the share and
+accuracy of single answers, and how many options a reviewer reads per reviewed row next to the number of
+options. It also lists reviewed rows with their short lists and gives the Python that builds a set. A Noul
+has two options, so its set is one answer or both, which works like a threshold on P(yes). A Box answer has
+no options, so it has no set. Test rows are left out, as in every tuning panel. It reuses the Bulk answers,
+so it makes no model calls.
+
+`POST /api/workbench/answersets` takes `rows` for one question (`index`, `answer`, `label`, and an optional
+`key` naming the row's input for the folds and `row`, its input for slices), `coverage` (from 0.5 to below
+1, default 0.9), `folds` (2–10, default 5), and an optional `field` to slice by. It returns `cut` (`null`
+when there are fewer labeled rows than `needed`), `summary`, `holdout` (with `spread`, the cuts the folds
+chose, and `unreached`, the folds with too few rows to fit one), `slices`, and one entry per labeled row with
+its `set`, `route`, and whether the list a person sees holds the label (`covered`).
+
 ## Save rows and labels
 
 The rows box and the labels you choose in the results table live only in the browser, so a reload
