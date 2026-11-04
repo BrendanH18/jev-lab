@@ -72,7 +72,7 @@ issue real refunds, or transfer money.
 | **Counter** | Step a support chat turn by turn: fixed replies, clarification, resolution, and a handoff when a customer asks, stays frustrated, or the bot repeatedly misses the point. Policy sliders replay the saved judgments without another call. | Sequential judgments, streaks, and code-owned handoff |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, label the rows it routed and audit the ones it automated, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, send review a short list of the likely answers instead of every option, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, label the rows it routed and audit the ones it automated, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. **Open in Workbench**, in the same drawer, puts that exact request in
@@ -122,6 +122,11 @@ conditions.
   rows you would need to label. For a Score question it also shows how far off the answers are, and
   the cut on the expected score that best flags each level. It reuses the Bulk answers, so it makes no
   extra calls.
+- **Answer sets:** for Calibrate's question, list the options likely enough that the list holds the right
+  answer 80%, 90%, 95%, or 99% of the time, with a cut fitted on the labeled rows by conformal prediction.
+  Act on a list of one; send a longer list to review, so a person chooses from two or three options, not all
+  of them. See how often the lists hold the answer on unseen rows and on each slice. It also reuses the
+  Bulk answers.
 - **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
   in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
   answers.
