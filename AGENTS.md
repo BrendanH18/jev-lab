@@ -132,7 +132,7 @@ measures how often a second person's blind labels agree with a dataset's and wri
 counted (`jev/testsplit.py`; the marker never reaches the model, and checks, drift and upgrade rerun only the other
 rows), checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
 Tune, cost, cross-validation, checks, drift and the exported gate send rows that break one to review),
-runs a
+fits monotone probability maps checked on unseen folds (`jev/recalibrate.py`, without changing routing), runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
 `SpendGuard`; a row's `_image` picture travels as an asset named `photo` in its state, so Box questions run
 too), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a

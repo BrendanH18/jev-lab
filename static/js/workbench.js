@@ -2293,6 +2293,57 @@ async function calibrateQuestion() {
   } catch (e) { if (seq === calSeq) handleError(e); }
 }
 
+// Recalibrate probability values, independently of the routing thresholds above.
+function probabilityMapsPanel() {
+  const c = W.bulk.cal;
+  const box = h("section", { id: "recalibrate", class: "grid", style: { gap: "10px" } });
+  const button = h("button", { class: "btn sm", onclick: async () => {
+    button.disabled = true;
+    const seq = calSeq;
+    const rows = tuningResults(W.bulk.result).filter((r) => r.answers[c.qid]).map((r) => ({
+      index: r.index, key: rowText(r.row), answer: r.answers[c.qid], label: W.bulk.labels[r.index]?.[c.qid] ?? null,
+    }));
+    try {
+      const rep = await api("/api/workbench/recalibrate", { rows, signal: c.signal });
+      if (seq !== calSeq || !box.isConnected) return;
+      output.replaceChildren(probabilityMapsReport(rep));
+    } catch (e) { if (seq === calSeq && box.isConnected) output.replaceChildren(h("p", { class: "muted" }, e.message)); }
+    finally { button.disabled = false; }
+  } }, "Fit and check probability maps");
+  const output = h("div", { class: "grid", style: { gap: "10px" }, "aria-live": "polite" });
+  box.append(h("h3", {}, "Recalibrate probabilities"),
+    h("p", { class: "muted" }, "Map the selected signal to the chance the answer is right, for code that uses that chance itself: the expected cost of acting on an answer, a product of two answers' chances of being right, or a chance shown to a person. It is not P(yes) or a class probability, so do not put it in a weighted sum of P(yes) values such as Shield's. This does not tune routing: thresholds already use measured accuracy. Confidence can be a margin rather than a probability; the selected signal is mapped to the chance the prediction is right. At least 20 labeled rows with both right and wrong answers; no extra model calls."), button, output);
+  return box;
+}
+function probabilityMapsReport(rep) {
+  const chosen = rep.recommendation;
+  const names = { raw: "Raw", platt: "Platt", isotonic: "Isotonic" };
+  const table = h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, ["Method", "Fit ECE", "Fit Brier", "Fit log loss", "CV ECE", "CV Brier", "CV log loss"].map((s) => h("th", {}, s)))),
+    h("tbody", {}, Object.entries(rep.methods).map(([name, m]) => h("tr", {}, h("td", {}, names[name]),
+      ...[m.fit.ece, m.fit.brier, m.fit.log_loss, m.cv.ece, m.cv.brier, m.cv.log_loss].map((v) => h("td", { class: "mono" }, v.toFixed(4)))))));
+  const chart = svg("svg", { viewBox: "0 0 340 260", role: "img", "aria-label": "Cross-validated reliability: stated probability versus observed correctness", style: "width:100%;max-width:440px" },
+    svg("line", { x1: 40, y1: 220, x2: 300, y2: 20, stroke: "currentColor", "stroke-dasharray": "4 4" }),
+    svg("path", { d: "M40 20V220H300", fill: "none", stroke: "currentColor" }),
+    svg("text", { x: 90, y: 250, fill: "currentColor", "font-size": 11 }, "Stated probability (0–1)"),
+    svg("text", { x: 45, y: 12, fill: "currentColor", "font-size": 11 }, "Observed correctness (0–1)"));
+  for (const [name, color] of [["raw", "#df9550"], [chosen, "#63b6cd"]]) {
+    const bins = rep.methods[name].cv.reliability;
+    chart.append(svg("polyline", { points: bins.map((b) => `${40 + b.stated * 260},${220 - b.observed * 200}`).join(" "), fill: "none", stroke: color, "stroke-width": 2 }));
+    for (const b of bins) chart.append(svg("circle", { cx: 40 + b.stated * 260, cy: 220 - b.observed * 200, r: 3, fill: color }));
+  }
+  const code = rep.methods[chosen].source;
+  return h("div", { class: "grid", style: { gap: "10px" } },
+    h("p", {}, `${chosen === "raw" ? "Keep raw" : `Recommend ${names[chosen]}`}: lowest five-fold cross-validated log loss, requiring an improvement of at least ${rep.margin.toFixed(3)} over raw. ${rep.labeled} labeled rows. Fitting numbers never select the map.`),
+    h("div", { class: "scroll" }, table), chart,
+    h("p", { class: "muted" }, `Cross-validated reliability: raw (orange), ${names[chosen]} (blue), ideal (dashed). These are predictions from maps fitted without each row. The copied map is refitted on all tuning rows. A flat part can merge distinct signals; keep routing on raw signals and existing thresholds.`),
+    h("details", {}, h("summary", {}, "Reliability tables (fit and cross-validated)"),
+      Object.entries(rep.methods).map(([name, m]) => h("div", {}, h("h4", {}, names[name]),
+        ["fit", "cv"].map((part) => h("div", {}, h("p", {}, part === "fit" ? "Fitting rows" : "Cross-validated rows"), reliabilityTable({ ...m[part], probabilityMap: true })))))),
+    ["python", "javascript"].map((lang) => h("div", { class: "code" }, h("pre", {}, code[lang]),
+      h("button", { class: "btn sm copy", onclick: () => copyText(code[lang]) }, icon("copy"), lang === "python" ? "Copy Python" : "Copy JavaScript"))));
+}
+
 function renderCalibrate() {
   const b = W.bulk;
   const c = b.cal;
@@ -2352,6 +2403,7 @@ function renderCalibrate() {
       rep.type === "box" ? h("div", { class: "stat-row" }, stat("mean overlap with the label (IoU)", rep.iou_mean === null ? "—" : rep.iou_mean.toFixed(2)),
         stat("counts as right at", `IoU ≥ ${rep.iou_right}`)) : null,
       h("div", { class: "cal-tables" }, rep.type === "box" ? null : confusionTable(rep), reliabilityTable(rep)),
+      rep.type === "box" ? null : probabilityMapsPanel(),
       rep.ordinal ? ordinalBlock(rep.ordinal, c.qid) : null,
       h("div", { class: "code" }, h("pre", { id: "cal-code" }),
         h("button", { class: "btn sm copy", onclick: () => copyText($("#cal-code").textContent) }, icon("copy"), "Copy")),
@@ -2414,9 +2466,9 @@ function confusionTable(rep) {
 function reliabilityTable(rep) {
   const noul = rep.type === "noul";
   return h("div", { class: "scroll" },
-    h("h3", { class: "cal-h" }, noul ? "When Jev says P(yes) is…, the label is yes…" : rep.type === "box" ? "When Jev's confidence is…, the box is right…" : "When Jev's top probability is…, it is right…"),
+    h("h3", { class: "cal-h" }, rep.probabilityMap ? "When the mapped signal states…, the prediction is right…" : noul ? "When Jev says P(yes) is…, the label is yes…" : rep.type === "box" ? "When Jev's confidence is…, the box is right…" : "When Jev's top probability is…, it is right…"),
     h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, h("th", {}, noul ? "P(yes)" : rep.type === "box" ? "confidence" : "top probability"), h("th", {}, "rows"), h("th", {}, "average stated"), h("th", {}, noul ? "label yes" : "right"))),
+      h("thead", {}, h("tr", {}, h("th", {}, rep.probabilityMap ? "signal" : noul ? "P(yes)" : rep.type === "box" ? "confidence" : "top probability"), h("th", {}, "rows"), h("th", {}, "average stated"), h("th", {}, noul ? "label yes" : "right"))),
       h("tbody", {}, rep.reliability.map((bin) => h("tr", {},
         h("td", { class: "mono" }, `${pct(bin.lo)}–${pct(bin.hi)}`), h("td", {}, String(bin.count)), h("td", {}, pct(bin.stated)),
         h("td", {}, `${pct(bin.observed)} (${bin.hits}/${bin.count})`))))));
