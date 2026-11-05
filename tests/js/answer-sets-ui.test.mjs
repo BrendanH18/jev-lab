@@ -57,15 +57,17 @@ test("an old attach button cannot attach its cut after a replacement fit complet
 
 test("review shortlists retain every label and audit shortlists stay hidden until labeled", () => {
   const funcs = ["queueClasses", "shownAnswer", "queueReady", "labelText", "labelValue", "queueSelect", "queueView"].map(body).join("\n");
-  const queueView = new Function("h", "rowText", "render", "icon", `${funcs}; return queueView;`)(h, String, () => {}, () => "");
+  const W = { bulk: { pictures: { "torn-bag": "/img/samples/torn-bag.png" } } };
+  const queueView = new Function("W", "h", "rowText", "render", "icon", `${funcs}; return queueView;`)(W, h, String, () => {}, () => "");
   const question = { type: "choice", criteria: { billing: "", delivery: "", other: "" } };
-  const item = { kind: "review", line: 1, held: ["topic"], rules: [], row: "a row", labels: {}, open: ["topic"],
+  const item = { kind: "review", line: 1, held: ["topic"], rules: [], row: { _image: "torn-bag" }, labels: {}, open: ["topic"],
     answers: { topic: "billing" }, candidates: { topic: ["billing", "delivery"] } };
   const report = { items: [item], gates: { topic: 0.9 }, room: 20, questions: { topic: question },
     counts: { decisions: 1, review: 1, auto: 0, queued: 1, audit: 0 }, problems_total: 0 };
   const view = () => queueView({ id: "coffee", name: "Coffee" }, { report });
   const review = view();
   assert.match(allText(review), /Suggested shortlist: billing, delivery/);
+  assert.equal(find(review, "img")[0].attrs.src, W.bulk.pictures["torn-bag"]);
   assert.deepEqual(find(review, "option").map((o) => o.attrs.value), ["", "billing", "delivery", "other"]);
   assert.deepEqual(item.labels, {}, "the held question stays unlabeled");
   item.kind = "audit";

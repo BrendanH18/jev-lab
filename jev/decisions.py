@@ -34,7 +34,7 @@ MAX_TEXT_CHARS = 5_000_000
 MAX_AUDIT = workbench.MAX_BULK_ROWS
 PROBLEMS_SHOWN = 20
 ROUTES = ("auto", "review")
-LABEL_TYPES = ("choice", "noul", "score")  # a Box label is edges, which a gate never answers (it sends no picture)
+LABEL_TYPES = ("choice", "noul", "score")  # Box coordinates are output only; label boxes in Bulk.
 
 
 def _key(row: Any) -> str:
@@ -92,6 +92,7 @@ def _decision(line: str, questions: Dict[str, dict]) -> dict:
         raise ValueError("has a row that is not a JSON object of fields")
     try:
         workbench.validate_state(row)
+        workbench.row_picture(row)
     except WorkbenchError as err:
         raise ValueError("has a row the model cannot be sent: %s" % err)
     unknown = [q for q in d["answers"] if q not in questions]
@@ -164,7 +165,8 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
         if not line.strip():
             continue
         try:
-            d = _decision(line.strip(), questions)
+            # Box results may accompany the routed answers, but Review labels only Choice, Noul, and Score.
+            d = _decision(line.strip(), dataset.get("questions") or {})
         except ValueError as err:
             problems.append({"line": number, "message": "Line %d %s" % (number, err)})
             continue

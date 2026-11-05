@@ -110,9 +110,10 @@ class PictureRowTests(unittest.TestCase):
         rep = calibrate.evaluate([{"index": 0, "answer": r["answers"]["where"], "label": r["expect"]["where"]}])
         self.assertEqual((rep["type"], rep["correct"], rep["labeled"]), ("box", 1, 1))
 
-    def test_an_exported_gate_still_refuses_box_questions(self):
+    def test_an_exported_gate_returns_boxes_but_cannot_gate_them(self):
+        self.assertIn("Box(", gate.export(Q, {"damaged": 0.5}, "confidence", "jev-1.14.0")["python"])
         with self.assertRaises(workbench.WorkbenchError):
-            gate.export(Q, {"damaged": 0.5}, "confidence", "jev-1.14.0")
+            gate.export(Q, {"where": 0.5}, "confidence", "jev-1.14.0")
 
 
 class RouteTests(unittest.TestCase):
