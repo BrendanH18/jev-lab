@@ -151,6 +151,11 @@ by default), and send the same `photo` asset reference as Bulk. Samples load as 
 stay unchanged. Pictures stay separate from exported source. Box questions return coordinates but cannot be gated
 or shortlisted; Review labels only Choice/Noul/Score and accepts accompanying Box output. Labels and `_test` markers
 never reach the model, including direct calls to an exported gate's `decide` function.
+Portable dataset bundles (`jev/bundles.py`) contain only dataset inputs, human labels, question and gate
+configuration, test-split history, and referenced pictures. Never include model answers, measured check
+results, or application credentials. Preview imports before saving and require explicit replacement of
+an existing dataset. Bundled sample pictures become content-addressed uploads so their exact bytes travel
+without replacing built-in sample files.
 
 ## Conventions
 

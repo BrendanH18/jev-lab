@@ -17,6 +17,7 @@ const W = {
     // Saved datasets (data/workbench/datasets/): rows and labels only, never answers. savedText is the rows box as
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
+    bundle: { data: null, report: null, name: "", busy: false },
     savedText: "", runText: null, labelsDirty: false,
     // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
     // pin: save the check and export the gate with the version that answered the run, when the run asked an alias.
@@ -760,6 +761,87 @@ async function deleteDataset(id) {
   } catch (e) { handleError(e); }
 }
 
+async function exportBundle(id) {
+  try {
+    const { filename, data } = await api("/api/workbench/datasets/bundle/export", { id });
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+    const link = h("a", { href: url, download: filename });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) { handleError(e); }
+}
+
+async function previewBundle(file) {
+  if (!file) return;
+  const b = W.bulk.bundle;
+  b.data = b.report = null;
+  b.busy = true;
+  render();
+  try {
+    if (file.size > 8 * 1024 * 1024) throw new Error("Dataset bundles must be at most 8 MiB.");
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = () => reject(new Error("Could not read the bundle."));
+      reader.readAsDataURL(file);
+    });
+    b.report = await api("/api/workbench/datasets/bundle/preview", { data });
+    b.data = data;
+    b.name = b.report.dataset.name;
+  } catch (e) { handleError(e); }
+  b.busy = false;
+  render();
+}
+
+async function importBundle() {
+  const bulk = W.bulk;
+  const b = bulk.bundle;
+  const name = b.name.trim();
+  const id = slugOf(name);
+  if (!id) return toast("Give the imported dataset a name", "error");
+  const replace = bulk.datasets.some((x) => x.id === id);
+  if (replace && !confirm(`Replace the saved dataset “${id}” with this bundle, including its check and test history?`)) return;
+  b.busy = true;
+  render();
+  try {
+    await api("/api/workbench/datasets/bundle/import", { data: b.data, name, replace });
+    // Reports and linked editors for an overwritten dataset refer to the old file.
+    delete bulk.checkRuns[id];
+    delete bulk.agreeRuns[id];
+    if (bulk.dataset.id === id) {
+      bulk.dataset.id = null;
+      bulk.testScore = null;
+    }
+    bulk.datasets = (await api("/api/workbench/datasets")).datasets;
+    b.data = b.report = null;
+    toast(`Imported “${name}”. Load it to work with its rows; run it to get answers.`);
+  } catch (e) { handleError(e); }
+  b.busy = false;
+  render();
+}
+
+function bundleImportForm() {
+  const b = W.bulk.bundle;
+  const file = h("input", { type: "file", accept: ".zip,application/zip", disabled: b.busy,
+    "aria-label": "Choose dataset bundle", onchange: () => previewBundle(file.files[0]) });
+  const name = h("input", { class: "input", value: b.name, disabled: b.busy, "aria-label": "Imported dataset name" });
+  name.addEventListener("input", () => { b.name = name.value; });
+  const d = b.report?.dataset;
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("b", {}, "Import dataset bundle"), file,
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      "Preview a ZIP before saving. Bundles carry rows, human labels, questions, gate settings, test history, and pictures. No model calls. Limit: 8 MiB. Review your input data before sharing it."),
+    b.busy ? note("Reading or saving bundle…") : null,
+    d ? h("div", { class: "grid", style: { gap: "6px" } },
+      h("span", { class: "muted" }, `${d.rows.length} rows · ${Object.keys(d.questions || {}).length} questions · ${b.report.images} pictures · ${d.check ? "saved check" : "no check"} · ${d.test ? `${d.test.looks.length} test evaluations` : "no test history"}`),
+      h("details", {}, h("summary", {}, "Preview dataset contents"),
+        h("pre", { class: "code", style: { maxHeight: "240px", overflow: "auto" } }, JSON.stringify(d, null, 2))),
+      name,
+      h("div", {}, h("button", { class: "btn sm primary", disabled: b.busy, onclick: importBundle }, "Import bundle"),
+        h("button", { class: "btn sm ghost", disabled: b.busy, onclick: () => { b.data = b.report = null; render(); } }, "Cancel"))) : null);
+}
+
 function renderDatasets() {
   const b = W.bulk;
   const d = b.dataset;
@@ -779,6 +861,7 @@ function renderDatasets() {
         h("label", { class: "toggle", style: { gap: "6px" } }, withQ, h("span", { class: "track" }), "Save the selected questions with the rows"),
         h("div", {}, h("button", { class: "btn sm", onclick: saveDataset }, icon("check"), "Save rows and labels"))),
       h("p", { class: "faint", style: { fontSize: "12px" } }, "Saves the rows box, with the labels you chose in the results table, as one JSON file you can commit. Only rows and labels are saved, never answers: run a loaded dataset to get answers."),
+      bundleImportForm(),
       b.datasets.some((x) => x.check) ? h("datalist", { id: "cmp-models" }, (W.compare.models || []).map((n) => h("option", { value: n }))) : null,
       b.datasets.length ? b.datasets.map((x) => h("div", { class: "item" },
         h("div", { class: "grid", style: { gap: "2px" } },
@@ -788,6 +871,7 @@ function renderDatasets() {
           x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
         h("div", { style: { display: "flex", gap: "6px" } },
           h("button", { class: "btn sm", onclick: () => loadDataset(x.id) }, "Load"),
+          h("button", { class: "btn sm", onclick: () => exportBundle(x.id) }, "Download ZIP"),
           x.labeled && x.questions ? agreeButton(x) : null,
           testControl(x),
           h("button", { class: "btn sm ghost danger", "aria-label": `Delete ${x.id}`, onclick: () => deleteDataset(x.id) }, icon("trash"))),

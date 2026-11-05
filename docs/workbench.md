@@ -472,6 +472,32 @@ before you commit them.
 | `POST /api/workbench/datasets/load` | `id` | `dataset`: the saved file |
 | `POST /api/workbench/datasets/delete` | `id` | `deleted`: whether a file was removed |
 
+### Share a dataset with its pictures
+
+Choose **Download ZIP** beside a saved dataset to bundle its saved rows, human labels,
+questions, consistency rules, check settings (including review shortlists), test markers and
+test-evaluation history, and every picture its rows reference. Unsaved browser edits are not
+included. The bundle adds no model answers, measured check results, or application credentials;
+the rows, labels, notes, and pictures are your data, so review them before sharing.
+
+In another checkout, use **Import dataset bundle** on the Bulk tab. Choosing a ZIP validates it
+and shows a preview, without writing anything. Expand **Preview dataset contents** to inspect
+the rows and configuration, choose a name, then select **Import bundle**. An existing dataset
+requires explicit confirmation before replacement, including its check and test history. Import
+does not change unsaved rows in the editor; select **Load** when ready, then run to get new answers.
+
+Bundles are limited to 8 MiB compressed and expanded. They contain a versioned `dataset.json`
+manifest and referenced files under `images/`. Import validates names, sizes, image bytes, and
+dataset configuration without extracting archive paths. Bundled sample pictures become uploads
+named by their content hash, preserving the bundled pixels without modifying built-in samples.
+No dependencies or model calls are needed.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/datasets/bundle/export` | `id` | `filename`, `data`: base64 ZIP |
+| `POST /api/workbench/datasets/bundle/preview` | `data`: base64 ZIP | `dataset`: validated contents, `summary`, `images`: count, `exists`: whether its ID is saved |
+| `POST /api/workbench/datasets/bundle/import` | `data`, optional `name`, `replace` (default false) | `dataset`: saved summary |
+
 ## Review labels
 
 Every accuracy, threshold, and tuned gate rests on the labels, and labels written by people contain
