@@ -144,6 +144,34 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(set(json.loads(body)), {"python", "javascript", "curl"})
 
+    def test_dataset_bundle_routes_roundtrip_without_model_calls(self):
+        from jev import workbench
+
+        with tempfile.TemporaryDirectory() as folder, patch.object(workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            workbench.save_dataset({"name": "Portable tickets", "rows": [{"text": "A ticket", "_expect": {"urgent": True}}],
+                                    "questions": {"urgent": {"type": "noul", "instructions": "Is it urgent?"}}})
+
+            def post(action, payload):
+                status, _, body = self.request("POST", "/api/workbench/datasets/bundle/" + action,
+                                               json.dumps(payload), self.post_headers())
+                return status, json.loads(body)
+
+            status, exported = post("export", {"id": "portable-tickets"})
+            self.assertEqual(status, 200)
+            status, preview = post("preview", {"data": exported["data"]})
+            self.assertEqual(status, 200)
+            self.assertEqual(preview["dataset"]["rows"][0]["_expect"], {"urgent": True})
+            status, imported = post("import", {"data": exported["data"], "name": "Imported tickets"})
+            self.assertEqual(status, 200)
+            self.assertEqual(imported["dataset"]["id"], "imported-tickets")
+            status, _ = post("import", {"data": exported["data"], "name": "Imported tickets"})
+            self.assertEqual(status, 400)
+            status, _ = post("import", {"data": exported["data"], "name": "Imported tickets", "replace": True})
+            self.assertEqual(status, 200)
+            status, _ = post("preview", {"data": "not a zip"})
+            self.assertEqual(status, 400)
+
     def test_static_traversal_cannot_read_sibling_with_matching_prefix(self):
         with tempfile.TemporaryDirectory(prefix="static-private-", dir=server.PROJECT_ROOT) as folder:
             sibling = Path(folder)

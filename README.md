@@ -132,6 +132,10 @@ conditions.
 - **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
   in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
   answers.
+- **Dataset bundles:** download a saved dataset as a ZIP with its referenced pictures, questions,
+  labels, check settings, and test history. Import it into another checkout, preview its contents,
+  and choose a name before saving. Replacing a dataset asks for confirmation. No model calls are made;
+  review your input data before sharing a bundle.
 - **Review labels:** see the labeled answers that disagree with their labels, the most confident
   disagreements first, since those are often labeling mistakes, and the unlabeled rows nearest
   Calibrate's threshold, whose labels decide whether it can move. Fix or label them in place. It also

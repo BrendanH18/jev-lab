@@ -20,7 +20,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (agreement, answersets, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello,
+from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello,
                  holdout, images, counter, lint, policy, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
@@ -585,6 +585,19 @@ def api_wb_dataset_delete(body):
     return {"deleted": workbench.delete_dataset(str(body.get("id", "")))}
 
 
+def api_wb_bundle_export(body):
+    return bundles.export_bundle(str(body.get("id", "")))
+
+
+def api_wb_bundle_preview(body):
+    return bundles.preview_bundle(body.get("data"))
+
+
+def api_wb_bundle_import(body):
+    dataset = bundles.import_bundle(body.get("data"), body.get("name"), body.get("replace", False))
+    return {"dataset": workbench.dataset_summary(dataset)}
+
+
 def api_wb_check_save(body):
     spec = body.get("check")
     if isinstance(spec, dict) and not str(spec.get("model") or "").strip():
@@ -731,6 +744,9 @@ ROUTES = {
     ("POST", "/api/workbench/datasets"): api_wb_dataset_save,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
+    ("POST", "/api/workbench/datasets/bundle/export"): api_wb_bundle_export,
+    ("POST", "/api/workbench/datasets/bundle/preview"): api_wb_bundle_preview,
+    ("POST", "/api/workbench/datasets/bundle/import"): api_wb_bundle_import,
     ("POST", "/api/workbench/datasets/test/lock"): api_wb_test_lock,
     ("POST", "/api/workbench/datasets/test/remove"): api_wb_test_remove,
     ("POST", "/api/workbench/datasets/test/score"): api_wb_test_score,
