@@ -400,6 +400,16 @@ has two options, so its set is one answer or both, which works like a threshold 
 no options, so it has no set. Test rows are left out, as in every tuning panel. It reuses the Bulk answers,
 so it makes no model calls.
 
+To use a fitted cut outside the lab, attach it to Policy from **Answer sets**. You can attach cuts for
+several questions by switching Calibrate's question. Policy's exported module and **Save as a check**
+include these cuts and their coverage targets, never the model's answers. Changing the Bulk run, rows,
+labels, or questions clears the attached cuts so you can fit them again. A model upgrade also drops them;
+refit on the new model before exporting its shortlists.
+
+Attached cuts only suggest review choices. Policy's thresholds and consistency rules still decide whether
+a row is automated, including when its answer set has one option. Coverage is a marginal promise for new
+rows drawn like the fitting rows, not a guarantee of accuracy on automated rows or on reviewed rows alone.
+
 `POST /api/workbench/answersets` takes `rows` for one question (`index`, `answer`, `label`, and an optional
 `key` naming the row's input for the folds and `row`, its input for slices), `coverage` (from 0.5 to below
 1, default 0.9), `folds` (2–10, default 5), and an optional `field` to slice by. It returns `cut` (`null`
@@ -977,6 +987,9 @@ decision = decide({"text": "I was charged twice. Please fix this today."})
 - `held` lists the gated questions that did not clear theirs, in gate order.
 - `answers` shows each answer as Calibrate does: a Choice's option, a Noul's yes or no as `True` or
   `False`, and a Score's most likely level.
+- With attached answer sets, `candidates` lists likely labels per configured question, in descending
+  probability order. Labels use the same types as `answers`. No option reaching the cut, or missing or
+  incomplete probabilities, falls back to every declared option.
 
 It reads each signal exactly as Calibrate and Policy do. A Noul's confidence is |2p − 1|, and a signal
 equal to its threshold clears it. When the model returns no answer to a gated question, that question
@@ -1004,6 +1017,8 @@ Policy does.
 `POST /api/workbench/gate/export` takes `questions`, `gates`, `signal` (default `confidence`), and
 `model` (default: the current model), or `dataset`, the ID of a dataset whose check to export. It
 returns `python` and `javascript`.
+An optional `answer_sets` object maps question IDs to `{"cut": 0.2, "coverage": 0.9}`; cuts are from 0
+to 1 and coverage is above 0 and below 1. Saved checks accept the same field. It affects candidates only.
 
 ## Label the rows a gate routed
 
@@ -1020,6 +1035,11 @@ were right, which nothing else in the Workbench can tell you about your own traf
 
 Questions no gate reads start empty on every row. The gate never judged them, so filling them in would save
 the model's answers as your labels; label them yourself if you want them in Calibrate.
+
+When a decision includes `candidates`, review shows its shortlist beside the label selector. Every valid
+answer remains selectable, and a shortlist never fills a held question's label for you. Audit rows hide
+shortlists together with the gate's answers until every gated question has a label. Older decisions without
+shortlists still work. Candidates are read from your decisions file and are not saved with the labeled rows.
 
 The queue lists every row the gate sent to review, in file order, then the audit sample. Rows the dataset
 already has are left out, and a row that appears twice is listed once. Lines that are not a decision of this

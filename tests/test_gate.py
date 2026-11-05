@@ -153,6 +153,55 @@ class ExportTests(unittest.TestCase):
         result = SimpleNamespace(choices=group("choice"), nouls=group("noul"), scores=group("score"))
         return SimpleNamespace(system_one=lambda state, questions, model=None: result)
 
+    def test_answer_set_candidates_match_in_python_and_javascript_without_changing_routing(self):
+        sets = {"department": {"cut": 0.2, "coverage": 0.9},
+                "is_urgent": {"cut": 0.5, "coverage": 0.9},
+                "frustration": {"cut": 0.3, "coverage": 0.9}}
+        case = answers(department=0.4, urgent=0.5)
+        case["department"]["probabilities"] = dict.fromkeys(QUESTIONS["department"]["criteria"], 0.0)
+        case["department"]["probabilities"].update(billing=0.6, shipping=0.2, technical=0.2 - 5e-10)
+        partial = dict(case, department=dict(case["department"], probabilities={"billing": 1}),
+                       frustration=dict(case["frustration"], probabilities={"1": 1}))
+        missing = {k: v for k, v in case.items() if k != "is_urgent"}
+        no_match = dict(case, department=dict(case["department"], probabilities={
+            "billing": 0.16, "shipping": 0.17, "technical": 0.17, "product": 0.17, "wholesale": 0.17, "none": 0.16}))
+        cases = [case, partial, missing, no_match]
+        exported = gate.export(QUESTIONS, GATES, "confidence", "m", rules=RULES, answer_sets=sets)
+        module = self.python_module(exported["python"])
+        plain = self.python_module(gate.export(QUESTIONS, GATES, "confidence", "m", rules=RULES)["python"])
+        out = [module["decide"]({"text": "hi"}, self.client(c)) for c in cases]
+        for c, d in zip(cases, out):
+            self.assertEqual({k: v for k, v in d.items() if k != "candidates"},
+                             plain["decide"]({"text": "hi"}, self.client(c)))
+        self.assertEqual(out[0]["candidates"], {"department": ["billing", "shipping", "technical"],
+                                                 "is_urgent": [True, False], "frustration": [1, 2]})
+        self.assertEqual(out[1]["candidates"]["department"], list(QUESTIONS["department"]["criteria"]))
+        self.assertEqual(out[1]["candidates"]["frustration"], [0, 1, 2])
+        self.assertEqual(out[2]["candidates"]["is_urgent"], [True, False])
+        self.assertEqual(out[3]["candidates"]["department"], ["shipping", "technical", "product", "wholesale", "billing", "none"])
+        # Invalid probabilities must not narrow the labeler's choices, including NaN and boolean values.
+        for invalid in (None, {"1": float("nan"), "0": 0.2, "2": 0.8}, {"0": True, "1": 0, "2": 0}):
+            bad = dict(case, frustration=dict(case["frustration"], probabilities=invalid))
+            grouped = self.client(bad).system_one({}, {})
+            self.assertEqual(module["candidates"](grouped)["frustration"], [0, 1, 2])
+        if shutil.which("node"):
+            package = self.tmp / "node_modules" / "@typesafe-ai" / "sdk"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text(json.dumps({"type": "module", "main": "index.mjs"}))
+            (package / "index.mjs").write_text(FAKE_JS_SDK)
+            (self.tmp / "gate.mjs").write_text(exported["javascript"])
+            (self.tmp / "run.mjs").write_text(JS_RUNNER)
+            js = json.loads(subprocess.run(["node", "run.mjs", json.dumps(cases)], capture_output=True,
+                                          text=True, check=True, cwd=self.tmp).stdout)
+            self.assertEqual(js, out)
+            (self.tmp / "fallback.mjs").write_text('''import { candidates } from "./gate.mjs";
+import assert from "node:assert/strict";
+for (const probabilities of [null, {0: 0.2, 1: NaN, 2: 0.8}, {0: true, 1: 0, 2: 0}]) {
+  assert.deepEqual(candidates({frustration: {probabilities}}).frustration, [0, 1, 2]);
+}
+''')
+            subprocess.run(["node", "fallback.mjs"], capture_output=True, text=True, check=True, cwd=self.tmp)
+
     def test_rules_route_as_policy_does(self):
         partial = {k: v for k, v in answers().items() if k != "is_urgent"}  # the first rule cannot be checked
         angry = dict(answers(), frustration=dict(answers()["frustration"], probabilities={"0": 0.1, "1": 0.2, "2": 0.7}))

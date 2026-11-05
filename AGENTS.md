@@ -142,6 +142,10 @@ each decision with its `row`; the Review queue (`jev/decisions.py`) reads those 
 it sent to review and a random audit sample of the rows it automated, and appends them to the check's dataset.
 The queue shows answers read from the user's own decisions file, which their own gate produced; that is their data,
 not a canned answer, so never bundle a sample decisions file for the UI to show.
+Answer-set cuts can be attached to Policy and saved with checks as `answer_sets` (question IDs to cut/coverage),
+then exported as typed `candidates` in gate decisions. They only assist review: thresholds and rules still decide
+automation. Review keeps all labels available and hides shortlists on blind audit rows. Model-upgrade proposals
+drop fitted cuts so they are refitted on the new model. Persist configuration and human labels, never candidates.
 
 ## Conventions
 

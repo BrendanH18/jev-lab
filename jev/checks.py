@@ -28,7 +28,7 @@ import time
 from math import isfinite
 from typing import Any, Dict, List, Optional
 
-from . import calibrate, policy, rules as rulebook, workbench
+from . import answersets, calibrate, policy, rules as rulebook, workbench
 from .calibrate import CalibrationError
 from .client import JevClient, is_versioned
 from .workbench import WorkbenchError
@@ -76,6 +76,9 @@ def validate_check(spec: Any, questions: Any) -> dict:
     out = {"gates": gates, "signal": signal, "bound": bound, "model": model,
            "min_accuracy": _unit(spec.get("min_accuracy"), "min_accuracy", 0.5),
            "min_coverage": _unit(spec.get("min_coverage", 0), "min_coverage")}
+    fitted = answersets.validate_config(spec.get("answer_sets"), questions)
+    if fitted:
+        out["answer_sets"] = fitted
     text = spec.get("rules")
     if text not in (None, ""):
         try:

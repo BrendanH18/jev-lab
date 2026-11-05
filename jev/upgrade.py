@@ -206,7 +206,11 @@ def run(client: JevClient, dataset_id: str, candidate: Any) -> dict:
         notes.append("Both sides were answered by %s, so the comparison only shows run-to-run variation." % pinned[0])
     proposals = {"saved": None, "retuned": None}  # each a check to save, pinned to the candidate's version
     if report["verdict"] in ("keep", "retune"):
-        base = {k: v for k, v in check.items() if k != "saved_at"}
+        # A probability cut fitted on the old version does not carry its coverage to a new model.
+        base = {k: v for k, v in check.items() if k not in ("saved_at", "answer_sets")}
+        if check.get("answer_sets"):
+            notes.append("The proposed checks leave out the saved answer-set cuts. Refit Answer sets on a Bulk run "
+                         "of the candidate version before exporting review shortlists for it.")
         if report["candidate"]["status"] == "pass":
             proposals["saved"] = dict(base, model=pinned[0], tuned_on=pinned[0])
         retuned = report["retuned"]["report"]

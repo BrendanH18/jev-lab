@@ -126,7 +126,9 @@ conditions.
   answer 80%, 90%, 95%, or 99% of the time, with a cut fitted on the labeled rows by conformal prediction.
   Act on a list of one; send a longer list to review, so a person chooses from two or three options, not all
   of them. See how often the lists hold the answer on unseen rows and on each slice. It also reuses the
-  Bulk answers.
+  Bulk answers. Attach a fitted cut to Policy to save it with a check and export review shortlists in
+  Python or JavaScript. Review offers those candidates while keeping every valid answer available;
+  automation still follows Policy's thresholds and rules.
 - **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
   in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
   answers.
