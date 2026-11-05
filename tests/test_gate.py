@@ -20,7 +20,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import server  # noqa: E402
-from jev import calibrate, examples, gate, policy, rules, workbench  # noqa: E402
+from jev import calibrate, examples, gate, images, policy, rules, workbench  # noqa: E402
 
 try:
     import httpx2
@@ -30,6 +30,11 @@ except ImportError:  # Python 3.9: the stdlib fallback has no SDK
 
 QUESTIONS = examples.BULK_QUESTIONS  # department (choice), frustration (score), is_urgent and wants_refund (noul)
 GATES = {"department": 0.6, "is_urgent": 0.4, "frustration": 0.5}
+PHOTO_QUESTIONS = {"damaged": {"type": "noul", "instructions": "Is anything in `photo` damaged?"},
+                   "where": {"type": "box", "instructions": "the damage in `photo`"}}
+BOX = {"left": 0.1, "top": 0.2, "right": 0.6, "bottom": 0.7}
+PHOTO_ANSWERS = {"damaged": {"type": "noul", "noul": 0.95},
+                 "where": {"type": "box", "box": BOX, "confidence": 0.8}}
 
 
 def answers(department=0.9, urgent=0.9, frustration=0.8):
@@ -76,13 +81,17 @@ def shown(answer_set):
 
 FAKE_SDK = '''
 import json, os
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 class _Q:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-Choice = Noul = NoulCriteria = Score = _Q
+Choice = Noul = NoulCriteria = Score = Box = _Q
+class Image:
+    def __init__(self, data):
+        self.data = Path(data).read_bytes()
 QUEUE = []
 
 class TypeSafeClient:
@@ -90,18 +99,20 @@ class TypeSafeClient:
         if not QUEUE and os.environ.get("FAKE_ANSWERS"):
             QUEUE.extend(json.load(open(os.environ["FAKE_ANSWERS"])))
 
-    def system_one(self, state, questions, model=None):
+    def system_one(self, state, questions, model=None, assets=None, extra_headers=None):
         if os.environ.get("FAKE_STATES"):
             with open(os.environ["FAKE_STATES"], "a") as states:
                 states.write(json.dumps(state) + "\\n")
         raw = QUEUE.pop(0)
         group = lambda t: {k: NS(**a) for k, a in raw.items() if a["type"] == t}
-        return NS(choices=group("choice"), nouls=group("noul"), scores=group("score"))
+        boxes = {k: NS(box=NS(**a["box"]), confidence=a["confidence"]) for k, a in raw.items() if a["type"] == "box"}
+        return NS(choices=group("choice"), nouls=group("noul"), scores=group("score"), boxes=boxes)
 '''
 
 FAKE_JS_SDK = '''
 import { appendFileSync, readFileSync } from "node:fs";
 const queue = process.env.FAKE_ANSWERS ? JSON.parse(readFileSync(process.env.FAKE_ANSWERS, "utf8")) : [];
+export function image(blob) { return { blob }; }
 export class TypeSafeClient {
   async systemOne(request) {
     if (process.env.FAKE_STATES) appendFileSync(process.env.FAKE_STATES, JSON.stringify(request.state) + "\\n");
@@ -150,8 +161,10 @@ class ExportTests(unittest.TestCase):
     def client(raw):
         """A client whose result, like the SDK's, groups the answers by type."""
         group = lambda t: {k: SimpleNamespace(**a) for k, a in raw.items() if a["type"] == t}  # noqa: E731
-        result = SimpleNamespace(choices=group("choice"), nouls=group("noul"), scores=group("score"))
-        return SimpleNamespace(system_one=lambda state, questions, model=None: result)
+        boxes = {k: SimpleNamespace(box=SimpleNamespace(**a["box"]), confidence=a["confidence"])
+                 for k, a in raw.items() if a["type"] == "box"}
+        result = SimpleNamespace(choices=group("choice"), nouls=group("noul"), scores=group("score"), boxes=boxes)
+        return SimpleNamespace(system_one=lambda state, questions, model=None, **kwargs: result)
 
     def test_answer_set_candidates_match_in_python_and_javascript_without_changing_routing(self):
         sets = {"department": {"cut": 0.2, "coverage": 0.9},
@@ -239,29 +252,123 @@ for (const probabilities of [null, {0: 0.2, 1: NaN, 2: 0.8}, {0: true, 1: 0, 2: 
         decision = module["decide"]({"text": "hi"}, self.client(partial))
         self.assertEqual((decision["route"], decision["held"], decision["answers"]["is_urgent"]), ("review", ["is_urgent"], None))
 
-    def test_python_gate_refuses_picture_rows_before_calling_the_model(self):
-        module = self.python_module(gate.export(QUESTIONS, GATES, model="jev-1.14.0")["python"])
-        client = self.client(answers())
+    def test_python_picture_gate_sends_the_asset_and_returns_box_and_candidates(self):
+        photo = self.tmp / "pictures"
+        photo.mkdir()
+        data = images.sample_bytes("torn-bag")
+        (photo / "torn-bag.png").write_bytes(data)
+        saved = "0123456789abcdef.jpg"
+        (photo / saved).write_bytes(data)
+        module = self.python_module(gate.export(PHOTO_QUESTIONS, {"damaged": 0.8}, model="jev-1.14.0",
+                                               answer_sets={"damaged": {"cut": 0.5, "coverage": 0.9}})["python"])
+        client = self.client(PHOTO_ANSWERS)
+        for name in ("torn-bag", saved):
+            row = {"note": "A torn bag", "_image": name, "_expect": {"damaged": True}, "_test": True}
+            original = dict(row)
+            with patch.object(client, "system_one", wraps=client.system_one) as call:
+                decision = module["decide"](row, client, image_dir=photo)
+            state = call.call_args.args[0]
+            self.assertEqual(state, {"note": "A torn bag", "photo": workbench._ref(name)})
+            asset = call.call_args.kwargs["assets"][state["photo"]]
+            self.assertEqual(asset.data, data)
+            self.assertEqual(call.call_args.kwargs["extra_headers"], {images.IMAGES_HEADER: "true"})
+            self.assertEqual(row, original, "library calls do not rewrite the caller's row")
+            self.assertEqual(decision, {"route": "auto", "held": [], "rules": [],
+                                       "answers": {"damaged": True, "where": BOX}, "candidates": {"damaged": [True]}})
+        self.assertIsNone(module["decide"]({"_image": "torn-bag"}, self.client({"damaged": PHOTO_ANSWERS["damaged"]}),
+                                         image_dir=photo)["answers"]["where"])
+        unsure = dict(PHOTO_ANSWERS, damaged={"type": "noul", "noul": 0.7})
+        self.assertEqual(module["decide"]({"_image": "torn-bag"}, self.client(unsure), image_dir=photo)["route"], "review")
+
+    def test_python_picture_gate_rejects_bad_input_before_calling_the_model(self):
+        module = self.python_module(gate.export(PHOTO_QUESTIONS, {"damaged": 0.8}, model="jev-1.14.0")["python"])
+        client = self.client(PHOTO_ANSWERS)
         with patch.object(client, "system_one", side_effect=AssertionError("Unexpected model call")):
-            row = {"text": "Torn bag", "_image": "torn-bag"}
-            with self.assertRaisesRegex(ValueError, "picture"):
-                module["decide"](row, client)
-            with self.assertRaisesRegex(ValueError, "picture"):
-                module["decide"](module["_row"](json.dumps(row)), client)
+            for row in ({"text": "no picture"}, {"_image": "../torn-bag.png"}, {"_image": "torn-bag", "photo": "mine"}):
+                with self.subTest(row=row), self.assertRaises(ValueError):
+                    module["decide"](row, client, image_dir=self.tmp)
+            with self.assertRaises((ValueError, OSError)):
+                module["decide"]({"_image": "torn-bag"}, client, image_dir=self.tmp)
+
+    def test_python_picture_script_keeps_the_original_image_row(self):
+        (self.tmp / "typesafe_sdk.py").write_text(FAKE_SDK)
+        (self.tmp / "gate.py").write_text(gate.export(PHOTO_QUESTIONS, {"damaged": 0.8}, model="jev-1.14.0")["python"])
+        (self.tmp / "torn-bag.png").write_bytes(images.sample_bytes("torn-bag"))
+        (self.tmp / "answers.json").write_text(json.dumps([PHOTO_ANSWERS]))
+        row = {"note": "A torn bag", "_image": "torn-bag", "_expect": {"damaged": True}, "_test": True}
+        env = dict(os.environ, FAKE_ANSWERS=str(self.tmp / "answers.json"), PYTHONPATH=str(self.tmp),
+                   FAKE_STATES=str(self.tmp / "states.jsonl"))
+        result = subprocess.run([sys.executable, "gate.py"], input=json.dumps(row) + "\n", capture_output=True,
+                                text=True, env=env, check=True, cwd=self.tmp)
+        decision = json.loads(result.stdout)
+        self.assertEqual(decision["row"], {"note": "A torn bag", "_image": "torn-bag"})
+        self.assertEqual(decision["answers"]["where"], BOX)
+        self.assertEqual(json.loads((self.tmp / "states.jsonl").read_text()),
+                         {"note": "A torn bag", "photo": workbench._ref("torn-bag")})
 
     @unittest.skipUnless(shutil.which("node"), "Node is not installed")
-    def test_javascript_gate_refuses_picture_rows_before_calling_the_model(self):
+    def test_javascript_picture_gate_and_script(self):
         package = self.tmp / "node_modules" / "@typesafe-ai" / "sdk"
         package.mkdir(parents=True)
         (package / "package.json").write_text(json.dumps({"type": "module", "main": "index.mjs"}))
-        (package / "index.mjs").write_text('export class TypeSafeClient { constructor() { throw Error("Unexpected client"); } }')
-        (self.tmp / "gate.mjs").write_text(gate.export(QUESTIONS, GATES, model="jev-1.14.0")["javascript"])
+        (package / "index.mjs").write_text(FAKE_JS_SDK)
+        (self.tmp / "gate.mjs").write_text(gate.export(PHOTO_QUESTIONS, {"damaged": 0.8}, model="jev-1.14.0",
+                                                    answer_sets={"damaged": {"cut": 0.5, "coverage": 0.9}})["javascript"])
+        photo = self.tmp / "pictures"
+        photo.mkdir()
+        (photo / "torn-bag.png").write_bytes(images.sample_bytes("torn-bag"))
+        saved = "0123456789abcdef.jpg"
+        (photo / saved).write_bytes(images.sample_bytes("torn-bag"))
         runner = '''import { decide } from "./gate.mjs";
 import assert from "node:assert/strict";
-await assert.rejects(() => decide({ _image: "torn-bag" }), /picture/);
+import { readFileSync } from "node:fs";
+const result = JSON.parse(process.argv[2]);
+const refs = JSON.parse(process.argv[3]);
+let calls = 0;
+const client = { systemOne: async (request, options) => {
+  calls++;
+  assert.deepEqual(request.state, {note: "A torn bag", photo: refs.shift()});
+  const [[ref, asset]] = Object.entries(request.assets);
+  assert.equal(ref, request.state.photo);
+  assert.deepEqual(Buffer.from(await asset.blob.arrayBuffer()), readFileSync("pictures/torn-bag.png"));
+  assert.deepEqual(options.headers, {"TypeSafe-Danger-Zone-Images": "true"});
+  return {answers: result};
+}};
+for (const name of ["torn-bag", "0123456789abcdef.jpg"]) {
+  const row = {note: "A torn bag", _image: name, _expect: {damaged: true}, _test: true};
+  const original = structuredClone(row);
+  const out = await decide(row, client, "pictures");
+  assert.deepEqual(out, {route: "auto", held: [], rules: [], answers: {damaged: true, where: result.where.box},
+                         candidates: {damaged: [true]}});
+  assert.deepEqual(row, original);
+}
+assert.equal(calls, 2);
+const noCall = {systemOne() { throw Error("Unexpected model call"); }};
+for (const row of [{text: "no picture"}, {_image: "../torn-bag.png"}, {_image: "torn-bag", photo: "mine"},
+                   {_image: "intact-bag"}]) {
+  await assert.rejects(() => decide(row, noCall, "pictures"));
+}
+const partial = await decide({_image: "torn-bag"}, {systemOne: async () => ({answers: {damaged: result.damaged}})}, "pictures");
+assert.equal(partial.answers.where, null);
+const unsure = await decide({_image: "torn-bag"}, {systemOne: async () => ({answers: {...result, damaged: {type: "noul", noul: 0.7}}})}, "pictures");
+assert.equal(unsure.route, "review");
 '''
         (self.tmp / "run.mjs").write_text(runner)
-        subprocess.run(["node", "run.mjs"], cwd=self.tmp, capture_output=True, text=True, check=True)
+        subprocess.run(["node", "run.mjs", json.dumps(PHOTO_ANSWERS),
+                        json.dumps([workbench._ref("torn-bag"), workbench._ref(saved)])],
+                       cwd=self.tmp, capture_output=True, text=True, check=True)
+        shutil.copy(photo / "torn-bag.png", self.tmp / "torn-bag.png")
+        (self.tmp / "answers.json").write_text(json.dumps([PHOTO_ANSWERS]))
+        row = {"note": "A torn bag", "_image": "torn-bag", "_expect": {"damaged": True}, "_test": True}
+        result = subprocess.run(["node", "gate.mjs"], input=json.dumps(row) + "\n", capture_output=True,
+                                text=True, check=True, cwd=self.tmp,
+                                env=dict(os.environ, FAKE_ANSWERS=str(self.tmp / "answers.json"),
+                                         FAKE_STATES=str(self.tmp / "states.jsonl")))
+        decision = json.loads(result.stdout)
+        self.assertEqual(decision["row"], {"note": "A torn bag", "_image": "torn-bag"})
+        self.assertEqual(decision["answers"]["where"], BOX)
+        self.assertEqual(json.loads((self.tmp / "states.jsonl").read_text()),
+                         {"note": "A torn bag", "photo": workbench._ref("torn-bag")})
 
     def test_python_runs_as_a_script_over_rows(self):
         (self.tmp / "typesafe_sdk.py").write_text(FAKE_SDK)
@@ -295,6 +402,40 @@ await assert.rejects(() => decide({ _image: "torn-bag" }), /picture/);
         (request,) = sent
         self.assertEqual(request["model"], "jev-1.14.0")
         self.assertEqual(request["questions"], workbench.bulk_questions(QUESTIONS), "the SDK sends the questions as the Workbench does")
+
+    @unittest.skipUnless(typesafe_sdk, "the TypeSafe SDK needs Python 3.10+")
+    def test_python_picture_gate_with_real_sdk_multipart(self):
+        from email.parser import BytesParser
+        from email.policy import default
+
+        sent = []
+
+        def handler(request):
+            sent.append(request)
+            return httpx2.Response(200, json={"model": "jev-1.14.0", "answers": PHOTO_ANSWERS,
+                                              "usage": {"input_tokens": 100, "output_tokens": 4}})
+
+        (self.tmp / "torn-bag.png").write_bytes(images.sample_bytes("torn-bag"))
+        namespace = {"__name__": "gate"}
+        code = gate.export(PHOTO_QUESTIONS, {"damaged": 0.8}, model="jev-1.14.0")["python"]
+        exec(compile(code, "gate.py", "exec"), namespace)
+        client = typesafe_sdk.TypeSafeClient(api_key="sk-test", transport=httpx2.MockTransport(handler), compression=False)
+        decision = namespace["decide"]({"_image": "torn-bag", "_expect": {"damaged": True}, "_test": True},
+                                       client, image_dir=self.tmp)
+        self.assertEqual(decision["answers"], {"damaged": True, "where": BOX})
+        self.assertEqual(decision["route"], "auto")
+        (request,) = sent
+        self.assertEqual(request.headers[images.IMAGES_HEADER], "true")
+        self.assertTrue(request.headers["content-type"].startswith("multipart/form-data"))
+        message = BytesParser(policy=default).parsebytes(
+            ("Content-Type: " + request.headers["content-type"] + "\r\n\r\n").encode() + request.content)
+        parts = [part.get_payload(decode=True) for part in message.iter_parts()]
+        self.assertIn(images.sample_bytes("torn-bag"), parts)
+        payloads = [json.loads(part) for part in parts if part.startswith(b"{")]
+        (payload,) = payloads
+        self.assertEqual(payload["state"], {"photo": workbench._ref("torn-bag")})
+        self.assertEqual(payload["questions"], PHOTO_QUESTIONS)
+        self.assertIn(workbench._ref("torn-bag"), payload["assets"])
 
     @unittest.skipUnless(shutil.which("node"), "Node is not installed")
     def test_javascript_routes_as_policy_does(self):
@@ -340,7 +481,7 @@ class ValidationTests(unittest.TestCase):
         box = dict(QUESTIONS, where={"type": "box", "instructions": "the tear in `photo`"})
         for args in ((QUESTIONS, {"nope": 0.5}, "confidence", "m"), (QUESTIONS, {}, "confidence", "m"),
                      (QUESTIONS, {"department": 1.5}, "confidence", "m"), (QUESTIONS, GATES, "loudness", "m"),
-                     (QUESTIONS, GATES, "confidence", " "), (box, GATES, "confidence", "m")):
+                     (QUESTIONS, GATES, "confidence", " "), (box, {"where": 0.8}, "confidence", "m")):
             with self.subTest(args=args[1:]), self.assertRaises(workbench.WorkbenchError):
                 gate.export(*args)
 
@@ -364,7 +505,8 @@ class ValidationTests(unittest.TestCase):
         name = 'Tickets """\nimport os; os.exit(1)  # */ \\'
         out = gate.export(QUESTIONS, GATES, "confidence", "m", {"dataset": name})
         tree = compile(out["python"], "gate.py", "exec", flags=0x400, dont_inherit=True)  # PyCF_ONLY_AST
-        self.assertEqual([type(n).__name__ for n in tree.body[:4]], ["Expr", "Import", "Import", "ImportFrom"])
+        self.assertEqual(type(tree.body[0]).__name__, "Expr")
+        self.assertNotIn("os", [alias.name for node in tree.body if type(node).__name__ == "Import" for alias in node.names])
         self.assertNotIn("\nimport os", out["python"])
         self.assertNotIn("\nimport os", out["javascript"])
 
@@ -393,13 +535,14 @@ class RouteTests(unittest.TestCase):
         self.assertIn("MODEL = 'jev-1.13.0'", out["python"])
         self.assertIn('dataset "Tickets", whose targets are 90% accuracy on automated rows and at least 50%', out["python"])
 
-    def test_image_dataset_cannot_export_a_text_only_gate(self):
+    def test_image_dataset_exports_its_gate_with_box_output(self):
         from jev import checks
-        questions = {"damaged": {"type": "noul", "instructions": "Is the packaging in `photo` damaged?"}}
-        workbench.save_dataset({"name": "Photos", "rows": [{"_image": "torn-bag"}], "questions": questions})
+        workbench.save_dataset({"name": "Photos", "rows": [{"_image": "torn-bag"}], "questions": PHOTO_QUESTIONS})
         checks.save_check("photos", {"gates": {"damaged": 0.8}, "model": "jev-1.14.0", "min_accuracy": 0.9})
-        with self.assertRaisesRegex(workbench.WorkbenchError, "picture"):
-            server.api_wb_gate_export({"dataset": "photos"})
+        out = server.api_wb_gate_export({"dataset": "photos"})
+        self.assertIn("Box(", out["python"])
+        self.assertIn('dataset "Photos"', out["python"])
+        self.assertIn('"type": "box"', out["javascript"])
 
 
 if __name__ == "__main__":

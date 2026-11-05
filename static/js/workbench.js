@@ -1122,6 +1122,11 @@ function renderGateExport() {
         " asks every question in one call and returns ", h("code", {}, "route"), " (", h("code", {}, "\"auto\""), " when every gated answer clears its threshold, else ",
         h("code", {}, "\"review\""), "), the ", h("code", {}, "held"), " questions, and the ", h("code", {}, "answers"),
         ". It reads each signal as Policy does, and a missing answer goes to review. Attached answer sets add candidates for review; thresholds and rules still decide automation. Run it as a script to route one row per line of standard input."),
+      h("p", { class: "muted", style: { fontSize: "12.5px" } },
+        "Picture rows keep their ", h("code", {}, "_image"), " names. Copy the named sample PNGs from ", h("code", {}, "static/img/samples/"),
+        " and uploads from ", h("code", {}, "data/workbench/images/"), " into the working directory before running. Library calls can set ",
+        h("code", {}, g.tab === "python" ? "image_dir" : "imageDir"),
+        " instead. Files stay separate from the export. Box answers return left, top, right, and bottom; only Choice, Noul, and Score decide routing."),
       h("div", { class: "code" }, h("pre", { id: "gate-code" }, g.out[g.tab]),
         h("button", { class: "btn sm copy", onclick: () => copyText(g.out[g.tab]) }, icon("copy"), "Copy")),
       h("p", { class: "faint", style: { fontSize: "12px" } },
@@ -1452,6 +1457,7 @@ async function readQueue(id) {
   render();
   try {
     q.report = await api("/api/workbench/checks/decisions", { id, text: q.text, audit });
+    await loadPictureUrls(q.report.items);
     q.audit_report = null;
   } catch (e) { handleError(e); }
   q.busy = false;
@@ -1494,6 +1500,7 @@ function queueView(x, q) {
         h("span", { class: "faint mono", style: { fontSize: "11.5px" } }, `line ${item.line}`), why,
         done ? h("span", { class: "badge good" }, icon("check"), "ready") : null),
       h("div", { class: "row-text" }, rowText(item.row)),
+      W.bulk.pictures[item.row?._image] ? h("img", { src: W.bulk.pictures[item.row._image], alt: item.row._image, class: "row-thumb" }) : null,
       h("div", { class: "queue-labels" }, Object.entries(rep.questions).map(([qid, question]) => {
         const answer = item.answers[qid];
         const label = item.labels[qid];

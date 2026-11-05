@@ -146,6 +146,11 @@ Answer-set cuts can be attached to Policy and saved with checks as `answer_sets`
 then exported as typed `candidates` in gate decisions. They only assist review: thresholds and rules still decide
 automation. Review keeps all labels available and hides shortlists on blind audit rows. Model-upgrade proposals
 drop fitted cuts so they are refitted on the new model. Persist configuration and human labels, never candidates.
+Exported gates accept Bulk's `_image` names, load pictures from a caller-selected directory (the working directory
+by default), and send the same `photo` asset reference as Bulk. Samples load as `<name>.png`; uploaded hash filenames
+stay unchanged. Pictures stay separate from exported source. Box questions return coordinates but cannot be gated
+or shortlisted; Review labels only Choice/Noul/Score and accepts accompanying Box output. Labels and `_test` markers
+never reach the model, including direct calls to an exported gate's `decide` function.
 
 ## Conventions
 

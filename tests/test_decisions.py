@@ -66,6 +66,27 @@ class Temp(unittest.TestCase):
 
 
 class QueueTests(Temp):
+    def test_picture_decision_with_box_can_be_reviewed_and_saved(self):
+        questions = dict(QUESTIONS, where={"type": "box", "instructions": "The damaged area in `photo`"})
+        workbench.save_dataset({"name": "Photos", "rows": [{"_image": "intact-bag"}], "questions": questions})
+        checks.save_check("photos", CHECK)
+        box = {"left": 0.1, "top": 0.2, "right": 0.5, "bottom": 0.6}
+        d = {"route": "review", "held": ["department"], "rules": [], "row": {"_image": "torn-bag"},
+             "answers": {"department": "billing", "is_urgent": True, "where": box},
+             "candidates": {"department": ["billing", "shipping"]}}
+        report = decisions.queue("photos", json.dumps(d))
+        self.assertEqual(report["problems"], [])
+        item = report["items"][0]
+        self.assertEqual(item["answers"]["where"], box)
+        self.assertNotIn("where", report["questions"], "Box output is not a Review label control")
+        self.assertIsNone(item["labels"]["department"])
+        item["labels"]["department"] = "billing"
+        decisions.append("photos", [item])
+        saved = workbench.load_dataset("photos")
+        self.assertEqual(saved["rows"][-1], {"_image": "torn-bag", "_expect": {"department": "billing", "is_urgent": True}})
+        self.assertNotIn("candidates", json.dumps(saved))
+        self.assertNotIn("answers", json.dumps(saved))
+
     def test_saved_cut_flows_through_gate_script_and_queue(self):
         fitted = {"department": {"cut": 0.2, "coverage": 0.9}}
         self.save(check=dict(CHECK, answer_sets=fitted))

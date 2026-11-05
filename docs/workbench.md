@@ -198,8 +198,9 @@ of the picture's width and height. Calibrate counts a Box answer as right when i
 with an intersection over union (IoU) of at least 0.5, as a saved test's default does, and shows the
 mean overlap. A Box has no options, so its gate reads its confidence under either signal, and it has no
 confusion matrix. Policy, the costs, and the check on unseen rows read Choice, Noul, and Score answers
-only. Exported gates send no pictures: exporting a dataset with picture rows or Box questions is
-refused, and the generated modules reject `_image` rows before calling the model. A dataset saved
+only. Exported gates accept the same picture rows and return Box coordinates, while their thresholds
+still read only Choice, Noul, and Score. Copy the pictures into the exported gate's working directory
+or pass an image directory to its `decide` function; see [Export a gate](#export-a-gate). A dataset saved
 with Box questions needs a picture on every row. Images are dreamer-ready in TypeSafe's terms, and each
 picture adds image tokens to its row's call.
 
@@ -999,7 +1000,7 @@ it across calls.
 The Python file (`gate.py`) needs `typesafe-sdk` on Python 3.10+. The JavaScript file (`gate.mjs`)
 needs `@typesafe-ai/sdk` on Node 22+, and its `decide` returns a promise. Both read
 `TYPESAFE_API_KEY`. Run either as a script to route rows the way Bulk reads them, one per line: a
-JSON object is sent without its `_expect` labels, and other text becomes `{"text": line}`. Each row's decision is printed
+JSON object is sent without its `_expect` labels and `_test` marker, and other text becomes `{"text": line}`. Each row's decision is printed
 as a line of JSON, with the row it was asked about under `row`, so the [review queue](#label-the-rows-a-gate-routed)
 can add it to a dataset once it is labeled:
 
@@ -1007,6 +1008,38 @@ can add it to a dataset once it is labeled:
 python gate.py < rows.jsonl > decisions.jsonl
 node gate.mjs < rows.jsonl > decisions.jsonl
 ```
+
+### Pictures in exported gates
+
+Picture rows use the same `_image` name as Bulk. Before running, copy the named sample PNGs from
+`static/img/samples/` and uploaded files from `data/workbench/images/` into the working directory.
+For example, `{"note": "Damaged order", "_image": "torn-bag"}` loads `torn-bag.png`; an uploaded
+name such as `0123456789abcdef.jpg` loads that filename unchanged. Exports contain the questions and
+policy configuration, never picture bytes or saved answers. Keep images at the sizes accepted by
+Workbench (PNG/JPEG, 280–1568 pixels per side, at most 16 MiB each).
+
+Library calls can choose a different directory:
+
+```python
+decision = decide({"_image": "torn-bag"}, client, image_dir="photos")
+```
+
+```javascript
+const decision = await decide({ _image: "torn-bag" }, client, "photos");
+```
+
+The gate replaces `_image` with `photo` naming the image asset, as Bulk does, and sends the SDK's
+image opt-in header. A row cannot also define `photo`. Invalid names, missing files, and Box
+questions without a picture fail before a model request. Only Workbench sample names and saved
+picture filenames are accepted; an arbitrary filesystem path is not a row image name.
+
+Box questions need Jev 1.14 or later. Their answers appear under `answers` as
+`{"left": 0.1, "top": 0.2, "right": 0.5, "bottom": 0.6}`, or `null` if missing. They are output only:
+Choice, Noul, and Score thresholds and consistency rules still decide `auto` versus `review`.
+Answer-set shortlists work alongside these outputs. The script's decision keeps the original
+`_image` row, so it can return to Review. Review labels Choice, Noul, and Score and shows the picture;
+use Bulk to label Box coordinates. To review uploaded pictures, keep their files in Workbench's
+`data/workbench/images/` too.
 
 A file exported from a check says which dataset and targets the thresholds came from. A file exported
 from Policy says they came from one Bulk run. Thresholds fit the labeled rows they were tuned on, so

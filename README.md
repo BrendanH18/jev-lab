@@ -176,7 +176,9 @@ conditions.
   `scripts/check.py <dataset> --drift new.jsonl` does the same from a terminal.
 - **Export a gate:** write Policy's gate, or a saved check, as a Python or JavaScript file. Its `decide(state)`
   asks the questions in one call and routes the row to `auto` or `review` by the tuned thresholds, reading
-  each answer as Policy does. Run it as a script to route rows from standard input. It makes no model call.
+  each answer as Policy does. Picture rows load their named image from a local directory, and Box answers
+  return typed coordinates alongside the routed answers. Run it as a script to route rows from standard
+  input. Exporting makes no model call.
 - **Review queue:** paste what the exported gate printed. Label the rows it sent to review, which start from
   the gated answers it was sure of, and a random sample of the rows it automated, labeled before you see its
   answers. Then add them to the check's dataset. The audit says how often the gate's automated decisions
