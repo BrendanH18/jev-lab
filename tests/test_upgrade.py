@@ -83,6 +83,19 @@ class SearchTests(unittest.TestCase):
 
 
 class RunTests(Temp):
+    def test_upgrade_proposals_require_refitting_answer_sets(self):
+        fitted = {"dept": {"cut": 0.2, "coverage": 0.9}}
+        for candidate, proposal in ((same, "saved"), (unsure, "retuned")):
+            with self.subTest(proposal=proposal):
+                checks.save_check("tickets", dict(SPEC, answer_sets=fitted))
+                fake = VersionClient({"jev-1.14.0": same, "jev-1.15.0": candidate})
+                rep = upgrade.run(fake, "tickets", "jev-1.15.0")
+                self.assertIsNotNone(rep["proposals"][proposal])
+                self.assertNotIn("answer_sets", rep["proposals"][proposal])
+                self.assertIn("Refit Answer sets", " ".join(rep["notes"]))
+                self.assertEqual(workbench.load_dataset("tickets")["check"]["answer_sets"], fitted,
+                                 "trying a candidate never changes the saved check")
+
     def test_the_same_answers_keep_the_saved_thresholds(self):
         fake = VersionClient({"jev-1.14.0": same, "jev-1.15.0": same})
         rep = upgrade.run(fake, "tickets", "jev-1.15.0")

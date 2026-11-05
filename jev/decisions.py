@@ -102,8 +102,27 @@ def _decision(line: str, questions: Dict[str, dict]) -> dict:
     broken = d.get("rules") or []
     if not isinstance(held, list) or not isinstance(broken, list) or not all(isinstance(q, str) for q in held):
         raise ValueError("has held or rules that are not lists of text")
-    return {"route": d["route"], "row": row, "answers": d["answers"],
-            "held": [q for q in held if q in questions], "rules": [str(r) for r in broken]}
+    out = {"route": d["route"], "row": row, "answers": d["answers"],
+           "held": [q for q in held if q in questions], "rules": [str(r) for r in broken]}
+    if "candidates" in d:
+        raw = d["candidates"]
+        if not isinstance(raw, dict):
+            raise ValueError("has candidates that are not keyed by question id")
+        candidates = {}
+        for qid, values in raw.items():
+            if qid not in questions:
+                raise ValueError("has candidates for %s, which the dataset's questions do not include" % qid)
+            if not isinstance(values, list) or not values:
+                raise ValueError("has candidates for %s that are not a nonempty list" % qid)
+            chosen = []
+            for value in values:
+                ok, value = label(questions[qid], value)
+                if not ok or value is None or value in chosen:
+                    raise ValueError("has invalid or repeated candidates for %s" % qid)
+                chosen.append(value)
+            candidates[qid] = chosen
+        out["candidates"] = candidates
+    return out
 
 
 def _lines(text: Any) -> List[str]:

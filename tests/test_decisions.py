@@ -66,6 +66,51 @@ class Temp(unittest.TestCase):
 
 
 class QueueTests(Temp):
+    def test_saved_cut_flows_through_gate_script_and_queue(self):
+        fitted = {"department": {"cut": 0.2, "coverage": 0.9}}
+        self.save(check=dict(CHECK, answer_sets=fitted))
+        a = answers(department=0.3)
+        a["department"]["probabilities"] = dict.fromkeys(QUESTIONS["department"]["criteria"], 0.025)
+        a["department"]["probabilities"].update(billing=0.5, shipping=0.4)
+        text = self.route(traffic=[("New shortlisting ticket", a)])
+        item = decisions.queue("tickets", text)["items"][0]
+        self.assertEqual(item["candidates"]["department"], ["billing", "shipping"])
+        self.assertEqual(item["route"], "review")
+        self.assertIsNone(item["labels"]["department"])
+        self.assertEqual(workbench.load_dataset("tickets")["check"]["answer_sets"], fitted)
+        out = server.api_wb_gate_export({"questions": QUESTIONS, "gates": CHECK["gates"],
+                                         "model": CHECK["model"], "answer_sets": fitted})
+        self.assertIn("ANSWER_SETS =", out["python"])
+        self.assertIn("export const ANSWER_SETS", out["javascript"])
+
+    def test_shortlists_are_suggestions_and_never_saved_as_labels(self):
+        self.save()
+        d = {"route": "review", "held": ["department", "is_urgent"], "rules": [],
+             "answers": {"department": "billing", "is_urgent": True}, "row": {"text": "A new ticket"},
+             "candidates": {"department": ["billing", "shipping"], "is_urgent": [False, True], "frustration": [0, 1]}}
+        item = decisions.queue("tickets", json.dumps(d))["items"][0]
+        self.assertEqual(item["candidates"], d["candidates"])
+        self.assertIsNone(item["labels"]["department"], "a shortlist does not choose a person's label")
+        self.assertIsNone(item["labels"]["is_urgent"])
+        # A reviewer can pick an option outside the shortlist.
+        item["labels"] = {"department": "none", "is_urgent": False}
+        decisions.append("tickets", [item])
+        saved = workbench.load_dataset("tickets")
+        self.assertEqual(saved["rows"][-1], {"text": "A new ticket", "_expect": item["labels"]})
+        self.assertNotIn("candidates", json.dumps(saved))
+
+    def test_invalid_shortlists_report_the_line(self):
+        self.save()
+        d = {"route": "review", "held": ["department"], "answers": {}, "row": {"text": "new"}}
+        for candidates in (["billing"], {"unknown": ["x"]}, {"department": []},
+                           {"department": ["billing", "billing"]}, {"department": ["sales"]},
+                           {"is_urgent": [None]}, {"frustration": [99]}):
+            with self.subTest(candidates=candidates):
+                out = decisions.queue("tickets", json.dumps(dict(d, candidates=candidates)))
+                self.assertEqual(out["items"], [])
+                self.assertEqual(out["problems_total"], 1)
+                self.assertIn("Line 1", out["problems"][0]["message"])
+
     def test_queue_from_the_exported_gate(self):
         self.save()
         out = decisions.queue("tickets", self.route(), audit=2)

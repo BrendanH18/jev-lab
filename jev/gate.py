@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from . import calibrate, policy, rules as rulebook, workbench
+from . import answersets, calibrate, policy, rules as rulebook, workbench
 from .calibrate import CalibrationError
 from .workbench import WorkbenchError, _py
 
@@ -95,13 +95,14 @@ def _percent(value: float) -> str:
 
 
 def export(questions: Any, gates: Any, signal: Any = "confidence", model: Any = None,
-           source: Optional[dict] = None, rules: Any = None) -> dict:
+           source: Optional[dict] = None, rules: Any = None, answer_sets: Any = None) -> dict:
     """{"python": source, "javascript": source}. rules: Policy's rules as text. No model call."""
     questions, gates, signal, model = validate(questions, gates, signal, model)
     origin = _origin(source)
     written = _rules(rules, questions)
-    return {"python": _python(questions, gates, signal, model, origin, written),
-            "javascript": _javascript(questions, gates, signal, model, origin, written)}
+    sets = answersets.validate_config(answer_sets, questions)
+    return {"python": _python(questions, gates, signal, model, origin, written, sets),
+            "javascript": _javascript(questions, gates, signal, model, origin, written, sets)}
 
 
 def export_check(dataset_id: str) -> dict:
@@ -115,7 +116,78 @@ def export_check(dataset_id: str) -> dict:
     source = {"dataset": dataset.get("name") or dataset_id, "min_accuracy": check.get("min_accuracy"),
               "min_coverage": check.get("min_coverage"), "bound": check.get("bound")}
     return export(dataset.get("questions"), check.get("gates"), check.get("signal", "confidence"), check.get("model"),
-                  source, check.get("rules"))
+                  source, check.get("rules"), check.get("answer_sets"))
+
+
+def _candidate_options(questions: Dict[str, dict], answer_sets: dict) -> dict:
+    """Declared labels in question order, also used when probabilities cannot form a shortlist."""
+    return {qid: ([True, False] if questions[qid]["type"] == "noul" else
+                  list(range(len(questions[qid]["criteria"]))) if questions[qid]["type"] == "score" else
+                  list(questions[qid]["criteria"])) for qid in answer_sets}
+
+
+def _python_candidates(questions: Dict[str, dict], answer_sets: dict) -> List[str]:
+    header = ["# Answer sets only suggest review options; thresholds and rules still decide automation.",
+              "ANSWER_SETS = %s" % _py(answer_sets),
+              "CANDIDATE_OPTIONS = %s" % _py(_candidate_options(questions, answer_sets)), ""]
+    return header + '''
+def candidates(result):
+    """Likely labels, or every declared label if none qualifies or probabilities are incomplete."""
+    out = {}
+    for qid, spec in ANSWER_SETS.items():
+        options = CANDIDATE_OPTIONS[qid]
+        answer = _answer(result, qid)
+        raw = getattr(answer, "probabilities", None)
+        if TYPES[qid] == "noul":
+            p = getattr(answer, "noul", None)
+            probs = [p, 1 - p] if isinstance(p, (int, float)) and not isinstance(p, bool) else []
+        elif isinstance(raw, dict) and {str(k) for k in raw} == {str(k) for k in options}:
+            by_key = {str(k): v for k, v in raw.items()}
+            probs = [by_key[str(k)] for k in options]
+        else:
+            probs = []
+        if len(probs) != len(options) or any(isinstance(p, bool) or not isinstance(p, (int, float))
+                                             or not 0 <= p <= 1 for p in probs):
+            out[qid] = list(options)
+            continue
+        ranked = sorted(range(len(options)), key=lambda i: -probs[i])
+        chosen = [options[i] for i in ranked if probs[i] + 1e-9 >= spec["cut"]]
+        out[qid] = chosen or [options[i] for i in ranked]
+    return out
+
+
+'''.splitlines()
+
+
+def _javascript_candidates(questions: Dict[str, dict], answer_sets: dict) -> List[str]:
+    header = ["// Answer sets only suggest review options; thresholds and rules still decide automation.",
+              "export const ANSWER_SETS = %s;" % json.dumps(answer_sets, ensure_ascii=False),
+              "const CANDIDATE_OPTIONS = %s;" % json.dumps(_candidate_options(questions, answer_sets), ensure_ascii=False), ""]
+    return header + '''
+export function candidates(answers) {
+  return Object.fromEntries(Object.entries(ANSWER_SETS).map(([id, spec]) => {
+    const options = CANDIDATE_OPTIONS[id];
+    const answer = Object.hasOwn(answers, id) ? answers[id] : null;
+    const raw = answer?.probabilities;
+    let probs = [];
+    if (TYPES[id] === "noul") {
+      const p = answer?.noul;
+      if (typeof p === "number") probs = [p, 1 - p];
+    } else if (raw && typeof raw === "object" && !Array.isArray(raw)
+               && Object.keys(raw).length === options.length && options.every((k) => Object.hasOwn(raw, k))) {
+      probs = options.map((k) => raw[k]);
+    }
+    if (probs.length !== options.length || probs.some((p) => typeof p !== "number" || !(p >= 0 && p <= 1))) {
+      return [id, [...options]];
+    }
+    const ranked = options.map((value, i) => ({ value, probability: probs[i] }))
+      .sort((a, b) => b.probability - a.probability);
+    const chosen = ranked.filter((p) => p.probability + 1e-9 >= spec.cut);
+    return [id, (chosen.length ? chosen : ranked).map((p) => p.value)];
+  }));
+}
+
+'''.splitlines()
 
 
 # --- Python --------------------------------------------------------------------------------------
@@ -135,7 +207,7 @@ _PY_SIGNAL = {
 
 
 def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str,
-            rules: List[dict]) -> str:
+            rules: List[dict], answer_sets: dict) -> str:
     types = {qid: q["type"] for qid, q in questions.items()}
     names = sorted({"Choice", "Noul", "NoulCriteria", "Score", "TypeSafeClient"})
     reads = _PY_SIGNAL[signal]
@@ -264,6 +336,12 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "if __name__ == \"__main__\":",
         "    main()",
     ]
+    if answer_sets:
+        at = lines.index("def decide(state, client=None):")
+        lines[at:at] = _python_candidates(questions, answer_sets)
+        at = lines.index('    return {"route": route, "held": held, "rules": rules, "answers": answers}')
+        lines[at] = ('    return {"route": route, "held": held, "rules": rules, "answers": answers, '
+                     '"candidates": candidates(result)}')
     return "\n".join(lines) + "\n"
 
 
@@ -284,7 +362,7 @@ _JS_SIGNAL = {
 
 
 def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str,
-                rules: List[dict]) -> str:
+                rules: List[dict], answer_sets: dict) -> str:
     types = {qid: q["type"] for qid, q in questions.items()}
     reads = _JS_SIGNAL[signal]
     dumps = lambda value: json.dumps(value, indent=2, ensure_ascii=False)  # noqa: E731
@@ -394,4 +472,10 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "  }",
         "}",
     ]
+    if answer_sets:
+        at = lines.index("let shared;")
+        lines[at:at] = _javascript_candidates(questions, answer_sets)
+        at = lines.index('  return { route: held.length || rules.length ? "review" : "auto", held, rules, answers: shown };')
+        lines[at] = ('  return { route: held.length || rules.length ? "review" : "auto", held, rules, answers: shown, '
+                     'candidates: candidates(answers) };')
     return "\n".join(lines) + "\n"

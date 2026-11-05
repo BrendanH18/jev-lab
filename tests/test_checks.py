@@ -104,6 +104,18 @@ class ValidateTests(unittest.TestCase):
 
 
 class StorageTests(Temp):
+    def test_answer_sets_are_configuration_only_and_survive_dataset_save(self):
+        fitted = {"dept": {"cut": 0.2, "coverage": 0.9}}
+        self.save(check=dict(CHECK, answer_sets={"dept": dict(fitted["dept"], answers={"dept": "billing"}, rows=[])}))
+        stored = workbench.load_dataset("refunds")
+        self.assertEqual(stored["check"]["answer_sets"], fitted)
+        self.assertNotIn("answers", json.dumps(stored))
+        self.assertEqual(checks.listed()[0]["check"]["answer_sets"], fitted)
+        saved = workbench.save_dataset({"name": "Refunds", "rows": rows_text(), "questions": Q})
+        self.assertNotIn("check_dropped", saved)
+        self.assertEqual(saved["check"]["answer_sets"], fitted)
+        self.assertEqual(workbench.load_dataset("refunds")["check"]["answer_sets"], fitted)
+
     def test_save_list_remove(self):
         self.save()
         stored = json.loads((self.dir / "datasets" / "refunds.json").read_text())

@@ -43,7 +43,7 @@ const W = {
     // Accuracy by slice (jev/slices.py), for Calibrate at its threshold and for Policy at its gates. One field for both.
     slice: { field: null, cal: null, pol: null },
     // Answer sets (jev/answersets.py) for Calibrate's question: the coverage asked for and the last report.
-    sets: { coverage: 0.9, report: null } },
+    sets: { coverage: 0.9, report: null, attached: {}, context: null, result: null, fitted: null } },
   compare: { variants: [{ text: "", model: "", perturb: "", average: false }, { text: "", model: "", perturb: "", average: false }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
@@ -230,6 +230,7 @@ async function boot() {
 
 // ---------- render ----------
 function render() {
+  syncAttachedSets();
   let view;
   switch (W.tab) {
     case "tests": view = renderTests(); break;
@@ -633,6 +634,7 @@ function rowsText(rows) {
 const bulkUnsaved = () => W.bulk.rowsText !== W.bulk.savedText || W.bulk.labelsDirty;
 
 function markUnsaved() {
+  syncAttachedSets();
   const el = $("#ds-unsaved");
   if (el) el.style.display = bulkUnsaved() ? "" : "none";
 }
@@ -822,6 +824,8 @@ function checkItem(x) {
       h("span", { class: "badge info" }, icon("check"), "Check"),
       h("span", { class: "mono" }, Object.entries(c.gates).map(([q, t]) => `${q} ≥ ${t.toFixed(2)}`).join(" · ")),
       h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}${c.tuned_on && c.tuned_on !== c.model ? ` · tuned on ${c.tuned_on}` : ""}`)),
+    Object.keys(c.answer_sets || {}).length ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
+      "Review shortlists: ", attachedSetsText(c.answer_sets), ". Thresholds and rules still decide automation.") : null,
     (x.check_notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm", disabled: run.running || run.drift.running || run.upgrade.running, onclick: () => runCheck(x.id) },
@@ -1117,7 +1121,7 @@ function renderGateExport() {
         h("code", {}, g.tab === "python" ? "decide(state)" : "await decide(state)"),
         " asks every question in one call and returns ", h("code", {}, "route"), " (", h("code", {}, "\"auto\""), " when every gated answer clears its threshold, else ",
         h("code", {}, "\"review\""), "), the ", h("code", {}, "held"), " questions, and the ", h("code", {}, "answers"),
-        ". It reads each signal as Policy does, and a missing answer goes to review. Run it as a script to route one row per line of standard input."),
+        ". It reads each signal as Policy does, and a missing answer goes to review. Attached answer sets add candidates for review; thresholds and rules still decide automation. Run it as a script to route one row per line of standard input."),
       h("div", { class: "code" }, h("pre", { id: "gate-code" }, g.out[g.tab]),
         h("button", { class: "btn sm copy", onclick: () => copyText(g.out[g.tab]) }, icon("copy"), "Copy")),
       h("p", { class: "faint", style: { fontSize: "12px" } },
@@ -1496,6 +1500,8 @@ function queueView(x, q) {
         const differs = reveal && label !== null && label !== undefined && labelText(label, question.type) !== labelText(answer, question.type);
         return h("label", { class: "queue-label" },
           h("span", { class: "mono" }, qid, qid in gates ? h("span", { class: "faint" }, " · gated") : null),
+          reveal && item.candidates?.[qid]?.length ? h("span", { class: "faint", style: { fontSize: "11.5px" } },
+            `Suggested shortlist: ${item.candidates[qid].map((v) => labelText(v, question.type)).join(", ")}. All options remain available.`) : null,
           queueSelect(item, qid, question, render),
           reveal ? h("span", { class: `faint${differs ? " differs" : ""}`, style: { fontSize: "11.5px" } },
             `gate: ${shownAnswer(answer)}`) : null);
@@ -1670,6 +1676,7 @@ async function saveCheck() {
   try {
     const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: gateModel(), tuned_on: tunedOn() || undefined,
       rules: policyRules() || undefined,
+      answer_sets: attachedSetsPayload(),
       min_accuracy: Number($("#check-accuracy").value) / 100, min_coverage: Number($("#check-coverage").value) / 100 };
     await api("/api/workbench/checks", { id, check });
     b.datasets = (await api("/api/workbench/datasets")).datasets;
@@ -2200,7 +2207,12 @@ function keepLabels(quiet = false) {
   }
   if (!quiet && b.rowsText !== b.runText
     && !confirm("The rows box has changed since the run. Replace it with the rows that were run, carrying these labels?")) return false;
+  syncAttachedSets();
+  const fit = b.sets.fitted;
   b.rowsText = b.runText = b.result.results.map((r) => rowLineFor(r.row, b.labels[r.index])).join("\n");
+  // Serializing the same rows and labels changes their text, not the data used to fit the cuts.
+  b.sets.context = setFitContext();
+  if (fit !== null) b.sets.fitted = b.sets.context;
   b.labelsDirty = false;
   if (!quiet) {
     render();
@@ -2627,11 +2639,56 @@ const SET_COVERAGES = [0.8, 0.9, 0.95, 0.99];
 const SETS_SHOWN = 8;
 // The cut as shown; the copied rule uses the full cut and the server's tolerance, so it builds the same sets.
 const cutText = (cut) => cut.toFixed(3);
+// A fit belongs to one run and its labels/questions. Never carry it into a newer run or edited inputs.
+function setFitContext() {
+  const b = W.bulk;
+  return JSON.stringify([b.labels, b.ranQuestions, bulkQuestions(), b.rowsText]);
+}
+function syncAttachedSets() {
+  const b = W.bulk;
+  const s = b.sets;
+  const context = setFitContext();
+  if (s.result !== b.result || s.context !== context) {
+    s.attached = {};
+    s.result = b.result;
+    s.context = context;
+    s.fitted = null;
+  }
+}
+function attachedSetsPayload() {
+  syncAttachedSets();
+  return Object.keys(W.bulk.sets.attached).length ? structuredClone(W.bulk.sets.attached) : undefined;
+}
+function attachedSetsText(sets) {
+  return Object.entries(sets).map(([qid, spec]) => `${qid} ≥ ${cutText(spec.cut)} (target ${pct(spec.coverage)} coverage)`).join(" · ");
+}
+function attachedSetsControl(qid, rep) {
+  const s = W.bulk.sets;
+  const ready = rep?.cut !== null && rep?.cut !== undefined && s.fitted === s.context;
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: !ready, onclick: () => {
+        syncAttachedSets();
+        if (s.fitted !== s.context || rep !== s.report) return toast("The fit changed. Use the current Answer sets report before attaching a cut.", "error");
+        s.attached = { ...s.attached, [qid]: { cut: rep.cut, coverage: rep.coverage_target } };
+        render();
+      } }, icon("list"), `Attach ${qid}'s cut to Policy export and check`),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "Shortlists assist review. Thresholds and rules still decide automation.")),
+    Object.entries(s.attached).map(([key, spec]) => h("div", { style: { display: "flex", gap: "8px", alignItems: "center", fontSize: "12px" } },
+      h("span", { class: "mono" }, attachedSetsText({ [key]: spec })),
+      h("button", { class: "btn sm ghost", "aria-label": `Remove ${key}'s attached answer set`, onclick: () => {
+        delete s.attached[key]; render();
+      } }, "Remove"))),
+    !ready ? h("span", { class: "faint", style: { fontSize: "12px" } }, "Fit a cut on the current run and labels before attaching it.") : null);
+}
 let setSeq = 0;
 async function answerSets() {
   const b = W.bulk;
+  syncAttachedSets();
   const s = b.sets;
   const qid = b.cal.qid;
+  const context = s.context;
+  const result = b.result;
   const seq = ++setSeq;  // only the latest request may install its report
   s.report = null;
   if (!qid || !SETTABLE.has(bulkQuestionsForResult(b.result)[qid]?.type)) return;
@@ -2640,7 +2697,10 @@ async function answerSets() {
   if (!rows.length) return;
   try {
     const report = await api("/api/workbench/answersets", { rows, coverage: s.coverage, field: b.slice.field });
-    if (seq === setSeq) s.report = report;
+    if (seq === setSeq && result === b.result && context === setFitContext()) {
+      s.report = report;
+      s.fitted = context;
+    }
   } catch (e) { if (seq === setSeq) handleError(e); }
 }
 async function refreshSets() {
@@ -2649,6 +2709,7 @@ async function refreshSets() {
 }
 
 function renderAnswerSets() {
+  syncAttachedSets();
   const b = W.bulk;
   const s = b.sets;
   const qid = b.cal.qid;
@@ -2660,7 +2721,8 @@ function renderAnswerSets() {
   const head = h("div", { class: "panel-head" }, icon("list"), h("h2", {}, "Answer sets"),
     h("span", { class: "faint", style: { fontSize: "12px" } }, `for “${qid}”, the question Calibrate shows; no extra calls`), h("div", { class: "spacer" }),
     SETTABLE.has(type) ? h("div", { class: "cal-controls" }, covSel) : null);
-  const panel = (...body) => h("div", { class: "panel", id: "answer-sets" }, head, h("div", { class: "panel-body grid", style: { gap: "12px" } }, ...body));
+  const panel = (...body) => h("div", { class: "panel", id: "answer-sets" }, head, h("div", { class: "panel-body grid", style: { gap: "12px" } },
+    ...body, attachedSetsControl(qid, s.report)));
   const note = (...text) => h("p", { class: "faint", style: { fontSize: "12.5px" } }, ...text);
   if (!SETTABLE.has(type)) return panel(h("p", { class: "muted" }, "A Box answer has no options to list, so it has no answer set. Choose a Choice, Noul, or Score question in Calibrate."));
   const rep = s.report;
@@ -3425,7 +3487,7 @@ function updatePolicy() {
     h("div", { class: "code" }, h("pre", { id: "pol-code" }, policyCode(rep)),
       h("button", { class: "btn sm copy", onclick: () => copyText($("#pol-code").textContent) }, icon("copy"), "Copy")),
     h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm", onclick: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: p.signal, model: gateModel() || undefined, rules: policyRules() || undefined }, "Policy's gate") },
+      h("button", { class: "btn sm", onclick: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: p.signal, model: gateModel() || undefined, rules: policyRules() || undefined, answer_sets: attachedSetsPayload() }, "Policy's gate") },
         icon("code"), "Export as a module"),
       h("span", { class: "faint", style: { fontSize: "12px" } }, "A Python or JavaScript file with these questions, the model, and these thresholds built in: decide(state) routes one row.")));
   if (!n) {
@@ -3759,6 +3821,7 @@ function renderCompare() {
   const rows = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Rows, shared with the Bulk tab" }, b.rowsText);
   rows.addEventListener("input", () => {
     b.rowsText = rows.value;
+    syncAttachedSets();
     const n = countRows(b.rowsText);
     count.textContent = `Rows · ${n}`;
     if (!c.running) mount(runBtn, runLabel(n));

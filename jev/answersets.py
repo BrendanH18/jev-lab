@@ -23,15 +23,46 @@ Choice, Noul (as yes and no), and Score answers have sets; Box answers have no o
 
 from __future__ import annotations
 
-from math import ceil
+from math import ceil, isfinite
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import calibrate, holdout, slices
 from .calibrate import CalibrationError
+from .workbench import WorkbenchError
 
 COVERAGES = (0.80, 0.90, 0.95, 0.99)
 TYPES = ("choice", "noul", "score")
 EPS = calibrate._EPS  # a probability equal to the cut joins the set, as a signal equal to a threshold clears it
+
+
+def validate_config(spec: Any, questions: Any) -> dict:
+    """Saved shortlist cuts, keyed by question, without answers or measured results. None means no shortlists.
+
+    These cuts only choose what a reviewer sees; a gate's thresholds and consistency rules still decide its route.
+    """
+    if spec is None:
+        return {}
+    if not isinstance(spec, dict):
+        raise WorkbenchError("answer_sets must be an object keyed by question id")
+    out = {}
+    for qid, fitted in spec.items():
+        question = questions.get(qid) if isinstance(questions, dict) else None
+        if not isinstance(question, dict):
+            raise WorkbenchError("The answer set reads %r, which is not one of the questions" % qid)
+        if question.get("type") not in TYPES:
+            raise WorkbenchError("The answer set reads %r; answer sets read Choice, Noul, and Score" % qid)
+        if not isinstance(fitted, dict):
+            raise WorkbenchError("The answer set for %r needs its cut and coverage" % qid)
+        values = {}
+        for field in ("cut", "coverage"):
+            value = fitted.get(field)
+            if (isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value)
+                    or not 0 <= value <= 1 or (field == "coverage" and value in (0, 1))):
+                interval = "above 0 and below 1" if field == "coverage" else "from 0 to 1"
+                raise WorkbenchError("The answer set %s for %r must be a number %s" % (field, qid, interval))
+            values[field] = float(value)
+        out[qid] = values
+    return out
 
 
 def needed(coverage: float) -> int:

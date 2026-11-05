@@ -11,8 +11,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jev import answersets, holdout  # noqa: E402
 from jev.calibrate import CalibrationError  # noqa: E402
+from jev.workbench import WorkbenchError  # noqa: E402
 
 OPTIONS = ("billing", "shipping", "account", "other")
+
+
+class ConfigTests(unittest.TestCase):
+    questions = {"dept": {"type": "choice"}, "refund": {"type": "noul"},
+                 "urgency": {"type": "score"}, "where": {"type": "box"}}
+
+    def test_only_fitted_configuration_survives(self):
+        fitted = {"cut": 0.2, "coverage": 0.9, "answers": {"dept": "billing"}, "summary": {"rows": 100}}
+        spec = {q: fitted for q in ("dept", "refund", "urgency")}
+        self.assertEqual(answersets.validate_config(spec, self.questions),
+                         {q: {"cut": 0.2, "coverage": 0.9} for q in spec})
+        self.assertEqual(answersets.validate_config(None, self.questions), {})
+        self.assertEqual(answersets.validate_config({}, self.questions), {})
+        self.assertEqual(answersets.validate_config({"dept": {"cut": 0, "coverage": 0.8},
+                                                    "refund": {"cut": 1, "coverage": 0.95}}, self.questions),
+                         {"dept": {"cut": 0.0, "coverage": 0.8}, "refund": {"cut": 1.0, "coverage": 0.95}})
+
+    def test_rejects_invalid_saved_cuts(self):
+        bad = [[], {"missing": {"cut": 0.2, "coverage": 0.9}},
+               {"where": {"cut": 0.2, "coverage": 0.9}}, {"dept": []}, {"dept": {"cut": 0.2}}]
+        for field, values in (("cut", [True, None, "0.2", -0.1, 1.1, float("nan"), float("inf")]),
+                              ("coverage", [True, None, "0.9", 0, 1, -0.1, 1.1, float("nan")])):
+            bad += [{"dept": dict({"cut": 0.2, "coverage": 0.9}, **{field: value})} for value in values]
+        for spec in bad:
+            with self.subTest(spec=spec), self.assertRaises(WorkbenchError):
+                answersets.validate_config(spec, self.questions)
 
 
 def choice(probs):

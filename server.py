@@ -656,7 +656,7 @@ def api_wb_gate_export(body):
     if body.get("dataset"):
         return gate.export_check(str(body["dataset"]))
     return gate.export(body.get("questions"), body.get("gates"), body.get("signal", "confidence"),
-                       body.get("model") or client.model, rules=body.get("rules"))
+                       body.get("model") or client.model, rules=body.get("rules"), answer_sets=body.get("answer_sets"))
 
 
 def api_wb_import(body):
