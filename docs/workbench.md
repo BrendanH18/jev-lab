@@ -969,6 +969,23 @@ saved, and nothing from an earlier run is reused. The report shows:
 - **The check on the dataset**: whether the gate still meets its targets on the dataset run, as **Run
   check** would report.
 
+**Label new traffic** opens a queue of the weak-support rows from that comparison. Each card shows the
+full input and any referenced picture. Choice, Noul, and Score labels start blank; the queue does not
+prefill model predictions or shortlists. Label every gated question to make a row ready, and optionally
+label the other questions too. Box coordinates remain a Bulk labeling task.
+
+**Add labeled rows** saves the inputs and your labels, never the model answers. It skips rows already in
+the dataset and repeated inputs, preserves the saved check and held-out test history, and adds only as
+many ready rows as fit under the 200-row dataset limit. Remaining labels stay in the queue. Text rows
+are stored as `{"text": "…", "_expect": {...}}`; JSON-array inputs are skipped because attaching labels
+would change their input shape. The queue reports skipped rows and available space.
+
+Saving makes no model call. After saving, **Rerun check** explicitly asks the model about the expanded
+dataset. The new rows were selected to fill gaps, so their labels are not a random audit and the queue
+reports no traffic-accuracy statistic. Use the [Review queue's random audit](#label-the-rows-a-gate-routed)
+to measure automated decisions on traffic. Held-out rows are excluded from the comparison and queue,
+including copies of saved test rows pasted without their `_test` marker.
+
 Every p-value is adjusted for the number of tests in the report with Holm's method, and a test counts as a
 shift when its adjusted p-value is below 0.05. The report says **Shifted** when any test does or the new
 rows miss a target, **Looks like the dataset** otherwise, and **Not compared** when rows got no answer.
@@ -994,6 +1011,12 @@ for checks.
 | Endpoint | Body | Returns |
 | --- | --- | --- |
 | `POST /api/workbench/checks/drift` | `id`, `rows` (text, one row per line, or a list), optional `model` | `status` (`steady`, `shift`, or `error`), `reasons`, `reference` and `new` (rows, routed, automated, share with interval; `reference` also has the accuracy), `automation` (`p`, `p_adjusted`, `shifted`), `questions` (`mix`, `distance`, `mix_p_adjusted`, `mix_shifted`, and `signal` medians and test), `estimate` (`accuracy`, `low`, `high`, and how many rows borrowed at each level), `targets`, `thin` (up to 20 rows worth labeling), `check_status`, `check_reasons`, `notes`, `cost_usd`, `calls`, and `answered_by` |
+| `POST /api/workbench/checks/drift/add` | `id`, `items` (each with `row` and human `labels`), `questions` (the labeling queue's question snapshot) | `dataset` summary, `added`, `already`, `room`; no model calls or audit report |
+
+The drift response also includes `labeling`: full eligible `items`, labelable `questions`, `gates`, `room`,
+and `counts` for queued, existing, repeated, and unsupported inputs. This queue is separate from the
+short `thin` preview. The append endpoint validates labels against the saved questions, rejects a stale
+question snapshot or held-out input, and rejects an over-capacity request without partially saving it.
 
 ## Export a gate as code
 

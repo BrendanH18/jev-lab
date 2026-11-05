@@ -625,6 +625,10 @@ def api_wb_check_drift(body):
     return drift.run(client, str(body.get("id", "")), body.get("rows"), model or None)
 
 
+def api_wb_drift_add(body):
+    return drift.append_labels(str(body.get("id", "")), body.get("items"), body.get("questions"))
+
+
 def api_wb_test_lock(body):
     share = body.get("share", testsplit.DEFAULT_SHARE)
     return {"dataset": workbench.dataset_summary(testsplit.lock(str(body.get("id", "")), share))}
@@ -757,6 +761,7 @@ ROUTES = {
     ("POST", "/api/workbench/checks/delete"): api_wb_check_delete,
     ("POST", "/api/workbench/checks/run"): api_wb_check_run,
     ("POST", "/api/workbench/checks/drift"): api_wb_check_drift,
+    ("POST", "/api/workbench/checks/drift/add"): api_wb_drift_add,
     ("POST", "/api/workbench/checks/upgrade"): api_wb_check_upgrade,
     ("POST", "/api/workbench/checks/decisions"): api_wb_decisions,
     ("POST", "/api/workbench/checks/decisions/add"): api_wb_decisions_add,

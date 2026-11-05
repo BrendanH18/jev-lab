@@ -156,6 +156,12 @@ configuration, test-split history, and referenced pictures. Never include model 
 results, or application credentials. Preview imports before saving and require explicit replacement of
 an existing dataset. Bundled sample pictures become content-addressed uploads so their exact bytes travel
 without replacing built-in sample files.
+Drift's **Label new traffic** queue carries the full weak-support inputs and their picture names from
+the comparison run, with blank human-label controls. Its append endpoint saves inputs and human labels
+only, deduplicates against all saved rows (including test rows), and preserves the check and test history.
+These targeted rows are not a random audit and must never produce audit-accuracy statistics. Adding
+labels makes no model call; rerunning the check is explicit. Saved held-out row identities are excluded
+from new-traffic comparisons even when pasted without their `_test` marker.
 
 ## Conventions
 
