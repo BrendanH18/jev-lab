@@ -177,7 +177,10 @@ conditions.
   the dataset it was tuned on. Both sets of rows are sent to the model again, then compared through the gate:
   the share automated, each question's answers and confidence, each with a significance test, and an
   estimated accuracy on the new rows from the labeled rows like them. It lists the new rows worth labeling.
-  `scripts/check.py <dataset> --drift new.jsonl` does the same from a terminal.
+  **Label new traffic** opens those rows with their full inputs and pictures, with blank label controls.
+  Add the human-labeled rows to the dataset, then explicitly rerun its check. These targeted rows help
+  fill gaps in the dataset; they are not a random audit of traffic accuracy.
+  `scripts/check.py <dataset> --drift new.jsonl` runs the comparison from a terminal.
 - **Export a gate:** write Policy's gate, or a saved check, as a Python or JavaScript file. Its `decide(state)`
   asks the questions in one call and routes the row to `auto` or `review` by the tuned thresholds, reading
   each answer as Policy does. Picture rows load their named image from a local directory, and Box answers

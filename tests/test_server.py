@@ -448,6 +448,45 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(bad, 400)
             self.assertIn("has no check", json.loads(err)["error"])
 
+    def test_drift_labels_over_http_save_without_model_calls(self):
+        questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}
+        fake = FakeClient(lambda state, qs: {"refund": 0.98})
+        with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            server.workbench.save_dataset({"name": "Refunds", "rows": [
+                {"text": "refund me", "_expect": {"refund": True}}], "questions": questions})
+            server.checks.save_check("refunds", {"gates": {"refund": 0.5}, "model": "jev-1.14.0",
+                                                 "min_accuracy": 0.9, "min_coverage": 0.5})
+            with patch.object(server.client, "system_one", side_effect=fake.system_one):
+                status, _, body = self.request("POST", "/api/workbench/checks/drift",
+                                               json.dumps({"id": "refunds", "rows": [
+                                                   {"text": "New refund request", "_image": "torn-bag"}]}),
+                                               self.post_headers())
+            self.assertEqual(status, 200, body)
+            queue = json.loads(body)["labeling"]
+            item = queue["items"][0]
+            self.assertEqual(item["labels"], {"refund": None})
+            self.assertNotIn("answers", item)
+            item["labels"]["refund"] = True
+            payload = json.dumps({"id": "refunds", "items": [item], "questions": queue["questions"]})
+            status, _, _ = self.request("POST", "/api/workbench/checks/drift/add", payload,
+                                       {"Content-Type": "application/json"})
+            self.assertEqual(status, 403, "adding human labels requires the session token")
+            status, _, body = self.request("POST", "/api/workbench/checks/drift/add", payload, self.post_headers())
+            self.assertEqual(status, 200, body)
+            saved = json.loads(body)
+            self.assertEqual(saved["added"], 1)
+            self.assertNotIn("audit", saved)
+            dataset = server.workbench.load_dataset("refunds")
+            self.assertEqual(dataset["rows"][-1], {"text": "New refund request", "_image": "torn-bag",
+                                                  "_expect": {"refund": True}})
+            status, _, body = self.request("POST", "/api/workbench/checks/drift/add", payload, self.post_headers())
+            self.assertEqual(status, 200, body)
+            self.assertEqual((json.loads(body)["added"], json.loads(body)["already"]), (0, 1))
+            status, _, body = self.request("POST", "/api/workbench/checks/drift/add",
+                                           json.dumps({"id": "refunds", "items": [item]}), self.post_headers())
+            self.assertEqual(status, 400, body)
+
     def test_policy_over_http_is_pure_code(self):
         rows = [{"index": 0, "answers": {"u": {"type": "noul", "noul": 0.9}}, "labels": {"u": "yes"}},
                 {"index": 1, "answers": {"u": {"type": "noul", "noul": 0.6}}, "labels": {"u": "no"}}]

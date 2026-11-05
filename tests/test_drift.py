@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import check as check_script  # noqa: E402
 from helpers import FakeClient, fake_answers  # noqa: E402
-from jev import checks, drift, workbench  # noqa: E402
+from jev import checks, decisions, drift, workbench  # noqa: E402
 from jev.client import JevError  # noqa: E402
 from jev.workbench import WorkbenchError  # noqa: E402
 
@@ -301,6 +301,145 @@ class RunTests(Temp):
         checks.remove_check("tickets")
         with self.assertRaisesRegex(WorkbenchError, "has no check"):
             drift.run(self.client(), "tickets", "a")
+
+
+class LabelingTests(Temp):
+    def test_full_inputs_and_pictures_are_queued_without_suggested_labels(self):
+        photo = {"text": "tech " + "long message " * 100, "_image": "torn-bag", "channel": "email",
+                 "_expect": {"dept": "other", "refund": False}}
+        rows = ["tech %d" % i for i in range(25)] + [photo]
+        fake = self.client()
+        report = drift.run(fake, "tickets", rows)
+        queue = report["labeling"]
+        self.assertEqual(len(report["thin"]), 20)
+        self.assertEqual(len(queue["items"]), 26, "the labeling queue is not capped to the report's preview")
+        item = queue["items"][-1]
+        self.assertEqual(item["row"], workbench.without_marks(photo))
+        self.assertEqual((item["index"], item["line"]), (25, 26))
+        self.assertEqual(item["labels"], dict.fromkeys(Q))
+        self.assertEqual(item["open"], list(SPEC["gates"]))
+        self.assertEqual(queue["questions"], Q)
+        self.assertEqual(queue["room"], 188)
+        self.assertNotIn("answers", json.dumps(queue))
+        self.assertNotIn("candidates", json.dumps(queue))
+        self.assertTrue(all("_expect" not in state for state, _ in fake.calls))
+
+    def test_queue_skips_existing_and_duplicate_rows_and_reports_array_inputs(self):
+        saved = workbench.load_dataset("tickets")
+        saved["rows"].append({"text": "tech saved", "_expect": {"dept": "tech", "refund": True}})
+        workbench.write_dataset(saved)
+        fake = FakeClient(lambda state, qs: {"dept": "tech" if isinstance(state, list) or "tech" in state["text"]
+                                            else "billing", "refund": 0.98})
+        report = drift.run(fake, "tickets", ["tech saved", "tech new", {"text": "tech new"}, ["tech array"]])
+        queue = report["labeling"]
+        self.assertEqual(queue["counts"], {"eligible": 4, "in_dataset": 1, "repeated": 1,
+                                           "unsupported": 1, "queued": 1})
+        self.assertEqual(queue["items"][0]["row"], {"text": "tech new"})
+
+    def test_marked_and_unmarked_test_rows_never_reach_the_new_run(self):
+        saved = workbench.load_dataset("tickets")
+        saved["rows"].append({"text": "tech held", "_test": True,
+                              "_expect": {"dept": "tech", "refund": True}})
+        saved["test"] = {"locked_at": "2026-11-05T00:00:00Z", "looks": []}
+        workbench.write_dataset(saved)
+        fake = self.client()
+        report = drift.run(fake, "tickets", ["tech held", {"text": "tech held"},
+                                             {"text": "tech marked", "_test": True}, "tech available"])
+        self.assertEqual(report["new"]["rows"], 1)
+        self.assertEqual(report["labeling"]["items"][0]["row"], {"text": "tech available"})
+        self.assertEqual(len(fake.calls), 13)
+        self.assertTrue(all("held" not in state["text"] and "marked" not in state["text"] for state, _ in fake.calls))
+        self.assertIn("3 of the new rows are test rows", " ".join(report["notes"]))
+        with self.assertRaisesRegex(WorkbenchError, "Every new row is a test row"):
+            drift.run(fake, "tickets", ["tech held"])
+
+    def test_append_keeps_only_human_labels_and_preserves_check_and_test_history(self):
+        saved = workbench.load_dataset("tickets")
+        saved["rows"][0]["_test"] = True
+        saved["test"] = {"locked_at": "2026-11-05T00:00:00Z", "looks": [{"at": "earlier"}]}
+        workbench.write_dataset(saved)
+        row = {"text": "tech " + "full input " * 100, "_image": "torn-bag"}
+        labels = {"dept": "other", "refund": False, "urgency": 0}
+        item = {"row": row, "labels": labels, "kind": "audit", "answers": {"dept": "tech"},
+                "candidates": {"dept": ["tech"]}}
+        with patch.object(decisions, "audit_report", side_effect=AssertionError("targeted rows are not an audit")):
+            out = drift.append_labels("tickets", [item], Q)
+        self.assertEqual((out["added"], out["already"], out["room"]), (1, 0, 187))
+        self.assertNotIn("audit", out)
+        after = workbench.load_dataset("tickets")
+        self.assertEqual(after["rows"][:-1], saved["rows"])
+        self.assertEqual(after["rows"][-1], dict(row, _expect=labels))
+        self.assertEqual(after["check"], saved["check"])
+        self.assertEqual(after["test"], saved["test"])
+        self.assertNotIn("answers", json.dumps(after))
+        self.assertNotIn("candidates", json.dumps(after))
+
+    def test_append_deduplicates_within_batch_and_against_test_rows(self):
+        saved = workbench.load_dataset("tickets")
+        saved["rows"][0]["_test"] = True
+        workbench.write_dataset(saved)
+        labels = {"dept": "tech", "refund": False}
+        item = {"row": {"text": "tech new"}, "labels": labels}
+        before = len(saved["rows"])
+        out = drift.append_labels("tickets", [item, item, {"row": {"text": "billing 0"}, "labels": labels}], Q)
+        self.assertEqual((out["added"], out["already"]), (1, 2))
+        out = drift.append_labels("tickets", [item], Q)
+        self.assertEqual((out["added"], out["already"]), (0, 1))
+        after = workbench.load_dataset("tickets")
+        self.assertEqual(len(after["rows"]), before + 1)
+        self.assertEqual(after["rows"][0], saved["rows"][0], "a held-out identity is never relabeled")
+
+    def test_append_rejects_partial_labels_stale_questions_test_marks_and_bad_photos_atomically(self):
+        path = self.dir / "datasets" / "tickets.json"
+        before = path.read_text()
+        labels = {"dept": "tech", "refund": True}
+        valid = {"row": {"text": "tech first"}, "labels": labels}
+        for invalid in (
+            {"row": {"text": "tech missing label"}, "labels": {"dept": "tech"}},
+            {"row": {"text": "tech invalid label"}, "labels": dict(labels, refund="maybe")},
+            {"row": {"text": "tech held", "_test": True}, "labels": labels},
+            {"row": {"text": "tech marked", "_expect": labels}, "labels": labels},
+            {"row": {"text": "tech path", "_image": "../secret.png"}, "labels": labels},
+            {"row": {"text": "tech missing photo", "_image": "0123456789abcdef.jpg"}, "labels": labels},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(WorkbenchError):
+                drift.append_labels("tickets", [valid, invalid], Q)
+            self.assertEqual(path.read_text(), before)
+        changed = dict(Q, refund=dict(Q["refund"], instructions="A different judgment"))
+        with self.assertRaisesRegex(WorkbenchError, "questions changed"):
+            drift.append_labels("tickets", [valid], changed)
+        self.assertEqual(path.read_text(), before)
+        checks.remove_check("tickets")
+        with self.assertRaisesRegex(WorkbenchError, "has no check"):
+            drift.append_labels("tickets", [valid], Q)
+
+    def test_append_capacity_failure_leaves_dataset_unchanged(self):
+        saved = workbench.load_dataset("tickets")
+        saved["rows"] += ["existing %d" % i for i in range(187)]
+        workbench.write_dataset(saved)
+        items = [{"row": {"text": "tech %d" % i}, "labels": {"dept": "tech", "refund": True}}
+                 for i in range(2)]
+        with self.assertRaisesRegex(WorkbenchError, "room for 1 more rows"):
+            drift.append_labels("tickets", items, Q)
+        self.assertEqual(workbench.load_dataset("tickets"), saved)
+        out = drift.append_labels("tickets", items[:1], Q)
+        self.assertEqual((out["added"], out["room"]), (1, 0))
+
+    def test_picture_checks_keep_box_questions_out_of_label_controls(self):
+        questions = dict(Q, damage={"type": "box", "instructions": "The damage in `photo`"})
+        workbench.save_dataset({"name": "Photos", "questions": questions, "rows": [
+            {"text": "billing photo", "_image": "intact-bag", "_expect": {"dept": "billing", "refund": True}}]})
+        checks.save_check("photos", SPEC)
+        report = drift.run(self.client(), "photos", [{"text": "tech photo", "_image": "torn-bag"}])
+        queue = report["labeling"]
+        self.assertEqual(queue["questions"], Q)
+        item = queue["items"][0]
+        item["labels"].update(dept="tech", refund=False)
+        drift.append_labels("photos", [item], queue["questions"])
+        self.assertEqual(workbench.load_dataset("photos")["rows"][-1]["_image"], "torn-bag")
+        with self.assertRaisesRegex(WorkbenchError, "Box questions need a picture"):
+            drift.append_labels("photos", [{"row": {"text": "no picture"},
+                                            "labels": {"dept": "tech", "refund": False}}], queue["questions"])
 
 
 class ScriptTests(Temp):

@@ -30,7 +30,7 @@ from itertools import combinations
 from math import comb, erfc, exp, lgamma, pi, sqrt
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import calibrate, checks, policy, rules as rulebook, workbench
+from . import calibrate, checks, decisions, policy, rules as rulebook, workbench
 from .client import JevClient
 from .workbench import WorkbenchError
 
@@ -299,7 +299,8 @@ def _signal_summary(values: List[float]) -> dict:
             "median": statistics.median(values) if values else None, "n": len(values)}
 
 
-def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict[str, dict]) -> dict:
+def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict[str, dict],
+            dataset: Optional[dict] = None) -> dict:
     """Compare a run of the dataset's rows (workbench.run_bulk "results", labels under "expect") with a run of new
     rows, through a validated check's gate. Labels on the new rows are ignored."""
     gates = check["gates"]
@@ -436,7 +437,7 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
         status = "shift"
     else:
         status = "steady"
-    return {
+    report = {
         "status": status, "reasons": reasons, "alpha": ALPHA, "signal": signal, "gates": gates,
         "reference": dict(ref_share, rows=len(reference), answered=len(ref_rows), **accuracy),
         "new": dict(new_share, rows=len(new), answered=len(new_rows)),
@@ -446,6 +447,82 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
                   "answers": _shown(_key(r["read"], gates)[0], gates)} for r in thin[:ROWS_SHOWN]],
         "thin_total": len(thin),
     }
+    if dataset is not None:
+        report["labeling"] = _labeling(dataset, thin, questions, gates)
+    return report
+
+
+def _labeling(dataset: dict, thin: List[dict], questions: Dict[str, dict], gates: dict) -> dict:
+    """Full weak-support inputs with blank labels, without any model answers or suggested shortlists."""
+    questions = {q: spec for q, spec in questions.items() if spec["type"] in decisions.LABEL_TYPES}
+    have = {decisions._key(row) for row in dataset["rows"]}
+    seen = set()
+    items = []
+    counts = {"eligible": len(thin), "in_dataset": 0, "repeated": 0, "unsupported": 0}
+    for result in thin:
+        row = workbench.without_marks(result["row"])
+        key = decisions._key(row)
+        if key in have:
+            counts["in_dataset"] += 1
+            continue
+        if key in seen:
+            counts["repeated"] += 1
+            continue
+        seen.add(key)
+        if isinstance(row, str):
+            row = {"text": row}  # the same state Bulk sent
+        if not isinstance(row, dict):
+            # Arrays have no place for labels; wrapping one would change the state sent to the model.
+            counts["unsupported"] += 1
+            continue
+        items.append({"index": result["index"], "line": result["index"] + 1, "row": row,
+                      "labels": {q: None for q in questions}, "open": list(gates)})
+    counts["queued"] = len(items)
+    return {"questions": questions, "gates": gates, "items": items, "counts": counts,
+            "room": max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"]))}
+
+
+@workbench.dataset_update()
+def append_labels(dataset_id: str, items: Any, questions: Any) -> dict:
+    """Append human labels for targeted new rows. They are never a random audit or an accuracy estimate."""
+    dataset = workbench.load_dataset(dataset_id)
+    current, check = decisions._check(dataset)
+    if questions != current:
+        raise WorkbenchError("The dataset's questions changed. Compare the new rows again before saving labels.")
+    if not isinstance(items, list) or not items or len(items) > workbench.MAX_BULK_ROWS:
+        raise WorkbenchError("Label from 1 to %d rows to add" % workbench.MAX_BULK_ROWS)
+    checked = []
+    for n, item in enumerate(items, 1):
+        entry = decisions._item(item, n, current)
+        if workbench.row_test(entry["row"]):
+            raise WorkbenchError("Item %d is a held-out test row and cannot be added through drift labeling" % n)
+        missing = [q for q in check["gates"] if q not in entry["labels"]]
+        if missing:
+            raise WorkbenchError("Item %d needs a label for every gated question: %s" % (n, ", ".join(missing)))
+        checked.append(entry)
+    have = {decisions._key(row) for row in dataset["rows"]}
+    added, already = [], 0
+    for item in checked:
+        key = decisions._key(item["row"])
+        if key in have:
+            already += 1
+            continue
+        have.add(key)
+        added.append(dict(item["row"], **{workbench.LABEL_KEY: item["labels"]}))
+    room = max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"]))
+    if len(added) > room:
+        raise WorkbenchError("The dataset has room for %d more rows; %d new labeled rows were supplied. "
+                             "Add fewer rows or save a new dataset." % (room, len(added)))
+    if added:
+        workbench.validate_rows(added)
+        workbench._need_pictures([workbench.split_labels(row, i + 1) for i, row in enumerate(added)],
+                                 dataset["questions"])
+        for name in {workbench.row_picture(row) for row in added} - {None}:
+            workbench.picture_asset(name)  # a missing photo must fail before any dataset write
+        dataset["rows"] = workbench.validate_rows(dataset["rows"] + added)
+        workbench.write_dataset(dataset)
+    return {"dataset": workbench.dataset_summary(dataset), "added": len(added), "already": already,
+            "room": room - len(added)}
 
 
 def _moved(m: dict) -> Tuple[float, float]:
@@ -511,8 +588,10 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
         raise WorkbenchError("The dataset %r has no check. Save one from the Workbench's Policy panel." % dataset_id)
     check = checks.validate_check(dataset["check"], dataset.get("questions"))
     fresh = new_rows(rows)
-    held_out = sum(1 for row in fresh if workbench.row_test(row))
-    fresh = [row for row in fresh if not workbench.row_test(row)]  # a test row's answers are shown only when scored
+    held_keys = {decisions._key(row) for row in dataset["rows"] if workbench.row_test(row)}
+    available = [row for row in fresh if not workbench.row_test(row) and decisions._key(row) not in held_keys]
+    held_out = len(fresh) - len(available)
+    fresh = available  # an unmarked copy of a saved test row must not reveal its answer either
     if not fresh:
         raise WorkbenchError("Every new row is a test row. Test rows are left out, so their answers stay hidden.")
     questions = workbench.bulk_questions(dataset["questions"])
@@ -523,7 +602,7 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
                "input_tokens": 0, "wall_ms": 0.0}
     else:
         new = workbench.run_bulk(client, fresh, questions, model=asked)
-    report = compare(ref["results"], new["results"], check, questions)
+    report = compare(ref["results"], new["results"], check, questions, dataset)
     problems = _incomplete(ref, "dataset rows") + ([] if ref["stopped"] else _incomplete(new, "new rows"))
     if problems:
         report["status"] = "error"

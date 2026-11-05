@@ -896,7 +896,7 @@ function checkTargetsText(c) {
 function checkItem(x) {
   const c = x.check;
   const run = W.bulk.checkRuns[x.id] || (W.bulk.checkRuns[x.id] = { running: false, report: null, model: "",
-    drift: { open: false, text: "", running: false, report: null }, queue: newQueue(),
+    drift: { open: false, text: "", running: false, report: null, labelsOpen: false, busy: false, saved: null }, queue: newQueue(),
     upgrade: { open: false, model: "", running: false, report: null } });
   const model = h("input", { class: "input sm", list: "cmp-models", value: run.model, spellcheck: "false", style: { maxWidth: "190px" },
     placeholder: `model: ${c.model}`, "aria-label": `Model to ask for the ${x.id} check` });
@@ -912,7 +912,7 @@ function checkItem(x) {
       "Review shortlists: ", attachedSetsText(c.answer_sets), ". Thresholds and rules still decide automation.") : null,
     (x.check_notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm", disabled: run.running || run.drift.running || run.upgrade.running, onclick: () => runCheck(x.id) },
+      h("button", { class: "btn sm", disabled: run.running || run.drift.running || run.drift.busy || run.upgrade.running, onclick: () => runCheck(x.id) },
         run.running ? [h("span", { class: "spin" }), " Checking…"] : [icon("layers"), `Run check · ${n} call${n === 1 ? "" : "s"}`]),
       model,
       h("button", { class: `btn sm${run.drift.open ? " active" : ""}`, "aria-expanded": String(run.drift.open),
@@ -925,12 +925,12 @@ function checkItem(x) {
       h("button", { class: `btn sm${run.queue.open ? " active" : ""}`, "aria-expanded": String(run.queue.open),
         title: "Label the rows the exported gate sent to review, and a sample it automated, then add them to this dataset",
         onclick: () => { run.queue.open = !run.queue.open; render(); } }, icon("check"), "Review queue"),
-      h("button", { class: "btn sm ghost", disabled: run.running, onclick: () => removeCheck(x.id) }, "Remove check")),
+      h("button", { class: "btn sm ghost", disabled: run.running || run.drift.busy, onclick: () => removeCheck(x.id) }, "Remove check")),
     run.report ? checkReport(run.report) : null,
     run.upgrade.open ? upgradeForm(x, run) : null,
     run.upgrade.report ? upgradeReport(x, run.upgrade.report) : null,
     run.drift.open ? driftForm(x, run) : null,
-    run.drift.report ? driftReport(run.drift.report) : null,
+    run.drift.report ? driftReport(x, run) : null,
     run.queue.open ? queueForm(x, run.queue) : null,
     run.queue.open && run.queue.report ? queueView(x, run.queue) : null,
     run.queue.audit_report ? auditReport(run.queue.audit_report) : null);
@@ -1222,6 +1222,7 @@ function renderGateExport() {
 async function runCheck(id) {
   const b = W.bulk;
   const run = b.checkRuns[id];
+  if (!run || run.running || run.drift.running || run.drift.busy || run.upgrade.running) return;
   run.running = true;
   run.report = null;
   render();
@@ -1298,12 +1299,14 @@ function upgradeForm(x, run) {
       "The report judges the saved gate on both, compares them row by row, and tunes the gate again on the new version's answers at this check's targets. Nothing is saved until you move the check."),
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       model,
-      h("button", { class: "btn sm", disabled: run.running || run.drift.running || u.running, onclick: () => runUpgrade(x.id) },
+      h("button", { class: "btn sm", disabled: run.running || run.drift.running || run.drift.busy || u.running, onclick: () => runUpgrade(x.id) },
         u.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), `Compare · ${n} calls`])));
 }
 
 async function runUpgrade(id) {
-  const u = W.bulk.checkRuns[id].upgrade;
+  const run = W.bulk.checkRuns[id];
+  if (!run || run.running || run.drift.running || run.drift.busy || run.upgrade.running) return;
+  const u = run.upgrade;
   if (!u.model.trim()) return toast("Name the version to try, such as jev-latest or jev-1.15.0", "error");
   u.running = true;
   u.report = null;
@@ -1405,22 +1408,31 @@ function driftForm(x, run) {
       h("code", {}, run.model.trim() || x.check.model), ", one call per row, and compared through the gate: what share it automates, how each question answers and how sure it is, and, from the labeled dataset rows like them, how accurate it is likely to be on them."),
     area,
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
-      h("button", { class: "btn sm", disabled: run.running || d.running, onclick: () => runDrift(x.id) },
+      h("button", { class: "btn sm", disabled: run.running || d.running || d.busy || run.upgrade.running, onclick: () => runDrift(x.id) },
         d.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), label]),
       h("button", { class: "btn sm ghost", onclick: fromBox, title: "Copy the Bulk rows box into this box" }, "Use the rows box"),
-      h("span", { class: "faint", style: { fontSize: "12px" } }, "Up to 200 new rows. Nothing is saved.")));
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "Up to 200 new rows. Comparing saves nothing.")));
 }
 
 async function runDrift(id) {
   const run = W.bulk.checkRuns[id];
-  if (!lineCount(run.drift.text)) return toast("Paste the new rows to compare, one per line", "error");
-  run.drift.running = true;
-  run.drift.report = null;
+  if (!run || run.running || run.drift.running || run.drift.busy || run.upgrade.running) return;
+  const d = run.drift;
+  if (!lineCount(d.text)) return toast("Paste the new rows to compare, one per line", "error");
+  if (d.report?.labeling?.items.some((i) => Object.values(i.labels).some((v) => v !== null && v !== undefined))
+      && !confirm("Compare again and discard the unsaved labels in this traffic queue?")) return;
+  d.running = true;
+  d.report = null;
+  d.labelsOpen = false;
+  d.saved = null;
   render();
   try {
-    run.drift.report = await api("/api/workbench/checks/drift", { id, rows: rowsPayload(run.drift.text), model: run.model.trim() || undefined });
+    const report = await api("/api/workbench/checks/drift", { id, rows: rowsPayload(d.text), model: run.model.trim() || undefined });
+    if (W.bulk.checkRuns[id] !== run) return;
+    d.report = report;
+    await loadPictureUrls(report.labeling?.items || []);
   } catch (e) { handleError(e); }
-  run.drift.running = false;
+  d.running = false;
   render();
 }
 
@@ -1428,7 +1440,9 @@ const DRIFT_BADGE = { steady: ["good", "check", "Looks like the dataset"], shift
 const pval = (p) => (p === null || p === undefined ? "—" : p < 0.001 ? "< 0.001" : p.toFixed(3));
 const pctOr = (p, digits = 0) => (p === null || p === undefined ? "—" : pct(p, digits));
 
-function driftReport(rep) {
+function driftReport(x, run) {
+  const d = run.drift;
+  const rep = d.report;
   const [tone, ic, label] = DRIFT_BADGE[rep.status];
   const [ctone, , clabel] = CHECK_BADGE[rep.check_status];
   const ref = rep.reference, nu = rep.new, e = rep.estimate, t = rep.targets;
@@ -1439,6 +1453,8 @@ function driftReport(rep) {
   const median = (s) => (s.median === null ? "—" : s.median.toFixed(2));
   const pline = (p, on) => h("div", { class: "faint", style: { whiteSpace: "nowrap" } }, p === null ? "no test" : `adjusted p ${pval(p)}`, shift(on));
   return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    d.saved ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
+      "This comparison used the dataset before the labeled rows below were added.") : null,
     h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
       h("span", { class: `badge ${tone}` }, icon(ic), label),
       h("span", { class: `badge ${ctone}`, title: "The check, judged on the dataset run" }, `check on the dataset: ${clabel}`),
@@ -1474,7 +1490,98 @@ function driftReport(rep) {
     h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
       `Each p-value is adjusted for the ${rep.tests} tests in this report (Holm); a shift is an adjusted p below ${rep.alpha}. `,
       "The estimate gives each new automated row the accuracy of the labeled, automated dataset rows with the same gated answers, and the same confidence band when enough share it. ",
-      "It assumes rows with the same answers are as often right in both sets, so label a sample of the new rows before relying on it."));
+      "It assumes rows with the same answers are as often right in both sets, so label a sample of the new rows before relying on it."),
+    rep.labeling ? driftLabels(x, run) : null);
+}
+
+// Label actual inputs selected by the comparison. These targeted rows never produce an audit score.
+function driftLabels(x, run) {
+  const d = run.drift;
+  const rep = d.report.labeling;
+  const ready = rep.items.filter((i) => queueReady(i, rep.gates));
+  const adding = Math.min(ready.length, rep.room);
+  const busy = d.busy || d.running || run.running || run.upgrade.running;
+  const counts = rep.counts;
+  const card = (item) => h("div", { class: `queue-item${queueReady(item, rep.gates) ? " done" : ""}` },
+    h("span", { class: "faint mono", style: { fontSize: "11.5px" } }, `new row ${item.line}`),
+    h("div", { class: "row-text", style: { whiteSpace: "pre-wrap" } }, rowText(item.row)),
+    W.bulk.pictures[item.row._image] ? h("div", { style: { maxWidth: "560px" } },
+      photoView(W.bulk.pictures[item.row._image], [], { alt: `Picture for new row ${item.line}` })) : null,
+    h("div", { class: "queue-labels" }, Object.entries(rep.questions).map(([qid, question]) => {
+      const select = queueSelect(item, qid, question, render);
+      select.disabled = busy;
+      return h("label", { class: "queue-label" },
+        h("span", { class: "mono" }, qid, qid in rep.gates ? h("span", { class: "faint" }, " · required") : null),
+        h("span", { class: "faint", style: { fontSize: "12px", maxWidth: "360px" } }, stringify(question.instructions)), select);
+    })));
+  const n = Math.min(x.rows - (x.test?.rows || 0), 200);
+  return h("div", { class: "grid", style: { gap: "8px", paddingTop: "8px", borderTop: "1px solid var(--line)" } },
+    h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: busy || (!rep.items.length && !d.saved), "aria-expanded": String(d.labelsOpen),
+        onclick: () => { d.labelsOpen = !d.labelsOpen; render(); } }, icon("check"), `Label new traffic · ${rep.items.length} rows`),
+      counts.in_dataset || counts.repeated ? h("span", { class: "faint", style: { fontSize: "12px" } },
+        `${counts.in_dataset} already in the dataset · ${counts.repeated} repeated`) : null),
+    counts.unsupported ? h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      `${counts.unsupported} array row${counts.unsupported === 1 ? " cannot" : "s cannot"} carry labels without changing the model's input. They are left out of this queue.`) : null,
+    d.labelsOpen ? [
+      h("p", { class: "muted", style: { fontSize: "12.5px", margin: 0 } },
+        "These automated rows have little support in the labeled dataset. Choose labels from their text and pictures. This is a targeted sample, not a random audit; it does not measure accuracy on all new traffic. Labeling and saving make no model calls."),
+      agreeQuestions(rep.questions),
+      rep.items.length ? h("div", { class: "queue-list" }, rep.items.map(card))
+        : h("div", { class: "empty" }, "All queued rows have been added."),
+      rep.items.length ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+        h("button", { class: "btn sm primary", disabled: busy || !adding, onclick: () => addDriftLabels(x.id) },
+          d.busy ? h("span", { class: "spin" }) : icon("save"), `Add ${adding} labeled row${adding === 1 ? "" : "s"} to “${x.name || x.id}”`),
+        h("span", { class: "faint", style: { fontSize: "12px" } },
+          `Label every required question to add a row. Room for ${rep.room} more; other labels stay here. Only inputs and your labels are saved.`)) : null,
+    ] : null,
+    d.saved ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+      h("span", { class: "muted", style: { fontSize: "12.5px" } }, `${d.saved.added} rows added${d.saved.already ? ` · ${d.saved.already} already present` : ""}.`),
+      h("button", { class: "btn sm", disabled: busy, onclick: () => runCheck(x.id) }, icon("layers"), `Rerun check · ${n} call${n === 1 ? "" : "s"}`)) : null);
+}
+
+async function addDriftLabels(id) {
+  const b = W.bulk;
+  const run = b.checkRuns[id];
+  if (!run || run.running || run.upgrade.running || run.drift.running || run.drift.busy) return;
+  const d = run.drift;
+  const report = d.report;
+  const rep = report?.labeling;
+  if (!rep) return;
+  const ready = rep.items.filter((i) => queueReady(i, rep.gates)).slice(0, rep.room);
+  if (!ready.length) return;
+  d.busy = true;
+  render();
+  try {
+    const items = ready.map((i) => ({ row: i.row,
+      labels: Object.fromEntries(Object.entries(i.labels).filter(([, v]) => v !== null && v !== undefined)) }));
+    const out = await api("/api/workbench/checks/drift/add", { id, items, questions: rep.questions });
+    if (b.checkRuns[id] !== run || d.report !== report) return;
+    rep.items = rep.items.filter((i) => !ready.includes(i));
+    rep.room = out.room;
+    d.saved = { added: (d.saved?.added || 0) + out.added, already: (d.saved?.already || 0) + out.already };
+    b.datasets = b.datasets.map((x) => x.id === id ? out.dataset : x);
+    run.report = run.upgrade.report = null;
+    if (b.dataset.id === id) {
+      b.testScore = null;
+      const source = b.dataset;
+      const clean = !bulkUnsaved();
+      // Until refreshed, saving this old editor snapshot must ask before it can replace the appended rows.
+      source.id = null;
+      if (clean) {
+        const loaded = (await api("/api/workbench/datasets/load", { id })).dataset;
+        if (b.dataset === source && source.id === null && !bulkUnsaved()) {
+          b.rowsText = b.savedText = rowsText(loaded.rows);
+          source.id = id;
+        }
+      }
+      if (b.dataset === source && source.id === null && bulkUnsaved()) {
+        toast("The rows box has unsaved edits. They are kept; saving under this dataset's name will ask before replacing the added rows.", "error");
+      }
+    }
+    toast(`Added ${out.added} labeled row${out.added === 1 ? "" : "s"}. Rerun the check when you want fresh answers.`);
+  } catch (e) { handleError(e); }
+  finally { d.busy = false; render(); }
 }
 
 // ---------- Review queue ----------
