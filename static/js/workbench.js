@@ -832,7 +832,7 @@ function bundleImportForm() {
     h("b", {}, "Import dataset bundle"), file,
     h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
       "Preview a ZIP before saving. Bundles carry rows, human labels, questions, gate settings, test history, and pictures. No model calls. Limit: 8 MiB. Review your input data before sharing it."),
-    b.busy ? note("Reading or saving bundle…") : null,
+    b.busy ? h("p", { class: "faint" }, "Reading or saving bundle…") : null,
     d ? h("div", { class: "grid", style: { gap: "6px" } },
       h("span", { class: "muted" }, `${d.rows.length} rows · ${Object.keys(d.questions || {}).length} questions · ${b.report.images} pictures · ${d.check ? "saved check" : "no check"} · ${d.test ? `${d.test.looks.length} test evaluations` : "no test history"}`),
       h("details", {}, h("summary", {}, "Preview dataset contents"),

@@ -5,6 +5,15 @@ import { test } from "node:test";
 const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
 const handler = source.match(/async function importBundle\(\) \{[\s\S]*?\n\}/)[0];
 
+test("the file-read busy state renders before a preview exists", () => {
+  const form = source.match(/function bundleImportForm\(\) \{[\s\S]*?\n\}/)[0];
+  const W = { bulk: { bundle: { busy: true, name: "", report: null } } };
+  const h = (tag, attrs, ...children) => ({ tag, attrs, children, addEventListener() {} });
+  const renderForm = new Function("W", "h", `${form}; return bundleImportForm;`)(W, h);
+  const result = renderForm();
+  assert.ok(JSON.stringify(result).includes("Reading or saving bundle…"));
+});
+
 function setup(confirm) {
   const calls = [];
   const bulk = {
