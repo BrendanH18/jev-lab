@@ -3833,6 +3833,7 @@ function compareWithout(drop) {
   a.model = v.model = b.runModel || "";
   a.perturb = v.perturb = "";  // the rows as written, so the left-out questions are the only change
   a.average = v.average = false;
+  Object.assign(W.compare, { result: null, report: null, reportError: null });  // an earlier run asked other variants
   W.tab = "compare";
   location.hash = "compare";
   render();

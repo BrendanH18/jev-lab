@@ -653,7 +653,7 @@ Policy's signal, bound, and rules, and shows for each gated question:
 
 | Variant | What changes | What it tells you |
 | --- | --- | --- |
-| Threshold off | Its threshold is 0. Its answer is still acted on and still scored, so a row with a wrong answer to it still counts as wrong | When the gate automates as many rows, the threshold holds nothing back at this target: its answers are right whenever the other gates clear. Your code need not wait on it |
+| Threshold off | Its threshold is 0. Its answer is still acted on and still scored, so a row with a wrong answer to it still counts as wrong | When the gate automates as many rows, the threshold holds nothing back at this target, so it is a candidate to remove. The answer is still acted on and scored, so your code still asks for it |
 | Dropped from the gate | The question is neither gated nor scored, as if your code stopped using its answer. Rows that lacked only its label are scored now | How much automation that answer costs. It is not a reason to drop an answer your code needs |
 
 A last list names the questions in the request that no gate and no rule reads, with each one's share of the request's
