@@ -116,6 +116,10 @@ conditions.
 - **Import CSV:** bring rows in from a spreadsheet. Choose which columns the model reads and which hold
   labels for which question. Label values that fit no answer are listed rather than guessed. It makes
   no model calls.
+- **Dataset health:** before a paid Bulk run, inspect pasted rows or a loaded dataset for duplicate inputs,
+  conflicting human labels, missing or invalid labels, and identical inputs on both sides of a test split.
+  Findings list row numbers without revealing test labels. Fixes stay manual; inspection makes no model calls
+  or saved changes. It compares exact inputs and picture names, not similar text or image contents.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. A target your rows cannot show yet estimates how many more

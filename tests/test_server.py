@@ -78,6 +78,25 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
                 self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
 
+    def test_dataset_health_is_read_only_and_needs_no_model(self):
+        rows = [{"text": "same", "_expect": {"urgent": True}},
+                {"text": "same", "_expect": {"urgent": False}, "_test": True},
+                {"text": "other"}]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("No model call")), \
+                patch("jev.workbench.write_dataset", side_effect=AssertionError("No dataset write")):
+            status, _, body = self.request("POST", "/api/workbench/health", json.dumps({
+                "rows": rows, "questions": {"urgent": {"type": "noul", "instructions": "Urgent?"}}}),
+                self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)
+        self.assertEqual(report["unique_inputs"], 2)
+        self.assertEqual(report["duplicate_groups"], [{"rows": [1, 2]}])
+        self.assertEqual(report["conflicts"], [{"rows": [1, 2], "question": "urgent"}])
+        self.assertEqual(report["overlap"], [{"rows": [1, 2], "training": [1], "test": [2]}])
+        self.assertNotIn("same", body.decode())
+        status, _, body = self.request("POST", "/api/workbench/health", "{}", self.post_headers())
+        self.assertEqual(status, 400, body)
+
     def test_browser_assets_are_served(self):
         for path in ("/css/app.css", "/js/common.js", "/js/../css/app.css"):
             with self.subTest(path=path):

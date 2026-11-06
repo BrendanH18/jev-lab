@@ -18,6 +18,7 @@ const W = {
     // Saved datasets (data/workbench/datasets/): rows and labels only, never answers. savedText is the rows box as
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
+    health: { busy: false, report: null, context: null },
     bundle: { data: null, report: null, name: "", busy: false },
     savedText: "", runText: null, labelsDirty: false,
     // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
@@ -640,6 +641,8 @@ const bulkUnsaved = () => W.bulk.rowsText !== W.bulk.savedText || W.bulk.labelsD
 
 function markUnsaved() {
   syncAttachedSets();
+  const healthPanel = $("#dataset-health");
+  if (healthPanel) mount(healthPanel, healthBody());
   const el = $("#ds-unsaved");
   if (el) el.style.display = bulkUnsaved() ? "" : "none";
 }
@@ -2191,6 +2194,61 @@ function bulkQuestions() {
   return b.source === "sample" ? b.sampleQuestions : toQuestions(W.questions);
 }
 
+// A health report describes the current rows and selected questions, never a prior Bulk run's answers.
+const healthContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty]);
+
+async function checkHealth() {
+  if (!settleLabels("Check the rows box")) return;
+  const state = W.bulk.health;
+  const context = healthContext();
+  state.busy = true;
+  state.report = null;
+  render();
+  try {
+    const report = await api("/api/workbench/health", { rows: rowsPayload(), questions: bulkQuestions() });
+    if (context === healthContext()) {
+      state.report = report;
+      state.context = context;
+    }
+  } catch (e) { handleError(e); }
+  state.busy = false;
+  render();
+}
+
+function healthBody() {
+  const state = W.bulk.health;
+  const report = state.context === healthContext() ? state.report : null;
+  const numbers = (rows) => rows.join(", ");
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("div", {}, h("button", { class: "btn sm", disabled: state.busy, onclick: checkHealth },
+      state.busy ? "Checking dataset…" : "Check dataset health")),
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      "Inspect the rows box and selected questions before a paid run. No model calls or saved changes. Load a saved dataset to inspect it here. Row numbers count nonempty rows from 1."),
+    report ? h("div", { class: "grid", style: { gap: "6px" } },
+      h("p", { class: "muted" }, `${report.rows} rows · ${report.unique_inputs} unique inputs. Exact inputs and picture names are compared; similar wording or identical pictures with different names are not detected.`),
+      report.duplicate_groups.length ? h("div", {}, h("b", {}, "Duplicate inputs"),
+        h("p", { class: "muted" }, "Repeated inputs can inflate evaluation results. Keep repeats only when they represent intentional traffic weighting."),
+        h("ul", {}, report.duplicate_groups.map((g) => h("li", {}, `Rows ${numbers(g.rows)}`)))) : null,
+      report.conflicts.length ? h("div", {}, h("b", {}, "Conflicting labels"),
+        h("p", { class: "muted" }, "Settle these human labels before tuning. Label values stay hidden here, including test labels."),
+        h("ul", {}, report.conflicts.map((g) => h("li", {}, `${g.question}: rows ${numbers(g.rows)}`)))) : null,
+      report.overlap.length ? h("div", {}, h("b", {}, "Tuning / test overlap"),
+        h("p", { class: "muted" }, "The same input is on both sides of the split. Remove duplicate inputs and draw a fresh split before relying on its score."),
+        h("ul", {}, report.overlap.map((g) => h("li", {}, `Tuning rows ${numbers(g.training)}; test rows ${numbers(g.test)}`)))) : null,
+      report.questions.length ? h("div", { class: "scroll" }, h("table", { class: "table" },
+        h("thead", {}, h("tr", {}, ["Question", "Valid labels", "Missing", "Invalid"].map((x) => h("th", {}, x)))),
+        h("tbody", {}, report.questions.map((q) => h("tr", {}, h("td", {}, q.qid), h("td", {}, String(q.labeled)),
+          h("td", {}, String(q.missing), q.missing ? h("details", {}, h("summary", {}, "Row numbers"), numbers(q.missing_rows)) : null),
+          h("td", {}, String(q.invalid.length), q.invalid.length ? ` · rows ${numbers(q.invalid)}` : "")))))) :
+        h("p", { class: "muted" }, "Select questions to check label coverage and validity."),
+      report.invalid_labels.length ? h("div", {}, h("b", {}, "Labels for unknown questions"),
+        h("p", { class: "muted" }, "Choose the matching question set or correct these label keys."),
+        h("ul", {}, report.invalid_labels.map((x) => h("li", {}, `Row ${x.row}: ${x.question}`)))) : null,
+      !report.duplicate_groups.length && !report.conflicts.length && !report.overlap.length && !report.invalid_labels.length
+        && report.questions.every((q) => !q.missing && !q.invalid.length)
+        ? h("p", { class: "muted" }, "No issues found by these checks. This does not establish model accuracy or representative data.") : null) : null);
+}
+
 function renderBulk() {
   const b = W.bulk;
   const rows = h("textarea", { class: "input", spellcheck: "false", placeholder: "One item per line. A text line becomes the state {\"text\": line}; a JSON object line is sent as it is. Or paste a JSON array of objects." }, b.rowsText);
@@ -2225,6 +2283,7 @@ function renderBulk() {
             src("sample", `Sample: support triage (${Object.keys(b.sampleQuestions || {}).length})`),
             b.dataset.questions ? src("dataset", `Saved with “${b.dataset.name}” (${Object.keys(b.dataset.questions).length})`) : null,
             h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run. The sample rows carry labels for the sample questions."),
+            h("div", { id: "dataset-health" }, healthBody()),
             h("div", {}, runBtn))),
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Why this matters")),
