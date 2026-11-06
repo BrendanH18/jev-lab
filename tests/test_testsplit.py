@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from helpers import FakeClient, fake_answers  # noqa: E402
-from jev import agreement, checks, decisions, drift, testsplit, workbench  # noqa: E402
+from jev import agreement, checks, decisions, drift, health, testsplit, workbench  # noqa: E402
 from jev.workbench import TEST_KEY, WorkbenchError  # noqa: E402
 
 Q = {"refund": {"type": "noul", "instructions": "Does the sender want money back?"}}
@@ -65,7 +65,7 @@ class LockTests(Temp):
         with self.assertRaisesRegex(WorkbenchError, "share must be"):
             testsplit.lock("tickets", 0.9)
         workbench.save_dataset({"name": "Few", "rows": "\n".join(json.dumps({"text": "x%d" % i, "_expect": {"refund": True}})
-                                                                 for i in range(5)), "questions": Q})
+                                                                 for i in range(3)), "questions": Q})
         with self.assertRaisesRegex(WorkbenchError, "Label more rows first"):
             testsplit.lock("few", 0.2)
         workbench.save_dataset({"name": "Ten", "rows": "\n".join(json.dumps({"text": "y%d" % i, "_expect": {"refund": True}})
@@ -77,6 +77,76 @@ class LockTests(Temp):
             workbench.validate_rows([{"text": "x", TEST_KEY: "yes"}])
         with self.assertRaisesRegex(WorkbenchError, "_test must be true"):
             workbench.run_bulk(FakeClient(), [{"text": "x", TEST_KEY: False}], Q)
+
+    def test_duplicates_and_unlabeled_copies_stay_on_the_same_side(self):
+        rows = []
+        for text in ("refund", "thanks"):
+            rows.extend([{"text": text, "_expect": {"refund": True}},
+                         {"_expect": {"refund": False}, "text": text}, text, {"text": text}])
+        rows.append("unrelated unlabeled row")
+        workbench.save_dataset({"name": "Copies", "rows": rows, "questions": Q})
+        dataset = testsplit.lock("copies", 0.5, seed=1)
+        self.assertEqual(len(testsplit.test_indexes(dataset)), 4, "two labeled and two unlabeled copies")
+        summary = workbench.dataset_summary(dataset)["test"]
+        self.assertEqual((summary["labeled"], summary["share"]), (2, 0.5), "share counts labeled rows only")
+        self.assertFalse(health.analyze(dataset["rows"], Q)["overlap"])
+        self.assertFalse(workbench.row_test(dataset["rows"][-1]), "unrelated unlabeled inputs stay in tuning")
+        self.assertEqual([workbench.without_marks(row) for row in dataset["rows"] if isinstance(row, dict)
+                          and "_expect" in row],
+                         [{"text": "refund"}] * 2 + [{"text": "thanks"}] * 2)
+        self.assertEqual([row["_expect"] for row in dataset["rows"] if isinstance(row, dict) and "_expect" in row],
+                         [{"refund": True}, {"refund": False}] * 2, "conflicting labels do not change input identity")
+
+    def test_grouped_split_uses_the_nearest_feasible_labeled_count(self):
+        rows = [{"text": text, "_expect": {"refund": True}} for text in ("a", "b") for _ in range(3)]
+        workbench.save_dataset({"name": "Threes", "rows": rows, "questions": Q})
+        dataset = testsplit.lock("threes", 0.25, seed=1)
+        self.assertEqual(len(testsplit.test_indexes(dataset)), 3, "target 2 moves to 3 to preserve whole groups")
+        self.assertFalse(health.analyze(dataset["rows"], Q)["overlap"])
+
+    def test_small_target_still_uses_a_valid_split(self):
+        rows = [{"text": str(i), "_expect": {"refund": True}} for i in range(4)]
+        workbench.save_dataset({"name": "Four", "rows": rows, "questions": Q})
+        self.assertEqual(len(testsplit.test_indexes(testsplit.lock("four", 0.25, seed=1))), 2)
+
+    def test_impossible_grouped_split_leaves_the_saved_dataset_untouched(self):
+        for name, texts in (("One group", ["a"] * 8), ("Uneven groups", ["a"] * 7 + ["b"])):
+            with self.subTest(name=name):
+                saved = workbench.save_dataset({"name": name, "rows": [
+                    {"text": text, "_expect": {"refund": True}} for text in texts], "questions": Q})
+                path = workbench._dataset_path(saved["id"])
+                before = path.read_bytes()
+                with self.assertRaisesRegex(WorkbenchError, "Exact duplicate inputs must stay together"):
+                    testsplit.lock(saved["id"], 0.25, seed=1)
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_existing_split_is_not_regrouped(self):
+        rows = [{"text": "same", "_expect": {"refund": True}} for _ in range(8)]
+        rows[0][TEST_KEY] = True
+        workbench.save_dataset({"name": "Existing", "rows": rows, "questions": Q})
+        path = workbench._dataset_path("existing")
+        before = path.read_bytes()
+        with self.assertRaisesRegex(WorkbenchError, "already has test rows"):
+            testsplit.lock("existing", 0.25)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_picture_names_distinguish_otherwise_identical_inputs(self):
+        names = ["torn-bag", "intact-bag"]
+        rows = [{"text": "photo", "_image": name, "_expect": {"refund": True}} for name in names for _ in range(2)]
+        workbench.save_dataset({"name": "Pictures", "rows": rows, "questions": Q})
+        dataset = testsplit.lock("pictures", 0.5, seed=1)
+        marked = [dataset["rows"][i] for i in testsplit.test_indexes(dataset)]
+        self.assertEqual(len(marked), 2)
+        self.assertEqual(len({row["_image"] for row in marked}), 1)
+        self.assertFalse(health.analyze(dataset["rows"], Q)["overlap"])
+
+    def test_grouped_draw_is_reproducible_with_a_seed(self):
+        rows = [{"text": str(i), "_expect": {"refund": True}} for i in range(8) for _ in range(2)]
+        selected = []
+        for name in ("First", "Second"):
+            workbench.save_dataset({"name": name, "rows": rows, "questions": Q})
+            selected.append(testsplit.test_indexes(testsplit.lock(name.lower(), 0.25, seed=3)))
+        self.assertEqual(selected[0], selected[1])
 
     def test_saving_again_keeps_the_record_of_looks(self):
         testsplit.lock("tickets", 0.25, seed=1)

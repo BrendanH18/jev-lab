@@ -3,7 +3,8 @@
 Calibrate, Policy, the costs, Review, Rules, and Compare all choose something (a threshold, a wording, a variant)
 on the labeled rows they report on. Cross-validation (jev/holdout.py) says what one tuning run delivers on rows
 it did not see, but after many rounds of rewording and retuning against the same rows, the choices themselves fit
-those rows. A test split guards against that: lock() marks a random share of the labeled rows with "_test": true.
+those rows. A test split guards against that: lock() holds out randomly chosen exact-input groups, targeting a
+share of the labeled rows, and marks every copy (including unlabeled ones) with "_test": true.
 The marker never reaches the model (workbench._state removes it), the Workbench leaves those rows out of every
 tuning panel and Compare, and their answers stay hidden, so nothing is chosen on them.
 
@@ -19,7 +20,7 @@ import random
 import time
 from typing import Any, Dict, List, Optional
 
-from . import policy, workbench
+from . import decisions, policy, workbench
 from .calibrate import CalibrationError
 from .workbench import LABEL_KEY, TEST_KEY, WorkbenchError
 
@@ -41,7 +42,7 @@ def test_indexes(dataset: dict) -> List[int]:
 
 @workbench.dataset_update()
 def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None) -> dict:
-    """Mark a random `share` of the dataset's labeled rows as test rows. seed: for tests; None draws at random."""
+    """Hold out whole input groups nearest `share` of labeled rows. seed: tests; None draws at random."""
     if isinstance(share, bool) or not isinstance(share, (int, float)) or not MIN_SHARE <= share <= MAX_SHARE:
         raise WorkbenchError("share must be a number from %g to %g" % (MIN_SHARE, MAX_SHARE))
     dataset = workbench.load_dataset(dataset_id)
@@ -49,13 +50,38 @@ def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
         raise WorkbenchError("The dataset already has test rows. Remove the split first to draw a new one.")
     labeled = [i for i, row in enumerate(dataset["rows"]) if _labeled(row)]
     n = int(share * len(labeled) + 0.5)  # half up, as the page's Math.round counts it
-    if n < MIN_ROWS or len(labeled) - n < MIN_ROWS:
+    if len(labeled) < 2 * MIN_ROWS:
         raise WorkbenchError("Label more rows first: a test split needs at least %d labeled rows on each side, and "
                              "%d of %d labeled rows would leave %d and %d." % (MIN_ROWS, round(share * 100),
                                                                                len(labeled), n, len(labeled) - n))
     rng = random.Random(seed) if seed is not None else random.SystemRandom()
-    for i in rng.sample(labeled, n):  # a labeled row is an object: labels live under its LABEL_KEY
-        dataset["rows"][i] = dict(dataset["rows"][i], **{TEST_KEY: True})
+    groups: Dict[str, List[int]] = {}
+    for i, row in enumerate(dataset["rows"]):
+        groups.setdefault(decisions._key(row), []).append(i)
+    candidates = list(groups.values())
+    rng.shuffle(candidates)
+    # At most MAX_BULK_ROWS labeled rows: retain one randomly ordered subset per reachable count.
+    subsets = {0: []}
+    for positions in candidates:
+        weight = sum(_labeled(dataset["rows"][i]) for i in positions)
+        if not weight:
+            continue  # unrelated unlabeled rows stay available to tuning
+        for count, chosen in list(subsets.items()):
+            total = count + weight
+            if total <= len(labeled) - MIN_ROWS and total not in subsets:
+                subsets[total] = chosen + [positions]
+    feasible = [count for count in subsets if count >= MIN_ROWS]
+    if not feasible:
+        raise WorkbenchError("Exact duplicate inputs must stay together: no split can leave at least %d labeled "
+                             "rows on each side. Add labeled rows with distinct inputs before drawing a split."
+                             % MIN_ROWS)
+    distance = min(abs(count - n) for count in feasible)
+    count = rng.choice([count for count in feasible if abs(count - n) == distance])
+    for positions in subsets[count]:
+        for i in positions:
+            row = dataset["rows"][i]
+            state = row if isinstance(row, dict) else {"text": row}
+            dataset["rows"][i] = dict(state, **{TEST_KEY: True})
     dataset["test"] = {"locked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "looks": []}
     workbench.write_dataset(dataset)
     return dataset
