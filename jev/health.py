@@ -18,12 +18,14 @@ from .workbench import WorkbenchError
 def _label(question: dict, value: Any) -> tuple:
     if value is None:
         return True, None
-    if question["type"] == "box":
-        try:
-            return True, calibrate._edges(value, "label")
-        except ValueError:
-            return False, None
-    return decisions.label(question, value)
+    qtype = question["type"]
+    # Calibrate reads label validity from the available option/level keys. No model output is needed.
+    keys = question["criteria"] if qtype == "choice" else range(len(question["criteria"])) if qtype == "score" else []
+    schema = {"probabilities": {str(key): 0.0 for key in keys}}
+    try:
+        return True, calibrate._label(qtype, value, schema)
+    except ValueError:
+        return False, None
 
 
 def analyze(rows: Any, questions: Any = None) -> dict:

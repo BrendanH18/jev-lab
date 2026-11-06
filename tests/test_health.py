@@ -39,7 +39,7 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(out["duplicate_groups"], [])
 
     def test_equivalent_label_spellings_do_not_conflict(self):
-        rows = [{"text": "same", "_expect": {"team": "Billing", "urgent": "yes", "severity": "1.0"}},
+        rows = [{"text": "same", "_expect": {"team": "billing", "urgent": "yes", "severity": "1.0"}},
                 {"text": "same", "_expect": {"team": "billing", "urgent": True, "severity": 1}},
                 {"text": "same", "_expect": {"team": "unknown", "urgent": None}}]
         out = health.analyze(rows, QUESTIONS)
@@ -47,6 +47,17 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(out["questions"][0], {"qid": "team", "type": "choice", "labeled": 2,
                                              "missing": 0, "missing_rows": [], "invalid": [3]})
         self.assertEqual(out["questions"][1]["missing_rows"], [3])
+
+    def test_choice_labels_require_the_same_exact_match_as_calibrate(self):
+        values = ["Billing", " billing ", "billing"]
+        rows = [{"text": "same", "_expect": {"team": value}} for value in values]
+        out = health.analyze(rows, QUESTIONS)
+        self.assertEqual(out["questions"][0]["invalid"], [1, 2])
+        self.assertEqual(out["questions"][0]["labeled"], 1)
+        self.assertEqual(out["conflicts"], [])
+        for value in values[:2]:
+            with self.assertRaises(ValueError):
+                health.calibrate._label("choice", value, {"probabilities": {"billing": 1.0, "shipping": 0.0}})
 
     def test_missing_invalid_and_unknown_labels_are_separate(self):
         rows = ["unlabeled", {"text": "partial", "_expect": {"team": None, "urgent": False, "severity": 0}},
