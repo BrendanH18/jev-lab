@@ -75,8 +75,8 @@ def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
         raise WorkbenchError("Exact duplicate inputs must stay together: no split can leave at least %d labeled "
                              "rows on each side. Add labeled rows with distinct inputs before drawing a split."
                              % MIN_ROWS)
-    distance = min(abs(count - n) for count in feasible)
-    count = rng.choice([count for count in feasible if abs(count - n) == distance])
+    # Compare with the requested share before rounding; exact ties round up as before.
+    count = min(feasible, key=lambda count: (abs(count - share * len(labeled)), -count))
     for positions in subsets[count]:
         for i in positions:
             row = dataset["rows"][i]

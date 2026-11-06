@@ -109,6 +109,12 @@ class LockTests(Temp):
         workbench.save_dataset({"name": "Four", "rows": rows, "questions": Q})
         self.assertEqual(len(testsplit.test_indexes(testsplit.lock("four", 0.25, seed=1))), 2)
 
+    def test_grouped_split_compares_the_unrounded_requested_share(self):
+        rows = [{"text": text, "_expect": {"refund": True}}
+                for text, size in (("a", 4), ("b", 6), ("c", 4)) for _ in range(size)]
+        workbench.save_dataset({"name": "Unrounded", "rows": rows, "questions": Q})
+        self.assertEqual(len(testsplit.test_indexes(testsplit.lock("unrounded", 0.33, seed=2))), 4)
+
     def test_impossible_grouped_split_leaves_the_saved_dataset_untouched(self):
         for name, texts in (("One group", ["a"] * 8), ("Uneven groups", ["a"] * 7 + ["b"])):
             with self.subTest(name=name):
