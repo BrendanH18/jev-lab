@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test:
     name: Python ${{ matrix.python }} (locked SDK)
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-gitrunner
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -25,6 +25,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python }}
+          enable-cache: true
       - name: Install locked dependencies
         run: uv sync --locked
       - name: Run tests (no API key needed)
@@ -32,7 +33,7 @@ jobs:
 
   fallback:
     name: Python 3.9 (stdlib fallback)
-    runs-on: ubuntu-24.04  # setup-python has no Python 3.9 build for Ubuntu 26.04
+    runs-on: namespace-profile-gitrunner  # Ubuntu 24.04; setup-python has no Python 3.9 build for Ubuntu 26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -44,7 +45,7 @@ jobs:
 
   lint:
     name: Ruff
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-gitrunner
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -53,6 +54,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
+          enable-cache: true
       - name: Install locked dependencies
         run: uv sync --locked
       - name: Lint
@@ -60,7 +62,7 @@ jobs:
 
   javascript:
     name: JavaScript modules and tests
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-gitrunner
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -74,3 +76,18 @@ jobs:
           done
       - name: Test browser modules
         run: node --test tests/js/*.test.mjs
+
+  samples:
+    name: Sample pictures match the script
+    runs-on: namespace-profile-gitrunner
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Redraw the sample pictures
+        run: python3 scripts/draw_samples.py
+      - name: Fail if the committed pictures are stale
+        run: |
+          git add --intent-to-add static/img/samples
+          git diff --exit-code --stat static/img/samples

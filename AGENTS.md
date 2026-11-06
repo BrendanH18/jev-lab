@@ -49,8 +49,10 @@ The system `python3` is 3.9 without the SDK, which exercises CI's stdlib-fallbac
 Needs a `TYPESAFE_API_KEY` (get one at console.typesafe.ai) to make live calls; the offline test
 suite does not need one. The official `typesafe-sdk` is used on Python ≥3.10; a hand-rolled stdlib
 `urllib` client in `jev/client.py` is the fallback on 3.9 — CI (`.github/workflows/test.yml`) runs
-the locked-SDK suite on 3.10–3.14, the stdlib fallback on 3.9, and separate Ruff and JavaScript
-jobs, so both code paths must keep working.
+the locked-SDK suite on 3.10–3.14, the stdlib fallback on 3.9, and separate Ruff, JavaScript and
+sample-picture jobs, so both code paths must keep working. `.github/workflows/audit.yml` audits
+`uv.lock` (`uv audit`) on PRs and weekly. Every job runs on Namespace runners
+(`namespace-profile-gitrunner`, Ubuntu 24.04), never GitHub-hosted ones.
 
 ## Architecture
 
