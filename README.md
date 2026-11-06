@@ -72,7 +72,7 @@ issue real refunds, or transfer money.
 | **Counter** | Step a support chat turn by turn: fixed replies, clarification, resolution, and a handoff when a customer asks, stays frustrated, or the bot repeatedly misses the point. Policy sliders replay the saved judgments without another call. | Sequential judgments, streaks, and code-owned handoff |
 | **Find** | Search handbook lines and check whether the document contains an answer. | Selection over line IDs, without embeddings |
 | **Play** | Play 20 Questions with Jev as referee. | Hidden state and probability thresholds |
-| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, send review a short list of the likely answers instead of every option, find labels worth a second look, gate several questions at once, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, label the rows it routed and audit the ones it automated, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
+| **Workbench** | Write questions, check them for common mistakes, save expectations, run batches, choose a confidence threshold from labeled rows, choose it by what a review and a mistake cost, send review a short list of the likely answers instead of every option, find labels worth a second look, gate several questions at once, find the gated and asked questions that earn nothing, check tuned thresholds on rows they never saw, keep a gate as a check you rerun after a change, see whether new unlabeled rows still look like the rows a gate was tuned on, export the gate as code, label the rows it routed and audit the ones it automated, compare two wordings or models, check whether the order of the options or small changes to the rows change an answer, measure what averaging over both option orders buys, and export code. | Experimentation, repeatable model evaluation, and confidence-gated routing |
 
 Model-backed results include the request and response in **Inspect JSON**, alongside latency,
 token usage, and estimated cost. **Open in Workbench**, in the same drawer, puts that exact request in
@@ -157,6 +157,10 @@ conditions.
 - **Policy:** gate several questions at once, the way an application acts on an item only when every
   answer it uses is confident. See what share of rows the combined gate automates and how accurate
   they are, tune the thresholds for 90%, 95%, or 99% accuracy, and copy the Python gate. It also
+  reuses the Bulk answers.
+- **Prune the gate:** in Policy, see what each gated question buys at a target accuracy: retune with its
+  threshold off, its answer still counted, and with the question dropped. See which questions no gate or rule
+  reads and their share of the request's question text, then compare the request without them live. It also
   reuses the Bulk answers.
 - **By slice:** in Calibrate and Policy, see accuracy for each value of a row field such as a channel or a
   language, with intervals, and which slices are worse than the rest by more than chance. It also reuses

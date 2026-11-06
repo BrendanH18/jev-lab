@@ -645,6 +645,36 @@ gated questions it finds the best thresholds on 0.01 steps. With more, it is a s
 guarantee that no better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
 more labeled rows before relying on them.
 
+### Do the gates earn their place?
+
+Every gated question is one more answer that must be confident before a row is automated, and every question in a
+request lengthens it. **Check each gate**, in Policy, retunes the gate at one target accuracy, 90%, 95%, or 99%, with
+Policy's signal, bound, and rules, and shows for each gated question:
+
+| Variant | What changes | What it tells you |
+| --- | --- | --- |
+| Threshold off | Its threshold is 0. Its answer is still acted on and still scored, so a row with a wrong answer to it still counts as wrong | When the gate automates as many rows, the threshold holds nothing back at this target, so it is a candidate to remove. The answer is still acted on and scored, so your code still asks for it |
+| Dropped from the gate | The question is neither gated nor scored, as if your code stopped using its answer. Rows that lacked only its label are scored now | How much automation that answer costs. It is not a reason to drop an answer your code needs |
+
+A last list names the questions in the request that no gate and no rule reads, with each one's share of the request's
+question text, counted as characters of its JSON. If your code does not read their answers either, a request without
+them is shorter. Box questions return coordinates and are never gated, so they appear there too; keep the ones your
+code uses. **Compare without these** puts the full request in Compare as variant A and the request without the
+questions you check as variant B, so a live run shows whether the remaining answers change: each question is asked
+in the same call, so removing one can shift the others.
+
+Each variant is tuned on the same rows as the baseline, so each number fits those rows. Confirm a smaller gate with
+[Check on unseen rows](#check-on-unseen-rows) and a smaller request with Compare. It makes no model calls; with ten
+gated questions it runs 21 searches, so it waits for the button.
+
+`POST /api/workbench/policy/prune` takes Policy's `rows`, `questions` (the gated ids), `signal`, `bound`, `target`
+(0.9, 0.95, or 0.99; default 0.95), optional `rules`, and optional `request`, the question set the rows were run
+with. It returns `labeled`, the `baseline`, `gated` (each with its `qid`, `type`, `share` of the question text,
+the `rules` that read it, and the `off` and `dropped` outcomes, `dropped` being `null` for the only gated question),
+`unused` (each `qid`, `type`, and `share`), and `chars`, the request's question text in characters. An outcome has
+`gates` (`null` when no thresholds reach the target), `labeled`, `automated`, `coverage`, and `accuracy` with `low`
+and `high`.
+
 ## Accuracy by slice
 
 An overall accuracy can hide a part of the data where the answers are much worse: one channel, one

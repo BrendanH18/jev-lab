@@ -133,7 +133,9 @@ counted (`jev/testsplit.py`; the marker never reaches the model, and checks, dri
 rows), fits a conformal cut that turns one question's answers into the shortest list that holds the right answer
 at a chosen rate, so review chooses among a few options (`jev/answersets.py`), checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
 Tune, cost, cross-validation, checks, drift and the exported gate send rows that break one to review),
-fits monotone probability maps checked on unseen folds (`jev/recalibrate.py`, without changing routing), runs a
+fits monotone probability maps checked on unseen folds (`jev/recalibrate.py`, without changing routing), retunes a
+Policy gate with each question's threshold off and with the question dropped, and lists the request's questions no gate
+or rule reads (`jev/prune.py`, no model calls; a live Compare confirms a shorter request), runs a
 question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
 `SpendGuard`; a row's `_image` picture travels as an asset named `photo` in its state, so Box questions run
 too), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a
