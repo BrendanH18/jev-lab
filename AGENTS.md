@@ -167,6 +167,12 @@ These targeted rows are not a random audit and must never produce audit-accuracy
 labels makes no model call; rerunning the check is explicit. Saved held-out row identities are excluded
 from new-traffic comparisons even when pasted without their `_test` marker.
 
+Dataset health (`jev/health.py`, Bulk's **Check dataset health**) inspects current inputs and human labels
+without model calls or writes. It reports duplicates, conflicting or invalid labels, missing labels, and
+identical inputs across tuning/test rows using row numbers only; never reveal held-out label values
+in health reports. Findings are advisory and fixes stay manual. Reports must match the current rows
+and selected questions; hide them when either changes.
+
 ## Conventions
 
 - Ask before adding any dependency, tool or service; propose the trade-off and a recommended
