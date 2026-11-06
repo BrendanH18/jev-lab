@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, decisions, dispatch, drift, envfile, examples, find, gate, hello,
-                 holdout, images, counter, lint, policy, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
+                 holdout, images, counter, lint, policy, prune, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -537,6 +537,11 @@ def api_wb_policy_tune(body):
                        str(body.get("bound") or "estimate"), body.get("rules"))
 
 
+def api_wb_policy_prune(body):
+    return prune.prune(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
+                       str(body.get("bound") or "estimate"), body.get("target", 0.95), body.get("rules"), body.get("request"))
+
+
 def api_wb_holdout(body):
     return holdout.evaluate(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
                             str(body.get("bound") or "estimate"), body.get("folds", holdout.FOLDS), body.get("costs"),
@@ -770,6 +775,7 @@ ROUTES = {
     ("POST", "/api/workbench/policy"): api_wb_policy,
     ("POST", "/api/workbench/rules"): api_wb_rules,
     ("POST", "/api/workbench/policy/tune"): api_wb_policy_tune,
+    ("POST", "/api/workbench/policy/prune"): api_wb_policy_prune,
     ("POST", "/api/workbench/holdout"): api_wb_holdout,
     ("POST", "/api/workbench/answersets"): api_wb_answersets,
     ("POST", "/api/workbench/review"): api_wb_review,

@@ -508,6 +508,25 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(bad, 400)
         self.assertIn("from 0 to 1", json.loads(err)["error"])
 
+    def test_policy_prune_over_http_is_pure_code(self):
+        rows = [{"index": i, "answers": {"u": {"type": "noul", "noul": p}, "v": {"type": "noul", "noul": 0.9}},
+                 "labels": {"u": "yes" if p > 0.5 else "no", "v": "yes"}} for i, p in enumerate((0.9, 0.1, 0.95, 0.05))]
+        request = {"u": {"type": "noul", "instructions": "Is it urgent?"}, "v": {"type": "noul", "instructions": "Is it a refund?"},
+                   "w": {"type": "noul", "instructions": "Is it spam?"}}
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            status, _, body = self.request("POST", "/api/workbench/policy/prune",
+                                           json.dumps({"rows": rows, "questions": ["u", "v"], "target": 0.9, "request": request}),
+                                           self.post_headers())
+            bad, _, err = self.request("POST", "/api/workbench/policy/prune",
+                                       json.dumps({"rows": rows, "questions": ["u"], "target": 0.5}), self.post_headers())
+        self.assertEqual(status, 200, body)
+        out = json.loads(body)
+        self.assertEqual(out["baseline"]["automated"], 4)
+        self.assertEqual([g["qid"] for g in out["gated"]], ["u", "v"])
+        self.assertEqual([u["qid"] for u in out["unused"]], ["w"])
+        self.assertEqual(bad, 400)
+        self.assertIn("target", json.loads(err)["error"])
+
     def test_holdout_over_http_is_pure_code(self):
         rows = [{"index": i, "answers": {"u": {"type": "noul", "noul": 0.55 + 0.04 * i}}, "labels": {"u": i % 4 != 0},
                  "key": "row %d" % i} for i in range(12)]
