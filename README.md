@@ -122,6 +122,10 @@ conditions.
   or saved changes. Choose an input field to see row and distinct-input counts, plus valid, missing, and invalid
   label counts by value, separately for tuning and held-out rows. Label values stay hidden.
   It compares exact inputs and picture names, not similar text or image contents.
+- **Label before running:** fill missing Choice, Noul, and Score labels on tuning rows without paying for
+  a Bulk run. Filter by an input slice while keeping drafts across slices, then **Apply labels to rows**
+  and explicitly save the dataset. Existing labels and held-out rows stay unchanged; Box and array rows
+  require JSON editing. Applying clears old Bulk results so a new run scores the updated labels.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. A target your rows cannot show yet estimates how many more

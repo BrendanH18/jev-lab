@@ -1472,3 +1472,19 @@ request with one file part per picture.
 
 These are local application limits, not a statement of provider-wide API limits. Validation
 behavior is defined in [`jev/workbench.py`](../jev/workbench.py).
+
+### Label missing tuning rows before Bulk
+
+In Bulk, **Label missing rows** opens blank human-label controls for missing Choice, Noul,
+and Score labels. It uses the selected questions and current rows box, without model calls.
+Existing labels (including invalid ones) are preserved, and held-out rows never enter this queue.
+Box labels and rows that are JSON arrays still require manual JSON editing.
+
+Choose an input field and value to focus on a slice. Drafts survive filter changes; the progress
+count and **Apply labels to rows** include every slice. Duplicate copies are separate rows, so
+label each intended copy. Picture inputs show their referenced picture when available.
+
+Apply updates the rows editor only. **Save dataset** persists those inputs and human labels.
+Applying clears old Bulk results; run again to score the new labels. Changing the rows or
+selected questions invalidates the draft view, and pending responses cannot overwrite newer
+inputs. Neither preparation nor application changes dataset files or makes model calls.

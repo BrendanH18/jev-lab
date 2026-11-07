@@ -19,6 +19,7 @@ const W = {
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
     health: { busy: false, report: null, context: null, field: null },
+    prelabel: { busy: false, report: null, context: null, drafts: {}, field: null, value: null },
     bundle: { data: null, report: null, name: "", busy: false },
     savedText: "", runText: null, labelsDirty: false,
     // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
@@ -644,6 +645,8 @@ function markUnsaved() {
   syncAttachedSets();
   const healthPanel = $("#dataset-health");
   if (healthPanel) mount(healthPanel, healthBody());
+  const labeling = $("#prelabel-panel");
+  if (labeling) mount(labeling, prelabelBody());
   const el = $("#ds-unsaved");
   if (el) el.style.display = bulkUnsaved() ? "" : "none";
 }
@@ -2498,6 +2501,110 @@ function healthSlices(report, state) {
       }))))));
 }
 
+// Pre-run human labels belong to a snapshot of the inputs and question schema, not model answers.
+const prelabelContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty]);
+
+async function prepareLabels(field = null, value = null) {
+  const state = W.bulk.prelabel;
+  if (state.busy || !settleLabels("Label the rows box")) return;
+  const context = prelabelContext();
+  if (state.context !== context) state.drafts = {};
+  state.busy = true;
+  state.report = null;
+  render();
+  try {
+    const report = await api("/api/workbench/prelabel", { rows: rowsPayload(), questions: bulkQuestions(), field, value });
+    if (context === prelabelContext()) {
+      state.report = report;
+      state.context = context;
+      state.field = report.field;
+      state.value = report.value;
+      await loadPictureUrls(report.items);
+    }
+  } catch (e) { handleError(e); }
+  state.busy = false;
+  render();
+}
+
+async function applyPreparedLabels() {
+  const b = W.bulk;
+  const state = b.prelabel;
+  if (state.busy || !state.report || state.context !== prelabelContext()) return;
+  const context = state.context;
+  state.busy = true;
+  render();
+  try {
+    const result = await api("/api/workbench/prelabel/apply", {
+      rows: rowsPayload(), questions: bulkQuestions(),
+      items: Object.entries(state.drafts).filter(([, labels]) => Object.keys(labels).length)
+        .map(([index, labels]) => ({ index: Number(index), labels })),
+    });
+    if (context === prelabelContext()) {
+      b.rowsText = rowsText(result.rows);
+      // Old result-table labels must not later replace the newly labeled rows.
+      b.result = null;
+      b.runText = null;
+      b.labels = {};
+      b.labelsDirty = false;
+      b.testScore = null;
+      b.gateExport = null;
+      state.report = null;
+      state.drafts = {};
+      syncAttachedSets();
+      toast(`Applied ${result.applied} human labels to the rows box. Save dataset to keep them.`);
+    } else toast("Rows or questions changed. Labels were not applied; reopen Label missing rows.", "error");
+  } catch (e) { handleError(e); }
+  state.busy = false;
+  render();
+}
+
+function prelabelBody() {
+  const state = W.bulk.prelabel;
+  const report = state.context === prelabelContext() ? state.report : null;
+  const drafts = report ? state.drafts : {};
+  const filled = Object.values(drafts).reduce((n, labels) => n + Object.keys(labels).length, 0);
+  return h("div", { class: "panel" },
+    h("div", { class: "panel-head" }, h("h2", {}, "Label before running")),
+    h("div", { class: "panel-body grid", style: { gap: "10px" } },
+      h("div", {}, h("button", { class: "btn sm", disabled: state.busy, onclick: () => prepareLabels() },
+        state.busy ? "Preparing labels…" : "Label missing rows")),
+      h("p", { class: "faint" }, "Fill blank Choice, Noul, and Score labels on tuning rows before a paid run. Existing labels and held-out rows stay unchanged. No model calls. Apply updates the rows box; Save dataset keeps the changes. Box and array rows must be labeled in JSON."),
+      report ? h("div", { class: "grid", style: { gap: "10px" } },
+        agreeQuestions(report.questions),
+        h("p", { class: "muted" }, `${filled} of ${report.missing} missing labels filled across ${report.eligible} tuning rows · showing ${report.items.length} rows`),
+        h("label", {}, "Filter by field ", h("select", { class: "input sm", "aria-label": "Labeling slice field", disabled: state.busy,
+          onchange: (e) => prepareLabels(e.target.value || null) },
+          h("option", { value: "", selected: report.field === null }, "All rows"),
+          report.fields.map((f) => h("option", { value: f.name, selected: report.field === f.name }, f.name)))),
+        report.field ? h("label", {}, "Value ", h("select", { class: "input sm", "aria-label": "Labeling slice value", disabled: state.busy,
+          onchange: (e) => prepareLabels(report.field, e.target.value === "" ? null : e.target.value) },
+          h("option", { value: "", selected: report.value === null }, "All values"),
+          report.values.map((v) => h("option", { value: v.value, selected: report.value === v.value }, `${v.shown} (${v.rows} rows)`)))) : null,
+        !report.items.length ? h("p", { class: "muted" }, "No missing labels in these tuning rows for Choice, Noul, or Score questions.") : null,
+        report.items.map((item) => h("div", { class: "panel-body", style: { border: "1px solid var(--border)", borderRadius: "8px" } },
+          h("b", {}, `Row ${item.index + 1}`),
+          h("pre", { class: "code", style: { whiteSpace: "pre-wrap" } }, typeof item.row === "string" ? item.row : JSON.stringify(item.row, null, 2)),
+          item.row?._image && W.bulk.pictures[item.row._image] ? photoView(W.bulk.pictures[item.row._image]) : null,
+          item.missing.map((qid) => {
+            const question = report.questions[qid];
+            const choices = question.type === "noul" ? ["yes", "no"] : question.type === "score"
+              ? question.criteria.map((_, i) => String(i)) : Object.keys(question.criteria);
+            const current = labelText(drafts[item.index]?.[qid], question.type);
+            return h("label", {}, qid, h("p", { class: "faint" }, stringify(question.instructions)),
+              h("select", { class: "input sm", "aria-label": `Label ${qid} for row ${item.index + 1}`, disabled: state.busy,
+                onchange: (e) => {
+                  const labels = state.drafts[item.index] ||= Object.create(null);
+                  const value = labelValue(e.target.value, question.type);
+                  if (value === null) delete labels[qid]; else labels[qid] = value;
+                  render();
+                } }, h("option", { value: "", selected: !current }, "Choose a human label"),
+                choices.map((c) => h("option", { value: c, selected: current === c },
+                  question.type === "score" ? `${c} · ${stringify(question.criteria[Number(c)])}` : c))));
+          }))),
+        h("button", { class: "btn sm primary", disabled: state.busy || !filled, onclick: applyPreparedLabels }, `Apply ${filled} labels to rows`),
+        h("p", { class: "faint" }, "Apply includes drafts in every slice. Changing rows or questions discards the draft view. Applying clears old Bulk results; run again to score the new labels.")) : null));
+}
+
 function renderBulk() {
   const b = W.bulk;
   const rows = h("textarea", { class: "input", spellcheck: "false", placeholder: "One item per line. A text line becomes the state {\"text\": line}; a JSON object line is sent as it is. Or paste a JSON array of objects." }, b.rowsText);
@@ -2539,6 +2646,7 @@ function renderBulk() {
           h("div", { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
             h("p", { class: "muted" }, "At $0.042 per million input tokens, a question set over a million short messages costs about ", h("b", {}, "$10"), ". That is why “classify everything, then sort” is finally practical."),
             h("p", { class: "muted" }, "With labeled rows, Calibrate shows how often each answer was right and where to set the confidence threshold: above it your code acts, below it a person reviews. Choose the threshold from your own data, not a default."))))),
+    h("div", { id: "prelabel-panel" }, prelabelBody()),
     b.csv.open ? renderImport() : null,
     b.gateExport ? renderGateExport() : null,
     b.result ? renderCosts() : null,

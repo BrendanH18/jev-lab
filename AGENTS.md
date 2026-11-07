@@ -242,3 +242,10 @@ label counts separately for tuning and held-out rows, without label values. Slic
 after a field is selected, using By slice's full normalized value identity and display-only truncation.
 Labels and test markers cannot be slice fields. Reports are ephemeral, make no model calls or writes,
 and are hidden when rows, questions, labels, or the selected field change.
+
+Pre-run labeling (`jev/prelabel.py`) fills only missing Choice/Noul/Score human labels on tuning
+rows, with blank controls and no model calls or file writes. Preserve existing labels (including
+invalid ones), duplicate positions, input data, pictures, and held-out markers. Held-out rows and
+array states never enter the editable queue. Slice filtering uses full normalized input values;
+drafts survive filters but belong to the current rows/questions snapshot. Apply changes the rows
+editor only, invalidates old Bulk results and health reports, and requires explicit dataset saving.
