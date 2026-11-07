@@ -236,3 +236,9 @@ the existing full normalized input-value identity. Show counts, accuracy and 95%
 never infer automation coverage or saved slice-target passes from an automated-only sample.
 Reports are ephemeral and make no model calls. Queue filters and navigation change presentation
 only: preserve labels, audit membership, CSV handoff, and the set of ready rows eligible to append.
+
+Dataset health by slice reports row and distinct-input counts and per-question valid/missing/invalid
+label counts separately for tuning and held-out rows, without label values. Slice values appear only
+after a field is selected, using By slice's full normalized value identity and display-only truncation.
+Labels and test markers cannot be slice fields. Reports are ephemeral, make no model calls or writes,
+and are hidden when rows, questions, labels, or the selected field change.

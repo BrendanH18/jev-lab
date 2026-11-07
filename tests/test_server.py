@@ -97,6 +97,25 @@ class HttpTests(unittest.TestCase):
         status, _, body = self.request("POST", "/api/workbench/health", "{}", self.post_headers())
         self.assertEqual(status, 400, body)
 
+    def test_dataset_health_slices_forward_the_selected_field(self):
+        rows = [{"channel": "email", "text": "private input", "_expect": {"urgent": True}},
+                {"channel": "email", "text": "private input", "_test": True},
+                {"channel": "chat", "_expect": {"urgent": "invalid label"}}]
+        with patch.object(server.client, "system_one", side_effect=AssertionError("No model call")), \
+                patch("jev.workbench.write_dataset", side_effect=AssertionError("No dataset write")):
+            status, _, body = self.request("POST", "/api/workbench/health", json.dumps({
+                "rows": rows, "field": "channel", "questions": {"urgent": {"type": "noul", "instructions": "Urgent?"}}}),
+                self.post_headers())
+        self.assertEqual(status, 200, body)
+        report = json.loads(body)["by_slice"]
+        self.assertEqual(report["field"], "channel")
+        email = report["slices"][0]
+        self.assertEqual((email["rows"], email["unique_inputs"]), (2, 1))
+        self.assertEqual(email["tuning"]["questions"][0]["labeled"], 1)
+        self.assertEqual(email["test"]["questions"][0]["missing"], 1)
+        self.assertNotIn("private input", body.decode())
+        self.assertNotIn("invalid label", body.decode())
+
     def test_browser_assets_are_served(self):
         for path in ("/css/app.css", "/js/common.js", "/js/../css/app.css"):
             with self.subTest(path=path):

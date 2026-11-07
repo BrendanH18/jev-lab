@@ -119,7 +119,9 @@ conditions.
 - **Dataset health:** before a paid Bulk run, inspect pasted rows or a loaded dataset for duplicate inputs,
   conflicting human labels, missing or invalid labels, and identical inputs on both sides of a test split.
   Findings list row numbers without revealing test labels. Fixes stay manual; inspection makes no model calls
-  or saved changes. It compares exact inputs and picture names, not similar text or image contents.
+  or saved changes. Choose an input field to see row and distinct-input counts, plus valid, missing, and invalid
+  label counts by value, separately for tuning and held-out rows. Label values stay hidden.
+  It compares exact inputs and picture names, not similar text or image contents.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. A target your rows cannot show yet estimates how many more
