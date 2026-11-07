@@ -1190,6 +1190,19 @@ were right, which nothing else in the Workbench can tell you about your own traf
 3. Label the rows in the queue. A row is ready once every gated question has a label.
 4. **Add labeled rows** appends the ready rows, with their labels, to the dataset.
 
+For spreadsheet labeling, **Download labeling CSV** exports the current queue's inputs and a blank
+`label:<question>` column for every Choice, Noul, and Score question. All labels start blank for independent
+labeling, including review rows. Model answers, shortlists, and decision metadata stay out of the CSV.
+Use the question definitions shown beside the download; pictures stay separate, so share the named picture
+files too when needed. Keep this queue open while the spreadsheet is filled in.
+
+**Import labeling CSV** previews the labels without changing the queue or saving the dataset. Keep
+`row_id` and `input` unchanged; the import rejects unknown or duplicate rows, changed inputs, stale gate
+configuration, and invalid labels. You may reorder rows or import a subset. Blank cells clear that row's
+labels; rows omitted from the CSV keep their current labels. **Apply imported labels** puts the preview's
+labels in the queue; **Add labeled rows** remains the explicit save step. Importing preserves the queue's
+review/audit membership and does not resample the audit. Export and import make no model calls.
+
 New Python and JavaScript gates include `provenance` in each decision: a versioned fingerprint of the
 questions (including Choice option order), requested model, thresholds, signal, rules, and answer-set cuts.
 Review compares it with the selected check and skips mismatches with a line-specific explanation. It
