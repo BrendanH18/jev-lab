@@ -4,6 +4,7 @@ The decisions come from the exported gate.py itself, run as a script against the
 the queue reads exactly what the exported file prints. No key, no network.
 """
 
+import copy
 import json
 import os
 import shutil
@@ -66,6 +67,48 @@ class Temp(unittest.TestCase):
 
 
 class QueueTests(Temp):
+    def test_mismatch_and_malformed_provenance_are_line_problems(self):
+        self.save()
+        d = json.loads(self.route().splitlines()[0])
+        for metadata in (None, {}, dict(d["provenance"], version=True),
+                         dict(d["provenance"], fingerprint="wrong")):
+            with self.subTest(metadata=metadata):
+                out = decisions.queue("tickets", json.dumps(dict(d, provenance=metadata)), audit=10)
+                self.assertEqual(out["items"], [])
+                self.assertEqual(out["problems_total"], 1)
+                self.assertIn("provenance", out["problems"][0]["message"])
+
+    def test_changed_gate_or_questions_reject_old_decisions(self):
+        self.save()
+        text = self.route()
+        original = workbench.load_dataset("tickets")
+        variants = []
+        for field, value in (("model", "jev-1.15.0"), ("gates", {"department": 0.9}),
+                             ("rules", ""), ("signal", "top_probability")):
+            dataset = copy.deepcopy(original)
+            dataset["check"][field] = value
+            variants.append(dataset)
+        dataset = copy.deepcopy(original)
+        dataset["questions"]["department"]["instructions"] += " Changed wording."
+        variants.append(dataset)
+        for dataset in variants:
+            with self.subTest(check=dataset["check"]):
+                workbench.write_dataset(dataset)
+                out = decisions.queue("tickets", text, audit=10)
+                self.assertEqual(out["items"], [])
+                self.assertGreater(out["problems_total"], 0)
+
+    def test_legacy_review_is_manual_and_legacy_auto_is_not_audited(self):
+        self.save()
+        rows = [json.loads(line) for line in self.route().splitlines()]
+        for row in rows:
+            del row["provenance"]
+        out = decisions.queue("tickets", "\n".join(json.dumps(r) for r in rows), audit=10)
+        self.assertEqual(out["counts"]["unverified"], len(rows))
+        self.assertEqual(out["counts"]["audit"], 0)
+        self.assertEqual(len(out["items"]), 2)
+        self.assertTrue(all(v is None for i in out["items"] for v in i["labels"].values()))
+
     def test_picture_decision_with_box_can_be_reviewed_and_saved(self):
         questions = dict(QUESTIONS, where={"type": "box", "instructions": "The damaged area in `photo`"})
         workbench.save_dataset({"name": "Photos", "rows": [{"_image": "intact-bag"}], "questions": questions})
@@ -81,6 +124,7 @@ class QueueTests(Temp):
         self.assertNotIn("where", report["questions"], "Box output is not a Review label control")
         self.assertIsNone(item["labels"]["department"])
         item["labels"]["department"] = "billing"
+        item["labels"]["is_urgent"] = True
         decisions.append("photos", [item])
         saved = workbench.load_dataset("photos")
         self.assertEqual(saved["rows"][-1], {"_image": "torn-bag", "_expect": {"department": "billing", "is_urgent": True}})
@@ -110,7 +154,7 @@ class QueueTests(Temp):
              "answers": {"department": "billing", "is_urgent": True}, "row": {"text": "A new ticket"},
              "candidates": {"department": ["billing", "shipping"], "is_urgent": [False, True], "frustration": [0, 1]}}
         item = decisions.queue("tickets", json.dumps(d))["items"][0]
-        self.assertEqual(item["candidates"], d["candidates"])
+        self.assertNotIn("candidates", item, "unverified shortlists cannot suggest current labels")
         self.assertIsNone(item["labels"]["department"], "a shortlist does not choose a person's label")
         self.assertIsNone(item["labels"]["is_urgent"])
         # A reviewer can pick an option outside the shortlist.
@@ -120,9 +164,20 @@ class QueueTests(Temp):
         self.assertEqual(saved["rows"][-1], {"text": "A new ticket", "_expect": item["labels"]})
         self.assertNotIn("candidates", json.dumps(saved))
 
+    def test_legacy_shortlist_with_removed_option_is_ignored(self):
+        self.save()
+        d = {"route": "review", "held": ["department"], "answers": {}, "row": {"text": "legacy"},
+             "candidates": {"department": ["removed-option"]}}
+        out = decisions.queue("tickets", json.dumps(d))
+        self.assertEqual(out["problems"], [])
+        self.assertEqual(len(out["items"]), 1)
+        self.assertNotIn("candidates", out["items"][0])
+        self.assertTrue(all(v is None for v in out["items"][0]["labels"].values()))
+
     def test_invalid_shortlists_report_the_line(self):
         self.save()
-        d = {"route": "review", "held": ["department"], "answers": {}, "row": {"text": "new"}}
+        d = {"route": "review", "held": ["department"], "answers": {}, "row": {"text": "new"},
+             "provenance": gate.provenance(QUESTIONS, CHECK["gates"], CHECK["signal"], CHECK["model"], RULES)}
         for candidates in (["billing"], {"unknown": ["x"]}, {"department": []},
                            {"department": ["billing", "billing"]}, {"department": ["sales"]},
                            {"is_urgent": [None]}, {"frustration": [99]}):
@@ -176,6 +231,8 @@ class QueueTests(Temp):
                              "row": {"text": "ticket %d" % n}}) for n in range(250)]
         lines += [json.dumps({"route": "auto", "held": [], "rules": [], "answers": {"department": "billing"},
                               "row": {"text": "auto %d" % n}}) for n in range(30)]
+        provenance = gate.provenance(QUESTIONS, CHECK["gates"], CHECK["signal"], CHECK["model"], RULES)
+        lines = [json.dumps(dict(json.loads(line), provenance=provenance)) for line in lines]
         out = decisions.queue("tickets", "\n".join(lines), audit=20)
         self.assertEqual((out["counts"]["queued"], out["counts"]["audit"], out["counts"]["dropped"]), (200, 20, 70))
 
@@ -216,6 +273,25 @@ class QueueTests(Temp):
 
 
 class AppendTests(Temp):
+    def test_append_rechecks_provenance_after_check_changes(self):
+        item = self.queued()["items"][0]
+        item["labels"] = {"department": "billing", "is_urgent": True}
+        checks.save_check("tickets", dict(CHECK, model="jev-1.15.0"))
+        before = workbench.load_dataset("tickets")
+        with self.assertRaisesRegex(workbench.WorkbenchError, "provenance"):
+            decisions.append("tickets", [item])
+        self.assertEqual(workbench.load_dataset("tickets"), before)
+
+    def test_legacy_append_cannot_claim_an_audit_score(self):
+        self.save()
+        item = {"row": {"text": "legacy audited row"}, "kind": "audit",
+                "answers": {"department": "billing", "is_urgent": True},
+                "labels": {"department": "billing", "is_urgent": True}}
+        out = decisions.append("tickets", [item])
+        self.assertEqual(out["added"], 1)
+        self.assertIsNone(out["audit"])
+        self.assertNotIn("provenance", json.dumps(workbench.load_dataset("tickets")))
+
     def test_concurrent_dataset_mutations_preserve_both_updates(self):
         for other in ("append", "check"):
             with self.subTest(other=other):

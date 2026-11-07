@@ -56,6 +56,23 @@ def _check(dataset: dict) -> Tuple[Dict[str, dict], dict]:
     return questions, check
 
 
+def _expected(dataset: dict, check: dict) -> dict:
+    from . import gate  # Gate's answer-set helpers also read Review's row identity during import.
+
+    return gate.provenance(dataset.get("questions"), check["gates"], check.get("signal", "confidence"),
+                           check["model"], check.get("rules"), check.get("answer_sets"))
+
+
+def _compatible(item: dict, expected: dict) -> bool:
+    """Missing provenance is legacy; present but incompatible metadata must never be silently downgraded."""
+    if "provenance" not in item:
+        return False
+    value = item["provenance"]
+    if not isinstance(value, dict) or type(value.get("version")) is not int or value != expected:
+        raise ValueError("has gate provenance that does not match this check. Export its current gate and route the rows again")
+    return True
+
+
 def _rule_questions(check: dict, questions: Dict[str, dict]) -> Dict[str, List[str]]:
     """{rule text: the questions it reads}, for the check's rules."""
     try:
@@ -105,7 +122,9 @@ def _decision(line: str, questions: Dict[str, dict]) -> dict:
         raise ValueError("has held or rules that are not lists of text")
     out = {"route": d["route"], "row": row, "answers": d["answers"],
            "held": [q for q in held if q in questions], "rules": [str(r) for r in broken]}
-    if "candidates" in d:
+    if "provenance" in d:
+        out["provenance"] = d["provenance"]
+    if "candidates" in d and "provenance" in d:
         raw = d["candidates"]
         if not isinstance(raw, dict):
             raise ValueError("has candidates that are not keyed by question id")
@@ -151,6 +170,7 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
     "open", the questions a person must decide."""
     dataset = workbench.load_dataset(dataset_id)
     questions, check = _check(dataset)
+    expected = _expected(dataset, check)
     audit = _count(audit, "audit", MAX_AUDIT)
     seed = _count(seed, "seed", 2 ** 31)
     rule_qids = _rule_questions(check, questions)
@@ -160,18 +180,23 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
     review: List[dict] = []
     auto: List[dict] = []
     problems: List[dict] = []
-    counts = {"decisions": 0, "review": 0, "auto": 0, "in_dataset": 0, "repeated": 0}
+    counts = {"decisions": 0, "review": 0, "auto": 0, "in_dataset": 0, "repeated": 0, "unverified": 0}
     for number, line in enumerate(_lines(text), 1):
         if not line.strip():
             continue
         try:
             # Box results may accompany the routed answers, but Review labels only Choice, Noul, and Score.
             d = _decision(line.strip(), dataset.get("questions") or {})
+            verified = _compatible(d, expected)
         except ValueError as err:
             problems.append({"line": number, "message": "Line %d %s" % (number, err)})
             continue
         counts["decisions"] += 1
         counts[d["route"]] += 1
+        if not verified:
+            counts["unverified"] += 1
+            if d["route"] == "auto":
+                continue  # Old automated decisions cannot enter this check's audit population.
         key = _key(d["row"])
         if key in have:
             counts["in_dataset"] += 1
@@ -197,8 +222,10 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
             # Only a gated answer that cleared its threshold is suggested. A question no gate reads was never judged
             # sure, so suggesting its answer would save the model's answer as a person's label.
             ok, value = label(question, d["answers"].get(qid))
-            labels[qid] = value if ok and qid in gates and qid not in opened else None
+            labels[qid] = value if "provenance" in d and ok and qid in gates and qid not in opened else None
         needed = [q for q in questions if labels[q] is None and (q in gates or q in opened)]
+        if "provenance" not in d:
+            d.pop("candidates", None)  # Its shortlist may have been fitted to different question wording.
         items.append(dict(d, kind="review", labels=labels, open=needed))
     for d in sampled:
         items.append(dict(d, kind="audit", labels={q: None for q in questions}, open=list(questions)))
@@ -231,15 +258,19 @@ def _item(item: Any, number: int, questions: Dict[str, dict]) -> dict:
         raise WorkbenchError("Item %d has no labels" % number)
     kind = item.get("kind")
     answers = item.get("answers") if isinstance(item.get("answers"), dict) else {}
-    return {"row": row, "labels": labels, "kind": kind if kind in ("review", "audit") else "review", "answers": answers}
+    out = {"row": row, "labels": labels, "kind": kind if kind in ("review", "audit") else "review", "answers": answers}
+    if "provenance" in item:
+        out["provenance"] = item["provenance"]
+    return out
 
 
-def audit_report(items: List[dict], questions: Dict[str, dict], check: dict) -> Optional[dict]:
+def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, expected: dict) -> Optional[dict]:
     """How often the gate's automated decisions were right on the audit rows labeled for every gated question.
 
     A row is right when every gated answer matches its label, as Policy scores it. None without such rows."""
     gates = list(check["gates"])
-    scored = [i for i in items if i["kind"] == "audit" and all(q in i["labels"] for q in gates)]
+    scored = [i for i in items if i["kind"] == "audit" and _compatible(i, expected)
+              and all(q in i["labels"] for q in gates)]
     if not scored:
         return None
     wrong = []
@@ -272,6 +303,12 @@ def append(dataset_id: str, items: Any) -> dict:
     if not isinstance(items, list) or not items:
         raise WorkbenchError("Label at least one row to add")
     checked = [_item(item, n, questions) for n, item in enumerate(items, 1)]
+    expected = _expected(dataset, check)
+    for n, item in enumerate(checked, 1):
+        try:
+            _compatible(item, expected)
+        except ValueError as err:
+            raise WorkbenchError("Item %d %s" % (n, err)) from err
     have = {_key(r) for r in dataset["rows"]}
     new, already = [], 0
     for item in checked:
@@ -290,4 +327,4 @@ def append(dataset_id: str, items: Any) -> dict:
     dataset["rows"] = workbench.validate_rows(rows)
     workbench.write_dataset(dataset)
     return {"dataset": workbench.dataset_summary(dataset), "added": len(new), "already": already,
-            "audit": audit_report(checked, questions, check)}
+            "audit": audit_report(checked, questions, check, expected)}

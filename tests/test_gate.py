@@ -155,7 +155,8 @@ class ExportTests(unittest.TestCase):
                     decision = module["decide"]({"text": "hi"}, self.client(case))
                     held = expected(case, signal=signal)
                     self.assertEqual(decision, {"route": "review" if held else "auto", "held": held, "rules": [],
-                                                "answers": shown(case)})
+                                                "answers": shown(case),
+                                                "provenance": gate.provenance(QUESTIONS, GATES, signal, "jev-1.14.0")})
 
     @staticmethod
     def client(raw):
@@ -184,8 +185,8 @@ class ExportTests(unittest.TestCase):
         plain = self.python_module(gate.export(QUESTIONS, GATES, "confidence", "m", rules=RULES)["python"])
         out = [module["decide"]({"text": "hi"}, self.client(c)) for c in cases]
         for c, d in zip(cases, out):
-            self.assertEqual({k: v for k, v in d.items() if k != "candidates"},
-                             plain["decide"]({"text": "hi"}, self.client(c)))
+            self.assertEqual({k: v for k, v in d.items() if k not in ("candidates", "provenance")},
+                             {k: v for k, v in plain["decide"]({"text": "hi"}, self.client(c)).items() if k != "provenance"})
         self.assertEqual(out[0]["candidates"], {"department": ["billing", "shipping", "technical"],
                                                  "is_urgent": [True, False], "frustration": [1, 2]})
         self.assertEqual(out[1]["candidates"]["department"], list(QUESTIONS["department"]["criteria"]))
@@ -274,7 +275,8 @@ for (const probabilities of [null, {0: 0.2, 1: NaN, 2: 0.8}, {0: true, 1: 0, 2: 
             self.assertEqual(call.call_args.kwargs["extra_headers"], {images.IMAGES_HEADER: "true"})
             self.assertEqual(row, original, "library calls do not rewrite the caller's row")
             self.assertEqual(decision, {"route": "auto", "held": [], "rules": [],
-                                       "answers": {"damaged": True, "where": BOX}, "candidates": {"damaged": [True]}})
+                                       "answers": {"damaged": True, "where": BOX}, "candidates": {"damaged": [True]},
+                                       "provenance": module["PROVENANCE"]})
         self.assertIsNone(module["decide"]({"_image": "torn-bag"}, self.client({"damaged": PHOTO_ANSWERS["damaged"]}),
                                          image_dir=photo)["answers"]["where"])
         unsure = dict(PHOTO_ANSWERS, damaged={"type": "noul", "noul": 0.7})
@@ -319,7 +321,7 @@ for (const probabilities of [null, {0: 0.2, 1: NaN, 2: 0.8}, {0: true, 1: 0, 2: 
         (photo / "torn-bag.png").write_bytes(images.sample_bytes("torn-bag"))
         saved = "0123456789abcdef.jpg"
         (photo / saved).write_bytes(images.sample_bytes("torn-bag"))
-        runner = '''import { decide } from "./gate.mjs";
+        runner = '''import { decide, PROVENANCE } from "./gate.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const result = JSON.parse(process.argv[2]);
@@ -339,7 +341,7 @@ for (const name of ["torn-bag", "0123456789abcdef.jpg"]) {
   const original = structuredClone(row);
   const out = await decide(row, client, "pictures");
   assert.deepEqual(out, {route: "auto", held: [], rules: [], answers: {damaged: true, where: result.where.box},
-                         candidates: {damaged: [true]}});
+                         candidates: {damaged: [true]}, provenance: PROVENANCE});
   assert.deepEqual(row, original);
 }
 assert.equal(calls, 2);
@@ -384,6 +386,8 @@ assert.equal(unsure.route, "review");
         self.assertEqual(sent, [{"text": "Order A-1041 arrived damaged."}, {"text": "Refund please", "channel": "email"},
                                 {"text": "42"}], "labels never reach the model")
         self.assertEqual([json.loads(line)["row"] for line in out], sent, "each decision carries the row it was asked about")
+        self.assertTrue(all(json.loads(line)["provenance"] == gate.provenance(QUESTIONS, GATES, model="jev-1.14.0")
+                            for line in out))
 
     @unittest.skipUnless(typesafe_sdk, "the TypeSafe SDK needs Python 3.10+")
     def test_python_with_the_real_sdk(self):
@@ -398,7 +402,8 @@ assert.equal(unsure.route, "review");
         exec(compile(gate.export(QUESTIONS, GATES, "confidence", "jev-1.14.0")["python"], "gate.py", "exec"), namespace)
         client = typesafe_sdk.TypeSafeClient(api_key="sk-test", transport=httpx2.MockTransport(handler), compression=False)
         decision = namespace["decide"]({"text": "hi"}, client)
-        self.assertEqual(decision, {"route": "review", "held": ["department"], "rules": [], "answers": shown(CASES[1])})
+        self.assertEqual(decision, {"route": "review", "held": ["department"], "rules": [], "answers": shown(CASES[1]),
+                                    "provenance": gate.provenance(QUESTIONS, GATES, model="jev-1.14.0")})
         (request,) = sent
         self.assertEqual(request["model"], "jev-1.14.0")
         self.assertEqual(request["questions"], workbench.bulk_questions(QUESTIONS), "the SDK sends the questions as the Workbench does")
@@ -452,7 +457,8 @@ assert.equal(unsure.route, "review");
                 want = []
                 for case in CASES:
                     held = expected(case, signal=signal)
-                    want.append({"route": "review" if held else "auto", "held": held, "rules": [], "answers": shown(case)})
+                    want.append({"route": "review" if held else "auto", "held": held, "rules": [], "answers": shown(case),
+                                                "provenance": gate.provenance(QUESTIONS, GATES, signal, "jev-1.14.0")})
                 self.assertEqual(json.loads(out), want)
         # An answer the model left out holds its question, even when its id names an inherited property, and an
         # unreadable signal (here a Choice answer without its confidence) holds its question too.
@@ -474,6 +480,39 @@ assert.equal(unsure.route, "review");
         sent = [json.loads(line) for line in (self.tmp / "states.jsonl").read_text().splitlines()]
         self.assertEqual(sent, [{"text": "Order A-1041 arrived damaged."}, {"text": "Refund please"}], "labels never reach the model")
         self.assertEqual([json.loads(line)["row"] for line in out], sent, "each decision carries the row it was asked about")
+        self.assertTrue(all(json.loads(line)["provenance"] == gate.provenance(QUESTIONS, GATES, model="jev-1.14.0")
+                            for line in out))
+
+
+class ProvenanceTests(unittest.TestCase):
+    def test_identity_covers_request_and_routing_changes(self):
+        baseline = gate.provenance(QUESTIONS, GATES, model="jev-1.14.0")
+        self.assertEqual(baseline["version"], 1)
+        self.assertEqual(baseline["model"], "jev-1.14.0")
+        self.assertRegex(baseline["fingerprint"], r"^[0-9a-f]{64}$")
+        reworded = dict(QUESTIONS, department=dict(QUESTIONS["department"], instructions="Where should this go?"))
+        reordered = dict(QUESTIONS, department=dict(QUESTIONS["department"], criteria=dict(
+            reversed(list(QUESTIONS["department"]["criteria"].items())))))
+        variants = [
+            {"questions": reworded}, {"questions": reordered}, {"model": "jev-1.15.0"},
+            {"gates": dict(GATES, department=0.7)}, {"signal": "top_probability"}, {"rules": RULES},
+            {"answer_sets": {"department": {"cut": 0.2, "coverage": 0.9}}},
+        ]
+        for changes in variants:
+            with self.subTest(changes=changes):
+                args = dict(questions=QUESTIONS, gates=GATES, model="jev-1.14.0")
+                args.update(changes)
+                self.assertNotEqual(gate.provenance(**args), baseline)
+
+    def test_identity_ignores_ordinary_object_field_order_and_source_metadata(self):
+        questions = {qid: dict(reversed(list(spec.items()))) for qid, spec in reversed(list(QUESTIONS.items()))}
+        baseline = gate.provenance(QUESTIONS, GATES, model="jev-1.14.0")
+        self.assertEqual(gate.provenance(questions, dict(reversed(list(GATES.items()))), model=" jev-1.14.0 "), baseline)
+        a = gate.export(QUESTIONS, GATES, model="jev-1.14.0", source={"dataset": "First", "min_accuracy": 0.9})
+        b = gate.export(QUESTIONS, GATES, model="jev-1.14.0", source={"dataset": "Second", "min_accuracy": 0.95})
+        for exported in (a, b):
+            self.assertIn(baseline["fingerprint"], exported["python"])
+            self.assertIn(baseline["fingerprint"], exported["javascript"])
 
 
 class ValidationTests(unittest.TestCase):
