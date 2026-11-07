@@ -218,3 +218,10 @@ Every required slice must pass; missing or unevaluable slices prevent a pass. Sc
 run's tuning answers only, with no extra calls or held-out rows. Preserve slice configuration in
 bundles and model upgrades, and enforce it on upgrade proposals. Persist no measured slice results.
 Slice targets evaluate batches; exported per-row gates still route by thresholds and rules.
+
+Exported gate decisions carry versioned configuration provenance (questions including Choice option order,
+requested model, thresholds, signal, rules, and answer-set cuts). Review rejects mismatches both when
+reading and appending. Legacy review rows without provenance require manual labels and supply no
+shortlists; legacy automated rows are excluded from audit sampling and scoring. Provenance identifies
+configuration, not file authenticity or an alias's resolved model version. Save only inputs and human
+labels in datasets, never provenance, model answers, or measured audit results.

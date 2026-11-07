@@ -206,7 +206,8 @@ conditions.
 - **Review queue:** paste what the exported gate printed. Label the rows it sent to review, which start from
   the gated answers it was sure of, and a random sample of the rows it automated, labeled before you see its
   answers. Then add them to the check's dataset. The audit says how often the gate's automated decisions
-  were right on your traffic, with a 95% interval. It makes no model call.
+  were right on your traffic, with a 95% interval. Exported decisions identify their gate configuration;
+  mismatches are skipped, and older files without provenance cannot supply audit scores. It makes no model call.
 - **Compare:** run two variants, each a question set and a model, over the same labeled rows. See
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
   significance test, and the rows where the variants disagree. **Reverse A's options** makes variant B an

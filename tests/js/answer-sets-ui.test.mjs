@@ -75,3 +75,24 @@ test("review shortlists retain every label and audit shortlists stay hidden unti
   item.labels.topic = "other";
   assert.match(allText(view()), /Suggested shortlist: billing, delivery/);
 });
+
+test("saving Review labels keeps provenance for the server's second check", async () => {
+  const provenance = { version: 1, fingerprint: "configuration", model: "jev-1.14.0" };
+  const item = { row: { text: "A new ticket" }, kind: "audit", answers: { topic: "billing" },
+    labels: { topic: "delivery" }, provenance };
+  const report = { items: [item], gates: { topic: 0.9 }, room: 20 };
+  const W = { bulk: { checkRuns: { coffee: { queue: { report } } }, dataset: { id: null } } };
+  let payload;
+  const api = async (path, data) => {
+    if (path.endsWith("/add")) {
+      payload = data;
+      return { added: 1, already: 0, audit: null };
+    }
+    return { datasets: [] };
+  };
+  const add = new Function("W", "api", "render", "toast", "handleError", "queueReady",
+    `async ${body("addQueued")}; return addQueued;`)(W, api, () => {}, () => {}, (e) => { throw e; }, () => true);
+  await add("coffee");
+  assert.deepEqual(payload.items[0].provenance, provenance);
+  assert.deepEqual(report.items, []);
+});

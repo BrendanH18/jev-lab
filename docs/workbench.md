@@ -1190,6 +1190,19 @@ were right, which nothing else in the Workbench can tell you about your own traf
 3. Label the rows in the queue. A row is ready once every gated question has a label.
 4. **Add labeled rows** appends the ready rows, with their labels, to the dataset.
 
+New Python and JavaScript gates include `provenance` in each decision: a versioned fingerprint of the
+questions (including Choice option order), requested model, thresholds, signal, rules, and answer-set cuts.
+Review compares it with the selected check and skips mismatches with a line-specific explanation. It
+checks again before saving: if the check changed while the queue was open, export and route again.
+Dataset names, timestamps, and batch accuracy/coverage targets do not change per-row provenance.
+This identifies configuration, not file authenticity or the concrete version an alias resolved to; keep
+using a pinned model for reproducible runs.
+
+Older files without provenance are marked **unverified**. Their review rows start with blank labels and
+no shortlists; their automated rows cannot enter audit sampling or produce audit statistics. To audit
+those rows, export the current check's gate and route them again. Mixed files audit only matching decisions,
+so that audit describes the matching population. Provenance stays in the imported file, never the dataset.
+
 Questions no gate reads start empty on every row. The gate never judged them, so filling them in would save
 the model's answers as your labels; label them yourself if you want them in Calibrate.
 
@@ -1225,7 +1238,7 @@ asks the model again.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
-| `POST /api/workbench/checks/decisions` | `id`, `text` (the decision lines), optional `audit` (0 to 200, default 0) and `seed` | `items`, each with its `line`, `kind` (`review` or `audit`), `row`, `route`, `held`, `rules`, `answers`, `labels` to start from, and `open` questions; the dataset's `questions` and the check's `gates`; `counts` (`decisions`, `review`, `auto`, `in_dataset`, `repeated`, `queued`, `audit`, `dropped`); `problems` by line; and `room` |
+| `POST /api/workbench/checks/decisions` | `id`, `text` (the decision lines), optional `audit` (0 to 200, default 0) and `seed` | `items`, each with its `line`, `kind` (`review` or `audit`), `row`, `route`, `held`, `rules`, `answers`, `labels` to start from, and `open` questions; the dataset's `questions` and the check's `gates`; `counts` (`decisions`, `review`, `auto`, `in_dataset`, `repeated`, `queued`, `audit`, `dropped`, `unverified`); `problems` by line; and `room` |
 | `POST /api/workbench/checks/decisions/add` | `id`, `items`, each with its `row`, `labels`, and, for the audit, `kind` and `answers` | `dataset`: the summary; `added`; `already`, rows the dataset had; and `audit`: `rows`, `correct`, `accuracy` with `accuracy_low` and `accuracy_high`, the `target` and whether it is met (`ok`), and the `wrong` rows, or `null` without audited rows |
 
 ## Compare two variants

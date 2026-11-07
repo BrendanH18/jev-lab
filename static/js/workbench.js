@@ -1707,6 +1707,7 @@ function queueView(x, q) {
     `${plural(c.decisions, "decision")}: ${c.review} to review, ${c.auto} automated`,
     c.in_dataset ? `${c.in_dataset} already in the dataset` : null,
     c.repeated ? `${c.repeated} repeated` : null,
+    c.unverified ? `${c.unverified} without provenance` : null,
     `queued ${c.queued - c.audit} to review and ${c.audit} to audit`,
     c.dropped ? `${c.dropped} more to review than fit; add these and read the file again` : null,
   ].filter(Boolean).join(" · ");
@@ -1719,6 +1720,8 @@ function queueView(x, q) {
     return h("div", { class: `queue-item${done ? " done" : ""}` },
       h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
         h("span", { class: "faint mono", style: { fontSize: "11.5px" } }, `line ${item.line}`), why,
+        h("span", { class: `badge ${item.provenance ? "info" : "warning"}` },
+          item.provenance ? "gate matches check" : "unverified · no provenance"),
         done ? h("span", { class: "badge good" }, icon("check"), "ready") : null),
       h("div", { class: "row-text" }, rowText(item.row)),
       W.bulk.pictures[item.row?._image] ? h("img", { src: W.bulk.pictures[item.row._image], alt: item.row._image, class: "row-thumb" }) : null,
@@ -1737,13 +1740,15 @@ function queueView(x, q) {
   };
   return h("div", { class: "check-report grid", style: { gap: "8px" } },
     h("div", { class: "faint", style: { fontSize: "12px" } }, summary),
+    c.unverified ? h("p", { class: "muted" },
+      "Older decisions have no gate provenance. Review rows start without suggested labels; automated rows are excluded from audit sampling and scores. Export this check's current gate and route rows again to verify them.") : null,
     rep.problems_total ? h("details", {},
       h("summary", { class: "muted", style: { fontSize: "12.5px" } }, `${plural(rep.problems_total, "line")} not read`),
       h("ul", { class: "faint", style: { fontSize: "12px", margin: "4px 0 0", paddingLeft: "18px" } },
         rep.problems.map((p) => h("li", {}, p.message)),
         rep.problems_total > rep.problems.length ? h("li", {}, `…and ${rep.problems_total - rep.problems.length} more`) : null)) : null,
     rep.items.length ? h("div", { class: "queue-list" }, rep.items.map(card))
-      : h("div", { class: "empty" }, "Nothing to label: the dataset already has every row these decisions name."),
+      : h("div", { class: "empty" }, "No eligible rows to label. Check the file problems and provenance notices above; matching rows may already be in the dataset."),
     rep.items.length ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm primary", disabled: q.busy || !adding, onclick: () => addQueued(x.id) },
         icon("save"), `Add ${adding < ready.length ? `${adding} of ${ready.length}` : adding} labeled row${ready.length === 1 ? "" : "s"} to “${x.name || x.id}”`),
@@ -1762,6 +1767,7 @@ async function addQueued(id) {
   render();
   try {
     const items = ready.map((i) => ({ row: i.row, kind: i.kind, answers: i.answers,
+      ...(i.provenance ? { provenance: i.provenance } : {}),
       labels: Object.fromEntries(Object.entries(i.labels).filter(([, v]) => v !== null && v !== undefined)) }));
     const out = await api("/api/workbench/checks/decisions/add", { id, items });
     rep.items = rep.items.filter((i) => !ready.includes(i));

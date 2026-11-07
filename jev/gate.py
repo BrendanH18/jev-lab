@@ -26,6 +26,7 @@ the file says where they came from.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, Dict, List, Optional
 
@@ -94,6 +95,21 @@ def _percent(value: float) -> str:
     return ("%.1f" % (value * 100)).rstrip("0").rstrip(".")
 
 
+def provenance(questions: Any, gates: Any, signal: Any = "confidence", model: Any = None,
+               rules: Any = None, answer_sets: Any = None) -> dict:
+    """Identity of the exported request and routing configuration, independent of dataset metadata.
+
+    Choice option order is part of the request even though ordinary JSON object field order is not.
+    This identifies configuration, not the authenticity of a decision file or an alias's resolved version.
+    """
+    questions, gates, signal, model = validate(questions, gates, signal, model)
+    payload = {"questions": questions, "gates": gates, "signal": signal, "model": model,
+               "rules": _rules(rules, questions), "answer_sets": answersets.validate_config(answer_sets, questions),
+               "choice_orders": {qid: list(q["criteria"]) for qid, q in questions.items() if q["type"] == "choice"}}
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return {"version": 1, "fingerprint": hashlib.sha256(encoded.encode("utf-8")).hexdigest(), "model": model}
+
+
 def export(questions: Any, gates: Any, signal: Any = "confidence", model: Any = None,
            source: Optional[dict] = None, rules: Any = None, answer_sets: Any = None) -> dict:
     """{"python": source, "javascript": source}. rules: Policy's rules as text. No model call."""
@@ -101,8 +117,9 @@ def export(questions: Any, gates: Any, signal: Any = "confidence", model: Any = 
     origin = _origin(source)
     written = _rules(rules, questions)
     sets = answersets.validate_config(answer_sets, questions)
-    return {"python": _python(questions, gates, signal, model, origin, written, sets),
-            "javascript": _javascript(questions, gates, signal, model, origin, written, sets)}
+    identity = provenance(questions, gates, signal, model, rules, sets)
+    return {"python": _python(questions, gates, signal, model, origin, written, sets, identity),
+            "javascript": _javascript(questions, gates, signal, model, origin, written, sets, identity)}
 
 
 def export_check(dataset_id: str) -> dict:
@@ -234,7 +251,7 @@ def _request(state, image_dir):
 
 
 def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str,
-            rules: List[dict], answer_sets: dict) -> str:
+            rules: List[dict], answer_sets: dict, identity: dict) -> str:
     types = {qid: q["type"] for qid, q in questions.items()}
     names = sorted({"Choice", "Image", "Noul", "NoulCriteria", "Score", "TypeSafeClient"}
                    | ({"Box"} if workbench.has_box(questions) else set()))
@@ -260,6 +277,7 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "from typesafe_sdk import %s" % ", ".join(names),
         "",
         "MODEL = %r" % model,
+        "PROVENANCE = %s" % _py(identity),
         "SIGNAL = %r  # what each threshold is compared with" % signal,
         "THRESHOLDS = %s" % _py(gates),
         "TYPES = %s" % _py(types),
@@ -349,7 +367,7 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
         "        answers[qid] = None if answer is None else value(answer, qtype)",
         "    rules = broken_rules(answers)",
         "    route = \"review\" if held or rules else \"auto\"",
-        "    return {\"route\": route, \"held\": held, \"rules\": rules, \"answers\": answers}",
+        "    return {\"route\": route, \"held\": held, \"rules\": rules, \"answers\": answers, \"provenance\": dict(PROVENANCE)}",
         "",
         "",
         "def _row(line):",
@@ -379,8 +397,8 @@ def _python(questions: Dict[str, dict], gates: Dict[str, float], signal: str, mo
     if answer_sets:
         at = lines.index('def decide(state, client=None, image_dir="."):')
         lines[at:at] = _python_candidates(questions, answer_sets)
-        at = lines.index('    return {"route": route, "held": held, "rules": rules, "answers": answers}')
-        lines[at] = ('    return {"route": route, "held": held, "rules": rules, "answers": answers, '
+        at = lines.index('    return {"route": route, "held": held, "rules": rules, "answers": answers, "provenance": dict(PROVENANCE)}')
+        lines[at] = ('    return {"route": route, "held": held, "rules": rules, "answers": answers, "provenance": dict(PROVENANCE), '
                      '"candidates": candidates(result)}')
     return "\n".join(lines) + "\n"
 
@@ -429,7 +447,7 @@ async function pictureRequest(state, imageDir) {
 
 
 def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str, model: str, origin: str,
-                rules: List[dict], answer_sets: dict) -> str:
+                rules: List[dict], answer_sets: dict, identity: dict) -> str:
     types = {qid: q["type"] for qid, q in questions.items()}
     reads = _JS_SIGNAL[signal]
     dumps = lambda value: json.dumps(value, indent=2, ensure_ascii=False)  # noqa: E731
@@ -452,6 +470,7 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "import { image, TypeSafeClient } from \"@typesafe-ai/sdk\";",
         "",
         "export const MODEL = %s;" % json.dumps(model),
+        "export const PROVENANCE = %s;" % dumps(identity),
         "export const SIGNAL = %s; // what each threshold is compared with" % json.dumps(signal),
         "export const THRESHOLDS = %s;" % dumps(gates),
         "const TYPES = %s;" % dumps(types),
@@ -524,7 +543,7 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
         "  const shown = Object.fromEntries(Object.entries(TYPES).map(([id, type]) =>",
         "    [id, Object.hasOwn(answers, id) ? value(answers[id], type) : null]));",
         "  const rules = brokenRules(shown);",
-        "  return { route: held.length || rules.length ? \"review\" : \"auto\", held, rules, answers: shown };",
+        "  return { route: held.length || rules.length ? \"review\" : \"auto\", held, rules, answers: shown, provenance: { ...PROVENANCE } };",
         "}",
         "",
         "function row(line) {",
@@ -551,7 +570,7 @@ def _javascript(questions: Dict[str, dict], gates: Dict[str, float], signal: str
     if answer_sets:
         at = lines.index("let shared;")
         lines[at:at] = _javascript_candidates(questions, answer_sets)
-        at = lines.index('  return { route: held.length || rules.length ? "review" : "auto", held, rules, answers: shown };')
-        lines[at] = ('  return { route: held.length || rules.length ? "review" : "auto", held, rules, answers: shown, '
+        at = lines.index('  return { route: held.length || rules.length ? "review" : "auto", held, rules, answers: shown, provenance: { ...PROVENANCE } };')
+        lines[at] = ('  return { route: held.length || rules.length ? "review" : "auto", held, rules, answers: shown, provenance: { ...PROVENANCE }, '
                      'candidates: candidates(answers) };')
     return "\n".join(lines) + "\n"
