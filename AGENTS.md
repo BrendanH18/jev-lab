@@ -225,3 +225,8 @@ reading and appending. Legacy review rows without provenance require manual labe
 shortlists; legacy automated rows are excluded from audit sampling and scoring. Provenance identifies
 configuration, not file authenticity or an alias's resolved model version. Save only inputs and human
 labels in datasets, never provenance, model answers, or measured audit results.
+
+Review queue CSV handoff exports inputs and blank human-label columns only, never model answers,
+shortlists, or decision metadata. Import matches the current queue's row and gate configuration,
+validates labels before applying them, and preserves review/audit membership. Preview and apply
+make no dataset write or model call; normal append saves inputs and human labels only.

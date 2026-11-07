@@ -662,6 +662,14 @@ def api_wb_decisions(body):
     return decisions.queue(str(body.get("id", "")), body.get("text"), body.get("audit", 0), body.get("seed", 0))
 
 
+def api_wb_decisions_export(body):
+    return {"csv": decisions.export_labels(str(body.get("id", "")), body.get("items"))}
+
+
+def api_wb_decisions_import(body):
+    return decisions.import_labels(str(body.get("id", "")), body.get("items"), body.get("text"))
+
+
 def api_wb_decisions_add(body):
     return decisions.append(str(body.get("id", "")), body.get("items"))
 
@@ -775,6 +783,8 @@ ROUTES = {
     ("POST", "/api/workbench/checks/upgrade"): api_wb_check_upgrade,
     ("POST", "/api/workbench/checks/decisions"): api_wb_decisions,
     ("POST", "/api/workbench/checks/decisions/add"): api_wb_decisions_add,
+    ("POST", "/api/workbench/checks/decisions/export"): api_wb_decisions_export,
+    ("POST", "/api/workbench/checks/decisions/import"): api_wb_decisions_import,
     ("POST", "/api/workbench/recalibrate"): api_wb_recalibrate,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,

@@ -5,6 +5,8 @@ the queue reads exactly what the exported file prints. No key, no network.
 """
 
 import copy
+import csv
+import io
 import json
 import os
 import shutil
@@ -64,6 +66,130 @@ class Temp(unittest.TestCase):
         rows = "\n".join(t for t, _a in traffic) + "\n"
         return subprocess.run([sys.executable, str(self.dir / "gate.py")], input=rows, capture_output=True, text=True,
                               env=env, check=True, cwd=self.dir).stdout
+
+
+class LabelHandoffTests(Temp):
+    def setUp(self):
+        super().setUp()
+        self.save()
+        self.items = decisions.queue("tickets", self.route(), audit=2)["items"]
+        self.before = (workbench.WORKBENCH_DIR / "datasets" / "tickets.json").read_bytes()
+
+    def csv_rows(self):
+        return list(csv.reader(io.StringIO(decisions.export_labels("tickets", self.items))))
+
+    def encode(self, rows):
+        out = io.StringIO()
+        csv.writer(out, lineterminator="\n").writerows(rows)
+        return out.getvalue()
+
+    def assert_unchanged(self):
+        self.assertEqual((workbench.WORKBENCH_DIR / "datasets" / "tickets.json").read_bytes(), self.before)
+
+    def test_export_is_blind_even_after_labels_and_shortlists(self):
+        self.items[0]["labels"]["department"] = "billing"
+        self.items[0]["candidates"] = {"department": ["billing", "shipping"]}
+        self.items[-1]["labels"]["department"] = "billing"
+        rows = self.csv_rows()
+        self.assertEqual(rows[0], ["row_id", "input"] + ["label:" + q for q in QUESTIONS])
+        self.assertEqual(len(rows), len(self.items) + 1)
+        for cells, item in zip(rows[1:], self.items):
+            self.assertEqual(json.loads(cells[1]), item["row"])
+            self.assertEqual(cells[2:], [""] * len(QUESTIONS))
+        self.assert_unchanged()
+
+    def test_import_preview_changes_only_labels_in_original_order(self):
+        rows = self.csv_rows()
+        at = rows[0].index("label:department")
+        rows[1][at] = "shipping"
+        rows[1][rows[0].index("label:is_urgent")] = "no"
+        rows[1][rows[0].index("label:frustration")] = "0"
+        original = copy.deepcopy(self.items)
+        out = decisions.import_labels("tickets", self.items, self.encode([rows[0], rows[1]]))
+        self.assertEqual(out["counts"], {"rows": 4, "matched": 1, "changed": 1, "labels": 3})
+        self.assertEqual(out["items"][0]["labels"]["department"], "shipping")
+        self.assertIs(out["items"][0]["labels"]["is_urgent"], False)
+        self.assertEqual(out["items"][0]["labels"]["frustration"], 0)
+        for before, after in zip(original, out["items"]):
+            self.assertEqual({k: v for k, v in before.items() if k != "labels"},
+                             {k: v for k, v in after.items() if k != "labels"})
+        self.assertEqual(out["items"][1:], original[1:])
+        self.assertEqual(self.items, original)
+        self.assert_unchanged()
+
+    def test_blank_labels_are_valid_and_clear_existing_suggestions(self):
+        out = decisions.import_labels("tickets", self.items, self.encode(self.csv_rows()))
+        self.assertTrue(all(v is None for item in out["items"] for v in item["labels"].values()))
+        self.assertEqual(out["counts"]["labels"], 0)
+        self.assert_unchanged()
+
+    def test_invalid_csv_is_rejected_atomically(self):
+        original = copy.deepcopy(self.items)
+        for mutation in ("unknown", "duplicate", "input", "marks", "invalid", "extra", "header", "truncated"):
+            with self.subTest(mutation=mutation):
+                rows = self.csv_rows()
+                rows[1][rows[0].index("label:department")] = "shipping"
+                if mutation == "unknown":
+                    rows[2][0] = "unknown"
+                elif mutation == "duplicate":
+                    rows.append(rows[1])
+                elif mutation == "input":
+                    rows[2][1] = json.dumps({"text": "changed"})
+                elif mutation == "marks":
+                    rows[2][1] = json.dumps(dict(json.loads(rows[2][1]), _expect={"department": "billing"}))
+                elif mutation == "invalid":
+                    rows[2][rows[0].index("label:department")] = "not-an-option"
+                elif mutation == "extra":
+                    rows[2].append("ignored?")
+                elif mutation == "header":
+                    rows[0][-1] = rows[0][-2]
+                else:
+                    rows[2].pop()
+                with self.assertRaises(workbench.WorkbenchError):
+                    decisions.import_labels("tickets", self.items, self.encode(rows))
+                self.assertEqual(self.items, original)
+                self.assert_unchanged()
+
+    def test_stale_provenance_rejected_for_export_and_import(self):
+        text = decisions.export_labels("tickets", self.items)
+        checks.save_check("tickets", dict(CHECK, gates={"department": 0.9}))
+        for operation in (lambda: decisions.export_labels("tickets", self.items),
+                          lambda: decisions.import_labels("tickets", self.items, text)):
+            with self.assertRaisesRegex(workbench.WorkbenchError, "provenance"):
+                operation()
+
+    def test_id_binds_configuration_and_normalized_input(self):
+        rows = self.csv_rows()
+        self.items[0]["row"]["channel"] = "email"
+        updated = self.csv_rows()
+        self.assertNotEqual(rows[1][0], updated[1][0])
+        check = workbench.load_dataset("tickets")["check"]
+        expected = decisions._expected(workbench.load_dataset("tickets"), check)
+        row = {"text": "hello", "channel": "email"}
+        self.assertEqual(decisions._handoff_id(row, expected),
+                         decisions._handoff_id(dict(reversed(list(row.items()))), expected))
+        self.assertNotEqual(decisions._handoff_id(row, expected),
+                            decisions._handoff_id(row, dict(expected, fingerprint="different")))
+
+    def test_export_formula_text_and_picture_are_safe_json_inputs(self):
+        self.items[0]["row"] = {"text": '=HYPERLINK("https://coffee.example", "click")', "_image": "torn-bag"}
+        rows = self.csv_rows()
+        self.assertTrue(rows[1][1].startswith("{"))
+        self.assertEqual(json.loads(rows[1][1]), self.items[0]["row"])
+        out = decisions.import_labels("tickets", self.items, self.encode(rows))
+        self.assertEqual(out["items"][0]["row"], self.items[0]["row"])
+
+    def test_legacy_review_allowed_but_legacy_audit_rejected(self):
+        review = copy.deepcopy([i for i in self.items if i["kind"] == "review"])
+        for item in review:
+            item.pop("provenance")
+        text = decisions.export_labels("tickets", review)
+        out = decisions.import_labels("tickets", review, text)
+        self.assertTrue(all("provenance" not in item for item in out["items"]))
+        audit = copy.deepcopy([i for i in self.items if i["kind"] == "audit"])
+        audit[0].pop("provenance")
+        with self.assertRaisesRegex(workbench.WorkbenchError, "legacy automated"):
+            decisions.export_labels("tickets", audit)
 
 
 class QueueTests(Temp):
@@ -393,6 +519,18 @@ class AppendTests(Temp):
 
 
 class ServerTests(Temp):
+    def test_csv_routes_preview_without_writing(self):
+        self.save()
+        items = decisions.queue("tickets", self.route(), audit=1)["items"]
+        before = workbench.load_dataset("tickets")
+        for suffix, handler in (("export", server.api_wb_decisions_export), ("import", server.api_wb_decisions_import)):
+            self.assertIs(server.ROUTES[("POST", "/api/workbench/checks/decisions/" + suffix)], handler)
+        text = server.api_wb_decisions_export({"id": "tickets", "items": items})["csv"]
+        preview = server.api_wb_decisions_import({"id": "tickets", "items": items, "text": text})
+        self.assertEqual(preview["counts"]["matched"], len(items))
+        self.assertTrue(all(all(v is None for v in item["labels"].values()) for item in preview["items"]))
+        self.assertEqual(workbench.load_dataset("tickets"), before)
+
     def test_routes(self):
         self.save()
         self.assertIs(server.ROUTES[("POST", "/api/workbench/checks/decisions")], server.api_wb_decisions)

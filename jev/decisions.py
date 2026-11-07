@@ -21,6 +21,9 @@ The answers shown come from the user's own gate runs, read from the file they su
 
 from __future__ import annotations
 
+import csv
+import hashlib
+import io
 import json
 import random
 from typing import Any, Dict, List, Optional, Tuple
@@ -262,6 +265,108 @@ def _item(item: Any, number: int, questions: Dict[str, dict]) -> dict:
     if "provenance" in item:
         out["provenance"] = item["provenance"]
     return out
+
+
+def _label_queue(dataset_id: str, items: Any) -> Tuple[dict, List[dict], dict]:
+    """Validate an editable queue without requiring its still-empty human labels."""
+    dataset = workbench.load_dataset(dataset_id)
+    questions, check = _check(dataset)
+    expected = _expected(dataset, check)
+    if not isinstance(items, list) or not items or len(items) > workbench.MAX_BULK_ROWS:
+        raise WorkbenchError("Supply between 1 and %d current queue items" % workbench.MAX_BULK_ROWS)
+    out, seen = [], set()
+    for number, item in enumerate(items, 1):
+        if not isinstance(item, dict) or item.get("kind") not in ("review", "audit"):
+            raise WorkbenchError("Item %d needs its current review or audit kind" % number)
+        try:
+            _decision(json.dumps(item), dataset["questions"])
+            verified = _compatible(item, expected)
+        except (ValueError, TypeError) as err:
+            raise WorkbenchError("Item %d: %s" % (number, err)) from err
+        if not verified and item["kind"] == "audit":
+            raise WorkbenchError("Item %d: legacy automated rows cannot be audited" % number)
+        raw = item.get("labels")
+        if not isinstance(raw, dict):
+            raise WorkbenchError("Item %d needs labels keyed by question id" % number)
+        labels = dict.fromkeys(questions)
+        for qid, value in raw.items():
+            if qid not in questions:
+                raise WorkbenchError("Item %d labels an unknown question %r" % (number, qid))
+            ok, value = label(questions[qid], value)
+            if not ok:
+                raise WorkbenchError("Item %d has an invalid label for %s" % (number, qid))
+            labels[qid] = value
+        key = _key(item["row"])
+        if key in seen:
+            raise WorkbenchError("Item %d repeats a queue input" % number)
+        seen.add(key)
+        out.append(dict(item, labels=labels))
+    return questions, out, expected
+
+
+def _handoff_id(row: dict, expected: dict) -> str:
+    payload = json.dumps([_key(row), expected], sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def export_labels(dataset_id: str, items: Any) -> str:
+    """A spreadsheet handoff with inputs and blank labels only, for independent human labeling."""
+    questions, checked, expected = _label_queue(dataset_id, items)
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["row_id", "input"] + ["label:" + q for q in questions])
+    for item in checked:
+        writer.writerow([_handoff_id(item["row"], expected), _key(item["row"])] +
+                        ["" for q in questions])
+    return out.getvalue()
+
+
+def import_labels(dataset_id: str, items: Any, text: Any) -> dict:
+    """Preview labels against the current queue, changing no inputs, metadata, or saved dataset."""
+    questions, checked, expected = _label_queue(dataset_id, items)
+    if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
+        raise WorkbenchError("Supply a nonempty labels CSV of at most %d characters" % MAX_TEXT_CHARS)
+    try:
+        rows = [r for r in csv.reader(io.StringIO(text.lstrip("\ufeff"), newline=""),
+                                     delimiter=csvimport._delimiter(text), strict=True) if any(c.strip() for c in r)]
+    except csv.Error as err:
+        raise WorkbenchError("Could not read the labels CSV: %s" % err) from err
+    names = ["row_id", "input"] + ["label:" + q for q in questions]
+    header = rows[0] if rows else []
+    if len(header) != len(names) or set(header) != set(names):
+        raise WorkbenchError("Keep exactly the row_id, input, and label columns from Download labels CSV")
+    if len(rows) < 2 or len(rows) > workbench.MAX_BULK_ROWS + 1:
+        raise WorkbenchError("Import between 1 and %d queued rows" % workbench.MAX_BULK_ROWS)
+    index = {_handoff_id(item["row"], expected): item for item in checked}
+    seen, changed, labeled = set(), 0, 0
+    for number, cells in enumerate(rows[1:], 2):
+        if len(cells) != len(header):
+            raise WorkbenchError("Line %d has a different number of columns" % number)
+        values = dict(zip(header, cells))
+        rid = values["row_id"].strip()
+        if rid not in index or rid in seen:
+            raise WorkbenchError("Line %d has an unknown or repeated row_id; use the current queue's CSV" % number)
+        seen.add(rid)
+        item = index[rid]
+        try:
+            state = json.loads(values["input"])
+            same = isinstance(state, dict) and json.dumps(state, sort_keys=True, ensure_ascii=False) == _key(item["row"])
+        except (ValueError, TypeError):
+            same = False
+        if not same:
+            raise WorkbenchError("Line %d changed its input; edit only the label columns" % number)
+        labels = {}
+        for qid, question in questions.items():
+            cell = values["label:" + qid]
+            ok, value = csvimport.label_value(question, cell)
+            if not ok:
+                raise WorkbenchError("Line %d: %r is not an answer to %s" % (number, cell.strip(), qid))
+            labels[qid] = value
+            labeled += value is not None
+        changed += labels != item["labels"]
+        item["labels"] = labels
+    return {"items": checked, "counts": {"rows": len(checked), "matched": len(seen),
+                                         "changed": changed, "labels": labeled}}
 
 
 def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, expected: dict) -> Optional[dict]:

@@ -56,7 +56,7 @@ test("an old attach button cannot attach its cut after a replacement fit complet
 });
 
 test("review shortlists retain every label and audit shortlists stay hidden until labeled", () => {
-  const funcs = ["queueClasses", "shownAnswer", "queueReady", "labelText", "labelValue", "queueSelect", "queueView"].map(body).join("\n");
+  const funcs = ["queueClasses", "shownAnswer", "queueReady", "labelText", "labelValue", "queueSelect", "queueView", "queueCsv", "agreeQuestions"].map(body).join("\n");
   const W = { bulk: { pictures: { "torn-bag": "/img/samples/torn-bag.png" } } };
   const queueView = new Function("W", "h", "rowText", "render", "icon", `${funcs}; return queueView;`)(W, h, String, () => {}, () => "");
   const question = { type: "choice", criteria: { billing: "", delivery: "", other: "" } };
