@@ -204,3 +204,10 @@ the actual share. Existing splits are never regrouped automatically; impossible 
 - `CLAUDE.md` contains only `@AGENTS.md`. Shared hooks, scripts and settings
   belong in tracked files. Do not ignore instruction files or shared settings;
   ignore only machine-local settings and agent worktrees.
+
+Cross-validation keeps exact-input groups together across threshold/cost tuning, answer sets,
+recalibration, and model upgrades. Use the dataset-health/Review identity (labels and test markers
+ignored, JSON field order ignored, picture names retained). Assign larger groups first to the
+least populated fold, breaking ties by input hash. Require at least one distinct labeled input
+per fold as well as the total labeled-row minimum; report why unseen evaluation is unavailable.
+Do not silently fall back to splitting duplicate copies between tuning and evaluation.

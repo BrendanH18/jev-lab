@@ -38,7 +38,7 @@ CHANGED_SHOWN = 20
 
 def _policy_rows(results: List[dict], gates: Dict[str, float]) -> List[dict]:
     """checks.evaluate's rows for policy: every answered row, with its labels for the gated questions."""
-    return [{"index": r["index"], "answers": r["answers"], "key": checks._row_text(r.get("row")),
+    return [{"index": r["index"], "answers": r["answers"], "key": checks._row_text(r.get("row")), "row": r.get("row"),
              "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates}}
             for r in results if isinstance(r.get("answers"), dict)]
 
@@ -121,7 +121,7 @@ def retune(results: List[dict], check: dict) -> dict:
                   "accuracy": u["accuracy"], "low": u["low"], "high": u["high"], "unreached": t["unreached"],
                   "below": t["below"]}
     gates = None if steps is None else {q: steps[j] / STEPS for j, q in enumerate(qids)}
-    return {"gates": gates, "problem": None, "unseen": unseen, "minimum": cv["minimum"]}
+    return {"gates": gates, "problem": None, "unseen": unseen, "minimum": cv["minimum"], "holdout_problem": cv["problem"]}
 
 
 def _judged(rep: dict) -> dict:

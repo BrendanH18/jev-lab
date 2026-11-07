@@ -6,6 +6,7 @@ import time
 from math import ceil
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -60,7 +61,7 @@ def simulated(seed, n):
         total = sum(weights)
         probs = {k: w / total for k, w in zip(OPTIONS, weights)}
         label = rng.choices(OPTIONS, weights=[probs[k] for k in OPTIONS])[0]
-        rows.append(row(i, probs, label, row={"channel": "email" if i % 2 else "chat"}))
+        rows.append(row(i, probs, label, row={"text": "ticket %d" % i, "channel": "email" if i % 2 else "chat"}))
     return rows
 
 
@@ -160,15 +161,36 @@ class EvaluateTests(unittest.TestCase):
             self.assertLess(unseen["listed_per_review"], 4)
         # A fold's cut comes only from the other folds: recompute fold 0's by hand.
         rep = answersets.evaluate(rows, 0.9)
-        folds = holdout.assign([r["key"] for r in rows], [r["index"] for r in rows], holdout.FOLDS)
+        folds = holdout.assign([holdout._key(r) for r in rows], [r["index"] for r in rows], holdout.FOLDS)
         train = [1 - r["answer"]["probabilities"][r["label"]] for r, f in zip(rows, folds) if f != 0]
         lo, hi = rep["holdout"]["spread"]
         self.assertTrue(lo - 1e-12 <= answersets.cut(train, 0.9) <= hi + 1e-12)
 
+    def test_cuts_never_train_on_a_heldout_duplicate(self):
+        rows = [row(i, {"a": 0.6 + (i // 4) * 0.05, "b": 0.4 - (i // 4) * 0.05}, "a",
+                    row={"text": "group %d" % (i // 4)}) for i in range(20)]
+        with patch.object(answersets, "cut", wraps=answersets.cut) as fit:
+            report = answersets.evaluate(rows, 0.8)
+        assigned = holdout.assign([holdout._key(r) for r in rows], list(range(20)), 5)
+        self.assertEqual(report["holdout"]["rows"], 20)
+        self.assertEqual(len(fit.call_args_list), 6)
+        for f, call in enumerate(fit.call_args_list[1:]):
+            self.assertEqual(call.args[0], [1 - r["answer"]["probabilities"]["a"]
+                                            for r, fold in zip(rows, assigned) if fold != f])
+
+    def test_duplicate_inputs_do_not_supply_unseen_folds(self):
+        rows = [row(i, {"a": 0.9, "b": 0.1}, "a", row={"text": "same"}) for i in range(20)]
+        rep = answersets.evaluate(rows, 0.8)
+        self.assertIsNotNone(rep["cut"])
+        self.assertNotIn("rows", rep["holdout"])
+        self.assertEqual(rep["holdout"]["unique_inputs"], 1)
+        self.assertIn("distinct labeled inputs", rep["holdout"]["problem"])
+
     def test_holdout_needs_rows_in_every_fold(self):
         rows = [row(i, {"billing": 0.9, "shipping": 0.1}, "billing") for i in range(9)]
         rep = answersets.evaluate(rows, 0.8)
-        self.assertEqual(rep["holdout"], {"folds": 5, "minimum": 10})
+        self.assertEqual(rep["holdout"]["minimum"], 10)
+        self.assertIn("labeled rows", rep["holdout"]["problem"])
         rep = answersets.evaluate(rows + [row(9, {"billing": 0.9, "shipping": 0.1}, "billing")], 0.8)
         self.assertEqual(rep["holdout"]["rows"], 10)
         # Each fold trains on 8 rows: enough for 80% (needs 4), so every fold has a cut.

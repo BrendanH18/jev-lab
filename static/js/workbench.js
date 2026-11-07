@@ -1358,8 +1358,8 @@ function upgradeReport(x, rep) {
         h("tr", {}, h("td", { class: "mono" }, t.gates ? gatesText(t.gates) : "—"), h("td", {}, `${s.candidate.model}, tuned again`),
           h("td", {}, t.report ? judged(t.report) : (t.problem || `No thresholds reach ${pct(rep.check.min_accuracy, 1)} on these answers`)))))),
     unseen && t.gates ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
-      `The new thresholds were tuned on these rows, so their accuracy here is optimistic. Tuned on four fifths and routing the rest (${unseen.folds}-fold), the same tuning automates ${pct(unseen.coverage)} at `,
-      unseen.accuracy === null ? "no measurable accuracy" : withCI(pct(unseen.accuracy, 1), unseen.low, unseen.high), unseen.below ? ", below the target." : ".") : null,
+      `The new thresholds were tuned on these rows, so their accuracy here is optimistic. Tuned on the other folds and routing each held-out group (${unseen.folds}-fold), the same tuning automates ${pct(unseen.coverage)} at `,
+      unseen.accuracy === null ? "no measurable accuracy" : withCI(pct(unseen.accuracy, 1), unseen.low, unseen.high), unseen.below ? ", below the target." : ".") : (t.holdout_problem ? h("p", { class: "faint" }, t.holdout_problem) : null),
     p.rows ? h("div", { class: "stat-row" },
       stat(`every gated answer right, ${s.current.model}`, withCI(pct(p.current.accuracy, 1), p.current.low, p.current.high)),
       stat(`every gated answer right, ${s.candidate.model}`, withCI(pct(p.candidate.accuracy, 1), p.candidate.low, p.candidate.high)),
@@ -2580,7 +2580,7 @@ function probabilityMapsPanel() {
     button.disabled = true;
     const seq = calSeq;
     const rows = tuningResults(W.bulk.result).filter((r) => r.answers[c.qid]).map((r) => ({
-      index: r.index, key: rowText(r.row), answer: r.answers[c.qid], label: W.bulk.labels[r.index]?.[c.qid] ?? null,
+      index: r.index, row: r.row, key: rowText(r.row), answer: r.answers[c.qid], label: W.bulk.labels[r.index]?.[c.qid] ?? null,
     }));
     try {
       const rep = await api("/api/workbench/recalibrate", { rows, signal: c.signal });
@@ -3018,7 +3018,7 @@ function renderAnswerSets() {
         h("th", {}, "sent to review"), h("th", {}, "a reviewer reads"))),
       h("tbody", {}, line("on these rows", m),
         u.rows ? line(`on unseen rows, ${u.folds} folds`, u)
-          : h("tr", {}, h("td", {}, "on unseen rows"), h("td", { colspan: 4, class: "faint" }, `Needs at least ${u.minimum} labeled rows to hold some out.`))))),
+          : h("tr", {}, h("td", {}, "on unseen rows"), h("td", { colspan: 4, class: "faint" }, u.problem || `Needs at least ${u.minimum} labeled rows to hold some out.`))))),
     u.rows ? note(`On unseen rows, each fold's sets come from a cut fitted on the other folds`,
       u.spread ? ` (cuts from ${cutText(u.spread[0])} to ${cutText(u.spread[1])})` : "",
       u.unreached ? `; ${u.unreached} of ${u.folds} folds had too few rows to promise ${target} and sent every row to review with every option` : "",
@@ -3541,7 +3541,8 @@ function policyRows(qids, results = tuningResults(W.bulk.result)) {
   const rules = policyRules();
   return results.map((r) => ({
     index: r.index,
-    key: rowText(r.row),  // the row's input names it for Holdout's folds, so a rerun or reorder keeps the split
+    row: r.row,  // the server groups exact inputs for folds, ignoring labels and test markers
+    key: rowText(r.row),
     // With rules, every answer: a rule may read a question no gate does.
     answers: Object.fromEntries((rules ? Object.keys(r.answers) : qids).filter((q) => r.answers[q]).map((q) => [q, r.answers[q]])),
     labels: Object.fromEntries(qids.filter((q) => b.labels[r.index]?.[q] !== undefined).map((q) => [q, b.labels[r.index][q]])),
@@ -3979,7 +3980,7 @@ function sliceBody(kind) {
 // ---------- Holdout ----------
 // Calibrate's shortcuts and Policy's Tune choose thresholds from the rows they then report on. Holdout
 // (jev/holdout.py) cross-validates that choice: each fifth of the labeled rows is routed by thresholds tuned on
-// the other four fifths. No model calls. It runs on request, because many gates over many rows take seconds,
+// the other four folds. No model calls. It runs on request, because many gates over many rows take seconds,
 // and clears whenever the question, gates, labels, signal, or target basis change.
 function clearHoldout(state) {
   state.holdout = null;
@@ -4030,11 +4031,11 @@ function holdoutView(state, id, qids) {
     const btn = h("button", { class: "btn sm", disabled: Boolean(rep?.running), onclick: () => runHoldout(state, id, qids) },
       rep?.running ? [h("span", { class: "spin" }), " Checking…"] : "Check on unseen rows");
     return [h("div", { class: "holdout-head" }, btn,
-      h("span", { class: "faint" }, "Tunes on four fifths of the labeled rows and routes the fifth it never saw, five times. Shows what these targets deliver on new rows. No extra calls."))];
+      h("span", { class: "faint" }, "Keeps identical inputs together, tunes on four folds and routes the fifth it never saw, five times. Shows what these targets deliver on new rows. No extra calls."))];
   }
   if (!rep.targets.length) {
     return [title, h("p", { class: "muted", style: { fontSize: "13px" } },
-      `Needs at least ${rep.minimum} labeled rows to hold some out (${rep.labeled} labeled).`)];
+      rep.problem || `Needs at least ${rep.minimum} labeled rows to hold some out (${rep.labeled} labeled).`)];
   }
   const lower = rep.bound === "lower";
   const row = (t) => {

@@ -58,8 +58,23 @@ class MappingTests(unittest.TestCase):
         self.assertAlmostEqual(m["a"], 0.7, delta=0.01)
         self.assertAlmostEqual(m["b"], -0.4, delta=0.01)
 
+    def test_null_rows_preserve_explicit_keys(self):
+        data = rows(40)
+        self.assertEqual(rc.evaluate(data), rc.evaluate([dict(row, row=None) for row in data]))
+        with self.assertRaisesRegex(WorkbenchError, "key must be a string"):
+            rc.evaluate([dict(row, row=None, key=3) for row in data])
+
+    def test_too_few_distinct_inputs_cannot_select_a_map(self):
+        data = rows(40)
+        for item in data:
+            item["row"] = {"text": "same"}
+        with self.assertRaisesRegex(WorkbenchError, "distinct labeled inputs"):
+            rc.evaluate(data)
+
     def test_cv_never_fits_heldout_rows(self):
         data = rows(40)
+        for i, item in enumerate(data):
+            item["key"] = str(i // 2)
         expected = holdout.assign([r["key"] for r in data], [r["index"] for r in data], 5)
         calls = []
         real = rc.platt

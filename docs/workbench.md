@@ -307,7 +307,7 @@ In Calibrate, choose a question and signal, then **Fit and check probability map
 This reuses the current Bulk answers and labels with no extra model calls. Test rows
 (`"_test": true`) are excluded and no answers or maps are persisted. Choice, Noul and
 Score are supported; Box is excluded. At least 20 valid labeled rows are needed,
-including both right and wrong answers. Invalid labels are excluded as in Calibrate.
+including both right and wrong answers and at least five distinct inputs. Invalid labels are excluded as in Calibrate.
 
 Recalibration is for code that uses the chance an answer is right itself: the expected
 cost of acting on an answer, a product of two answers' chances of being right, or a
@@ -328,8 +328,8 @@ clamping and Newton backtracking. Isotonic pools adjacent violations, groups tie
 signals, clips outputs away from zero and one, and interpolates linearly between
 knots (constant beyond the endpoints). The table compares ECE, Brier score and log
 loss on fitting rows and pooled five-fold cross-validation. Lower is better.
-Folds use the same input-key hash and round-robin convention as **Check on unseen
-rows**. Every cross-validated prediction comes from a map fitted on the other folds.
+Folds keep identical inputs together using the same grouping as **Check on unseen
+rows**; at least five distinct labeled inputs are required. Every cross-validated prediction comes from a map fitted on the other folds.
 
 Only cross-validated log loss selects the recommendation. A map must beat raw by
 at least 0.01 and 1% of raw log loss; otherwise **Keep raw** is recommended. The
@@ -412,7 +412,8 @@ a row is automated, including when its answer set has one option. Coverage is a 
 rows drawn like the fitting rows, not a guarantee of accuracy on automated rows or on reviewed rows alone.
 
 `POST /api/workbench/answersets` takes `rows` for one question (`index`, `answer`, `label`, and an optional
-`key` naming the row's input for the folds and `row`, its input for slices), `coverage` (from 0.5 to below
+`key` naming the row's input for the folds and `row`, its full input for grouping and slices;
+when non-null, `row` takes precedence over `key`), `coverage` (from 0.5 to below
 1, default 0.9), `folds` (2–10, default 5), and an optional `field` to slice by. It returns `cut` (`null`
 when there are fewer labeled rows than `needed`), `summary`, `holdout` (with `spread`, the cuts the folds
 chose, and `unreached`, the folds with too few rows to fit one), `slices`, and one entry per labeled row with
@@ -752,7 +753,7 @@ accuracy on, so that accuracy favors thresholds that happen to fit those rows. *
 rows**, at the end of each panel, measures what the tuning delivers on rows it did not see. It uses
 five-fold cross-validation and makes no model calls:
 
-1. The labeled rows are split into five parts of nearly equal size.
+1. Exact duplicate inputs are kept in the same fold, balancing row counts across five parts.
 2. For each part, thresholds are tuned for each target on the other four parts alone, the way the
    shortcuts or Tune choose them, on the selected signal and target basis.
 3. Those thresholds route the held-out part. Every labeled row is routed exactly once, by thresholds
@@ -768,15 +769,24 @@ For each target, the table shows:
 
 A large drop, or thresholds that swing between folds, means the tuned thresholds fit these rows more
 than the question does. Label more rows, or choose a lower target, before you rely on them. With
-targets [at 95% confidence](#targets-at-95-confidence), each fold has only four fifths of the rows
+targets [at 95% confidence](#targets-at-95-confidence), each fold has fewer rows
 to show the target with, so a target the full set barely reaches may be unreachable in every fold.
 
-Folds follow the rows' inputs, not their order: labeled rows are sorted by a hash of their text or
-JSON and dealt in turn. The same labeled rows always split the same way, whatever their order or the
-values of their labels. Labeling another row, or clearing a label, deals the folds again. The check needs at least two labeled rows per fold, so ten rows. It runs on request,
+Folds follow the rows' inputs, not their order. Inputs use the same identity as dataset health:
+labels and test markers are ignored, JSON field order does not matter, a text row matches its
+`{"text": ...}` form, and picture names stay part of the input. Similar wording is not grouped.
+Larger groups are placed first into the least populated fold; input hashes break ties.
+The same labeled inputs always split the same way, whatever their order or label values.
+Adding or removing labeled rows can change the folds. Ten valid labeled rows and at least five
+distinct inputs are required for five-fold evaluation. If there are too few distinct inputs,
+label more distinct rows; repeated copies cannot supply unseen folds. Large duplicate groups
+can make folds unequal, so a training part need not contain exactly four fifths of the rows.
+This grouping applies to threshold and cost tuning, answer sets, recalibration, and model-upgrade
+comparisons. Fitting on all rows remains available when cross-validation is unavailable, except
+recalibration cannot select a map without cross-validation. The check runs on request,
 because tuning many gates over many rows takes a few seconds, and it clears when the question,
 gates, labels, signal, or target basis change. Moving a threshold slider does not clear it. The
-interval treats the held-out rows as independent; cross-validation only approximates that, so read
+interval treats the held-out rows as independent; duplicates and cross-validation weaken that assumption, so read
 it as a guide, not a guarantee.
 
 With valid [costs](#choose-a-threshold-by-cost), the table adds a **lowest cost** row. Each fold searches the other
@@ -1361,7 +1371,7 @@ request with one file part per picture.
 | Calibrate, Costs, Review, Slices, Policy, Holdout, and Compare scoring rows | 1,000 per request |
 | Prices | $0 to $1,000,000 each; up to 100 priced mistakes |
 | Policy gated questions | 10 |
-| Holdout folds | 2–10 through the API, 5 in the Workbench; at least 2 labeled rows per fold |
+| Holdout folds | 2–10 through the API, 5 in the Workbench; at least 2 × folds labeled rows and folds distinct inputs |
 | Compare variants | 2, over the first 200 nonempty rows: up to 400 calls per run |
 | Images per request | 4, PNG or JPEG, 280–1568 pixels per side |
 | HTTP request body | 12 MiB |

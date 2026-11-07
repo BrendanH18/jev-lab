@@ -10,11 +10,10 @@ the other parts alone, and those thresholds then route the held-out part. Every 
 once by thresholds that never saw it; pooled, those rows give the automated share and accuracy to expect. One
 question is Calibrate's case: its tuned threshold is the lowest that reaches the target, as Calibrate picks it.
 
-Folds are deterministic. Labeled rows are ordered by a hash of their key (the row's input, so rerunning, reordering,
-or changing a label's value keeps the split) and dealt round-robin, which keeps the parts within one row of the
-same size. Identical
-inputs share a key, and a tie between them is broken by row index, so the deal never depends on request order.
-The pooled 95% interval treats the held-out rows as independent, which cross-validation only approximates.
+Folds are deterministic. Exact-input groups stay together; larger groups are assigned first to the
+least populated fold, with input hashes breaking ties. Reordering rows or changing labels keeps the
+split. Unequal group sizes can make folds unequal. At least one distinct input per fold is required.
+The pooled 95% interval treats rows as independent; duplicates and cross-validation weaken that assumption.
 With Policy's `rules`, rows a rule holds are dealt into folds like the rest and always go to review.
 """
 
@@ -23,7 +22,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, List, Optional, Tuple
 
-from . import calibrate, cost, policy
+from . import calibrate, cost, decisions, policy
 from .calibrate import STEPS, TARGETS, CalibrationError
 
 FOLDS = 5
@@ -32,18 +31,37 @@ MIN_PER_FOLD = 2  # fewer labeled rows than folds * this cannot hold anything me
 
 
 def _key(item: dict) -> str:
+    if item.get("row") is not None:
+        return decisions._key(item["row"])
     key = item.get("key")
-    return key if isinstance(key, str) and key else "#%s" % (item["index"],)
+    return key if isinstance(key, str) and key else "#%s" % (item.get("index"),)
 
 
 def assign(keys: List[str], indexes: List[Any], folds: int) -> List[int]:
-    """The fold of each row: order by hash of key, then index, and deal round-robin."""
-    digests = [hashlib.sha256(k.encode("utf-8")).hexdigest() for k in keys]
-    order = sorted(range(len(keys)), key=lambda i: (digests[i], str(indexes[i])))
+    """Keep equal keys together, balancing row counts deterministically across folds."""
+    groups = {}
+    for i, key in enumerate(keys):
+        groups.setdefault(key, []).append(i)
+    order = sorted(groups, key=lambda k: (-len(groups[k]), hashlib.sha256(k.encode("utf-8")).hexdigest()))
+    sizes = [0] * folds
     out = [0] * len(keys)
-    for position, i in enumerate(order):
-        out[i] = position % folds
+    for key in order:
+        fold = min(range(folds), key=lambda f: (sizes[f], f))
+        for i in groups[key]:
+            out[i] = fold
+        sizes[fold] += len(groups[key])
     return out
+
+
+def problem(keys: List[str], folds: int) -> Optional[str]:
+    """Why these rows cannot support the requested grouped cross-validation."""
+    if len(keys) < folds * MIN_PER_FOLD:
+        return "Needs at least %d valid labeled rows to hold some out (%d labeled)." % (folds * MIN_PER_FOLD, len(keys))
+    if len(set(keys)) < folds:
+        return ("Needs at least %d distinct labeled inputs for %d folds (%d distinct). "
+                "Exact duplicate inputs must stay together; label more distinct inputs."
+                % (folds, folds, len(set(keys))))
+    return None
 
 
 def _folds(folds: Any) -> int:
@@ -68,15 +86,19 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
     calibrate.check_bound(bound)
     folds = _folds(folds)
     prices = cost.parse(costs) if costs is not None else None
+    if isinstance(rows, list):
+        rows = [dict(row, key=_key(row)) if isinstance(row, dict) else row for row in rows]
     qids, data, levels, right = policy.prepared(rows, qids, signal, rules)
     scored = data["scored"]
     everyone = scored + data["held"]  # rows a rule holds fill out their folds, always reviewed
     n = len(everyone)
     base = {"signal": signal, "bound": bound, "folds": folds, "questions": qids, "labeled": n,
             "minimum": folds * MIN_PER_FOLD, "targets": []}
-    if n < folds * MIN_PER_FOLD:
+    keys = [_key(item) for item in everyone]
+    base.update(unique_inputs=len(set(keys)), problem=problem(keys, folds))
+    if base["problem"]:
         return base
-    fold_all = assign([_key(item) for item in everyone], [item["index"] for item in everyone], folds)
+    fold_all = assign(keys, [item["index"] for item in everyone], folds)
     fold_of = fold_all[:len(scored)]
     members = [[i for i in range(len(scored)) if fold_of[i] == f] for f in range(folds)]
     sizes = [fold_all.count(f) for f in range(folds)]

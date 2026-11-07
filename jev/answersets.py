@@ -145,7 +145,7 @@ def _prepare(rows: Any) -> Tuple[str, List[dict], List[dict], int]:
         except (KeyError, TypeError, ValueError, AttributeError) as err:
             invalid.append({"index": row.get("index"), "reason": str(err).strip("'\"")})
             continue
-        key = row.get("key")
+        key = holdout._key(row)
         scored.append({"index": row.get("index"), "key": key if isinstance(key, str) and key else "#%s" % (row.get("index"),),
                        "row": row.get("row"), "options": options, "label": label})
     if qtype is None:
@@ -212,8 +212,10 @@ def evaluate(rows: Any, coverage: Any = 0.9, folds: Any = holdout.FOLDS, field: 
     base["rows"] = routed
     base["slices"] = slices.evaluate([{"row": item["row"], "correct": r["covered"], "automated": r["route"] == "auto"}
                                       for item, r in zip(scored, routed)], field)
-    if n >= folds * holdout.MIN_PER_FOLD:
-        fold_of = holdout.assign([item["key"] for item in scored], [item["index"] for item in scored], folds)
+    keys = [item["key"] for item in scored]
+    issue = holdout.problem(keys, folds)
+    if issue is None:
+        fold_of = holdout.assign(keys, [item["index"] for item in scored], folds)
         unseen: List[dict] = []
         cuts: List[float] = []
         unreached = 0
@@ -228,5 +230,6 @@ def evaluate(rows: Any, coverage: Any = 0.9, folds: Any = holdout.FOLDS, field: 
         base["holdout"] = dict(_summary(unseen, options), folds=folds, unreached=unreached,
                                spread=[min(cuts), max(cuts)] if cuts else None)
     else:
-        base["holdout"] = {"folds": folds, "minimum": folds * holdout.MIN_PER_FOLD}
+        base["holdout"] = {"folds": folds, "minimum": folds * holdout.MIN_PER_FOLD,
+                           "unique_inputs": len(set(keys)), "problem": issue}
     return base
