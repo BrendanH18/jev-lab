@@ -1622,7 +1622,8 @@ async function addDriftLabels(id) {
 // labeled, so the audit measures the gate rather than agreement with it. Labeled rows join the dataset, rows and labels
 // only. Nothing here calls the model: the answers shown are the ones the user's own gate returned.
 function newQueue() {
-  return { open: false, text: "", audit: "10", busy: false, report: null, audit_report: null, csvPreview: null };
+  return { open: false, text: "", audit: "10", busy: false, report: null, audit_report: null, csvPreview: null,
+    kindFilter: "all", statusFilter: "all", nextLine: null };
 }
 
 function queueClasses(question) {
@@ -1639,6 +1640,30 @@ function shownAnswer(value) {
 
 function queueReady(item, gates) {
   return Object.keys(gates).every((q) => item.labels[q] !== null && item.labels[q] !== undefined);
+}
+
+function queueVisible(items, gates, kind = "all", status = "all") {
+  return items.filter((item) => (kind === "all" || item.kind === kind)
+    && (status === "all" || queueReady(item, gates) === (status === "ready")));
+}
+
+function queueNextIncomplete(items, gates, kind = "all", afterLine = null) {
+  const start = items.findIndex((item) => item.line === afterLine);
+  const ordered = [...items.slice(start + 1), ...items.slice(0, start + 1)];
+  return ordered.find((item) => (kind === "all" || item.kind === kind) && !queueReady(item, gates));
+}
+
+function nextQueueRow(id) {
+  const q = W.bulk.checkRuns[id].queue;
+  if (q.busy) return;
+  const item = queueNextIncomplete(q.report.items, q.report.gates, q.kindFilter, q.nextLine);
+  if (!item) return;
+  q.statusFilter = "incomplete";
+  q.nextLine = item.line;
+  render();
+  const card = document.getElementById(`queue-${id}-${item.line}`);
+  card?.scrollIntoView({ block: "center", behavior: "smooth" });
+  (card?.querySelector(".label-sel.open") || card)?.focus({ preventScroll: true });
 }
 
 function queueForm(x, q) {
@@ -1680,6 +1705,7 @@ async function readQueue(id) {
   try {
     q.csvPreview = null;
     q.report = await api("/api/workbench/checks/decisions", { id, text: q.text, audit });
+    q.nextLine = null;
     await loadPictureUrls(q.report.items);
     q.audit_report = null;
   } catch (e) { handleError(e); }
@@ -1703,6 +1729,11 @@ function queueView(x, q) {
   const c = rep.counts;
   const gates = rep.gates;
   const ready = rep.items.filter((i) => queueReady(i, gates));
+  const visible = queueVisible(rep.items, gates, q.kindFilter, q.statusFilter);
+  const filter = (name, label, options) => h("label", { class: "faint", style: { display: "flex", gap: "6px", alignItems: "center" } },
+    label, h("select", { class: "input sm", disabled: q.busy, "aria-label": label,
+      onchange: (e) => { q[name] = e.target.value; q.nextLine = null; render(); } },
+    options.map(([value, text]) => h("option", { value, selected: value === (q[name] || "all") }, text))));
   const adding = Math.min(ready.length, rep.room);
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const summary = [
@@ -1719,7 +1750,7 @@ function queueView(x, q) {
     const why = item.kind === "audit" ? h("span", { class: "badge info", title: "Label it before you read the gate's answers" }, "audit · label blind")
       : [item.held.length ? h("span", { class: "badge warning" }, `held: ${item.held.join(", ")}`) : null,
         item.rules.map((r) => h("span", { class: "badge warning", title: r }, "breaks a rule"))];
-    return h("div", { class: `queue-item${done ? " done" : ""}` },
+    return h("div", { class: `queue-item${done ? " done" : ""}`, id: `queue-${x.id}-${item.line}`, tabindex: "-1" },
       h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
         h("span", { class: "faint mono", style: { fontSize: "11.5px" } }, `line ${item.line}`), why,
         h("span", { class: `badge ${item.provenance ? "info" : "warning"}` },
@@ -1735,7 +1766,7 @@ function queueView(x, q) {
           h("span", { class: "mono" }, qid, qid in gates ? h("span", { class: "faint" }, " · gated") : null),
           reveal && item.candidates?.[qid]?.length ? h("span", { class: "faint", style: { fontSize: "11.5px" } },
             `Suggested shortlist: ${item.candidates[qid].map((v) => labelText(v, question.type)).join(", ")}. All options remain available.`) : null,
-          queueSelect(item, qid, question, () => { q.csvPreview = null; render(); }, q.busy),
+          queueSelect(item, qid, question, () => { q.csvPreview = null; q.nextLine = item.line; render(); }, q.busy),
           reveal ? h("span", { class: `faint${differs ? " differs" : ""}`, style: { fontSize: "11.5px" } },
             `gate: ${shownAnswer(answer)}`) : null);
       })));
@@ -1750,7 +1781,17 @@ function queueView(x, q) {
         rep.problems.map((p) => h("li", {}, p.message)),
         rep.problems_total > rep.problems.length ? h("li", {}, `…and ${rep.problems_total - rep.problems.length} more`) : null)) : null,
     rep.items.length ? queueCsv(x.id, q) : null,
-    rep.items.length ? h("div", { class: "queue-list" }, rep.items.map(card))
+    rep.items.length ? h("div", { class: "grid", style: { gap: "6px" } },
+      h("div", { class: "faint", role: "status" }, `${ready.length} of ${rep.items.length} rows ready · ${rep.items.length - ready.length} incomplete · showing ${visible.length}`),
+      h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+        filter("kindFilter", "Queue rows", [["all", "Review and audit"], ["review", "Review only"], ["audit", "Audit only"]]),
+        filter("statusFilter", "Labeling status", [["all", "All statuses"], ["incomplete", "Incomplete"], ["ready", "Ready"]]),
+        h("button", { class: "btn sm", disabled: q.busy || !queueNextIncomplete(rep.items, gates, q.kindFilter),
+          onclick: () => nextQueueRow(x.id) }, "Next incomplete row")),
+      h("p", { class: "faint", style: { margin: 0, fontSize: "12px" } },
+        "Filters change only the rows shown. CSV handoff and Add use the whole queue; Next follows the selected row kind and shows incomplete rows."),
+      visible.length ? h("div", { class: "queue-list" }, visible.map(card))
+        : h("div", { class: "empty" }, "No rows match these filters. Choose another row kind or labeling status."))
       : h("div", { class: "empty" }, "No eligible rows to label. Check the file problems and provenance notices above; matching rows may already be in the dataset."),
     rep.items.length ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm primary", disabled: q.busy || !adding, onclick: () => addQueued(x.id) },
@@ -1866,13 +1907,33 @@ function auditReport(a) {
     h("div", { class: "stat-row" },
       stat("automated decisions right, audited", [withCI(`${a.correct} of ${a.rows} · ${pct(a.accuracy, 1)}`, a.accuracy_low, a.accuracy_high), " ", mark]),
       a.target === null ? null : stat(a.bound === "lower" ? "target, 95% lower bound" : "target", pct(a.target, 1))),
+    auditSlices(a),
     a.wrong.length ? h("div", { class: "scroll" }, h("table", { class: "table" },
       h("tbody", {}, a.wrong.map((w) => h("tr", {},
         h("td", { class: "row", style: { maxWidth: "300px" } }, rowText(w.row)),
         h("td", {}, Object.entries(w.wrong).map(([qid, v]) => h("div", { style: { fontSize: "12px" } },
           h("span", { class: "mono" }, qid), `: gate ${shownAnswer(v.answer)}, label ${shownAnswer(v.label)}`)))))))) : null,
     h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
-      `A row is right when every gated answer matches its label, as Policy scores it. The sample was drawn at random from the automated rows, so it stands for them. ${a.rows < 100 ? `${a.rows} row${a.rows === 1 ? " gives" : "s give"} a wide interval, so audit more before you rely on it.` : "Read the interval, not only the share."}`));
+      `A row is right when every gated answer matches its label, as Policy scores it. This report describes completed audits submitted in this batch. The queue samples automated rows randomly; label the whole sample before drawing conclusions about traffic. ${a.rows < 100 ? `${a.rows} row${a.rows === 1 ? " gives" : "s give"} a wide interval, so audit more before you rely on it.` : "Read the interval, not only the share."}`));
+}
+
+function auditSlices(a) {
+  const options = a.by_slice || [];
+  if (!options.length) return h("p", { class: "faint" },
+    "No input field has 2–20 distinct values among completed audits in this batch. More varied audited rows are needed for slices.");
+  const selected = options.find((s) => s.field === a.slice_field) || options[0];
+  const field = h("select", { class: "input sm", "aria-label": "Audit slice field" },
+    options.map((s) => h("option", { value: s.field, selected: s === selected }, s.field)));
+  field.addEventListener("change", () => { a.slice_field = field.value; render(); });
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("label", {}, "Audit by slice ", field),
+    h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, ["Value", "Audited", "Correct", "Accuracy · 95% interval"].map((v) => h("th", {}, v)))),
+      h("tbody", {}, selected.slices.map((s) => h("tr", {},
+        h("td", {}, s.value), h("td", {}, s.rows), h("td", {}, s.correct),
+        h("td", {}, withCI(pct(s.accuracy, 1), s.accuracy_low, s.accuracy_high))))))),
+    h("p", { class: "faint", style: { margin: 0 } },
+      "Small slices have wide intervals; a high accuracy alone is not enough evidence. Missing or blank values appear as (none). These are descriptive accuracy results, not slice-target checks or automation coverage. No additional model calls are made, and results are not saved."));
 }
 
 // The versioned id that answered every row of the last Bulk run (from each response's "model" field), or null.

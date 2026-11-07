@@ -1237,7 +1237,21 @@ with their line numbers and skipped.
 The audit sample is drawn at random from the automated rows, so it stands for all of them. When rows with
 an audit sample are added, the queue reports how many of the audited rows the gate got right, as Policy
 scores a row (every gated answer matches its label), with a 95% interval, against the check's accuracy
-target. A few audited rows give a wide interval; audit more before you rely on the number.
+target. This report describes completed audits submitted in that batch; complete the whole random
+sample before drawing conclusions about traffic. A few audited rows give a wide interval; audit more
+before you rely on the number.
+
+**Audit by slice** selects a top-level input field with 2–20 distinct values in the completed audits.
+For each value, the table shows audited rows, correct rows, accuracy, and a 95% Wilson interval.
+Grouping uses the same full normalized values as By slice; missing or blank values appear as
+`(none)`. Shortened display values do not merge groups. A small slice's high accuracy alone is not
+enough evidence. These are descriptive accuracy results for the submitted batch, not saved
+slice-target checks or automation coverage: every sampled row was automated. Selecting a field
+makes no model call, and neither overall nor slice audit results are saved.
+
+Queue controls filter rows by **Review/Audit** and **Incomplete/Ready** and show progress for the
+current queue. **Next incomplete** moves to the next unfinished row. Filters preserve labels and
+audit membership; CSV handoff and **Add** still operate on the whole queue, including hidden rows.
 
 The rows sent to review are the hard ones, so a dataset that grows mostly from them automates a smaller
 share than your traffic does, and its accuracy describes harder rows. Add audit rows too, and read the
@@ -1252,7 +1266,7 @@ asks the model again.
 | Endpoint | Body | Returns |
 | --- | --- | --- |
 | `POST /api/workbench/checks/decisions` | `id`, `text` (the decision lines), optional `audit` (0 to 200, default 0) and `seed` | `items`, each with its `line`, `kind` (`review` or `audit`), `row`, `route`, `held`, `rules`, `answers`, `labels` to start from, and `open` questions; the dataset's `questions` and the check's `gates`; `counts` (`decisions`, `review`, `auto`, `in_dataset`, `repeated`, `queued`, `audit`, `dropped`, `unverified`); `problems` by line; and `room` |
-| `POST /api/workbench/checks/decisions/add` | `id`, `items`, each with its `row`, `labels`, and, for the audit, `kind` and `answers` | `dataset`: the summary; `added`; `already`, rows the dataset had; and `audit`: `rows`, `correct`, `accuracy` with `accuracy_low` and `accuracy_high`, the `target` and whether it is met (`ok`), and the `wrong` rows, or `null` without audited rows |
+| `POST /api/workbench/checks/decisions/add` | `id`, `items`, each with its `row`, `labels`, and, for the audit, `kind` and `answers` | `dataset`: the summary; `added`; `already`, rows the dataset had; and `audit`: `rows`, `correct`, `accuracy` with `accuracy_low` and `accuracy_high`, the `target` and whether it is met (`ok`), the `wrong` rows, and `by_slice` (each `field` and its `slices`, with `value`, counts, accuracy and interval), or `null` without audited rows |
 
 ## Compare two variants
 

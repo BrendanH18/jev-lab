@@ -491,6 +491,43 @@ class AppendTests(Temp):
         self.assertEqual(out["added"], 1)
         self.assertIsNone(out["audit"], "a row without a label for every gated question is not scored")
 
+    def test_audit_slices_only_score_completed_verified_audits(self):
+        self.save()
+        dataset = workbench.load_dataset("tickets")
+        expected = decisions._expected(dataset, dataset["check"])
+        def item(channel, correct=True, **extra):
+            row = {"text": str(channel)}
+            if channel is not None:
+                row["channel"] = channel
+            return dict({"row": row, "kind": "audit", "provenance": expected,
+                         "labels": {"department": "billing", "is_urgent": True},
+                         "answers": {"department": "billing" if correct else "technical", "is_urgent": True}}, **extra)
+        valid = [item(" email "), item("email", False), item(None)]
+        excluded = [item("review", kind="review"), item("incomplete", labels={"department": "billing"})]
+        legacy = item("legacy")
+        del legacy["provenance"]
+        report = decisions.audit_report(valid + excluded + [legacy], QUESTIONS, CHECK, expected)
+        self.assertEqual(report["rows"], 3)
+        groups = next(s for s in report["by_slice"] if s["field"] == "channel")
+        self.assertEqual(groups["field"], "channel")
+        email, missing = groups["slices"]
+        self.assertEqual((email["value"], email["rows"], email["correct"], email["accuracy"]), ("email", 2, 1, 0.5))
+        self.assertEqual((missing["value"], missing["rows"], missing["accuracy"]), ("(none)", 1, 1))
+        self.assertLess(email["accuracy_low"], 0.5)
+        self.assertGreater(email["accuracy_high"], 0.5)
+        self.assertNotIn("coverage", json.dumps(groups))
+
+    def test_audit_slice_grouping_uses_full_values_and_results_are_not_saved(self):
+        audit = [i for i in self.queued()["items"] if i["kind"] == "audit"]
+        for n, item in enumerate(audit):
+            item["row"]["channel"] = "x" * 100 + str(n)
+            item["labels"] = {q: item["answers"][q] for q in CHECK["gates"]}
+        out = decisions.append("tickets", audit)
+        channel = next(s for s in out["audit"]["by_slice"] if s["field"] == "channel")
+        self.assertEqual([s["rows"] for s in channel["slices"]], [1, 1])
+        self.assertNotIn("by_slice", workbench.load_dataset("tickets"))
+        self.assertNotIn("audit", workbench.load_dataset("tickets"))
+
     def test_refusals(self):
         beans = self.queued()["items"][0]
         cases = [

@@ -209,6 +209,9 @@ conditions.
   were right on your traffic, with a 95% interval. Exported decisions identify their gate configuration;
   mismatches are skipped, and older files without provenance cannot supply audit scores. Download a blank labeling
   CSV for independent spreadsheet review, then preview and apply imported labels before saving. It makes no model call.
+  Filter the queue by review/audit or incomplete/ready, follow labeling progress, and jump to the next
+  incomplete row. After adding audits, choose an input field to see each slice's audited count,
+  accuracy, and 95% interval for that batch. Slice reports make no extra calls and are not saved.
 - **Compare:** run two variants, each a question set and a model, over the same labeled rows. See
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
   significance test, and the rows where the variants disagree. **Reverse A's options** makes variant B an
