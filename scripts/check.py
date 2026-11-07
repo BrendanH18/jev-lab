@@ -174,6 +174,8 @@ def print_upgrade(rep: dict) -> None:
         if u:
             print("    on unseen rows (%d-fold): accuracy %s, %s automated" % (
                 u["folds"], pct(u["accuracy"]).strip(), pct(u["coverage"]).strip()))
+        elif t.get("holdout_problem"):
+            print("    on unseen rows: %s" % t["holdout_problem"])
     elif t["problem"]:
         print("  retuned gate: %s" % t["problem"])
     else:

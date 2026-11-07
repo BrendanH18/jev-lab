@@ -175,7 +175,9 @@ conditions.
   the Bulk answers.
 - **Check on unseen rows:** in Calibrate and Policy, see what the tuned thresholds deliver on rows they were
   not tuned on. Five-fold cross-validation tunes on four fifths of the labeled rows and routes the fifth,
-  then compares that accuracy with the accuracy on the tuning rows. It also reuses the Bulk answers.
+  then compares that accuracy with the accuracy on the tuning rows. Exact duplicate inputs stay together,
+  including when JSON fields are reordered; five-fold evaluation needs at least five distinct labeled inputs
+  and ten valid labeled rows. It also reuses the Bulk answers.
 - **Checks:** keep a tuned gate with its dataset, with the model and two targets: an accuracy and a
   share automated. **Run check** reruns every saved row but the test rows and says whether the gate still meets them;
   `uv run --locked scripts/check.py` does the same from a terminal or CI and exits nonzero on a miss.

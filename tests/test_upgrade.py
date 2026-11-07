@@ -83,6 +83,15 @@ class SearchTests(unittest.TestCase):
 
 
 class RunTests(Temp):
+    def test_retune_explains_unavailable_grouped_cross_validation(self):
+        answer = FakeClient().system_one({"text": "thanks"}, Q).answers
+        results = [{"index": i, "row": {"text": "same", "channel": "email"} if i % 2 else
+                    {"channel": "email", "text": "same"}, "answers": answer,
+                    "expect": {"dept": "billing", "refund": False}} for i in range(20)]
+        report = upgrade.retune(results, SPEC)
+        self.assertIsNone(report["unseen"])
+        self.assertIn("distinct labeled inputs", report["holdout_problem"])
+
     def test_upgrade_proposals_require_refitting_answer_sets(self):
         fitted = {"dept": {"cut": 0.2, "coverage": 0.9}}
         for candidate, proposal in ((same, "saved"), (unsure, "retuned")):

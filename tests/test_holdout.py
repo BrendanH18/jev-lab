@@ -53,12 +53,42 @@ class FoldTests(unittest.TestCase):
         shuffled = holdout.assign([keys[i] for i in order], order, 5)
         self.assertEqual(shuffled, [folds[i] for i in order])
 
-    def test_identical_inputs_break_ties_by_index(self):
-        self.assertEqual(holdout.assign(["same", "same", "x"], [0, 1, 2], 2), [0, 1, 0])
-        self.assertEqual(holdout.assign(["x", "same", "same"], [2, 1, 0], 2), [0, 1, 0])
+    def test_duplicate_groups_stay_together_and_assignment_ignores_order_and_indexes(self):
+        keys = ["large"] * 17 + ["pair"] * 2 + ["a", "b", "c", "d", "e"]
+        assigned = holdout.assign(keys, list(range(len(keys))), 5)
+        for key in set(keys):
+            self.assertEqual(len({f for k, f in zip(keys, assigned) if k == key}), 1)
+        order = list(reversed(range(len(keys))))
+        self.assertEqual(holdout.assign([keys[i] for i in order], [999] * len(keys), 5),
+                         [assigned[i] for i in order])
+        self.assertEqual(set(assigned), set(range(5)))
+
+    def test_input_identity_ignores_labels_markers_and_json_order_but_keeps_pictures(self):
+        left = {"row": {"text": "ticket", "channel": "email", "_expect": {"a": True}}}
+        right = {"row": {"channel": "email", "text": "ticket", "_test": True}, "key": "ignored"}
+        self.assertEqual(holdout._key(left), holdout._key(right))
+        self.assertEqual(holdout._key({"row": "ticket"}), holdout._key({"row": {"text": "ticket"}}))
+        self.assertNotEqual(holdout._key({"row": {"text": "ticket", "_image": "a.png"}}),
+                            holdout._key({"row": {"text": "ticket", "_image": "b.png"}}))
 
 
 class EvaluateTests(unittest.TestCase):
+    def test_repeated_inputs_cannot_substitute_for_distinct_inputs(self):
+        rows = random_rows(7, 20)
+        for row in rows:
+            row["row"] = {"text": "same"}
+        report = holdout.evaluate(rows, ["a"], costs={"review": 1, "error": 10})
+        self.assertEqual(report["targets"], [])
+        self.assertNotIn("cost", report)
+        self.assertEqual(report["unique_inputs"], 1)
+        self.assertIn("distinct labeled inputs", report["problem"])
+        rows = random_rows(7, 20)
+        for row in rows:
+            row["row"] = {"text": str(row["index"] // 4)}
+        report = holdout.evaluate(rows, ["a"])
+        self.assertEqual(report["unique_inputs"], 5)
+        self.assertEqual([p["rows"] for p in report["targets"][0]["parts"]], [4] * 5)
+
     def test_matches_tuning_each_fold_with_tune_and_scoring_it_with_evaluate(self):
         # The reference uses only Policy's public routes: tune on the other folds, route the held-out fold.
         for seed, qids in ((5, ["a"]), (6, ["a", "b"])):

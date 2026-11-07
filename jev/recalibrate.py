@@ -163,9 +163,13 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
         raise WorkbenchError("Recalibrate needs both right and wrong answers; all labeled answers are right or all are wrong.")
     pairs = [(r["signal"], r["correct"]) for r in scored]
     indexes = [rows[r["index"]].get("index", r["index"]) for r in scored]
-    keys = [rows[r["index"]].get("key") or "#%s" % indexes[i] for i, r in enumerate(scored)]
-    if not all(isinstance(k, str) for k in keys):
+    keys = [holdout._key(dict(rows[r["index"]], index=indexes[i])) for i, r in enumerate(scored)]
+    if any("row" not in rows[r["index"]] and rows[r["index"]].get("key")
+           and not isinstance(rows[r["index"]]["key"], str) for r in scored):
         raise WorkbenchError("Each row key must be a string")
+    issue = holdout.problem(keys, holdout.FOLDS)
+    if issue:
+        raise WorkbenchError(issue)
     folds = holdout.assign(keys, indexes, holdout.FOLDS)
     methods = {}
     for name, fit in [("raw", lambda _: {"method": "raw"}), ("platt", platt), ("isotonic", isotonic)]:
