@@ -26,6 +26,7 @@ const W = {
     // checkForm: Policy's "Save as a check" targets as typed (percent strings; null takes a default from the run).
     // checkRuns: per dataset id, a check run in flight or its report (jev/checks.py), and the model typed to ask instead.
     ranQuestions: null, runModel: null, pin: true, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
+    checkSlices: { datasetId: null, targets: null },
     // agreeRuns: per dataset id, a blind second-labeling sample, its labels, and the comparison (jev/agreement.py).
     agreeRuns: {},
     // testScore: the last report of a gate scored on the loaded dataset's test rows (jev/testsplit.py); testBusy while it runs.
@@ -749,6 +750,7 @@ async function loadDataset(id) {
     const { dataset } = await api("/api/workbench/datasets/load", { id });
     if (!replaceRows(rowsText(dataset.rows), `“${dataset.name || id}”`)) return;
     b.dataset = { id, name: dataset.name || id, notes: dataset.notes || "", withQuestions: !!dataset.questions, questions: dataset.questions || null };
+    b.checkSlices = { datasetId: id, targets: (dataset.check?.slice_targets || []).map((t) => ({ ...t })) };
     b.rules = { ...b.rules, text: dataset.rules || "", applied: "", checked: "", report: null, error: null };
     if (dataset.questions) b.source = "dataset";
     else if (b.source === "dataset") b.source = "current";
@@ -897,7 +899,8 @@ const canon = (v) => (v && typeof v === "object" && !Array.isArray(v)
 
 function checkTargetsText(c) {
   const rules = c.rules ? c.rules.split("\n").length : 0;
-  return `${pct(c.min_accuracy, 1)} accurate${c.bound === "lower" ? " at 95% confidence" : ""} · at least ${pct(c.min_coverage)} automated${rules ? ` · ${rules} rule${rules > 1 ? "s" : ""} send breaking rows to review` : ""}`;
+  const slices = c.slice_targets?.length || 0;
+  return `${pct(c.min_accuracy, 1)} accurate${c.bound === "lower" ? " at 95% confidence" : ""} · at least ${pct(c.min_coverage)} automated${rules ? ` · ${rules} rule${rules > 1 ? "s" : ""} send breaking rows to review` : ""}${slices ? ` · ${slices} required slice${slices === 1 ? "" : "s"}` : ""}`;
 }
 
 function checkItem(x) {
@@ -915,6 +918,8 @@ function checkItem(x) {
       h("span", { class: "badge info" }, icon("check"), "Check"),
       h("span", { class: "mono" }, Object.entries(c.gates).map(([q, t]) => `${q} ≥ ${t.toFixed(2)}`).join(" · ")),
       h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}${c.tuned_on && c.tuned_on !== c.model ? ` · tuned on ${c.tuned_on}` : ""}`)),
+    (c.slice_targets || []).map((t) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
+      h("span", { class: "mono" }, `${t.field} = ${t.value}`), `: at least ${pct(t.min_accuracy, 1)} accurate · ${pct(t.min_coverage)} automated`)),
     Object.keys(c.answer_sets || {}).length ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
       "Review shortlists: ", attachedSetsText(c.answer_sets), ". Thresholds and rules still decide automation.") : null,
     (x.check_notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
@@ -1252,6 +1257,22 @@ async function removeCheck(id) {
 
 const CHECK_BADGE = { pass: ["good", "check", "Passed"], fail: ["critical", "stop", "Failed"], error: ["warning", "eye", "Not judged"] };
 
+function sliceCheckReport(rep) {
+  if (!rep.slice_targets?.length) return null;
+  return h("div", { class: "scroll" }, h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, ["required slice", "result", "accuracy / target", "automated / minimum"].map((text) => h("th", {}, text)))),
+    h("tbody", {}, rep.slice_targets.map((s) => {
+      const [tone, , label] = CHECK_BADGE[s.status];
+      return h("tr", {},
+        h("td", {}, h("span", { class: "mono" }, `${s.field} = ${s.value}`),
+          h("div", { class: "faint" }, `${s.rows} rows · ${s.labeled || 0} labeled`)),
+        h("td", {}, h("span", { class: `badge ${tone}` }, label),
+          (s.reasons || []).map((reason) => h("div", { class: "faint" }, reason))),
+        h("td", {}, s.targets?.accuracy ? `${s.targets.accuracy.value === null ? "—" : pct(s.targets.accuracy.value, 1)} / ${pct(s.targets.accuracy.target, 1)}${s.targets.accuracy.bound === "lower" ? " (95% lower bound)" : ""}` : "—"),
+        h("td", {}, s.targets?.coverage ? `${pct(s.coverage)} / ${pct(s.targets.coverage.target)}` : "—"));
+    }))));
+}
+
 function checkReport(rep) {
   const [tone, ic, label] = CHECK_BADGE[rep.status];
   const t = rep.targets;
@@ -1269,6 +1290,7 @@ function checkReport(rep) {
       stat("minimum", pct(t.coverage.target)),
       stat("cost", usd(rep.cost_usd)),
       rep.latency_ms_median === null ? null : stat("median latency", ms(rep.latency_ms_median))) : null,
+    sliceCheckReport(rep),
     rep.reasons.length ? h("ul", { class: "muted", style: { fontSize: "12.5px", margin: 0, paddingLeft: "18px" } },
       rep.reasons.map((r) => h("li", {}, r))) : null,
     (rep.notes || []).map((note) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"), " ", note)),
@@ -1340,9 +1362,10 @@ function upgradeReport(x, rep) {
   const [tone, ic, label] = UPGRADE_BADGE[rep.verdict];
   const s = rep.sides, p = rep.paired, t = rep.retuned;
   const gatesText = (g) => Object.entries(g).map(([q, v]) => `${q} ≥ ${v.toFixed(2)}`).join(" · ");
-  const judged = (j) => (!j.targets || !j.targets.accuracy ? h("span", { class: "badge warning" }, "not judged")
-    : [h("span", { class: `badge ${j.status === "pass" ? "good" : "critical"}` }, j.status === "pass" ? "meets" : "misses"), " ",
-      j.accuracy === null ? "none automated" : `${pct(j.accuracy, 1)} accurate · ${pct(j.coverage)} automated`]);
+  const judged = (j) => h("div", {},
+    h("span", { class: `badge ${CHECK_BADGE[j.status][0]}` }, j.status === "error" ? "not judged" : j.status === "pass" ? "meets" : "misses"),
+    j.targets?.accuracy ? [" ", j.accuracy === null ? "none automated" : `${pct(j.accuracy, 1)} accurate · ${pct(j.coverage)} automated`] : null,
+    sliceCheckReport(j));
   const side = (k) => `${s[k].model}${s[k].answered_by.length && s[k].answered_by.join(", ") !== s[k].model ? `, answered by ${s[k].answered_by.join(", ")}` : ""}`;
   const unseen = t.unseen;
   return h("div", { class: "check-report grid", style: { gap: "8px" } },
@@ -1842,6 +1865,66 @@ function checkVerdict(rep, bound, form) {
     accOk && covOk ? "" : ". A check that fails on the run it comes from will fail when you rerun it."];
 }
 
+// Only text-valued fields are offered here: their exact strings match By slice without translating JSON
+// numbers or objects between Python and JavaScript. Imported targets for other values remain intact.
+function availableCheckSlices(results) {
+  const rows = results.filter((r) => !(r.row && typeof r.row === "object" && r.row._test === true)).map((r) => r.row);
+  const fields = [...new Set(rows.flatMap((row) => row && typeof row === "object" && !Array.isArray(row) ? Object.keys(row) : []))];
+  return fields.filter((field) => field && field.length <= 100 && !["_expect", "_test"].includes(field)).flatMap((field) => {
+    const values = rows.map((row) => row && typeof row === "object" && !Array.isArray(row) ? row[field] : null);
+    if (values.some((v) => v != null && typeof v !== "string")) return [];
+    const text = [...new Set(values.map((v) => v?.trim() || "(none)"))];
+    if (text.some((v) => v.length > 500)) return [];
+    return [{ field, values: text }];
+  });
+}
+
+function checkSliceTargets() {
+  const b = W.bulk;
+  if (b.checkSlices.datasetId !== b.dataset.id || b.checkSlices.targets === null) {
+    const saved = b.datasets.find((d) => d.id === b.dataset.id)?.check?.slice_targets || [];
+    b.checkSlices = { datasetId: b.dataset.id, targets: saved.map((t) => ({ ...t })) };
+  }
+  return b.checkSlices.targets;
+}
+
+function checkSliceForm() {
+  const targets = checkSliceTargets();
+  const redraw = () => mount("#check-slice-form", checkSliceForm());
+  const options = availableCheckSlices(W.bulk.result.results).map((option) => ({ ...option,
+    values: option.values.filter((value) => !targets.some((t) => t.field === option.field && t.value === value)) })).filter((option) => option.values.length);
+  const number = (target, key, label, min) => {
+    const input = h("input", { class: "input sm", type: "number", min, max: 100, step: "any", value: target[key] * 100,
+      style: { width: "80px" }, "aria-label": `${target.field} = ${target.value}: ${label}` });
+    input.addEventListener("input", () => { target[key] = input.value === "" ? NaN : Number(input.value) / 100; });
+    return h("label", {}, label, " ", input, "%");
+  };
+  let add = null;
+  if (options.length && targets.length < 20) {
+    const field = h("select", { class: "input sm", "aria-label": "Required slice field" },
+      options.map((option) => h("option", { value: option.field }, option.field)));
+    const value = h("select", { class: "input sm", "aria-label": "Required slice value" });
+    const values = () => mount(value, options.find((option) => option.field === field.value).values.map((text) => h("option", { value: text }, text)));
+    field.addEventListener("change", values);
+    values();
+    add = h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" } }, field, value,
+      h("button", { class: "btn sm", onclick: () => {
+        targets.push({ field: field.value, value: value.value, min_accuracy: 0.9, min_coverage: 0 });
+        redraw();
+      } }, "Add slice target"));
+  }
+  return h("div", { class: "grid", style: { gap: "8px", fontSize: "12.5px" } },
+    h("h4", { style: { margin: 0 } }, "Required slices"),
+    h("p", { class: "faint", style: { margin: 0 } },
+      "Add targets for text-valued fields in the current tuning rows, up to 20. Each uses the same gates, rules, and accuracy basis as the overall check. A missing or unevaluable slice prevents a pass. Held-out rows are excluded. Saved targets stay until you remove them."),
+    targets.map((target, i) => h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" } },
+      h("span", { class: "mono" }, `${target.field} = ${target.value}`),
+      number(target, "min_accuracy", "accurate, at least", 50), number(target, "min_coverage", "automated, at least", 0),
+      h("button", { class: "btn sm ghost", "aria-label": `Remove slice ${target.field} = ${target.value}`,
+        onclick: () => { targets.splice(i, 1); redraw(); } }, "Remove"))),
+    add || h("p", { class: "faint", style: { margin: 0 } }, targets.length >= 20 ? "20 slice targets selected." : "No unused text-valued slices in these tuning rows."));
+}
+
 function checkSaveBody(rep) {
   const b = W.bulk;
   const p = b.policy;
@@ -1868,7 +1951,8 @@ function checkSaveBody(rep) {
       field("accuracy", p.bound === "lower" ? "accurate at 95% confidence, at least" : "accurate when automated, at least", 50),
       field("coverage", "automated, at least", 0),
       h("button", { class: "btn sm", onclick: saveCheck }, icon("check"), existing ? "Replace the saved check" : `Save check to ${b.dataset.id}`)),
-    verdict];
+    verdict,
+    h("div", { id: "check-slice-form" }, checkSliceForm())];
 }
 
 async function saveCheck() {
@@ -1882,6 +1966,7 @@ async function saveCheck() {
     const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: gateModel(), tuned_on: tunedOn() || undefined,
       rules: policyRules() || undefined,
       answer_sets: attachedSetsPayload(),
+      slice_targets: checkSliceTargets(),
       min_accuracy: Number($("#check-accuracy").value) / 100, min_coverage: Number($("#check-coverage").value) / 100 };
     await api("/api/workbench/checks", { id, check });
     b.datasets = (await api("/api/workbench/datasets")).datasets;

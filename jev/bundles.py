@@ -161,6 +161,9 @@ def _read(data: Any, name: Any = None) -> Tuple[dict, Dict[str, bytes]]:
             dataset["rows"] = [dict(row, **{workbench.IMAGE_KEY: renamed[row[workbench.IMAGE_KEY]]})
                                if isinstance(row, dict) and workbench.IMAGE_KEY in row else row
                                for row in dataset["rows"]]
+            for target in dataset.get("check", {}).get("slice_targets", []):
+                if target["field"] == workbench.IMAGE_KEY:
+                    target["value"] = renamed.get(target["value"], target["value"])
             if len(workbench._dataset_text(dataset)) > workbench.MAX_DATASET_CHARS:
                 raise WorkbenchError("The bundle dataset is too large to save")
             return dataset, pictures

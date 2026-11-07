@@ -211,3 +211,10 @@ ignored, JSON field order ignored, picture names retained). Assign larger groups
 least populated fold, breaking ties by input hash. Require at least one distinct labeled input
 per fold as well as the total labeled-row minimum; report why unseen evaluation is unavailable.
 Do not silently fall back to splitting duplicate copies between tuning and evaluation.
+
+Saved checks may require `slice_targets` (top-level input field/value plus minimum accuracy and
+coverage), using By slice's full normalized value identity and the check's shared confidence basis.
+Every required slice must pass; missing or unevaluable slices prevent a pass. Score the current
+run's tuning answers only, with no extra calls or held-out rows. Preserve slice configuration in
+bundles and model upgrades, and enforce it on upgrade proposals. Persist no measured slice results.
+Slice targets evaluate batches; exported per-row gates still route by thresholds and rules.

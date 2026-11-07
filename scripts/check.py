@@ -60,12 +60,30 @@ def targets_text(check: dict) -> str:
     return "%s, at least %s automated" % (accuracy, pct(check["min_coverage"]).strip())
 
 
+def print_slice_targets(check: dict) -> None:
+    for target in check.get("slice_targets", []):
+        print("  slice %r = %r: %s" % (target["field"], target["value"],
+                                        targets_text(dict(target, bound=check["bound"]))))
+
+
+def print_slices(rep: dict) -> None:
+    for s in rep.get("slice_targets", []):
+        print("  slice %r = %r: %s (%d rows, %s labeled)" % (
+            s["field"], s["value"], s["status"].upper(), s["rows"], s.get("labeled") or 0))
+        for name, target in s["targets"].items():
+            print("    %s %s, target %s  %s" % (name, pct(target["value"]).strip(),
+                                               pct(target["target"]).strip(), "ok" if target["ok"] else "FAIL"))
+        for reason in s["reasons"]:
+            print("    - " + reason)
+
+
 def print_list(summaries) -> None:
     for d in summaries:
         c = d["check"]
         tuned = "  tuned on %s" % c["tuned_on"] if c.get("tuned_on") and c["tuned_on"] != c.get("model") else ""
         print("%s  (%d rows, %d labeled)  model %s%s\n  gate: %s on %s\n  targets: %s" % (
             d["id"], d["rows"], d["labeled"], c.get("model"), tuned, gates_text(c), c.get("signal"), targets_text(c)))
+        print_slice_targets(c)
         for note in d.get("check_notes", []):
             print("  note: " + note)
 
@@ -86,6 +104,7 @@ def print_report(rep: dict) -> None:
                                                         " (95% lower bound)" if lower else "", "ok" if acc["ok"] else "FAIL"))
         print("  automated  %s  %d of %d    min %s  %s" % (pct(rep["coverage"]), rep["automated"], rep["labeled"],
                                                          pct(cov["target"]).strip(), "ok" if cov["ok"] else "FAIL"))
+    print_slices(rep)
     latency = rep["latency_ms_median"]
     print("  cost $%.5f · %d input tokens · median latency %s" % (
         rep["cost_usd"], rep["input_tokens"], "n/a" if latency is None else "%.0f ms" % latency))
@@ -164,12 +183,16 @@ def print_upgrade(rep: dict) -> None:
         rep["id"], s["current"]["rows"], s["current"]["model"], ", ".join(s["current"]["answered_by"]) or "none",
         s["candidate"]["model"], ", ".join(s["candidate"]["answered_by"]) or "none"))
     print("  gate: %s on %s; targets: %s" % (gates_text(c), c["signal"], targets_text(c)))
+    print_slice_targets(c)
     print("  saved gate, tuned-on version:  %s" % side_text(s["current"], rep["current"]))
+    print_slices(rep["current"])
     print("  saved gate, candidate:         %s" % side_text(s["candidate"], rep["candidate"]))
+    print_slices(rep["candidate"])
     t = rep["retuned"]
     if t["gates"] is not None:
         print("  retuned gate: %s  %s" % (", ".join("%s>=%.2f" % kv for kv in t["gates"].items()),
                                          side_text(s["candidate"], t["report"])))
+        print_slices(t["report"])
         u = t["unseen"]
         if u:
             print("    on unseen rows (%d-fold): accuracy %s, %s automated" % (

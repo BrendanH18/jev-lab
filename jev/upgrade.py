@@ -127,7 +127,10 @@ def retune(results: List[dict], check: dict) -> dict:
 def _judged(rep: dict) -> dict:
     keys = ("status", "reasons", "targets", "labeled", "automated", "correct", "coverage", "accuracy",
             "accuracy_low", "accuracy_high", "mistakes_total")
-    return {k: rep.get(k) for k in keys}
+    out = {k: rep.get(k) for k in keys}
+    if "slice_targets" in rep:
+        out["slice_targets"] = rep["slice_targets"]
+    return out
 
 
 def compare(current: dict, candidate: dict, check: dict) -> dict:

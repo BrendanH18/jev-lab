@@ -181,6 +181,9 @@ conditions.
 - **Checks:** keep a tuned gate with its dataset, with the model and two targets: an accuracy and a
   share automated. **Run check** reruns every saved row but the test rows and says whether the gate still meets them;
   `uv run --locked scripts/check.py` does the same from a terminal or CI and exits nonzero on a miss.
+  Add accuracy and automation targets for selected input slices, such as a channel or language, so
+  an overall pass cannot hide a failing required slice. Missing or unscorable slices prevent a pass,
+  and slice scoring reuses the same live answers without extra calls.
   A check saved from a run of an alias such as `jev-latest` asks the version that answered that run, so
   the gate stays on the version it was tuned on when the alias moves. Only targets are saved, never answers.
 - **Try a new version:** when TypeSafe ships a new Jev version, ask the version a check was tuned on and the new one

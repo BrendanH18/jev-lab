@@ -7,12 +7,14 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+from helpers import FakeClient
 from jev import bundles, checks, images, workbench
 
 Q = {"damaged": {"type": "noul", "instructions": "Is the bag in `photo` damaged?"},
      "where": {"type": "box", "instructions": "The bag in `photo`"}}
 CHECK = {"gates": {"damaged": 0.8}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-         "tuned_on": "jev-1.14.0", "min_accuracy": 0.95, "min_coverage": 0.5}
+         "tuned_on": "jev-1.14.0", "min_accuracy": 0.95, "min_coverage": 0.5,
+         "slice_targets": [{"field": "text", "value": "broken", "min_accuracy": 0.95, "min_coverage": 0.5}]}
 
 
 def encoded(files):
@@ -85,11 +87,31 @@ class BundleTests(unittest.TestCase):
         with self.assertRaisesRegex(workbench.WorkbenchError, "true or false"):
             bundles.import_bundle(data, replace="true")
 
+    def test_picture_slice_follows_renamed_picture_and_still_passes_after_import(self):
+        dataset = self.saved()
+        target = {"field": "_image", "value": "torn-bag", "min_accuracy": 1, "min_coverage": 1}
+        checks.save_check(dataset["id"], dict(CHECK, min_accuracy=1, slice_targets=[target]))
+        client = FakeClient(lambda state, _: {"damaged": 0.99 if state["text"] == "broken" else 0.01})
+        self.assertEqual(checks.run(client, dataset["id"])["status"], "pass")
+        data = bundles.export_bundle(dataset["id"])["data"]
+        with patch.object(workbench, "WORKBENCH_DIR", self.root / "destination"):
+            preview = bundles.preview_bundle(data)
+            renamed = preview["dataset"]["rows"][0]["_image"]
+            self.assertNotEqual(renamed, "torn-bag")
+            self.assertEqual(preview["dataset"]["check"]["slice_targets"], [dict(target, value=renamed)])
+            imported = bundles.import_bundle(data)
+            report = checks.run(client, imported["id"])
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["slice_targets"][0]["rows"], 1)
+            again = bundles.export_bundle(imported["id"])["data"]
+            self.assertEqual(bundles.preview_bundle(again)["dataset"]["check"], imported["check"])
+
     def test_export_and_import_allowlist_metadata(self):
         dataset = self.saved()
         dataset["answers"] = {"secret": "do not travel"}
         dataset["api_key"] = "do not travel"
         dataset["check"]["answers"] = "do not travel"
+        dataset["check"]["slice_targets"][0]["result"] = "do not travel"
         dataset["test"]["looks"][0]["accuracy"] = "do not travel"
         workbench.write_dataset(dataset)
         data = bundles.export_bundle(dataset["id"])["data"]

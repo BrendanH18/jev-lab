@@ -103,6 +103,25 @@ class ValidateTests(unittest.TestCase):
             self.assertIn(message, str(ctx.exception))
 
 
+class SliceValidationTests(unittest.TestCase):
+    def test_configuration_only_and_defaults(self):
+        target = {"field": "channel", "value": "email", "min_accuracy": 0.95}
+        checked = checks.validate_check(dict(CHECK, slice_targets=[dict(target, answers={}, accuracy=1, status="pass")]), Q)
+        self.assertEqual(checked["slice_targets"], [dict(target, min_coverage=0)])
+        self.assertNotIn("slice_targets", checks.validate_check(dict(CHECK, slice_targets=[]), Q))
+
+    def test_rejects_invalid_targets(self):
+        target = {"field": "channel", "value": "email", "min_accuracy": 0.95}
+        bad = ["email", [target] * 21, [None], [target, target]]
+        bad += [[dict(target, **change)] for change in (
+            {"field": ""}, {"field": " "}, {"field": "x" * 101}, {"field": "_expect"}, {"field": "_test"},
+            {"value": 1}, {"value": "x" * 501}, {"min_accuracy": True}, {"min_accuracy": 0.4},
+            {"min_coverage": -1}, {"min_coverage": float("nan")})]
+        for spec in bad:
+            with self.subTest(spec=spec), self.assertRaises(workbench.WorkbenchError):
+                checks.validate_check(dict(CHECK, slice_targets=spec), Q)
+
+
 class StorageTests(Temp):
     def test_answer_sets_are_configuration_only_and_survive_dataset_save(self):
         fitted = {"dept": {"cut": 0.2, "coverage": 0.9}}
@@ -245,6 +264,94 @@ class EvaluateTests(unittest.TestCase):
                               stopped="Budget reached")
         self.assertEqual(rep["status"], "error")
         self.assertIn("stopped early: Budget reached", rep["reasons"][0])
+
+
+class SliceEvaluateTests(unittest.TestCase):
+    def check(self, targets=None, **kw):
+        return checks.validate_check(dict(CHECK, slice_targets=targets or [
+            {"field": "channel", "value": "email", "min_accuracy": 0.9, "min_coverage": 0.5}], **kw), Q)
+
+    def rows(self, pairs):
+        rows = results(pairs)
+        for i, row in enumerate(rows):
+            row["row"] = {"text": "row %d" % i, "channel": "email" if i == 0 else "chat"}
+        return rows
+
+    def test_overall_pass_does_not_hide_failing_slice(self):
+        rows = self.rows([(0.98, False)] + [(0.98, True)] * 19)
+        self.assertEqual(checks.evaluate(rows, CHECK)["status"], "pass")
+        rep = checks.evaluate(rows, self.check())
+        self.assertEqual(rep["status"], "fail")
+        [slice_report] = rep["slice_targets"]
+        self.assertEqual((slice_report["field"], slice_report["value"], slice_report["rows"], slice_report["accuracy"]),
+                         ("channel", "email", 1, 0))
+        self.assertTrue(rep["targets"]["accuracy"]["ok"])
+        self.assertFalse(slice_report["targets"]["accuracy"]["ok"])
+        self.assertIn("Slice 'channel' = 'email'", rep["reasons"][0])
+
+    def test_missing_unlabeled_and_failed_rows_cannot_pass(self):
+        cases = [self.rows([(0.98, True), (0.98, True)])[1:], self.rows([(0.98, None), (0.98, True)]),
+                 self.rows([(0.98, True), (0.98, True)])]
+        cases[-1][0].pop("answers")
+        cases[-1][0]["error"] = "failed"
+        for rows in cases:
+            with self.subTest(rows=rows):
+                rep = checks.evaluate(rows, self.check())
+                self.assertEqual(rep["status"], "error")
+                self.assertEqual(rep["slice_targets"][0]["status"], "error")
+                self.assertTrue(rep["slice_targets"][0]["reasons"])
+
+    def test_confidence_bound_and_coverage_targets_apply_to_slice(self):
+        rows = self.rows([(0.98, True)] * 50)
+        rep = checks.evaluate(rows, self.check(bound="lower"))
+        self.assertEqual(rep["status"], "fail")
+        self.assertTrue(rep["targets"]["accuracy"]["ok"], "overall has enough rows")
+        self.assertLess(rep["slice_targets"][0]["accuracy_low"], 0.9)
+        rows = self.rows([(0.6, True)] + [(0.98, True)] * 19)
+        rep = checks.evaluate(rows, self.check())
+        self.assertEqual(rep["status"], "fail")
+        self.assertEqual(rep["slice_targets"][0]["coverage"], 0)
+        self.assertFalse(rep["slice_targets"][0]["targets"]["coverage"]["ok"])
+
+    def test_rule_routing_is_shared(self):
+        from helpers import fake_answers
+        rows = self.rows([(0.98, True)] * 20)
+        for row in rows:
+            row["answers"] = fake_answers(Q, {"refund": 0.98, "dept": "billing"})
+        rows[0]["answers"] = fake_answers(Q, {"refund": 0.98, "dept": "tech"})
+        rep = checks.evaluate(rows, self.check(rules="if refund = yes then dept in billing"))
+        self.assertTrue(rep["targets"]["coverage"]["ok"])
+        self.assertEqual(rep["status"], "fail")
+        self.assertEqual(rep["slice_targets"][0]["automated"], 0)
+
+    def test_matches_full_values_and_existing_by_slice_semantics(self):
+        value = "x" * 100
+        rows = self.rows([(0.98, True), (0.98, True), (0.98, True)])
+        rows[0]["row"]["channel"] = " " + value + " "
+        rows[1]["row"]["channel"] = 1
+        rows[2]["row"].pop("channel")
+        targets = [{"field": "channel", "value": v, "min_accuracy": 1} for v in (value, "1", "(none)")]
+        rep = checks.evaluate(rows, self.check(targets))
+        self.assertEqual(rep["status"], "pass")
+        self.assertEqual([r["rows"] for r in rep["slice_targets"]], [1, 1, 1])
+
+
+class SliceRunTests(Temp):
+    def test_targets_persist_and_use_only_tuning_rows_without_extra_calls(self):
+        rows = [{"text": "refund %d" % i, "channel": "email" if i < 2 else "chat",
+                 "_expect": {"refund": True}, **({"_test": True} if i == 0 else {})} for i in range(4)]
+        workbench.save_dataset({"name": "Refunds", "rows": rows, "questions": Q})
+        targets = [{"field": "channel", "value": "email", "min_accuracy": 1, "min_coverage": 1}]
+        checks.save_check("refunds", dict(CHECK, slice_targets=targets))
+        client = FakeClient(lambda state, questions: {"refund": 0.98})
+        rep = checks.run(client, "refunds")
+        self.assertEqual(rep["status"], "pass")
+        self.assertEqual((len(client.calls), rep["slice_targets"][0]["rows"]), (3, 1))
+        self.assertNotIn("_test", json.dumps([state for state, _ in client.calls]))
+        self.assertNotIn("_expect", json.dumps([state for state, _ in client.calls]))
+        saved = workbench.save_dataset({"name": "Refunds", "rows": rows, "questions": Q})
+        self.assertEqual(saved["check"]["slice_targets"], targets)
+        self.assertNotIn("answers", json.dumps(workbench.load_dataset("refunds")))
 
 
 class RunTests(Temp):
