@@ -173,6 +173,11 @@ identical inputs across tuning/test rows using row numbers only; never reveal he
 in health reports. Findings are advisory and fixes stay manual. Reports must match the current rows
 and selected questions; hide them when either changes.
 
+New test splits keep exact-input groups together, including unlabeled copies, using the same identity as
+dataset health and Review (labels and test markers ignored, picture names retained). Select the closest
+feasible labeled-row count to the requested share, with at least two labeled rows on each side, and show
+the actual share. Existing splits are never regrouped automatically; impossible splits must leave files unchanged.
+
 ## Conventions
 
 - Ask before adding any dependency, tool or service; propose the trade-off and a recommended

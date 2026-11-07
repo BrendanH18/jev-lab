@@ -152,6 +152,10 @@ conditions.
 - **Test rows:** hold a random share of a dataset's labeled rows out of every tuning panel and Compare, with their
   answers hidden, then score the chosen gate on them for a number no choice was fit to. Each score is counted in
   the dataset, since a gate changed after a look is partly tuned on the test rows too.
+  New splits keep exact duplicate inputs together, including unlabeled copies, and choose the closest possible
+  labeled-row share with at least two labeled rows on each side. The dataset shows the actual held-out share.
+  Picture names are part of input identity; similar wording is not grouped. If the groups cannot form a valid
+  split, add labeled rows with distinct inputs. Existing splits are preserved until you explicitly remove them.
 - **Rules:** write what a row's answers may say together, such as
   `if wants_refund = yes then department in billing, shipping`. See which rows break each rule, even
   unlabeled, since a broken rule means a wrong answer or a wrong rule. Where rows are labeled, see

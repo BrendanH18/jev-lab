@@ -1899,15 +1899,15 @@ function testControl(x) {
   if (x.test) {
     const looks = x.test.looks;
     return [h("span", { class: "badge", title: "Rows held out of every tuning panel and Compare. Score a gate on them from Policy." },
-      `test: ${x.test.rows} rows · ${looks} look${looks === 1 ? "" : "s"}`),
+      `test: ${x.test.rows} rows · ${x.test.labeled} labeled (${pct(x.test.share, 1)} of labeled rows) · ${looks} look${looks === 1 ? "" : "s"}`),
     h("button", { class: "btn sm ghost", onclick: () => removeTest(x.id) }, "Remove test split")];
   }
-  // Only shares that leave at least two labeled rows on each side, as jev/testsplit.py's lock requires.
-  const shares = [0.2, 0.25, 0.33].filter((share) => { const n = Math.round(share * x.labeled); return n >= 2 && x.labeled - n >= 2; });
+  // The server finds the closest feasible share; whole groups must leave two labeled rows on each side.
+  const shares = x.labeled >= 4 ? [0.2, 0.25, 0.33] : [];
   if (!shares.length) return null;
   const sel = h("select", { class: "input sm", "aria-label": `Hold out test rows from ${x.id}`, style: { width: "auto" } },
     h("option", { value: "" }, "Hold out test rows…"),
-    shares.map((share) => h("option", { value: String(share) }, `${Math.round(share * 100)}% of ${x.labeled} labeled rows`)));
+    shares.map((share) => h("option", { value: String(share) }, `About ${Math.round(share * 100)}% of ${x.labeled} labeled rows`)));
   sel.addEventListener("change", () => { if (sel.value) lockTest(x.id, Number(sel.value)); sel.value = ""; });
   return sel;
 }
@@ -1929,12 +1929,13 @@ async function reloadAfterSplit(id) {
 async function lockTest(id, share) {
   const b = W.bulk;
   if (b.dataset.id === id && bulkUnsaved()) return toast("Save the rows and labels first: the split is drawn from the saved file.", "error");
-  if (!confirm(`Hold out ${Math.round(share * 100)}% of the labeled rows in “${id}” as test rows, drawn at random?\n\n`
-    + "No tuning panel or Compare will read them, and their answers stay hidden. Score a gate on them from Policy when you have chosen it; each score is counted.")) return;
+  if (!confirm(`Hold out about ${Math.round(share * 100)}% of the labeled rows in “${id}” as test rows?\n\n`
+    + "Exact duplicate inputs stay together, including unlabeled copies. Groups are drawn at random to get as close as possible to that share, with at least two labeled rows on each side. The actual share can differ. Picture names count as part of the input; similar wording is not grouped.\n\n"
+    + "No tuning panel or Compare will read test rows, and their answers stay hidden. Score a gate on them from Policy when you have chosen it; each score is counted.")) return;
   try {
     const { dataset } = await api("/api/workbench/datasets/test/lock", { id, share });
     await reloadAfterSplit(id);
-    toast(`${dataset.test.rows} rows are test rows now.${b.dataset.id === id ? " Run the rows again to get answers." : ""}`);
+    toast(`${dataset.test.rows} test rows · ${dataset.test.labeled} labeled (${pct(dataset.test.share, 1)} of labeled rows).${b.dataset.id === id ? " Run the rows again to get answers." : ""}`);
   } catch (e) { handleError(e); }
 }
 

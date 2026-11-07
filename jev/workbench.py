@@ -452,10 +452,13 @@ def dataset_summary(dataset: dict) -> dict:
     rows = dataset.get("rows") or []
     labeled: Dict[str, int] = {}
     labeled_rows = 0
+    test_labeled = 0
     for row in rows:
         labels = row.get(LABEL_KEY) if isinstance(row, dict) else None
         if isinstance(labels, dict) and any(v is not None for v in labels.values()):
             labeled_rows += 1
+            if row.get(TEST_KEY) is True:
+                test_labeled += 1
             for qid, value in labels.items():
                 if value is not None:
                     labeled[qid] = labeled.get(qid, 0) + 1
@@ -467,7 +470,9 @@ def dataset_summary(dataset: dict) -> dict:
     return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
             "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
             "questions": len(dataset.get("questions") or {}), "check": check, "check_notes": [pin] if pin else [],
-            "test": {"rows": test_rows, "looks": len(test.get("looks") or []) if test else 0,
+            "test": {"rows": test_rows, "labeled": test_labeled,
+                     "share": test_labeled / labeled_rows if labeled_rows else None,
+                     "looks": len(test.get("looks") or []) if test else 0,
                      "locked_at": test.get("locked_at") if test else None} if test_rows else None}
 
 
