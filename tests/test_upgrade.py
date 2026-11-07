@@ -105,6 +105,31 @@ class RunTests(Temp):
                 self.assertEqual(workbench.load_dataset("tickets")["check"]["answer_sets"], fitted,
                                  "trying a candidate never changes the saved check")
 
+    def test_slice_failure_blocks_upgrade_even_when_overall_targets_pass(self):
+        targets = [{"field": "text", "value": "refund 1", "min_accuracy": 1, "min_coverage": 1}]
+        checks.save_check("tickets", dict(SPEC, slice_targets=targets))
+        fake = VersionClient({"jev-1.14.0": same,
+                              "jev-1.15.0": lambda text: wrong(text) if text == "refund 1" else same(text)})
+        rep = upgrade.run(fake, "tickets", "jev-1.15.0")
+        self.assertEqual(rep["verdict"], "stay")
+        self.assertTrue(rep["candidate"]["targets"]["accuracy"]["ok"])
+        self.assertEqual(rep["candidate"]["slice_targets"][0]["status"], "fail")
+        self.assertEqual(rep["retuned"]["report"]["slice_targets"][0]["status"], "fail")
+        self.assertEqual(rep["proposals"], {"saved": None, "retuned": None})
+
+    def test_upgrade_preserves_slice_configuration_in_saved_and_retuned_proposals(self):
+        targets = [{"field": "text", "value": "refund 1", "min_accuracy": 1, "min_coverage": 1}]
+        for candidate, proposal in ((same, "saved"), (unsure, "retuned")):
+            with self.subTest(proposal=proposal):
+                checks.save_check("tickets", dict(SPEC, slice_targets=targets))
+                fake = VersionClient({"jev-1.14.0": same, "jev-1.15.0": candidate})
+                rep = upgrade.run(fake, "tickets", "jev-1.15.0")
+                saved = rep["proposals"][proposal]
+                self.assertEqual(saved["slice_targets"], targets)
+                checks.save_check("tickets", saved)
+                self.assertEqual(workbench.load_dataset("tickets")["check"]["slice_targets"], targets)
+                self.assertEqual(rep["calls"], 40, "slice evaluation makes no extra calls")
+
     def test_the_same_answers_keep_the_saved_thresholds(self):
         fake = VersionClient({"jev-1.14.0": same, "jev-1.15.0": same})
         rep = upgrade.run(fake, "tickets", "jev-1.15.0")

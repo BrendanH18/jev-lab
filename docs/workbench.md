@@ -881,6 +881,41 @@ check reruns exactly what the file holds.
 }
 ```
 
+### Require targets for a slice
+
+An overall pass can hide a channel or language where the gate performs poorly. In **Save as a
+check**, add a slice target by selecting an input field and its text value, then choose the minimum
+accuracy and share automated for that slice. You can keep up to 20 distinct field/value targets.
+Each uses the same thresholds, rules, signal, and confidence basis as the overall check; all
+targets must pass. For example, a check can require 90% accuracy overall and 95% for `channel = email`.
+
+The saved check's optional configuration is:
+
+```json
+"slice_targets": [
+  {"field": "channel", "value": "email", "min_accuracy": 0.95, "min_coverage": 0.3}
+]
+```
+
+Values match the full text used by **By slice**, including its whitespace normalization. A missing,
+null, or blank field matches `(none)`. Fields are top-level input fields, and labels and test markers
+cannot be selected. The interface offers text values; checks supplied as JSON can also match the
+JSON text of other values, using Python's sorted-key JSON representation. A field with numeric `1`
+and text `"1"` shares one slice, as in **By slice**.
+
+**Run check** and the terminal report show each required slice's targets and result. A measured
+slice below either target fails the check. A required slice with no matching tuning rows, no usable
+labels, or unreadable answers makes it **Not judged**, so it cannot pass silently. Terminal exit
+codes remain 1 for failed targets and 2 for checks that cannot be judged. Slices reuse the same
+run's answers and make no additional model calls. Held-out test rows remain excluded.
+
+Slice configuration travels with dataset bundles and is preserved when moving a check to a new
+model version. Upgrade proposals must meet its slice targets too; retuning still searches for the
+overall accuracy target, so it can recommend staying even if another set of thresholds could satisfy
+every slice. Exported gates continue to route individual rows using thresholds and rules: slice
+targets evaluate a batch, and do not change per-row routing. Only configuration is saved, never
+measured slice results.
+
 ### Pin the model version
 
 An alias such as `jev-latest` points at a new version when TypeSafe ships one, so a gate that asks an
@@ -934,9 +969,9 @@ change, for example in GitHub Actions:
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
-| `POST /api/workbench/checks` | `id`, `check`: `gates`, `min_accuracy` (0.5–1), optional `min_coverage` (default 0), `signal`, `bound`, `model` (default: the current model), and optional `tuned_on` (the versioned id that answered the tuning run) | `dataset`: the summary, with the `check` and `check_notes` |
+| `POST /api/workbench/checks` | `id`, `check`: `gates`, `min_accuracy` (0.5–1), optional `min_coverage` (default 0), `signal`, `bound`, `model` (default: the current model), optional `slice_targets` (field/value and minimum accuracy/coverage), and optional `tuned_on` (the versioned id that answered the tuning run) | `dataset`: the summary, with the `check` and `check_notes` |
 | `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
-| `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, `answered_by`, and `notes` |
+| `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, optional `slice_targets` (each slice's status, reasons, targets, counts, and accuracy), `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, `answered_by`, and `notes` |
 
 ### Move a check to a new version
 

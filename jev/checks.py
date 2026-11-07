@@ -12,6 +12,10 @@ because an alias moves when TypeSafe ships a new version and thresholds tuned on
 the next (https://docs.typesafe.ai/models#aliases). A check that still asks an alias carries a note saying so,
 and a run answered by another version than the one the gate was tuned on says that too.
 
+Optional slice_targets require the same accuracy and automation targets for selected input-field values.
+They reuse this run's answers and the check's gate and confidence basis; missing or unevaluable required slices
+are errors. A passing overall average cannot override a failed slice. Only slice target configuration is saved.
+
 A check may also hold Policy's consistency rules (jev/rules.py) as text: then rows whose answers break one go to
 review on every run, as they did when the gate was tuned.
 
@@ -28,7 +32,7 @@ import time
 from math import isfinite
 from typing import Any, Dict, List, Optional
 
-from . import answersets, calibrate, policy, rules as rulebook, workbench
+from . import answersets, calibrate, policy, rules as rulebook, slices, workbench
 from .calibrate import CalibrationError
 from .client import JevClient, is_versioned
 from .workbench import WorkbenchError
@@ -36,6 +40,7 @@ from .workbench import WorkbenchError
 STATUSES = ("pass", "fail", "error")
 MAX_MODEL_CHARS = 100
 MISTAKES_SHOWN = 20
+MAX_SLICE_TARGETS = 20
 EPS = calibrate._EPS  # a share equal to its target meets it, as a threshold equal to its signal clears it
 
 
@@ -43,6 +48,31 @@ def _unit(value: Any, what: str, low: float = 0.0) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or not low <= value <= 1:
         raise WorkbenchError("%s must be a number from %g to 1" % (what, low))
     return float(value)
+
+
+def _slice_targets(spec: Any) -> List[dict]:
+    """Keep only target configuration, never measurements attached to an incoming spec."""
+    if spec is None:
+        return []
+    if not isinstance(spec, list) or len(spec) > MAX_SLICE_TARGETS:
+        raise WorkbenchError("slice_targets must be a list of at most %d targets" % MAX_SLICE_TARGETS)
+    out = []
+    seen = set()
+    for target in spec:
+        if not isinstance(target, dict):
+            raise WorkbenchError("Each slice target must be an object")
+        field, value = target.get("field"), target.get("value")
+        if not isinstance(field, str) or not field.strip() or len(field) > 100 or field in ("_expect", "_test"):
+            raise WorkbenchError("A slice target field must name an input field, up to 100 characters; labels and test markers cannot be sliced")
+        if not isinstance(value, str) or len(value) > 500:
+            raise WorkbenchError("A slice target value must be a string up to 500 characters")
+        if (field, value) in seen:
+            raise WorkbenchError("Duplicate slice target for %r = %r" % (field, value))
+        seen.add((field, value))
+        out.append({"field": field, "value": value,
+                    "min_accuracy": _unit(target.get("min_accuracy"), "slice min_accuracy", 0.5),
+                    "min_coverage": _unit(target.get("min_coverage", 0), "slice min_coverage")})
+    return out
 
 
 def validate_check(spec: Any, questions: Any) -> dict:
@@ -76,6 +106,9 @@ def validate_check(spec: Any, questions: Any) -> dict:
     out = {"gates": gates, "signal": signal, "bound": bound, "model": model,
            "min_accuracy": _unit(spec.get("min_accuracy"), "min_accuracy", 0.5),
            "min_coverage": _unit(spec.get("min_coverage", 0), "min_coverage")}
+    targets = _slice_targets(spec.get("slice_targets"))
+    if targets:
+        out["slice_targets"] = targets
     fitted = answersets.validate_config(spec.get("answer_sets"), questions)
     if fitted:
         out["answer_sets"] = fitted
@@ -147,7 +180,7 @@ def _row_text(row: Any) -> str:
 def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) -> dict:
     """Score one run's Bulk results (workbench.run_bulk's "results") against a validated check.
 
-    status: "pass" when both targets hold; "fail" when one does not; "error" when the run cannot judge the
+    status: "pass" when all overall and required slice targets hold; "fail" when one does not; "error" when the run cannot judge the
     check: some rows got no answer, or no row is labeled for every gated question."""
     gates = check["gates"]
     qids = list(gates)
@@ -209,6 +242,23 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
         out.update({k: rep[k] for k in ("labeled", "unlabeled", "invalid", "skipped", "automated", "correct", "coverage",
                                         "accuracy", "accuracy_low", "accuracy_high", "routed", "routed_automated",
                                         "questions")})
+    if check.get("slice_targets"):
+        out["slice_targets"] = []
+        base = {k: v for k, v in check.items() if k != "slice_targets"}
+        keys = ("status", "reasons", "targets", "rows", "labeled", "automated", "correct", "coverage",
+                "accuracy", "accuracy_low", "accuracy_high")
+        for target in check["slice_targets"]:
+            selected = [r for r in results if slices._value(r.get("row"), target["field"]) == target["value"]]
+            report = evaluate(selected, dict(base, min_accuracy=target["min_accuracy"],
+                                             min_coverage=target["min_coverage"]), stopped)
+            if not selected:
+                report["reasons"].append("No rows match this required slice.")
+            out["slice_targets"].append(dict({k: report.get(k) for k in keys},
+                                             field=target["field"], value=target["value"]))
+            out["reasons"].extend("Slice %r = %r: %s" % (target["field"], target["value"], reason)
+                                  for reason in report["reasons"])
+            if report["status"] == "error" or (report["status"] == "fail" and out["status"] == "pass"):
+                out["status"] = report["status"]
     return out
 
 
