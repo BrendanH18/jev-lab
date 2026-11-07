@@ -28,7 +28,7 @@ import json
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import calibrate, csvimport, rules as rulebook, workbench
+from . import calibrate, csvimport, rules as rulebook, slices, workbench
 from .calibrate import CalibrationError
 from .workbench import WorkbenchError
 
@@ -369,6 +369,14 @@ def import_labels(dataset_id: str, items: Any, text: Any) -> dict:
                                          "changed": changed, "labels": labeled}}
 
 
+def _audit_stats(rows: List[dict]) -> dict:
+    n = len(rows)
+    correct = sum(r["correct"] for r in rows)
+    low, high = calibrate.wilson(correct, n)
+    return {"rows": n, "correct": correct, "accuracy": correct / n if n else None,
+            "accuracy_low": low, "accuracy_high": high}
+
+
 def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, expected: dict) -> Optional[dict]:
     """How often the gate's automated decisions were right on the audit rows labeled for every gated question.
 
@@ -378,7 +386,7 @@ def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, exp
               and all(q in i["labels"] for q in gates)]
     if not scored:
         return None
-    wrong = []
+    wrong, outcomes = [], []
     for i in scored:
         miss = {}
         for q in gates:
@@ -387,6 +395,16 @@ def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, exp
                 miss[q] = {"answer": i["answers"].get(q), "label": i["labels"][q]}
         if miss:
             wrong.append({"row": i["row"], "wrong": miss})
+        outcomes.append({"row": workbench.without_marks(i["row"]), "correct": not miss})
+    by_slice = []
+    for option in slices.fields(outcomes):
+        field = option["name"]
+        groups: Dict[str, List[dict]] = {}
+        for row in outcomes:
+            groups.setdefault(slices._value(row["row"], field), []).append(row)
+        values = [dict(_audit_stats(group), value=slices._shown(value)) for value, group in groups.items()]
+        values.sort(key=lambda s: (-s["rows"], s["value"]))
+        by_slice.append({"field": field, "slices": values})
     n = len(scored)
     correct = n - len(wrong)
     low, high = calibrate.wilson(correct, n)
@@ -395,7 +413,7 @@ def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, exp
     return {"rows": n, "correct": correct, "accuracy": correct / n, "accuracy_low": low, "accuracy_high": high,
             "target": target, "bound": bound,
             "ok": None if target is None else calibrate.meets(correct, n, target, bound),
-            "wrong": wrong[:PROBLEMS_SHOWN], "wrong_total": len(wrong)}
+            "wrong": wrong[:PROBLEMS_SHOWN], "wrong_total": len(wrong), "by_slice": by_slice}
 
 
 @workbench.dataset_update()

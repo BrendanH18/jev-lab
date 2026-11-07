@@ -230,3 +230,9 @@ Review queue CSV handoff exports inputs and blank human-label columns only, neve
 shortlists, or decision metadata. Import matches the current queue's row and gate configuration,
 validates labels before applying them, and preserves review/audit membership. Preview and apply
 make no dataset write or model call; normal append saves inputs and human labels only.
+
+Review audit slices describe completed, verified blind audits in the submitted batch, grouped by
+the existing full normalized input-value identity. Show counts, accuracy and 95% intervals only;
+never infer automation coverage or saved slice-target passes from an automated-only sample.
+Reports are ephemeral and make no model calls. Queue filters and navigation change presentation
+only: preserve labels, audit membership, CSV handoff, and the set of ready rows eligible to append.

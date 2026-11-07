@@ -56,7 +56,7 @@ test("an old attach button cannot attach its cut after a replacement fit complet
 });
 
 test("review shortlists retain every label and audit shortlists stay hidden until labeled", () => {
-  const funcs = ["queueClasses", "shownAnswer", "queueReady", "labelText", "labelValue", "queueSelect", "queueView", "queueCsv", "agreeQuestions"].map(body).join("\n");
+  const funcs = ["queueClasses", "shownAnswer", "queueReady", "queueVisible", "queueNextIncomplete", "labelText", "labelValue", "queueSelect", "queueView", "queueCsv", "agreeQuestions"].map(body).join("\n");
   const W = { bulk: { pictures: { "torn-bag": "/img/samples/torn-bag.png" } } };
   const queueView = new Function("W", "h", "rowText", "render", "icon", `${funcs}; return queueView;`)(W, h, String, () => {}, () => "");
   const question = { type: "choice", criteria: { billing: "", delivery: "", other: "" } };
@@ -68,7 +68,8 @@ test("review shortlists retain every label and audit shortlists stay hidden unti
   const review = view();
   assert.match(allText(review), /Suggested shortlist: billing, delivery/);
   assert.equal(find(review, "img")[0].attrs.src, W.bulk.pictures["torn-bag"]);
-  assert.deepEqual(find(review, "option").map((o) => o.attrs.value), ["", "billing", "delivery", "other"]);
+  const labels = find(review, "select").find((s) => s.attrs["aria-label"] === "Label topic for line 1");
+  assert.deepEqual(find(labels, "option").map((o) => o.attrs.value), ["", "billing", "delivery", "other"]);
   assert.deepEqual(item.labels, {}, "the held question stays unlabeled");
   item.kind = "audit";
   assert.doesNotMatch(allText(view()), /Suggested shortlist|gate: billing/);
