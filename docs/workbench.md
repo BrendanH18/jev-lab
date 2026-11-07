@@ -204,6 +204,25 @@ or pass an image directory to its `decide` function; see [Export a gate](#export
 with Box questions needs a picture on every row. Images are dreamer-ready in TypeSafe's terms, and each
 picture adds image tokens to its row's call.
 
+## Check dataset health
+
+Before running Bulk, choose **Check dataset health** to inspect the current rows and selected
+questions for duplicate inputs, conflicting labels, missing or invalid labels, and tuning/test
+overlap. Findings refer to row numbers and never reveal held-out label values. Inspection makes
+no model calls and saves nothing; fixes stay manual.
+
+**Label coverage by slice** offers input fields with 2–20 distinct normalized values. Choose a
+field such as channel or language to see each value's row and distinct-input counts, plus valid,
+missing, and invalid label counts per question, separately for tuning and held-out rows. Missing
+field values form a **(none)** slice. Labels and test markers are excluded from the field selector.
+Grouping uses the same full normalized value identity as **By slice**; long values are shortened
+only for display. Exact-input identity ignores labels, test markers, and JSON field order while
+retaining picture names. Repeated inputs can increase row counts without increasing distinct inputs.
+
+These counts describe label availability, not accuracy, representative coverage, or a saved
+check's slice-target pass. Editing rows or selected questions hides the old report; check again
+to inspect the changed data.
+
 ## Import a CSV
 
 Labeled data usually lives in a spreadsheet. **Import CSV**, beside **Load sample rows**, turns one

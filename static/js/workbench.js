@@ -18,7 +18,7 @@ const W = {
     // Saved datasets (data/workbench/datasets/): rows and labels only, never answers. savedText is the rows box as
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
-    health: { busy: false, report: null, context: null },
+    health: { busy: false, report: null, context: null, field: null },
     bundle: { data: null, report: null, name: "", busy: false },
     savedText: "", runText: null, labelsDirty: false,
     // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
@@ -2418,9 +2418,10 @@ function bulkQuestions() {
 }
 
 // A health report describes the current rows and selected questions, never a prior Bulk run's answers.
-const healthContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty]);
+const healthContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty, W.bulk.health.field]);
 
 async function checkHealth() {
+  if (W.bulk.health.busy) return;
   if (!settleLabels("Check the rows box")) return;
   const state = W.bulk.health;
   const context = healthContext();
@@ -2428,10 +2429,11 @@ async function checkHealth() {
   state.report = null;
   render();
   try {
-    const report = await api("/api/workbench/health", { rows: rowsPayload(), questions: bulkQuestions() });
+    const report = await api("/api/workbench/health", { rows: rowsPayload(), questions: bulkQuestions(), field: state.field });
     if (context === healthContext()) {
       state.report = report;
-      state.context = context;
+      state.field = report.by_slice?.field ?? null;
+      state.context = healthContext();
     }
   } catch (e) { handleError(e); }
   state.busy = false;
@@ -2464,12 +2466,36 @@ function healthBody() {
           h("td", {}, String(q.missing), q.missing ? h("details", {}, h("summary", {}, "Row numbers"), numbers(q.missing_rows)) : null),
           h("td", {}, String(q.invalid.length), q.invalid.length ? ` · rows ${numbers(q.invalid)}` : "")))))) :
         h("p", { class: "muted" }, "Select questions to check label coverage and validity."),
+      healthSlices(report.by_slice, state),
       report.invalid_labels.length ? h("div", {}, h("b", {}, "Labels for unknown questions"),
         h("p", { class: "muted" }, "Choose the matching question set or correct these label keys."),
         h("ul", {}, report.invalid_labels.map((x) => h("li", {}, `Row ${x.row}: ${x.question}`)))) : null,
       !report.duplicate_groups.length && !report.conflicts.length && !report.overlap.length && !report.invalid_labels.length
         && report.questions.every((q) => !q.missing && !q.invalid.length)
         ? h("p", { class: "muted" }, "No issues found by these checks. This does not establish model accuracy or representative data.") : null) : null);
+}
+
+// Counts describe label availability, never model quality or the hidden label values.
+function healthSlices(report, state) {
+  if (!report) return null;
+  const select = h("select", { class: "input", "aria-label": "Dataset health slice field", disabled: state.busy,
+    onchange: (e) => { state.field = e.target.value || null; checkHealth(); } },
+    h("option", { value: "", selected: report.field === null }, "Choose a field"),
+    report.fields.map((f) => h("option", { value: f.name, selected: report.field === f.name }, f.name)));
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("label", {}, "Label coverage by slice ", select),
+    h("p", { class: "faint", style: { fontSize: "12px" } },
+      "Fields with 2–20 distinct values are available. Missing values form a (none) slice. Counts separate tuning and held-out rows; label values stay hidden. Counts do not establish accuracy or representative data."),
+    report.fields.length ? null : h("p", { class: "muted" }, "No input field has 2–20 distinct values."),
+    report.field === null ? null : h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, ["Value", "All rows", "Distinct inputs", "Split", "Rows in split", "Distinct in split", "Question", "Valid labels", "Missing", "Invalid"].map((x) => h("th", {}, x)))),
+      h("tbody", {}, report.slices.flatMap((slice) => ["tuning", "test"].flatMap((split) => {
+        const group = slice[split];
+        const questions = group.questions.length ? group.questions : [{ qid: "—", labeled: "—", missing: "—", invalid: "—" }];
+        return questions.map((q) => h("tr", {},
+          [slice.value, slice.rows, slice.unique_inputs, split === "test" ? "Held-out" : "Tuning",
+            group.rows, group.unique_inputs, q.qid, q.labeled, q.missing, q.invalid].map((v) => h("td", {}, String(v)))));
+      }))))));
 }
 
 function renderBulk() {

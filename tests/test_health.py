@@ -134,6 +134,79 @@ class HealthTests(unittest.TestCase):
         with self.assertRaisesRegex(WorkbenchError, "instructions"):
             health.analyze(["a"], {"q": {"type": "noul"}})
 
+    def test_slices_count_label_status_and_distinct_inputs_by_split(self):
+        rows = [{"channel": "email", "text": "same", "_expect": {"team": "billing"}},
+                {"channel": "email", "text": "same", "_expect": {"team": "wrong"}},
+                {"channel": "email", "text": "same", "_test": True, "_expect": {"team": "shipping"}},
+                {"channel": "email", "text": "other", "_test": True},
+                {"channel": "chat", "_expect": {"team": "wrong"}}]
+        out = health.analyze(rows, QUESTIONS, "channel")["by_slice"]
+        self.assertEqual(out["field"], "channel")
+        email, chat = out["slices"]
+        self.assertEqual((email["value"], email["rows"], email["unique_inputs"]), ("email", 4, 2))
+        self.assertEqual(email["tuning"], {"rows": 2, "unique_inputs": 1, "questions": [
+            {"qid": "team", "type": "choice", "labeled": 1, "missing": 0, "invalid": 1},
+            {"qid": "urgent", "type": "noul", "labeled": 0, "missing": 2, "invalid": 0},
+            {"qid": "severity", "type": "score", "labeled": 0, "missing": 2, "invalid": 0}]})
+        self.assertEqual(email["test"]["questions"][0],
+                         {"qid": "team", "type": "choice", "labeled": 1, "missing": 1, "invalid": 0})
+        self.assertEqual((email["test"]["rows"], email["test"]["unique_inputs"]), (2, 2))
+        self.assertEqual(chat["test"]["rows"], 0)
+        for group in out["slices"]:
+            for split in ("tuning", "test"):
+                for question in group[split]["questions"]:
+                    self.assertEqual(sum(question[k] for k in ("labeled", "missing", "invalid")),
+                                     group[split]["rows"])
+
+    def test_slices_normalize_values_and_include_absent_fields_and_text_rows(self):
+        rows = [{"channel": 1}, {"channel": " 1 "}, {"channel": None}, "plain text",
+                {"channel": {"a": 1, "b": 2}}, {"channel": {"b": 2, "a": 1}}]
+        out = health.analyze(rows, field="channel")["by_slice"]
+        self.assertEqual(out["fields"], [{"name": "channel", "values": 3}, {"name": "text", "values": 2}])
+        self.assertEqual({group["value"]: group["rows"] for group in out["slices"]},
+                         {"1": 2, "(none)": 2, '{"a": 1, "b": 2}': 2})
+        self.assertTrue(all(not group["tuning"]["questions"] for group in out["slices"]))
+        text = health.analyze(["same", {"text": "same", "_test": True}, "other"], field="text")["by_slice"]
+        self.assertEqual((text["slices"][0]["rows"], text["slices"][0]["unique_inputs"]), (2, 1))
+
+    def test_slice_grouping_uses_whole_values_before_truncating_display(self):
+        prefix = "x" * health.slices.MAX_VALUE_CHARS
+        rows = [{"channel": prefix + "a"}, {"channel": prefix + "b"}]
+        out = health.analyze(rows, field="channel")["by_slice"]
+        self.assertEqual(len(out["slices"]), 2)
+        self.assertEqual(out["slices"][0]["value"], out["slices"][1]["value"])
+        self.assertEqual([group["rows"] for group in out["slices"]], [1, 1])
+
+    def test_slice_fields_exclude_marks_and_require_explicit_eligible_selection(self):
+        rows = [{"channel": "email", "_expect": {"team": "billing"}},
+                {"channel": "chat", "_test": True, "_expect": {"team": "shipping"}}]
+        for field in (None, "missing", "_test", "_expect", {}, 3):
+            with self.subTest(field=field):
+                out = health.analyze(rows, QUESTIONS, field)["by_slice"]
+                self.assertEqual(out, {"fields": [{"name": "channel", "values": 2}], "field": None, "slices": []})
+        rows = [{"channel": str(i)} for i in range(health.slices.MAX_VALUES + 1)]
+        self.assertEqual(health.analyze(rows, field="channel")["by_slice"],
+                         {"fields": [], "field": None, "slices": []})
+
+    def test_slice_report_hides_labels_and_other_inputs_without_side_effects(self):
+        questions = {"q": {"type": "choice", "instructions": "Pick", "criteria": {"secret-a": None, "secret-b": None}}}
+        rows = [{"channel": "email", "text": "private input", "_expect": {"q": "secret-a"}},
+                {"channel": "chat", "text": "private input", "_test": True, "_expect": {"q": "secret-b"}}]
+        original = copy.deepcopy(rows)
+        with patch("jev.workbench.write_dataset", side_effect=AssertionError("must not write")), \
+                patch("jev.client.JevClient.system_one", side_effect=AssertionError("must not call")):
+            report = health.analyze(rows, questions, "channel")
+        self.assertEqual(rows, original)
+        for secret in ("private input", "secret-a", "secret-b", "_expect", "_test"):
+            self.assertNotIn(secret, json.dumps(report))
+
+    def test_slice_distinct_inputs_keep_picture_names(self):
+        first, second = list(workbench.images.SAMPLES)[:2]
+        rows = [{"channel": "email", "_image": first},
+                {"channel": "email", "_image": second}, {"channel": "chat"}]
+        out = health.analyze(rows, field="channel")["by_slice"]
+        self.assertEqual((out["slices"][0]["rows"], out["slices"][0]["unique_inputs"]), (2, 2))
+
 
 if __name__ == "__main__":
     unittest.main()

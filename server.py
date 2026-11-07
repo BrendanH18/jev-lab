@@ -505,7 +505,7 @@ def bulk_rows(body):
 
 
 def api_wb_health(body):
-    return health.analyze(body.get("rows"), body.get("questions"))
+    return health.analyze(body.get("rows"), body.get("questions"), body.get("field"))
 
 
 def api_wb_bulk(body):
