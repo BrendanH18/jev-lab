@@ -413,7 +413,7 @@ rows drawn like the fitting rows, not a guarantee of accuracy on automated rows 
 
 `POST /api/workbench/answersets` takes `rows` for one question (`index`, `answer`, `label`, and an optional
 `key` naming the row's input for the folds and `row`, its full input for grouping and slices;
-when present, `row` takes precedence over `key`), `coverage` (from 0.5 to below
+when non-null, `row` takes precedence over `key`), `coverage` (from 0.5 to below
 1, default 0.9), `folds` (2–10, default 5), and an optional `field` to slice by. It returns `cut` (`null`
 when there are fewer labeled rows than `needed`), `summary`, `holdout` (with `spread`, the cuts the folds
 chose, and `unreached`, the folds with too few rows to fit one), `slices`, and one entry per labeled row with

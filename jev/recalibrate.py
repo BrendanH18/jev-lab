@@ -164,7 +164,7 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
     pairs = [(r["signal"], r["correct"]) for r in scored]
     indexes = [rows[r["index"]].get("index", r["index"]) for r in scored]
     keys = [holdout._key(dict(rows[r["index"]], index=indexes[i])) for i, r in enumerate(scored)]
-    if any("row" not in rows[r["index"]] and rows[r["index"]].get("key")
+    if any(rows[r["index"]].get("row") is None and rows[r["index"]].get("key")
            and not isinstance(rows[r["index"]]["key"], str) for r in scored):
         raise WorkbenchError("Each row key must be a string")
     issue = holdout.problem(keys, holdout.FOLDS)

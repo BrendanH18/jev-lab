@@ -73,6 +73,12 @@ class FoldTests(unittest.TestCase):
 
 
 class EvaluateTests(unittest.TestCase):
+    def test_null_rows_preserve_explicit_keys_and_index_fallback(self):
+        rows = random_rows(7, 20)
+        expected = holdout.evaluate(rows, ["a"])
+        self.assertEqual(holdout.evaluate([dict(row, row=None) for row in rows], ["a"]), expected)
+        self.assertEqual(holdout._key({"row": None, "index": 3}), "#3")
+
     def test_repeated_inputs_cannot_substitute_for_distinct_inputs(self):
         rows = random_rows(7, 20)
         for row in rows:

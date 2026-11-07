@@ -31,7 +31,7 @@ MIN_PER_FOLD = 2  # fewer labeled rows than folds * this cannot hold anything me
 
 
 def _key(item: dict) -> str:
-    if "row" in item:
+    if item.get("row") is not None:
         return decisions._key(item["row"])
     key = item.get("key")
     return key if isinstance(key, str) and key else "#%s" % (item.get("index"),)
