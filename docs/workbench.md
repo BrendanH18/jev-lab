@@ -3,6 +3,10 @@
 Open `/workbench` on your running Jev Lab server. The Workbench lets you edit requests, inspect
 answers, save expectations, evaluate batches, and export requests for your own application.
 
+Expand **Workbench guide** above the current tab to follow the path from questions to reviewed
+traffic. Its shortcuts open existing panels and describe the current workspace. They never run
+requests, apply labels, or save data. You can keep using the tabs and panels independently.
+
 ## Build a request
 
 State may be text or a JSON value. Questions are an object keyed by stable question IDs. Start
@@ -1488,3 +1492,20 @@ Apply updates the rows editor only. **Save dataset** persists those inputs and h
 Applying clears old Bulk results; run again to score the new labels. Changing the rows or
 selected questions invalidates the draft view, and pending responses cannot overwrite newer
 inputs. Neither preparation nor application changes dataset files or makes model calls.
+
+
+Pre-run labeling shows ready/incomplete counts for the current slice. Filter by labeling status
+or choose **Next incomplete row** to move through that slice, wrapping at the end. Drafts survive
+filters; **Apply labels to rows** includes drafts from every slice.
+
+**Download tuning labeling CSV** exports eligible rows in the selected slice with blank label
+columns. The `missing` column lists the questions you may label on each row; existing label values
+and held-out rows are excluded. Keep `row_id`, `input`, and `missing` unchanged and fill only those
+missing `label:<question>` cells. Pictures remain separate: share their named files if needed.
+
+**Import tuning labeling CSV** previews a subset or reordered export against the same full rows
+and question schema, including Choice option order. Changed inputs, existing-label edits, invalid
+labels, repeated IDs, and stale exports are rejected. Accepting a preview merges nonblank cells
+into drafts, replacing drafts for those cells while retaining other drafts. It makes no model call
+or dataset write. Apply updates the rows editor and clears old Bulk results; save the dataset
+explicitly to retain the labels. Changing rows, questions, or drafts invalidates a pending preview.

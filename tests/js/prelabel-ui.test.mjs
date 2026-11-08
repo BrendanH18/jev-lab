@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { labelProgress, visibleLabels } from "../../static/js/prelabel.js";
+
 const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const h = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat(Infinity).filter((x) => x != null && x !== false) });
@@ -16,10 +18,11 @@ function harness(api) {
   const context = () => JSON.stringify([W.bulk.rowsText, schema, W.bulk.labelsDirty]);
   const fn = new Function("W", "api", "prelabelContext", "settleLabels", "render", "handleError", "rowsPayload", "bulkQuestions",
     "loadPictureUrls", "rowsText", "syncAttachedSets", "toast", "h", "stringify", "photoView",
+    "labelProgress", "visibleLabels", "preparedLabelCsv", "nextPreparedLabel",
     ["agreeQuestions", "labelText", "labelValue", "prepareLabels", "applyPreparedLabels", "prelabelBody"].map(body).join("\n")
       + "; return { prepareLabels, applyPreparedLabels, prelabelBody };"
   )(W, api, context, () => true, () => {}, (e) => { throw e; }, () => W.bulk.rowsText, () => schema,
-    async () => {}, JSON.stringify, () => {}, () => {}, h, JSON.stringify, () => null);
+    async () => {}, JSON.stringify, () => {}, () => {}, h, JSON.stringify, () => null, labelProgress, visibleLabels, () => null, () => {});
   return { W, ...fn, changeSchema: () => { schema = "changed"; } };
 }
 
@@ -80,4 +83,18 @@ test("discards a pending prepare response if inputs change", async () => {
   for (const rubric of ["Safety risk or deadline", "Routine request", "Order support", "Wholesale sales", "Choose a team"]) {
     assert.ok(text.includes(rubric), rubric);
   }
+});
+
+test("status filters show ready rows without dropping hidden drafts or their Apply count", async () => {
+  const x = harness(async () => ({ ...report, items: [...report.items,
+    { index: 4, row: { text: "Other slice" }, missing: ["urgent"] }] }));
+  await x.prepareLabels();
+  x.W.bulk.prelabel.drafts = { 0: { urgent: false, level: 0 }, 4: { urgent: true } };
+  x.W.bulk.prelabel.status = "incomplete";
+  const hidden = JSON.stringify(x.prelabelBody());
+  assert.ok(!hidden.includes("Other slice"));
+  assert.ok(hidden.includes("Apply 3 labels to rows"));
+  x.W.bulk.prelabel.status = "ready";
+  assert.ok(JSON.stringify(x.prelabelBody()).includes("Other slice"));
+  assert.deepEqual(x.W.bulk.prelabel.drafts[0], { urgent: false, level: 0 });
 });

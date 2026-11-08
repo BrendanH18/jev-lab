@@ -512,6 +512,14 @@ def api_wb_prelabel(body):
     return prelabel.prepare(body.get("rows"), body.get("questions"), body.get("field"), body.get("value"))
 
 
+def api_wb_prelabel_csv_export(body):
+    return prelabel.export_labels(body.get("rows"), body.get("questions"), body.get("field"), body.get("value"))
+
+
+def api_wb_prelabel_csv_import(body):
+    return prelabel.import_labels(body.get("rows"), body.get("questions"), body.get("text"))
+
+
 def api_wb_prelabel_apply(body):
     return prelabel.apply(body.get("rows"), body.get("questions"), body.get("items"))
 
@@ -774,6 +782,8 @@ ROUTES = {
     ("POST", "/api/workbench/health"): api_wb_health,
     ("POST", "/api/workbench/prelabel"): api_wb_prelabel,
     ("POST", "/api/workbench/prelabel/apply"): api_wb_prelabel_apply,
+    ("POST", "/api/workbench/prelabel/csv/export"): api_wb_prelabel_csv_export,
+    ("POST", "/api/workbench/prelabel/csv/import"): api_wb_prelabel_csv_import,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
     ("POST", "/api/workbench/datasets/bundle/export"): api_wb_bundle_export,

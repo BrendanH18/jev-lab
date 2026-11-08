@@ -6,9 +6,11 @@ import { secondItems, settleKey, settledItems } from "./agreement.js";
 import { readHandoff } from "./handoff.js";
 import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "./prune.js";
 import { reverseOptions } from "./variants.js";
+import { labelProgress, visibleLabels, nextLabel } from "./prelabel.js";
+import { renderWorkbenchGuide } from "./workbench-guide.js";
 
 const W = {
-  tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
+  guideOpen: false, tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
   // Question checks (jev/lint.py): the last report for the Build request, made by code, never by the model.
   lint: null,
   items: [], examples: [], runResults: null, saveOpen: false, expect: {}, saveName: "", saveNotes: "", editingId: null,
@@ -19,7 +21,7 @@ const W = {
     // last saved or loaded; runText is the box as last run, so typed labels merge back only into the rows they belong to.
     datasets: [], dataset: { id: null, name: "", notes: "", withQuestions: true, questions: null },
     health: { busy: false, report: null, context: null, field: null },
-    prelabel: { busy: false, report: null, context: null, drafts: {}, field: null, value: null },
+    prelabel: { busy: false, report: null, context: null, drafts: {}, field: null, value: null, status: "all", nextIndex: null, csvPreview: null },
     bundle: { data: null, report: null, name: "", busy: false },
     savedText: "", runText: null, labelsDirty: false,
     // ranQuestions, runModel: the questions and model the last Bulk run asked, so a check is saved for what it reruns.
@@ -237,6 +239,23 @@ async function boot() {
 }
 
 // ---------- render ----------
+function renderGuide() {
+  const b = W.bulk;
+  const questions = bulkQuestions() || {};
+  mount("#workbench-guide", renderWorkbenchGuide(h, {
+    questionCount: Object.keys(questions).length, rowCount: countRows(b.rowsText),
+    currentRun: !!b.result && b.runText === b.rowsText && JSON.stringify(b.ranQuestions) === JSON.stringify(questions),
+    healthCurrent: !!b.health.report && b.health.context === healthContext(),
+    gateableCount: Object.values(questions).filter((q) => ["choice", "noul", "score"].includes(q.type)).length,
+    hasSavedCheck: b.datasets.some((d) => d.check),
+  }, (tab, target) => {
+    W.tab = tab;
+    location.hash = tab;
+    render();
+    $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, { open: W.guideOpen, onToggle: (open) => { W.guideOpen = open; } }));
+}
+
 function render() {
   syncAttachedSets();
   let view;
@@ -252,6 +271,7 @@ function render() {
   mount("#tabs", TABS.map(([k, label]) => h("button", { class: `tab${W.tab === k ? " active" : ""}`, onclick: () => { W.tab = k; location.hash = k; render(); } },
     label, k === "tests" && W.items.length ? ` (${W.items.length})` : "")));
   mount("#view", view);
+  renderGuide();
   if (W.tab === "bulk") { updateCal(); updatePolicy(); }
   if (W.tab === "compare") { updateCmpChart(); updateCascade(); }
 }
@@ -643,6 +663,7 @@ const bulkUnsaved = () => W.bulk.rowsText !== W.bulk.savedText || W.bulk.labelsD
 
 function markUnsaved() {
   syncAttachedSets();
+  renderGuide();
   const healthPanel = $("#dataset-health");
   if (healthPanel) mount(healthPanel, healthBody());
   const labeling = $("#prelabel-panel");
@@ -865,7 +886,7 @@ function renderDatasets() {
   withQ.addEventListener("change", () => { d.withQuestions = withQ.checked; });
   const labeledText = (x) => `${x.rows} row${x.rows === 1 ? "" : "s"} · ${x.labeled} labeled`
     + (x.questions ? ` · ${x.questions} question${x.questions === 1 ? "" : "s"}` : "");
-  return h("div", { class: "panel datasets" },
+  return h("div", { class: "panel datasets", id: "datasets" },
     h("div", { class: "panel-head" }, h("h2", {}, "Datasets · data/workbench/datasets/"), h("div", { class: "spacer" }),
       h("span", { class: "badge warning", id: "ds-unsaved", style: { display: bulkUnsaved() ? "" : "none" }, title: "A reload would lose these rows or labels" }, "Unsaved rows or labels")),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
@@ -2502,13 +2523,13 @@ function healthSlices(report, state) {
 }
 
 // Pre-run human labels belong to a snapshot of the inputs and question schema, not model answers.
-const prelabelContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty]);
+const prelabelContext = () => JSON.stringify([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty]);
 
 async function prepareLabels(field = null, value = null) {
   const state = W.bulk.prelabel;
   if (state.busy || !settleLabels("Label the rows box")) return;
   const context = prelabelContext();
-  if (state.context !== context) state.drafts = {};
+  if (state.context !== context) { state.drafts = {}; state.status = "all"; state.csvPreview = null; }
   state.busy = true;
   state.report = null;
   render();
@@ -2517,6 +2538,7 @@ async function prepareLabels(field = null, value = null) {
     if (context === prelabelContext()) {
       state.report = report;
       state.context = context;
+      state.nextIndex = null;
       state.field = report.field;
       state.value = report.value;
       await loadPictureUrls(report.items);
@@ -2558,11 +2580,99 @@ async function applyPreparedLabels() {
   render();
 }
 
+// CSV previews belong to both the input snapshot and the draft values shown at preview time.
+const preparedDraftKey = () => canon(W.bulk.prelabel.drafts);
+
+async function exportPreparedLabels() {
+  const state = W.bulk.prelabel;
+  if (state.busy || !state.report || state.context !== prelabelContext()) return;
+  const context = state.context;
+  state.busy = true;
+  render();
+  try {
+    const out = await api("/api/workbench/prelabel/csv/export", {
+      rows: rowsPayload(), questions: bulkQuestions(), field: state.field, value: state.value,
+    });
+    if (context !== prelabelContext()) return;
+    const url = URL.createObjectURL(new Blob([out.csv], { type: "text/csv;charset=utf-8" }));
+    h("a", { href: url, download: "tuning-labels.csv" }).click();
+    URL.revokeObjectURL(url);
+  } catch (e) { handleError(e); }
+  finally { state.busy = false; render(); }
+}
+
+async function previewPreparedLabels(text, context = prelabelContext()) {
+  const state = W.bulk.prelabel;
+  if (state.busy || !state.report || state.context !== context || context !== prelabelContext()) return;
+  const draftKey = preparedDraftKey();
+  state.busy = true;
+  state.csvPreview = null;
+  render();
+  try {
+    const report = await api("/api/workbench/prelabel/csv/import", { rows: rowsPayload(), questions: bulkQuestions(), text });
+    if (context === prelabelContext() && draftKey === preparedDraftKey()) state.csvPreview = { ...report, context, draftKey };
+  } catch (e) { handleError(e); }
+  finally { state.busy = false; render(); }
+}
+
+function acceptPreparedLabels() {
+  const state = W.bulk.prelabel;
+  const preview = state.csvPreview;
+  if (state.busy || !preview || preview.context !== prelabelContext() || preview.draftKey !== preparedDraftKey()) return;
+  for (const item of preview.items) {
+    const labels = state.drafts[item.index] ||= Object.create(null);
+    Object.assign(labels, item.labels);
+  }
+  state.csvPreview = null;
+  render();
+}
+
+function preparedLabelCsv(state, report) {
+  const context = state.context;
+  const file = h("input", { type: "file", accept: ".csv,text/csv", class: "hidden", disabled: state.busy });
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    if (f) {
+      try { await previewPreparedLabels(await f.text(), context); }
+      catch (e) { handleError(e); }
+    }
+  });
+  const preview = state.csvPreview?.context === prelabelContext() && state.csvPreview.draftKey === preparedDraftKey() ? state.csvPreview : null;
+  return h("div", { class: "panel-body grid", style: { gap: "8px" } },
+    h("div", {}, file,
+      h("button", { class: "btn sm", disabled: state.busy || !report.items.length, onclick: exportPreparedLabels }, "Download tuning labeling CSV"),
+      h("button", { class: "btn sm", disabled: state.busy, onclick: () => file.click() }, "Import tuning labeling CSV")),
+    h("p", { class: "faint" }, "Download includes this slice's eligible tuning rows with blank label columns. The missing column lists which questions need labels on each row. Edit only those label:<question> cells; keep row_id, input, and missing unchanged. Existing labels and held-out rows are excluded. Pictures remain separate; share the named files if needed. Imports can include rows from any slice of this same rows/questions snapshot."),
+    preview ? h("div", { class: "grid", style: { gap: "6px" } },
+      h("b", {}, `${preview.counts.matched} rows matched · ${preview.counts.labels} labels imported`),
+      h("p", { class: "faint" }, "Preview only. Accept merges nonblank cells into drafts, replacing drafts for the same cells. Other drafts remain. Apply labels to rows and Save dataset are still required."),
+      h("div", { class: "scroll" }, h("table", { class: "table" }, h("tbody", {}, preview.items.map((item) =>
+        h("tr", {}, h("td", {}, `Row ${item.index + 1}`), h("td", {}, Object.entries(item.labels).map(([qid, value]) =>
+          h("div", {}, `${qid}: ${labelText(value, report.questions[qid].type)}`)))))))),
+      h("div", {}, h("button", { class: "btn sm primary", disabled: state.busy || !preview.counts.labels, onclick: acceptPreparedLabels }, "Accept imported label drafts"),
+        h("button", { class: "btn sm", disabled: state.busy, onclick: () => { state.csvPreview = null; render(); } }, "Cancel import"))) : null);
+}
+
+function nextPreparedLabel() {
+  const state = W.bulk.prelabel;
+  if (state.busy || !state.report || state.context !== prelabelContext()) return;
+  const item = nextLabel(state.report.items, state.drafts, state.nextIndex);
+  if (!item) return;
+  state.nextIndex = item.index;
+  state.status = "incomplete";
+  render();
+  const target = $(`#prelabel-row-${item.index}`);
+  target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  target?.focus({ preventScroll: true });
+}
+
 function prelabelBody() {
   const state = W.bulk.prelabel;
   const report = state.context === prelabelContext() ? state.report : null;
   const drafts = report ? state.drafts : {};
   const filled = Object.values(drafts).reduce((n, labels) => n + Object.keys(labels).length, 0);
+  const progress = labelProgress(report?.items || [], drafts);
+  const visible = visibleLabels(report?.items || [], drafts, state.status || "all");
   return h("div", { class: "panel" },
     h("div", { class: "panel-head" }, h("h2", {}, "Label before running")),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
@@ -2581,7 +2691,17 @@ function prelabelBody() {
           h("option", { value: "", selected: report.value === null }, "All values"),
           report.values.map((v) => h("option", { value: v.value, selected: report.value === v.value }, `${v.shown} (${v.rows} rows)`)))) : null,
         !report.items.length ? h("p", { class: "muted" }, "No missing labels in these tuning rows for Choice, Noul, or Score questions.") : null,
-        report.items.map((item) => h("div", { class: "panel-body", style: { border: "1px solid var(--border)", borderRadius: "8px" } },
+        preparedLabelCsv(state, report),
+        h("div", { role: "status", class: "muted" }, `${progress.ready} rows ready · ${progress.incomplete} incomplete in this slice · showing ${visible.length}`),
+        h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+          h("label", {}, "Labeling status ", h("select", { class: "input sm", "aria-label": "Pre-run labeling status", disabled: state.busy,
+            onchange: (e) => { state.status = e.target.value; render(); } },
+            [["all", "All rows"], ["incomplete", "Incomplete"], ["ready", "Ready"]].map(([value, text]) =>
+              h("option", { value, selected: value === (state.status || "all") }, text)))),
+          h("button", { class: "btn sm", disabled: state.busy || !progress.incomplete, onclick: nextPreparedLabel }, "Next incomplete row")),
+        h("p", { class: "faint" }, "Filters change the rows shown. Apply includes drafts from every slice. Next follows the current slice and wraps to the first incomplete row."),
+        report.items.length && !visible.length ? h("p", { class: "muted" }, "No rows match this labeling status.") : null,
+        visible.map((item) => h("div", { class: "panel-body", id: `prelabel-row-${item.index}`, tabindex: "-1", style: { border: "1px solid var(--border)", borderRadius: "8px" } },
           h("b", {}, `Row ${item.index + 1}`),
           h("pre", { class: "code", style: { whiteSpace: "pre-wrap" } }, typeof item.row === "string" ? item.row : JSON.stringify(item.row, null, 2)),
           item.row?._image && W.bulk.pictures[item.row._image] ? photoView(W.bulk.pictures[item.row._image]) : null,
@@ -2593,6 +2713,7 @@ function prelabelBody() {
             return h("label", {}, qid, h("p", { class: "faint" }, stringify(question.instructions)),
               h("select", { class: "input sm", "aria-label": `Label ${qid} for row ${item.index + 1}`, disabled: state.busy,
                 onchange: (e) => {
+                  state.csvPreview = null;
                   const labels = state.drafts[item.index] ||= Object.create(null);
                   const value = labelValue(e.target.value, question.type);
                   if (value === null) delete labels[qid]; else labels[qid] = value;
@@ -2619,7 +2740,7 @@ function renderBulk() {
   const runBtn = h("button", { class: "btn primary", id: "bulk-run", onclick: runBulk }, icon("layers"), `Run ${Math.min(nRows, 200)} rows`);
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "grid wb-grid" },
-      h("div", { class: "panel bulk" },
+      h("div", { class: "panel bulk", id: "bulk-rows" },
         h("div", { class: "panel-head" }, h("h2", {}, `Rows · ${nRows}`), h("div", { class: "spacer" }),
           h("button", { class: "btn sm ghost", onclick: () => { b.csv.open = !b.csv.open; render(); if (b.csv.open) $("#csv-import")?.scrollIntoView({ behavior: "smooth", block: "start" }); } }, "Import CSV"),
           h("button", { class: "btn sm ghost", onclick: () => $("#bulk-pictures").click(), title: "Each picture becomes a row whose state names it as photo" }, "Add pictures"),
