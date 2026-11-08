@@ -249,3 +249,11 @@ invalid ones), duplicate positions, input data, pictures, and held-out markers. 
 array states never enter the editable queue. Slice filtering uses full normalized input values;
 drafts survive filters but belong to the current rows/questions snapshot. Apply changes the rows
 editor only, invalidates old Bulk results and health reports, and requires explicit dataset saving.
+
+Pre-run labeling CSV handoff exports eligible tuning inputs, a missing-question list, and blank
+human-label columns for the current slice. Imports match the full rows/question snapshot including
+Choice order and duplicate positions, validate all labels, and preview before merging into drafts.
+Never export existing labels or held-out inputs. Blank cells preserve drafts; Apply and dataset
+Save remain explicit, with no model calls or file writes from export/import. Labeling filters and
+next-row navigation change presentation only and preserve drafts across slices. The Workbench
+guide only navigates existing panels; it never runs, labels, saves, or changes configuration.

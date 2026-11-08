@@ -7,9 +7,13 @@ returns edited rows for the browser's rows box; neither operation saves or calls
 from __future__ import annotations
 
 import copy
+import csv
+import hashlib
+import io
+import json
 from typing import Any, Dict, List
 
-from . import decisions, health, slices, workbench
+from . import csvimport, decisions, health, slices, workbench
 from .workbench import LABEL_KEY, WorkbenchError
 
 
@@ -100,3 +104,91 @@ def apply(rows: Any, questions: Any, items: Any) -> dict:
             row[LABEL_KEY] = dict(row.get(LABEL_KEY, {}), **clean)
             applied += len(clean)
     return {"rows": out, "applied": applied}
+
+
+def _csv_context(rows: List[Any], questions: Any) -> str:
+    # Row order and all source labels matter, even outside the exported slice.
+    # Keep Choice option order: it is part of the question schema.
+    asked = workbench.validate_questions(questions) if questions not in (None, {}) else {}
+    source = json.dumps(rows, sort_keys=True, ensure_ascii=False)
+    schema = json.dumps(asked, ensure_ascii=False)
+    return hashlib.sha256((source + "\n" + schema).encode("utf-8")).hexdigest()
+
+
+def _csv_id(context: str, index: int) -> str:
+    return hashlib.sha256((context + ":" + str(index)).encode("utf-8")).hexdigest()
+
+
+def export_labels(rows: Any, questions: Any, field: Any = None, value: Any = None) -> dict:
+    """Download only eligible inputs and blank human-label columns, never existing labels."""
+    rows, asked = _source(rows, questions)
+    report = prepare(rows, questions, field, value)
+    context = _csv_context(rows, questions)
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["row_id", "input", "missing"] + ["label:" + qid for qid in asked])
+    for item in report["items"]:
+        writer.writerow([_csv_id(context, item["index"]), decisions._key(item["row"]), json.dumps(item["missing"])] +
+                        ["" for qid in asked])
+    return {"csv": out.getvalue(), "rows": len(report["items"])}
+
+
+def import_labels(rows: Any, questions: Any, text: Any) -> dict:
+    """Preview a spreadsheet against the exact source snapshot; return nonblank drafts only."""
+    rows, asked = _source(rows, questions)
+    context = _csv_context(rows, questions)
+    # CSV doubles quotes in JSON inputs and adds per-row handoff columns.
+    limit = 3 * workbench.MAX_DATASET_CHARS
+    if not isinstance(text, str) or not text.strip() or len(text) > limit:
+        raise WorkbenchError("Supply a nonempty labels CSV of at most %d characters" % limit)
+    try:
+        parsed = [r for r in csv.reader(io.StringIO(text.lstrip("\ufeff"), newline=""),
+                                       delimiter=csvimport._delimiter(text), strict=True) if any(c.strip() for c in r)]
+    except csv.Error as err:
+        raise WorkbenchError("Could not read the labels CSV: %s" % err) from err
+    names = ["row_id", "input", "missing"] + ["label:" + qid for qid in asked]
+    header = parsed[0] if parsed else []
+    if len(header) != len(names) or set(header) != set(names):
+        raise WorkbenchError("Keep exactly the row_id, input, missing, and label columns from Download labeling CSV")
+    if len(parsed) < 2 or len(parsed) > workbench.MAX_BULK_ROWS + 1:
+        raise WorkbenchError("Import between 1 and %d eligible rows" % workbench.MAX_BULK_ROWS)
+    eligible = {_csv_id(context, item["index"]): item for item in _items(rows, asked)}
+    seen, items, count = set(), [], 0
+    for line, cells in enumerate(parsed[1:], 2):
+        if len(cells) != len(header):
+            raise WorkbenchError("Line %d has a different number of columns" % line)
+        values = dict(zip(header, cells))
+        rid = values["row_id"].strip()
+        if rid not in eligible or rid in seen:
+            raise WorkbenchError("Line %d has an unknown or repeated row_id; download CSV from the current rows and questions" % line)
+        seen.add(rid)
+        item = eligible[rid]
+        try:
+            state = json.loads(values["input"])
+            same = isinstance(state, dict) and json.dumps(state, sort_keys=True, ensure_ascii=False) == decisions._key(item["row"])
+        except (ValueError, TypeError):
+            same = False
+        if not same:
+            raise WorkbenchError("Line %d changed its input; edit only the label columns" % line)
+        try:
+            missing_matches = json.loads(values["missing"]) == item["missing"]
+        except ValueError:
+            missing_matches = False
+        if not missing_matches:
+            raise WorkbenchError("Line %d changed its missing-label list; edit only the label columns" % line)
+        labels = {}
+        for qid, question in asked.items():
+            cell = values["label:" + qid]
+            if not cell.strip():
+                continue
+            if qid not in item["missing"]:
+                raise WorkbenchError("Line %d: %s already has a label; only missing labels can be filled" % (line, qid))
+            ok, value = csvimport.label_value(question, cell)
+            if not ok:
+                raise WorkbenchError("Line %d: %r is not an answer to %s" % (line, cell.strip(), qid))
+            if value is not None:
+                labels[qid] = value
+        if labels:
+            items.append({"index": item["index"], "labels": labels})
+            count += len(labels)
+    return {"items": items, "counts": {"rows": len(items), "matched": len(seen), "labels": count}}

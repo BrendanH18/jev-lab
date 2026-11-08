@@ -126,6 +126,12 @@ conditions.
   a Bulk run. Filter by an input slice while keeping drafts across slices, then **Apply labels to rows**
   and explicitly save the dataset. Existing labels and held-out rows stay unchanged; Box and array rows
   require JSON editing. Applying clears old Bulk results so a new run scores the updated labels.
+  Track ready/incomplete rows and jump to the next incomplete row within the selected slice. Download
+  a blank labeling CSV for that slice, then preview and accept imported labels into drafts before Apply.
+  CSVs match the exact rows and question schema; pictures travel separately.
+- **Workbench guide:** expand the guide above the tabs' content for shortcuts from defining questions
+  through inputs, health and labels, a live run, Policy/checks, and exported gates with Review.
+  Shortcuts navigate only; running, applying, and saving remain your actions.
 - **Calibrate:** label rows, then see accuracy, a confusion matrix, and how a confidence threshold
   trades automation for accuracy. Each accuracy has a 95% interval, and you can pick only thresholds
   that reach a target at 95% confidence. A target your rows cannot show yet estimates how many more
