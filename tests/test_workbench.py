@@ -217,7 +217,9 @@ class DatasetTests(unittest.TestCase):
         replaced = workbench.load_dataset("tickets-march")
         self.assertEqual(replaced["rows"], ["only row"])
         self.assertNotIn("questions", replaced, "a dataset saved without questions has none")
-        self.assertEqual(list((self.dir / "datasets").iterdir()), [path], "no partial file is left behind")
+        self.assertEqual(sorted((self.dir / "datasets").iterdir()), [self.dir / "datasets" / ".history", path],
+                         "no partial file is left behind")
+        self.assertEqual([p.suffix for p in (self.dir / "datasets" / ".history" / "tickets-march").iterdir()], [".json"])
         self.assertTrue(workbench.delete_dataset("tickets-march"))
         self.assertFalse(workbench.delete_dataset("tickets-march"))
         self.assertEqual(workbench.list_datasets(), [])

@@ -210,6 +210,49 @@ class HttpTests(unittest.TestCase):
             status, _ = post("preview", {"data": "not a zip"})
             self.assertEqual(status, 400)
 
+    def test_dataset_history_routes_preview_and_restore_without_model_calls(self):
+        from jev import workbench
+
+        questions = {"urgent": {"type": "noul", "instructions": "Is it urgent?"}}
+        with tempfile.TemporaryDirectory() as folder, patch.object(workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            workbench.save_dataset({"name": "Tickets", "notes": "first", "questions": questions,
+                                    "rows": [{"text": "private input", "_expect": {"urgent": "secret-label"}}]})
+            workbench.save_dataset({"name": "Tickets", "notes": "second", "rows": ["other"]})
+
+            def post(path, payload, headers=None):
+                status, _, body = self.request("POST", "/api/workbench/datasets/history" + path,
+                                               json.dumps(payload), headers or self.post_headers())
+                return status, json.loads(body)
+
+            status, listed = post("", {"id": "tickets"})
+            self.assertEqual(status, 200, listed)
+            [entry] = listed["revisions"]
+            self.assertEqual((entry["rows"], entry["labeled"], entry["questions"]), (1, 1, ["urgent"]))
+            self.assertNotIn("secret-label", json.dumps(listed))
+            status, preview = post("/preview", {"id": "tickets", "revision": entry["revision"]})
+            self.assertEqual(status, 200, preview)
+            self.assertEqual((preview["restoring"], preview["questions_changed"]), (entry["revision"], True))
+            self.assertNotIn("secret-label", json.dumps(preview))
+            restore = {"id": "tickets", "revision": entry["revision"], "preview_revision": preview["revision"]}
+            status, _ = post("/restore", restore, {"Content-Type": "application/json"})
+            self.assertEqual(status, 403, "restoring needs the session token")
+            status, stale = post("/restore", dict(restore, preview_revision="0" * 64))
+            self.assertEqual(status, 400)
+            self.assertIn("Preview the restore again", stale["error"])
+            status, restored = post("/restore", restore)
+            self.assertEqual(status, 200, restored)
+            self.assertEqual(workbench.load_dataset("tickets")["notes"], "first")
+            status, again = post("/restore", restore)
+            self.assertEqual(status, 400, "a used preview is stale")
+            status, _ = post("", {"id": "../.env"})
+            self.assertEqual(status, 400)
+            self.request("POST", "/api/workbench/datasets/delete", json.dumps({"id": "tickets"}), self.post_headers())
+            status, _, body = self.request("GET", "/api/workbench/datasets/history/deleted")
+            self.assertEqual((status, [d["id"] for d in json.loads(body)["datasets"]]), (200, ["tickets"]))
+            status, _, body = self.request("GET", "/api/workbench/datasets")
+            self.assertEqual(json.loads(body)["datasets"], [])
+
     def test_static_traversal_cannot_read_sibling_with_matching_prefix(self):
         with tempfile.TemporaryDirectory(prefix="static-private-", dir=server.PROJECT_ROOT) as folder:
             sibling = Path(folder)
@@ -387,7 +430,8 @@ class HttpTests(unittest.TestCase):
             status, _, body = self.request("POST", "/api/workbench/datasets/delete", json.dumps({"id": "tickets"}),
                                            self.post_headers())
             self.assertTrue(json.loads(body)["deleted"])
-            self.assertEqual(list(Path(folder, "datasets").iterdir()), [])
+            # The deleted file is kept as a revision (jev/history.py) so the delete can be undone.
+            self.assertEqual(list(Path(folder, "datasets").iterdir()), [Path(folder, "datasets", ".history")])
 
     def test_test_split_over_http(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
