@@ -510,9 +510,8 @@ def _prior_check(dataset_id: str) -> Any:
     return _prior(dataset_id, "check")
 
 
-@dataset_update()
-def save_dataset(spec: dict) -> dict:
-    """Write a dataset named spec["name"]; a dataset with the same id is replaced.
+def prepare_dataset(spec: dict) -> dict:
+    """Validate a prospective dataset without writing it.
 
     A check saved in the file it replaces (jev/checks.py) is kept while it still fits the questions saved
     now, so adding rows or labels keeps it. Otherwise it is dropped and the returned dataset says why under
@@ -553,6 +552,16 @@ def save_dataset(spec: dict) -> dict:
                            "looks": prior.get("looks") if isinstance(prior.get("looks"), list) else []}
     if dataset.get("questions"):  # a dataset reruns its questions, so a Box question needs a picture on every row
         _need_pictures([split_labels(r, i + 1) for i, r in enumerate(dataset["rows"])], dataset["questions"])
+    if len(_dataset_text(dataset)) > MAX_DATASET_CHARS:
+        raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
+    return dict(dataset, check_dropped=dropped) if dropped else dataset
+
+
+@dataset_update()
+def save_dataset(spec: dict) -> dict:
+    """Write a validated dataset; preserve compatible checks and test history."""
+    dataset = prepare_dataset(spec)
+    dropped = dataset.pop("check_dropped", None)
     write_dataset(dataset)
     return dict(dataset, check_dropped=dropped) if dropped else dataset
 
