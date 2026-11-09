@@ -37,6 +37,8 @@ uv run scripts/check.py                       # rerun the checks saved in Workbe
                                                # dataset through its gate (jev/drift.py); exits 1 on a shift.
                                                # --upgrade-to <version> asks each check's tuned-on version and
                                                # <version> every row (jev/upgrade.py); exits 1 if one should stay.
+                                               # --estimate prints the calls and an upper-bound cost instead of
+                                               # running (with --model/--drift/--upgrade-to); no calls, no key.
 ```
 
 Lint with `uv run --locked ruff check` (configured in `pyproject.toml`; CI runs it). No formatter is
@@ -166,6 +168,14 @@ only, deduplicates against all saved rows (including test rows), and preserves t
 These targeted rows are not a random audit and must never produce audit-accuracy statistics. Adding
 labels makes no model call; rerunning the check is explicit. Saved held-out row identities are excluded
 from new-traffic comparisons even when pasted without their `_test` marker.
+
+Spend previews (`jev/estimate.py`, `POST /api/workbench/estimate`, `static/js/estimate.js`, `scripts/check.py
+--estimate`) count the calls a paid Workbench run would make and add up `client.request_reserve_usd` for the exact
+requests it would send, built through the run's own helpers (`workbench.prepare_bulk`/`prepare_compare`/`job_state`,
+`checks.load`, `drift.prepare`, `upgrade.prepare`) so counts, test-row exclusion, the 200-row cap and image uses match
+the run. Estimates make no model call (not even the model-list check) and never reserve or record budget; they only
+read the guard's snapshot. They are upper bounds: always show them as "≤"/"at most"/"upper bound", rounded up, and
+never as measured spend. A run whose bound exceeds the budget left needs an explicit confirm before it starts.
 
 Dataset health (`jev/health.py`, Bulk's **Check dataset health**) inspects current inputs and human labels
 without model calls or writes. It reports duplicates, conflicting or invalid labels, missing labels, and

@@ -179,6 +179,32 @@ Empty rows are removed, and only the first 200 remaining rows are processed. Eac
 separate model call. A missing-key or budget error stops new work where possible; already admitted
 calls may complete. Per-row errors remain visible in the results.
 
+### Preview the spend before a paid run
+
+Next to every paid Workbench run button (Bulk's and Compare's **Run** buttons, a saved check's **Run
+check**, the **Compare** buttons under **Compare new rows** and **Try a new version**, and **Run all
+tests**) a short line previews the run, for example `120 calls · ≤ $0.0040 · fits the $1.98 left in this session's budget`. Hover it for
+the calls per part (each Compare variant, the dataset rows and the new rows, the tuned-on version and the
+candidate), the test rows left out, and any notes. It refreshes a moment after you change the rows,
+questions, variants or model.
+
+The server (`POST /api/workbench/estimate`, [`jev/estimate.py`](../jev/estimate.py)) builds the requests the
+run would send through the same code the run uses, and adds up the high estimate each live call holds
+against the session budget until it settles (two characters per token, plus a fixed allowance for each
+use of a picture). So the dollar figure is an **upper bound**, rounded up, never a measured cost; the
+bill is usually far lower. The call count follows each run: one call per row in Bulk, after the 200-row
+cap; one per row and Compare variant, two for a variant that averages both orders, with test rows left
+out; checks, drift and upgrades send only the dataset's tuning rows; drift adds the new rows that are not
+test rows; an upgrade asks both versions. When the first half of a drift or upgrade run stops early the
+run skips the second half; the preview still counts both.
+
+Estimating makes no model call and reserves nothing in the budget. When the upper bound is more than
+the budget left, the line turns amber and the run asks you to confirm before it starts; the budget then
+stops the run once it is spent, and the remaining rows get no answer. A run that cannot be estimated
+(for example, a Box question on a row without a picture) shows no line and reports its own error when you
+start it. In the terminal, `uv run scripts/check.py <id> --estimate` prints the same preview for a
+check, and composes with `--model`, `--drift rows.jsonl` and `--upgrade-to <version>`.
+
 ### Picture rows
 
 A JSON row can carry a picture under `"_image"`: the name of a bundled sample (`torn-bag`,

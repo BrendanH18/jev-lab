@@ -118,6 +118,14 @@ def estimate_reserve_usd(payload: dict, model: str, image_uses: int = 0) -> floa
     return tokens * price_per_input_token(model)
 
 
+def request_reserve_usd(state: Any, questions: Dict[str, dict], model: str, refs: Any = ()) -> float:
+    """estimate_reserve_usd for the request system_one() builds from these parts. refs: the image references sent
+    with it (only their names count; each use in the state or questions adds an image). jev/estimate.py adds these up
+    for a spend preview, so a preview prices exactly what a call holds against the budget."""
+    payload = {"state": state, "model": model, "questions": questions}
+    return estimate_reserve_usd(payload, model, images.count_uses(refs or {}, state, questions))
+
+
 class JevError(Exception):
     def __init__(self, message: str, status: Optional[int] = None, body: Any = None):
         super().__init__(message)
@@ -287,7 +295,7 @@ class JevClient:
         if not self.api_key:
             raise JevError("No TypeSafe API key yet. Click “Connect API key” in the top-right, or add "
                            "TYPESAFE_API_KEY to .env.", status=401)
-        reserve = estimate_reserve_usd(payload, model, images.count_uses(assets or {}, state, questions))
+        reserve = request_reserve_usd(state, questions, model, assets)
         self.guard.check(reserve)
         started = time.perf_counter()
         try:

@@ -579,14 +579,10 @@ def _incomplete(bulk: dict, what: str) -> List[str]:
     return out
 
 
-def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = None) -> dict:
-    """Send the saved dataset's rows, then the new rows, to the model with the dataset's questions, and compare
-    them through its check's gate. The dataset run is also judged as a check run is, so the report says whether
-    the gate still holds on the rows it was tuned on. model: ask this model instead of the one the check names."""
-    dataset = workbench.load_dataset(dataset_id)
-    if not isinstance(dataset.get("check"), dict):
-        raise WorkbenchError("The dataset %r has no check. Save one from the Workbench's Policy panel." % dataset_id)
-    check = checks.validate_check(dataset["check"], dataset.get("questions"))
+def prepare(dataset_id: str, rows: Any, model: Optional[str] = None) -> tuple:
+    """(dataset, check, new rows to send, new rows left out as test rows, questions, model asked) for a drift run.
+    The run sends the dataset's tuning rows, then these new rows, one call per row each."""
+    dataset, check = checks.load(dataset_id)
     fresh = new_rows(rows)
     held_keys = {decisions._key(row) for row in dataset["rows"] if workbench.row_test(row)}
     available = [row for row in fresh if not workbench.row_test(row) and decisions._key(row) not in held_keys]
@@ -595,7 +591,14 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
     if not fresh:
         raise WorkbenchError("Every new row is a test row. Test rows are left out, so their answers stay hidden.")
     questions = workbench.bulk_questions(dataset["questions"])
-    asked = (model or "").strip() or check["model"]
+    return dataset, check, fresh, held_out, questions, checks.asked_model(check, model)
+
+
+def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = None) -> dict:
+    """Send the saved dataset's rows, then the new rows, to the model with the dataset's questions, and compare
+    them through its check's gate. The dataset run is also judged as a check run is, so the report says whether
+    the gate still holds on the rows it was tuned on. model: ask this model instead of the one the check names."""
+    dataset, check, fresh, held_out, questions, asked = prepare(dataset_id, rows, model)
     ref = workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=asked)
     if ref["stopped"]:  # a missing key or the budget: the new rows would stop too
         new = {"results": [], "rows": len(fresh), "completed": 0, "stopped": None, "cost_usd": 0.0,

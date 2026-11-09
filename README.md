@@ -113,6 +113,11 @@ conditions.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
   A row can carry a picture, a sample or one of your own, so photo questions and Box questions run in
   bulk too, and Calibrate scores a Box answer by how much it overlaps its label.
+- **Spend preview:** next to every paid run button (Bulk, Compare, saved tests, and a check's run, drift
+  comparison and version upgrade) a line such as `120 calls · ≤ $0.0040 · fits the $1.98 left in this
+  session's budget` counts the calls the run would make and an upper bound on their cost, built from the
+  same requests the run sends. A run over the budget left asks you to confirm first. Estimating makes no
+  model call and reserves nothing; `scripts/check.py --estimate` prints the same for checks.
 - **Import CSV:** bring rows in from a spreadsheet. Choose which columns the model reads and which hold
   labels for which question. Label values that fit no answer are listed rather than guessed. It makes
   no model calls.

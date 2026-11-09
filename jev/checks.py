@@ -266,14 +266,24 @@ def _pct(value: Optional[float]) -> str:
     return "n/a" if value is None else "%.1f%%" % (100 * value)
 
 
-def run(client: JevClient, dataset_id: str, model: Optional[str] = None) -> dict:
-    """Send every row of a saved dataset to the model and judge the dataset's check on the answers.
-    model: ask this model instead of the one the check names, to see whether the gate holds on it."""
+def load(dataset_id: str) -> tuple:
+    """(dataset, validated check) for a saved dataset that holds a check."""
     dataset = workbench.load_dataset(dataset_id)
     if not isinstance(dataset.get("check"), dict):
         raise WorkbenchError("The dataset %r has no check. Save one from the Workbench's Policy panel." % dataset_id)
-    check = validate_check(dataset["check"], dataset.get("questions"))
-    asked = (model or "").strip() or check["model"]
+    return dataset, validate_check(dataset["check"], dataset.get("questions"))
+
+
+def asked_model(check: dict, model: Optional[str] = None) -> str:
+    """The model a check run asks: `model` when one is named, else the one the check names."""
+    return (model or "").strip() or check["model"]
+
+
+def run(client: JevClient, dataset_id: str, model: Optional[str] = None) -> dict:
+    """Send every row of a saved dataset to the model and judge the dataset's check on the answers.
+    model: ask this model instead of the one the check names, to see whether the gate holds on it."""
+    dataset, check = load(dataset_id)
+    asked = asked_model(check, model)
     bulk = workbench.run_bulk(client, workbench.tuning_rows(dataset), dataset["questions"], model=asked)
     done = [r for r in bulk["results"] if "answers" in r]
     latencies = [r["meta"]["latency_ms"] for r in done]
