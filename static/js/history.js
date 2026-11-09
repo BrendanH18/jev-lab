@@ -3,6 +3,8 @@
 // preview, and restores only after an explicit confirmation. Revisions hold inputs, human labels and configuration,
 // never answers; the list and previews show counts only, never label values. Nothing here calls the model.
 
+import { guidelineChangeText } from "./guidelines.js";
+
 export const revisionTime = (at) => (typeof at === "string" ? `${at.slice(0, 10)} ${at.slice(11, 19)} UTC` : "unknown time");
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -30,6 +32,7 @@ export function restoreMessage(report, entry) {
     + `Questions: ${report.questions_changed ? "changed" : "unchanged"}. Rules: ${report.rules_changed ? "changed" : "unchanged"}.\n`
     + `Name/notes: ${report.metadata_changed ? "changed" : "unchanged"}. Input order: ${rows.order_changed ? "changed" : "unchanged"}.\n`
     + `Saved check: ${checkChange(report)}\n`
+    + guidelineChangeText(report.guidelines)
     + `Held-out rows: ${test.before} → ${test.after}. Test history: ${test.history}; looks recorded since the revision are kept.\n\n`
     + (report.exists ? "The current file is kept as a revision first, so this restore can be undone. " : "")
     + "The editor then reloads the dataset (you are asked first if it has unsaved rows). No model calls.";
@@ -86,6 +89,7 @@ export function createHistory(deps) {
         { id, revision: entry.revision, preview_revision: report.revision });
       deps.toast(`Restored “${id}” to the revision from ${revisionTime(entry.at)}. The replaced file is kept as a revision.`);
       if (out.check_dropped) deps.toast(`The revision's check no longer fits: ${out.check_dropped}`, "error");
+      if (out.guidelines_dropped?.length) deps.toast(out.guidelines_dropped.join(". "), "error");
       state.busy = false;
       state.preview = null;
       gone.list = null;

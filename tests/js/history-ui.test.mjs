@@ -38,6 +38,8 @@ test("restore confirmation says it can be undone, or that it recreates a deleted
   assert.match(message, /Inputs: 3 → 7 rows; 4 added, 0 removed/);
   assert.match(message, /kept as a revision first, so this restore can be undone/);
   assert.match(message, /No model calls/);
+  assert.match(restoreMessage({ ...REPORT, guidelines: { before: 1, after: 1, added: [], removed: [], changed: ["urgent"], dropped: [] } }, ENTRY),
+    /Labeling guidelines: 1 → 1 questions; changed: urgent\./);
   const deleted = restoreMessage({ ...REPORT, exists: false, revision: "missing" }, ENTRY);
   assert.match(deleted, /deleted; restoring recreates it/);
   assert.doesNotMatch(deleted, /can be undone/);

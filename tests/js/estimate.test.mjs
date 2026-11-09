@@ -64,7 +64,9 @@ test("confirmSpend goes ahead when the run fits, asks when it does not, and pass
   assert.equal(asked.length, 1);
   assert.equal(await confirmSpend(api({ fits: false }), "bulk", { rows: "a" }, ask(true)), true);
   const failing = async () => { throw new Error("No questions"); };
-  assert.equal(await confirmSpend(failing, "bulk", {}, ask(false)), true, "the run reports its own error");
+  assert.equal(await confirmSpend(failing, "bulk", {}, ask(false)), false, "a failed preview never starts a run unasked");
+  assert.match(asked.at(-1), /spend preview failed \(No questions\)/);
+  assert.equal(await confirmSpend(failing, "bulk", {}, ask(true)), true, "the user may start it anyway");
 });
 
 test("a second paid click while a preview is on its way does not start a second run", async () => {

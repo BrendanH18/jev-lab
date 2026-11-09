@@ -253,8 +253,13 @@ class HttpTests(unittest.TestCase):
             status, stale = post("/restore", dict(restore, preview_revision="0" * 64))
             self.assertEqual(status, 400)
             self.assertIn("Preview the restore again", stale["error"])
+            kept = Path(folder, "datasets", ".history", "tickets", entry["revision"] + ".json")
+            raw = json.loads(kept.read_text())
+            raw["guidelines"] = {"gone": {"note": "for a question the revision lacks"}}
+            kept.write_text(json.dumps(raw))
             status, restored = post("/restore", restore)
             self.assertEqual(status, 200, restored)
+            self.assertIn("gone", " ".join(restored["guidelines_dropped"]), "drops reach the page")
             self.assertEqual(workbench.load_dataset("tickets")["notes"], "first")
             status, again = post("/restore", restore)
             self.assertEqual(status, 400, "a used preview is stale")

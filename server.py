@@ -652,8 +652,9 @@ def api_wb_dataset_history_preview(body):
 def api_wb_dataset_history_restore(body):
     dataset = history.restore(str(body.get("id", "")), body.get("revision"), body.get("preview_revision"))
     out = {"dataset": workbench.dataset_summary(dataset)}
-    if dataset.get("check_dropped"):
-        out["check_dropped"] = dataset["check_dropped"]
+    for note in history.NOTES:
+        if dataset.get(note):
+            out[note] = dataset[note]
     return out
 
 

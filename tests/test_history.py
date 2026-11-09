@@ -217,6 +217,19 @@ class HistoryTests(unittest.TestCase):
         history.restore("tickets", target, report["revision"])
         self.assertEqual(len(workbench.load_dataset("tickets")["test"]["looks"]), 1)
 
+    def test_restoring_a_deleted_dataset_keeps_looks_recorded_after_the_revision(self):
+        workbench.save_dataset(self.spec())
+        testsplit.lock("tickets", 0.3, seed=1)
+        workbench.save_dataset(self.spec(notes="after split", data=workbench.load_dataset("tickets")["rows"]))
+        target = self.kept()[-1]  # the split, with no looks yet
+        dataset = workbench.load_dataset("tickets")
+        dataset["test"]["looks"].append({"at": "2026-11-01T00:00:00Z", "gates": {"urgent": 0.5}, "signal": "confidence"})
+        workbench.write_dataset(dataset)
+        workbench.delete_dataset("tickets")
+        report = history.preview("tickets", target)
+        history.restore("tickets", target, report["revision"])
+        self.assertEqual(len(workbench.load_dataset("tickets")["test"]["looks"]), 1)
+
     def test_ids_and_revisions_are_validated_against_traversal(self):
         workbench.save_dataset(self.spec())
         workbench.save_dataset(self.spec(notes="two"))

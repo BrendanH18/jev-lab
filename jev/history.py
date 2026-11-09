@@ -168,6 +168,15 @@ def _looks(*tests: Any) -> list:
     return out[-testsplit.MAX_LOOKS_KEPT:]
 
 
+def _kept_test(dataset_id: str, revision: str) -> dict:
+    """A kept revision's test record, or {} when it has none or cannot be read."""
+    try:
+        test = _read(dataset_id, revision).get("test")
+    except WorkbenchError:
+        return {}
+    return test if isinstance(test, dict) else {}
+
+
 def _candidate(dataset_id: str, revision: Any) -> tuple:
     """(prior dataset or {}, file token, the dataset a restore would write) after the replacement's validation."""
     raw = _read(dataset_id, revision)
@@ -203,8 +212,10 @@ def _candidate(dataset_id: str, revision: Any) -> tuple:
         # revision never hides how often the held-out rows were scored.
         old = raw.get("test") if isinstance(raw.get("test"), dict) else {}
         now = prior.get("test") if isinstance(prior.get("test"), dict) else {}
+        # A deleted dataset has no current file: the kept revisions, oldest first, hold the looks recorded since.
+        kept = [] if prior else [_kept_test(dataset_id, p.stem) for p in _revisions(dataset_id)]
         candidate["test"] = {"locked_at": old.get("locked_at") or now.get("locked_at") or candidate["test"]["locked_at"],
-                             "looks": _looks(old, now)}
+                             "looks": _looks(old, *kept, now)}
     if len(workbench._dataset_text({k: v for k, v in candidate.items() if k not in NOTES})) > workbench.MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % workbench.MAX_DATASET_CHARS)
     return prior, token, candidate

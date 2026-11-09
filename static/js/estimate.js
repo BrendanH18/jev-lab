@@ -59,8 +59,14 @@ export function confirmMessage(est) {
     + "get no answer. Start it anyway?";
 }
 
-// Ask for a fresh preview just before a paid run. Resolves true to go ahead: the run fits, the user confirmed, or the
-// preview failed (the run then reports its own error). ask: window.confirm in the page; tests pass their own.
+export function errorMessage(e) {
+  return `The spend preview failed (${e?.message || e}), so this run's cost and the budget left are unknown. `
+    + "Start it anyway? Cancel to retry the preview.";
+}
+
+// Ask for a fresh preview just before a paid run. Resolves true to go ahead: the run fits, or the user confirmed,
+// including after a failed preview, whose error is shown so the user can cancel and retry. ask: window.confirm in the
+// page; tests pass their own.
 // One at a time: a second paid click while a preview is on its way resolves false, so a double click cannot start
 // two runs before the first one marks itself running.
 let confirming = false;
@@ -70,7 +76,7 @@ export async function confirmSpend(api, kind, body, ask = (m) => globalThis.conf
   cache.clear();  // the run changes what is left; every line asks again
   try {
     let est;
-    try { est = await api(ENDPOINT, { ...body, kind }); } catch { return true; }
+    try { est = await api(ENDPOINT, { ...body, kind }); } catch (e) { return Boolean(ask(errorMessage(e))); }
     return needsConfirm(est) ? Boolean(ask(confirmMessage(est))) : true;
   } finally { confirming = false; }
 }
