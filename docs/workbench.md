@@ -201,8 +201,8 @@ run skips the second half; the preview still counts both.
 Estimating makes no model call and reserves nothing in the budget. When the upper bound is more than
 the budget left, the line turns amber and the run asks you to confirm before it starts; the budget then
 stops the run once it is spent, and the remaining rows get no answer. A run that cannot be estimated
-(for example, a Box question on a row without a picture) shows no line and reports its own error when you
-start it. In the terminal, `uv run scripts/check.py <id> --estimate` prints the same preview for a
+(for example, a Box question on a row without a picture) shows no line; starting it shows the preview's
+error and asks before it runs, so you can cancel and fix the input or start it anyway. In the terminal, `uv run scripts/check.py <id> --estimate` prints the same preview for a
 check, and composes with `--model`, `--drift rows.jsonl` and `--upgrade-to <version>`.
 
 ### Picture rows
