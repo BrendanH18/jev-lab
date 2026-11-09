@@ -394,6 +394,10 @@ function renderBoxes() {
 }
 
 function renderRaw() {
+  const error = buildRawText === null ? questionEditorError() : null;
+  if (error) return h("div", { class: "raw grid", style: { gap: "8px" } },
+    h("p", { role: "alert" }, `Fix the editor errors before opening Raw JSON: ${error}`),
+    h("button", { class: "btn sm", onclick: () => { W.raw = false; render(); } }, "Back to editor"));
   const area = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Questions as JSON" }, buildRawText ?? JSON.stringify(toQuestions(W.questions), null, 2));
   area.addEventListener("input", () => { buildRawText = area.value; markBuildEdited(); });
   return h("div", { class: "raw grid", style: { gap: "8px" } }, area,

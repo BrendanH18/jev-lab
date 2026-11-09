@@ -146,7 +146,7 @@ export function guidelineChangeText(report) {
 // ---------- Workbench wiring ----------
 // deps: { h, api, handleError, toast, rerender }. Guidelines are fetched per saved dataset on first use and kept until
 // that dataset's saved_at changes or the editor saves new ones.
-export function createGuidelines({ h, api, handleError = () => {}, toast = () => {}, rerender = () => {} }) {
+export function createGuidelines({ h, api, handleError = () => {}, toast = () => {}, rerender = () => {}, beforeSave = () => true }) {
   const cache = new Map();    // dataset id -> { status: "loading" | "ready" | "error", data }
   const editors = new Map();  // dataset id -> { open, busy, draft, data }
 
@@ -206,6 +206,7 @@ export function createGuidelines({ h, api, handleError = () => {}, toast = () =>
     const e = editor(x.id);
     const { guidelines, problems } = draftPayload(e.draft, e.data.questions);
     if (problems.length) return toast(problems[0], "error");
+    if (!beforeSave(x.id)) return;
     e.busy = true;
     rerender();
     try {

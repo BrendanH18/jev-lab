@@ -177,6 +177,27 @@ async function storeWith(guidelines) {
   return { store, calls };
 }
 
+test("canceling the shared discard guard keeps guideline drafts and makes no save request", async () => {
+  const calls = [], guarded = [];
+  const interactiveH = (tag, attrs, ...children) => ({ ...h(tag, attrs, ...children), listeners: {},
+    addEventListener(name, fn) { this.listeners[name] = fn; } });
+  const store = createGuidelines({ h: interactiveH,
+    api: async (path, data) => { calls.push(path); return { id: data.id, saved_at: "now", questions: Q, guidelines: {}, warnings: [] }; },
+    beforeSave: (id) => { guarded.push(id); return false; } });
+  const dataset = { id: "tickets", saved_at: "now" };
+  store.toggle(dataset).attrs.onclick();
+  await new Promise((resolve) => setImmediate(resolve));
+  const panel = store.panel(dataset);
+  const note = nodes(panel, "textarea")[0];
+  note.value = "Keep this guideline draft";
+  note.listeners.input();
+  await nodes(panel, "button").find((node) => textOf(node) === "Save guidelines").attrs.onclick();
+  assert.deepEqual(guarded, ["tickets"]);
+  assert.deepEqual(calls, ["/api/workbench/datasets/guidelines"]);
+  assert.ok(textOf(store.panel(dataset)).includes("Keep this guideline draft"));
+  assert.match(workbenchSource, /beforeSave: \(id\) => confirmReviewDiscard\(id\)/);
+});
+
 test("the Review queue shows guidelines beside its labels and hides matching examples on blind audit rows", async () => {
   const { store, calls } = await storeWith({ dept: GUIDE });
   const W = { bulk: { pictures: {} }, guides: store };

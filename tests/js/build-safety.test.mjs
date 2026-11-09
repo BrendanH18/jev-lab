@@ -145,3 +145,21 @@ test("shared question replacement clears hidden Raw edits and invalidates pendin
   assert.equal(harness.running(), false);
   assert.equal(W.stateText, "keep input");
 });
+
+test("duplicate editor keys cannot seed an empty Raw JSON view that erases questions", () => {
+  for (const questions of [[choice("q"), choice("q")], [choice("q", ["same", "same"])]]) {
+    const W = { questions, raw: true };
+    const original = JSON.stringify(questions);
+    const h = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat(Infinity) });
+    const raw = new Function("W", "h", "questionEditorError", "render", "toQuestions",
+      `let buildRawText = null; ${body("renderRaw")}; return renderRaw;`)(W, h,
+      () => editorQuestionError(W.questions), () => {}, () => assert.fail("duplicates cannot be serialized"));
+    const view = raw();
+    const children = view.children;
+    assert.equal(children.some((node) => node.tag === "textarea"), false);
+    assert.match(children[0].children[0], /Fix the editor errors/);
+    children.find((node) => node.tag === "button").attrs.onclick();
+    assert.equal(W.raw, false);
+    assert.equal(JSON.stringify(W.questions), original);
+  }
+});
