@@ -8,6 +8,7 @@ import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "
 import { reverseOptions } from "./variants.js";
 import { labelProgress, visibleLabels, nextLabel, labelShortcut } from "./prelabel.js";
 import { renderWorkbenchGuide } from "./workbench-guide.js";
+import { createGuidelines } from "./guidelines.js";
 
 const W = {
   guideOpen: false, tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
@@ -61,6 +62,9 @@ const W = {
   handoff: null,
 };
 const TYPES = ["noul", "choice", "score", "box"];
+// Labeling guidelines (static/js/guidelines.js): human-only, shown beside label controls, never sent to the model.
+// Kept on W so a view rendered without it (tests/js) simply shows no guideline.
+W.guides = createGuidelines({ h, api, handleError, toast, rerender: () => render() });
 const TABS = [["build", "Build"], ["tests", "Tests"], ["bulk", "Bulk"], ["compare", "Compare"], ["examples", "Examples"]];
 
 // ---------- data helpers ----------
@@ -748,7 +752,8 @@ function datasetChangeMessage(report) {
     + `Questions: ${report.questions_changed ? "changed" : "unchanged"}. Rules: ${report.rules_changed ? "changed" : "unchanged"}.\n`
     + `Name/notes: ${report.metadata_changed ? "changed" : "unchanged"}. Input order: ${rows.order_changed ? "changed" : "unchanged"}.\n`
     + `Saved check: ${report.check}.${report.check_dropped ? ` ${report.check_dropped}` : ""}\n`
-    + `Held-out rows: ${test.before} → ${test.after}; ${test.changed_membership} matching inputs change split. Test history: ${test.history}.\n\n`
+    + `Held-out rows: ${test.before} → ${test.after}; ${test.changed_membership} matching inputs change split. Test history: ${test.history}.\n`
+    + (W.guides?.changeText(report.guidelines) ?? "") + "\n"
     + "Counts include held-out label changes without showing their values. Duplicate inputs are paired in row order. "
     + "Changed inputs count as a removal and an addition. No model calls or file changes have been made by this preview.";
 }
@@ -775,7 +780,7 @@ async function saveDataset() {
     const preview = await api("/api/workbench/datasets/preview", spec);
     if (!current()) return toast("Rows or dataset settings changed. Save again to preview the current changes.", "error");
     if (preview.exists && !confirm(datasetChangeMessage(preview))) return;
-    const { dataset, check_dropped: dropped } = await api("/api/workbench/datasets", { ...spec, preview_revision: preview.revision });
+    const { dataset, check_dropped: dropped, guidelines_dropped: guidesDropped } = await api("/api/workbench/datasets", { ...spec, preview_revision: preview.revision });
     if (current()) {
       b.savedText = b.rowsText;
       b.labelsDirty = false;
@@ -788,6 +793,7 @@ async function saveDataset() {
     b.datasets = (await api("/api/workbench/datasets")).datasets;
     toast(`Saved ${dataset.rows} rows (${dataset.labeled} labeled) to data/workbench/datasets/${dataset.id}.json`);
     if (dropped) toast(`Removed the dataset's check: ${dropped}`, "error");
+    if (guidesDropped?.length) toast(guidesDropped.join(". "), "error");
   } catch (e) { handleError(e); }
   finally { b.datasetSaveBusy = false; render(); }
 }
@@ -931,9 +937,11 @@ function renderDatasets() {
           h("button", { class: "btn sm", onclick: () => exportBundle(x.id) }, "Download ZIP"),
           x.labeled && x.questions ? agreeButton(x) : null,
           testControl(x),
+          W.guides?.toggle(x),
           h("button", { class: "btn sm ghost danger", "aria-label": `Delete ${x.id}`, onclick: () => deleteDataset(x.id) }, icon("trash"))),
         x.check ? checkItem(x) : null,
-        b.agreeRuns[x.id]?.open ? agreePanel(x) : null))
+        b.agreeRuns[x.id]?.open ? agreePanel(x) : null,
+        W.guides?.panel(x)))
         : h("div", { class: "empty" }, "No saved datasets yet. Label some rows, name them, and save.")));
 }
 
@@ -1070,7 +1078,7 @@ function agreeSampleView(x, a) {
           queueClasses(question).map((c) => h("option", { value: c, selected: c === current },
             question.type === "score" ? `${c} · ${String(question.criteria[Number(c)] ?? "").slice(0, 32)}` : c)));
         sel.addEventListener("change", () => { labels[qid] = labelValue(sel.value, question.type); render(); });
-        return h("label", { class: "queue-label" }, h("span", { class: "mono" }, qid), sel);
+        return h("label", { class: "queue-label" }, h("span", { class: "mono" }, qid), sel, W.guides?.hint(x.id, qid, question, { row: item.row, blind: true }));
       })));
   };
   const file = h("input", { type: "file", accept: ".csv,.tsv,.txt", style: { display: "none" } });
@@ -1590,7 +1598,8 @@ function driftLabels(x, run) {
       select.disabled = busy;
       return h("label", { class: "queue-label" },
         h("span", { class: "mono" }, qid, qid in rep.gates ? h("span", { class: "faint" }, " · required") : null),
-        h("span", { class: "faint", style: { fontSize: "12px", maxWidth: "360px" } }, stringify(question.instructions)), select);
+        h("span", { class: "faint", style: { fontSize: "12px", maxWidth: "360px" } }, stringify(question.instructions)), select,
+        W.guides?.hint(x.id, qid, question));
     })));
   const n = Math.min(x.rows - (x.test?.rows || 0), 200);
   return h("div", { class: "grid", style: { gap: "8px", paddingTop: "8px", borderTop: "1px solid var(--line)" } },
@@ -1816,7 +1825,8 @@ function queueView(x, q) {
             `Suggested shortlist: ${item.candidates[qid].map((v) => labelText(v, question.type)).join(", ")}. All options remain available.`) : null,
           queueSelect(item, qid, question, () => { q.csvPreview = null; q.nextLine = item.line; render(); }, q.busy),
           reveal ? h("span", { class: `faint${differs ? " differs" : ""}`, style: { fontSize: "11.5px" } },
-            `gate: ${shownAnswer(answer)}`) : null);
+            `gate: ${shownAnswer(answer)}`) : null,
+          W.guides?.hint(x.id, qid, question, { row: item.row, blind: item.kind === "audit" }));
       })));
   };
   return h("div", { class: "check-report grid", style: { gap: "8px" } },
@@ -2788,7 +2798,8 @@ function prelabelBody() {
                   ($(`#prelabel-label-${item.index}-${position}`) || $("#prelabel-controls"))?.focus({ preventScroll: true });
                 } }, h("option", { value: "", selected: !current }, "Choose a human label"),
                 choices.map((c) => h("option", { value: c, selected: current === c },
-                  question.type === "score" ? `${c} · ${stringify(question.criteria[Number(c)])}` : c))));
+                  question.type === "score" ? `${c} · ${stringify(question.criteria[Number(c)])}` : c))),
+              W.guides?.hint(W.bulk.dataset.id, qid, question));
           }))),
         h("button", { class: "btn sm primary", disabled: state.busy || !filled, onclick: applyPreparedLabels }, `Apply ${filled} labels to rows`),
         h("p", { class: "faint" }, "Apply includes drafts in every slice. Changing rows or questions discards the draft view. Applying clears old Bulk results; run again to score the new labels.")) : null));

@@ -7,7 +7,7 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from . import decisions, workbench
+from . import decisions, guidelines, workbench
 from .workbench import WorkbenchError
 
 
@@ -67,6 +67,9 @@ def preview(spec: dict) -> dict:
             "metadata_changed": any(prior.get(k, "") != candidate.get(k, "") for k in ("name", "notes")),
             "check": "removed" if candidate.get("check_dropped") else "preserved" if candidate.get("check") else "none",
             "check_dropped": candidate.get("check_dropped"),
+            # Labeling guidelines by question id only: never a note, an example, or a label value.
+            "guidelines": dict(guidelines.changes(prior.get("guidelines"), candidate.get("guidelines")),
+                               dropped=candidate.get("guidelines_dropped") or []),
             "test": {"before": test_before, "after": test_after, "changed_membership": split_changed,
                      "history": "preserved" if test_after and prior.get("test") else "started" if test_after else
                                 "removed" if prior.get("test") else "none"}}

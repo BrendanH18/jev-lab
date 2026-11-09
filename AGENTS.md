@@ -266,6 +266,15 @@ explicit. Pictures travel separately. Warn before unload when current unapplied 
 Labeling keyboard shortcuts act only inside that panel, preserve native editing behavior, and only
 navigate incomplete rows within the current slice; they never apply, save, or call the model.
 
+Labeling guidelines (`jev/guidelines.py`, `static/js/guidelines.js`) are a dataset's optional `guidelines`:
+question id -> note and generic examples with valid Choice/Noul/Score labels (Box takes a note only). They are
+human-only: never send them to the model (Bulk, checks, drift, upgrade, Compare, request export) and never make
+them gate configuration, so exported gates and decision provenance must not change with them. Show them collapsed
+beside label controls; on blind audit and agreement rows hide examples matching the row. Bundles carry them, check
+saves and upgrades preserve them, a save without them keeps the saved ones, and guidelines for removed questions
+are dropped with a warning naming the question. Replacement previews and warnings report question ids and counts,
+never notes, examples, or label values. The labeling CSV handoffs do not include them.
+
 Dataset replacement previews use the same candidate validation as saving, show counts and configuration
 changes without label values, and make no writes or model calls. Match exact input occurrences in order
 so duplicates remain distinct, with picture names included. Saving a previewed replacement verifies the

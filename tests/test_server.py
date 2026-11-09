@@ -371,7 +371,7 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(json.loads(body)["dataset"], {"id": "tickets", "name": "Tickets", "notes": "",
                                                            "saved_at": json.loads(body)["dataset"]["saved_at"], "rows": 2,
                                                            "labeled": 1, "labels": {"dept": 1}, "questions": 0,
-                                                           "check": None, "check_notes": [], "test": None})
+                                                           "check": None, "check_notes": [], "guidelines": 0, "test": None})
             status, _, body = self.request("GET", "/api/workbench/datasets")
             self.assertEqual([d["id"] for d in json.loads(body)["datasets"]], ["tickets"])
             status, _, body = self.request("POST", "/api/workbench/datasets/load", json.dumps({"id": "tickets"}),

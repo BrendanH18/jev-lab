@@ -20,7 +20,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, dataset_changes, decisions, dispatch, drift, envfile, examples, find, gate, health, hello,
+from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, dataset_changes, decisions, dispatch, drift, envfile, examples, find, gate, guidelines, health, hello,
                  holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
@@ -608,6 +608,8 @@ def api_wb_dataset_save(body):
     out = {"dataset": workbench.dataset_summary(dataset)}
     if dataset.get("check_dropped"):
         out["check_dropped"] = dataset["check_dropped"]
+    if dataset.get("guidelines_dropped"):
+        out["guidelines_dropped"] = dataset["guidelines_dropped"]
     return out
 
 
@@ -617,6 +619,14 @@ def api_wb_dataset_preview(body):
 
 def api_wb_dataset_load(body):
     return {"dataset": workbench.load_dataset(str(body.get("id", "")))}
+
+
+def api_wb_guidelines(body):
+    return guidelines.load(str(body.get("id", "")))
+
+
+def api_wb_guidelines_save(body):
+    return guidelines.save(str(body.get("id", "")), body.get("guidelines"))
 
 
 def api_wb_dataset_delete(body):
@@ -802,6 +812,8 @@ ROUTES = {
     ("POST", "/api/workbench/prelabel/csv/import"): api_wb_prelabel_csv_import,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
+    ("POST", "/api/workbench/datasets/guidelines"): api_wb_guidelines,
+    ("POST", "/api/workbench/datasets/guidelines/save"): api_wb_guidelines_save,
     ("POST", "/api/workbench/datasets/bundle/export"): api_wb_bundle_export,
     ("POST", "/api/workbench/datasets/bundle/preview"): api_wb_bundle_preview,
     ("POST", "/api/workbench/datasets/bundle/import"): api_wb_bundle_import,

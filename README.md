@@ -170,6 +170,11 @@ conditions.
   95% interval, and Cohen's kappa, the agreement beyond chance. Then settle each difference and save it to
   the dataset. Accuracy is measured against labels, so it means little above the share two people agree on.
   It makes no model call.
+- **Labeling guidelines:** write, per question, how a person should label it, with short made-up
+  examples, and save them with a dataset. They appear collapsed beside every label control: Label before
+  running, the Review queue, Label agreement, and Label new traffic. On blind rows, an example matching the
+  row is hidden. Guidelines are human-only: never sent to the model, not part of a check or an exported gate.
+  They travel in dataset ZIPs and survive check saves and model upgrades.
 - **Test rows:** hold a random share of a dataset's labeled rows out of every tuning panel and Compare, with their
   answers hidden, then score the chosen gate on them for a number no choice was fit to. Each score is counted in
   the dataset, since a gate changed after a look is partly tuned on the test rows too.
