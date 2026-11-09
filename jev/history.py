@@ -212,10 +212,11 @@ def _candidate(dataset_id: str, revision: Any) -> tuple:
         # revision never hides how often the held-out rows were scored.
         old = raw.get("test") if isinstance(raw.get("test"), dict) else {}
         now = prior.get("test") if isinstance(prior.get("test"), dict) else {}
-        # A deleted dataset has no current file: the kept revisions, oldest first, hold the looks recorded since.
+        # A deleted dataset has no current file: the kept revisions hold the looks recorded since. Merge them oldest
+        # first (the selected revision is one of them) so the cap keeps the newest looks.
         kept = [] if prior else [_kept_test(dataset_id, p.stem) for p in _revisions(dataset_id)]
         candidate["test"] = {"locked_at": old.get("locked_at") or now.get("locked_at") or candidate["test"]["locked_at"],
-                             "looks": _looks(old, *kept, now)}
+                             "looks": _looks(*kept, old, now) if kept else _looks(old, now)}
     if len(workbench._dataset_text({k: v for k, v in candidate.items() if k not in NOTES})) > workbench.MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % workbench.MAX_DATASET_CHARS)
     return prior, token, candidate

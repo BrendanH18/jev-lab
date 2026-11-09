@@ -230,6 +230,25 @@ class HistoryTests(unittest.TestCase):
         history.restore("tickets", target, report["revision"])
         self.assertEqual(len(workbench.load_dataset("tickets")["test"]["looks"]), 1)
 
+    def test_deleted_restore_keeps_the_newest_looks_in_order_at_the_cap(self):
+        workbench.save_dataset(self.spec())
+        testsplit.lock("tickets", 0.3, seed=1)
+        def look(n):
+            return {"at": "2026-11-01T00:00:%02dZ" % (n % 60), "n": n, "gates": {"urgent": 0.5}, "signal": "confidence"}
+
+        cap = testsplit.MAX_LOOKS_KEPT
+        dataset = workbench.load_dataset("tickets")
+        dataset["test"]["looks"] = [look(n) for n in range(1, cap + 1)]
+        workbench.write_dataset(dataset)
+        dataset["test"]["looks"] = [look(n) for n in range(2, cap + 2)]
+        workbench.write_dataset(dataset)
+        workbench.delete_dataset("tickets")
+        target = self.kept()[-1]  # the file as deleted: looks 2..cap+1
+        report = history.preview("tickets", target)
+        history.restore("tickets", target, report["revision"])
+        looks = workbench.load_dataset("tickets")["test"]["looks"]
+        self.assertEqual([x["n"] for x in looks], list(range(2, cap + 2)))
+
     def test_ids_and_revisions_are_validated_against_traversal(self):
         workbench.save_dataset(self.spec())
         workbench.save_dataset(self.spec(notes="two"))
