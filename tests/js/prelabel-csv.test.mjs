@@ -51,3 +51,26 @@ test("file read snapshot and busy guards prevent a competing import", async () =
   await x.previewPreparedLabels("csv");
   assert.equal(calls, 0);
 });
+
+test("draft restore previews through its endpoint and accepts only into drafts", async () => {
+  let path;
+  const x = harness(async (p) => { path = p; return preview; });
+  await x.previewPreparedLabels('{"format":"jev-labeling-draft"}', "original", "draft");
+  assert.equal(path, "/api/workbench/prelabel/draft/import");
+  assert.equal(x.W.bulk.prelabel.drafts[2], undefined);
+  x.acceptPreparedLabels();
+  assert.equal(x.W.bulk.prelabel.drafts[2].urgent, false);
+  assert.equal(x.W.bulk.rowsText, "original");
+});
+
+test("unload guard includes unapplied current drafts even before rows change", () => {
+  const W = { bulk: { prelabel: { context: "same", drafts: { 0: { urgent: false, severity: 0 } } } } };
+  const text = source.match(/const preparedLabelsUnsaved = \(\) =>[\s\S]*?;/)[0];
+  const unsaved = new Function("W", "prelabelContext", `${text}; return preparedLabelsUnsaved;`)(W, () => "same");
+  assert.equal(unsaved(), true);
+  W.bulk.prelabel.context = "old";
+  assert.equal(unsaved(), false);
+  W.bulk.prelabel.context = "same";
+  W.bulk.prelabel.drafts = { 0: {} };
+  assert.equal(unsaved(), false);
+});

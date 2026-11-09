@@ -18,11 +18,11 @@ function harness(api) {
   const context = () => JSON.stringify([W.bulk.rowsText, schema, W.bulk.labelsDirty]);
   const fn = new Function("W", "api", "prelabelContext", "settleLabels", "render", "handleError", "rowsPayload", "bulkQuestions",
     "loadPictureUrls", "rowsText", "syncAttachedSets", "toast", "h", "stringify", "photoView",
-    "labelProgress", "visibleLabels", "preparedLabelCsv", "nextPreparedLabel",
+    "labelProgress", "visibleLabels", "preparedLabelCsv", "nextPreparedLabel", "$",
     ["agreeQuestions", "labelText", "labelValue", "prepareLabels", "applyPreparedLabels", "prelabelBody"].map(body).join("\n")
       + "; return { prepareLabels, applyPreparedLabels, prelabelBody };"
   )(W, api, context, () => true, () => {}, (e) => { throw e; }, () => W.bulk.rowsText, () => schema,
-    async () => {}, JSON.stringify, () => {}, () => {}, h, JSON.stringify, () => null, labelProgress, visibleLabels, () => null, () => {});
+    async () => {}, JSON.stringify, () => {}, () => {}, h, JSON.stringify, () => null, labelProgress, visibleLabels, () => null, () => {}, () => null);
   return { W, ...fn, changeSchema: () => { schema = "changed"; } };
 }
 

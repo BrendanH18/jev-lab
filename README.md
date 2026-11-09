@@ -129,6 +129,11 @@ conditions.
   Track ready/incomplete rows and jump to the next incomplete row within the selected slice. Download
   a blank labeling CSV for that slice, then preview and accept imported labels into drafts before Apply.
   CSVs match the exact rows and question schema; pictures travel separately.
+  **Download labeling draft** keeps unfinished human labels across all slices in a JSON file.
+  Load the same original rows and questions, open labeling, then **Restore labeling draft** to preview
+  and accept them into drafts. Files omit existing labels and held-out inputs; keep named pictures separately.
+  While focused in the labeling panel, Ctrl/⌘+Enter moves to the next incomplete row and
+  Ctrl/⌘+Shift+Enter moves to the previous one. Neither shortcut applies or saves labels.
 - **Workbench guide:** expand the guide above the tabs' content for shortcuts from defining questions
   through inputs, health and labels, a live run, Policy/checks, and exported gates with Review.
   Shortcuts navigate only; running, applying, and saving remain your actions.
@@ -145,6 +150,10 @@ conditions.
   Bulk answers. Attach a fitted cut to Policy to save it with a check and export review shortlists in
   Python or JavaScript. Review offers those candidates while keeping every valid answer available;
   automation still follows Policy's thresholds and rules.
+- **Preview dataset replacement:** saving over a dataset first shows input additions/removals, label-change
+  counts, and changes to questions, rules, saved checks, and test history. Confirm explicitly to replace it;
+  a saved file changed since preview must be previewed again. No label values appear in the summary,
+  and preview makes no writes or model calls.
 - **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
   in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
   answers.

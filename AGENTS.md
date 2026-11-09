@@ -257,3 +257,17 @@ Never export existing labels or held-out inputs. Blank cells preserve drafts; Ap
 Save remain explicit, with no model calls or file writes from export/import. Labeling filters and
 next-row navigation change presentation only and preserve drafts across slices. The Workbench
 guide only navigates existing panels; it never runs, labels, saves, or changes configuration.
+
+Pre-run labeling draft downloads carry eligible tuning inputs, the question schema, and human draft
+labels across all slices; exclude existing labels, held-out inputs, and model answers. A hash binds
+restores to the full original rows/questions snapshot, including labels, held-out markers, duplicate
+positions, and Choice order. Preview and accept only merge validated drafts; Apply and Save remain
+explicit. Pictures travel separately. Warn before unload when current unapplied drafts exist.
+Labeling keyboard shortcuts act only inside that panel, preserve native editing behavior, and only
+navigate incomplete rows within the current slice; they never apply, save, or call the model.
+
+Dataset replacement previews use the same candidate validation as saving, show counts and configuration
+changes without label values, and make no writes or model calls. Match exact input occurrences in order
+so duplicates remain distinct, with picture names included. Saving a previewed replacement verifies the
+saved file revision under the dataset update lock; changed files require another preview. Preserve the
+existing explicit replacement, check compatibility, and test-history semantics.

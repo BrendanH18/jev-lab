@@ -6,7 +6,7 @@ import { secondItems, settleKey, settledItems } from "./agreement.js";
 import { readHandoff } from "./handoff.js";
 import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "./prune.js";
 import { reverseOptions } from "./variants.js";
-import { labelProgress, visibleLabels, nextLabel } from "./prelabel.js";
+import { labelProgress, visibleLabels, nextLabel, labelShortcut } from "./prelabel.js";
 import { renderWorkbenchGuide } from "./workbench-guide.js";
 
 const W = {
@@ -221,7 +221,7 @@ async function boot() {
   W.items = items.items;
   W.bulk.rowsText = W.bulk.savedText = rowsText(sample.rows);
   W.bulk.datasets = sets.datasets;
-  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved() || preparedLabelsUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
   W.bulk.sampleQuestions = sample.questions;
   W.compare.terse = sample.terse_questions;
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);
@@ -740,32 +740,56 @@ function settleLabels(action) {
 // The server's file name for a dataset name (jev/workbench.py slugify), to warn before replacing one.
 const slugOf = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 
+function datasetChangeMessage(report) {
+  const rows = report.rows, labels = report.labels, test = report.test;
+  return `Replace the saved dataset “${report.id}”?\n\n`
+    + `Inputs: ${rows.before} → ${rows.after} rows; ${rows.added} added, ${rows.removed} removed.\n`
+    + `Human labels: ${labels.added} added, ${labels.removed} removed, ${labels.changed} changed.\n`
+    + `Questions: ${report.questions_changed ? "changed" : "unchanged"}. Rules: ${report.rules_changed ? "changed" : "unchanged"}.\n`
+    + `Name/notes: ${report.metadata_changed ? "changed" : "unchanged"}. Input order: ${rows.order_changed ? "changed" : "unchanged"}.\n`
+    + `Saved check: ${report.check}.${report.check_dropped ? ` ${report.check_dropped}` : ""}\n`
+    + `Held-out rows: ${test.before} → ${test.after}; ${test.changed_membership} matching inputs change split. Test history: ${test.history}.\n\n`
+    + "Counts include held-out label changes without showing their values. Duplicate inputs are paired in row order. "
+    + "Changed inputs count as a removal and an addition. No model calls or file changes have been made by this preview.";
+}
+
 async function saveDataset() {
   const b = W.bulk;
+  if (b.datasetSaveBusy) return;
   const d = b.dataset;
   const name = d.name.trim();
-  const id = slugOf(name);
-  if (!id) return toast("Give the dataset a name", "error");
-  if (id !== d.id && b.datasets.some((x) => x.id === id) && !confirm(`Replace the saved dataset “${id}”?`)) return;
+  if (!slugOf(name)) return toast("Give the dataset a name", "error");
   if (!settleLabels("Save the rows box")) return;
   const questions = d.withQuestions ? bulkQuestions() : null;
+  const currentSpec = () => {
+    const form = b.dataset;
+    const q = form.withQuestions ? bulkQuestions() : null;
+    return { name: form.name.trim(), notes: form.notes, rows: rowsPayload(),
+      questions: q && Object.keys(q).length ? q : undefined, rules: b.rules.text.trim() || undefined };
+  };
+  const spec = currentSpec();
+  const snapshot = JSON.stringify([spec, b.rowsText, b.labelsDirty]);
+  const current = () => snapshot === JSON.stringify([currentSpec(), b.rowsText, b.labelsDirty]);
+  b.datasetSaveBusy = true;
   try {
-    const { dataset, check_dropped: dropped } = await api("/api/workbench/datasets", {
-      name, notes: d.notes, rows: rowsPayload(), questions: questions && Object.keys(questions).length ? questions : undefined,
-      rules: b.rules.text.trim() || undefined,
-    });
-    b.savedText = b.rowsText;
-    b.labelsDirty = false;
-    d.id = dataset.id;
-    d.name = dataset.name;
-    // Match the file: a dataset saved without questions offers none, as when it is loaded.
-    d.questions = questions && Object.keys(questions).length ? questions : null;
-    if (!d.questions && b.source === "dataset") b.source = "current";
+    const preview = await api("/api/workbench/datasets/preview", spec);
+    if (!current()) return toast("Rows or dataset settings changed. Save again to preview the current changes.", "error");
+    if (preview.exists && !confirm(datasetChangeMessage(preview))) return;
+    const { dataset, check_dropped: dropped } = await api("/api/workbench/datasets", { ...spec, preview_revision: preview.revision });
+    if (current()) {
+      b.savedText = b.rowsText;
+      b.labelsDirty = false;
+      d.id = dataset.id;
+      d.name = dataset.name;
+      // Match the file: a dataset saved without questions offers none, as when it is loaded.
+      d.questions = questions && Object.keys(questions).length ? questions : null;
+      if (!d.questions && b.source === "dataset") b.source = "current";
+    } else toast("The previewed dataset was saved. Newer editor changes remain unsaved.", "error");
     b.datasets = (await api("/api/workbench/datasets")).datasets;
     toast(`Saved ${dataset.rows} rows (${dataset.labeled} labeled) to data/workbench/datasets/${dataset.id}.json`);
     if (dropped) toast(`Removed the dataset's check: ${dropped}`, "error");
-    render();
-  } catch (e) { handleError(e); render(); }
+  } catch (e) { handleError(e); }
+  finally { b.datasetSaveBusy = false; render(); }
 }
 
 async function loadDataset(id) {
@@ -2582,6 +2606,30 @@ async function applyPreparedLabels() {
 
 // CSV previews belong to both the input snapshot and the draft values shown at preview time.
 const preparedDraftKey = () => canon(W.bulk.prelabel.drafts);
+const preparedLabelsUnsaved = () => W.bulk.prelabel.context === prelabelContext()
+  && Object.values(W.bulk.prelabel.drafts).some((labels) => Object.keys(labels).length);
+
+async function downloadPreparedDraft() {
+  const state = W.bulk.prelabel;
+  if (state.busy || !state.report || state.context !== prelabelContext()) return;
+  const context = state.context;
+  const draftKey = preparedDraftKey();
+  state.busy = true;
+  render();
+  try {
+    const out = await api("/api/workbench/prelabel/draft/export", {
+      rows: rowsPayload(), questions: bulkQuestions(),
+      items: Object.entries(state.drafts).filter(([, labels]) => Object.keys(labels).length)
+        .map(([index, labels]) => ({ index: Number(index), labels })),
+    });
+    if (context !== prelabelContext() || draftKey !== preparedDraftKey()) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: "application/json" }));
+    h("a", { href: url, download: "labeling-draft.json" }).click();
+    URL.revokeObjectURL(url);
+    toast("Downloaded labeling draft. Keep the original rows and questions to restore it; pictures travel separately.");
+  } catch (e) { handleError(e); }
+  finally { state.busy = false; render(); }
+}
 
 async function exportPreparedLabels() {
   const state = W.bulk.prelabel;
@@ -2601,7 +2649,7 @@ async function exportPreparedLabels() {
   finally { state.busy = false; render(); }
 }
 
-async function previewPreparedLabels(text, context = prelabelContext()) {
+async function previewPreparedLabels(text, context = prelabelContext(), format = "csv") {
   const state = W.bulk.prelabel;
   if (state.busy || !state.report || state.context !== context || context !== prelabelContext()) return;
   const draftKey = preparedDraftKey();
@@ -2609,7 +2657,7 @@ async function previewPreparedLabels(text, context = prelabelContext()) {
   state.csvPreview = null;
   render();
   try {
-    const report = await api("/api/workbench/prelabel/csv/import", { rows: rowsPayload(), questions: bulkQuestions(), text });
+    const report = await api(`/api/workbench/prelabel/${format}/import`, { rows: rowsPayload(), questions: bulkQuestions(), text });
     if (context === prelabelContext() && draftKey === preparedDraftKey()) state.csvPreview = { ...report, context, draftKey };
   } catch (e) { handleError(e); }
   finally { state.busy = false; render(); }
@@ -2629,6 +2677,13 @@ function acceptPreparedLabels() {
 
 function preparedLabelCsv(state, report) {
   const context = state.context;
+  const draftFile = h("input", { type: "file", accept: ".json,application/json", class: "hidden", disabled: state.busy });
+  draftFile.addEventListener("change", async () => {
+    const f = draftFile.files[0];
+    if (!f) return;
+    try { await previewPreparedLabels(await f.text(), context, "draft"); }
+    catch (e) { handleError(e); }
+  });
   const file = h("input", { type: "file", accept: ".csv,text/csv", class: "hidden", disabled: state.busy });
   file.addEventListener("change", async () => {
     const f = file.files[0];
@@ -2639,6 +2694,10 @@ function preparedLabelCsv(state, report) {
   });
   const preview = state.csvPreview?.context === prelabelContext() && state.csvPreview.draftKey === preparedDraftKey() ? state.csvPreview : null;
   return h("div", { class: "panel-body grid", style: { gap: "8px" } },
+    h("div", {}, draftFile,
+      h("button", { class: "btn sm", disabled: state.busy, onclick: downloadPreparedDraft }, "Download labeling draft"),
+      h("button", { class: "btn sm", disabled: state.busy, onclick: () => draftFile.click() }, "Restore labeling draft")),
+    h("p", { class: "faint" }, "Draft files include eligible tuning inputs, questions, and your draft labels across all slices. Keep the original rows and questions for a matching restore. Existing labels, held-out inputs, and model answers are excluded; pictures travel separately. Restore previews before merging into drafts. Apply and Save remain explicit."),
     h("div", {}, file,
       h("button", { class: "btn sm", disabled: state.busy || !report.items.length, onclick: exportPreparedLabels }, "Download tuning labeling CSV"),
       h("button", { class: "btn sm", disabled: state.busy, onclick: () => file.click() }, "Import tuning labeling CSV")),
@@ -2653,17 +2712,17 @@ function preparedLabelCsv(state, report) {
         h("button", { class: "btn sm", disabled: state.busy, onclick: () => { state.csvPreview = null; render(); } }, "Cancel import"))) : null);
 }
 
-function nextPreparedLabel() {
+function nextPreparedLabel(direction = 1) {
   const state = W.bulk.prelabel;
   if (state.busy || !state.report || state.context !== prelabelContext()) return;
-  const item = nextLabel(state.report.items, state.drafts, state.nextIndex);
+  const item = nextLabel(state.report.items, state.drafts, state.nextIndex, direction);
   if (!item) return;
   state.nextIndex = item.index;
   state.status = "incomplete";
   render();
   const target = $(`#prelabel-row-${item.index}`);
   target?.scrollIntoView({ behavior: "smooth", block: "center" });
-  target?.focus({ preventScroll: true });
+  (target?.querySelector("select:not(:disabled)") || target)?.focus({ preventScroll: true });
 }
 
 function prelabelBody() {
@@ -2673,7 +2732,14 @@ function prelabelBody() {
   const filled = Object.values(drafts).reduce((n, labels) => n + Object.keys(labels).length, 0);
   const progress = labelProgress(report?.items || [], drafts);
   const visible = visibleLabels(report?.items || [], drafts, state.status || "all");
-  return h("div", { class: "panel" },
+  return h("div", { class: "panel", id: "prelabel-controls", tabindex: "-1", onkeydown: (event) => {
+    const direction = labelShortcut(event);
+    if (direction === null || state.busy || !report || !progress.incomplete) return;
+    event.preventDefault();
+    const row = event.target.closest?.("[data-prelabel-index]");
+    if (row) state.nextIndex = Number(row.dataset.prelabelIndex);
+    nextPreparedLabel(direction);
+  } },
     h("div", { class: "panel-head" }, h("h2", {}, "Label before running")),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
       h("div", {}, h("button", { class: "btn sm", disabled: state.busy, onclick: () => prepareLabels() },
@@ -2698,26 +2764,28 @@ function prelabelBody() {
             onchange: (e) => { state.status = e.target.value; render(); } },
             [["all", "All rows"], ["incomplete", "Incomplete"], ["ready", "Ready"]].map(([value, text]) =>
               h("option", { value, selected: value === (state.status || "all") }, text)))),
-          h("button", { class: "btn sm", disabled: state.busy || !progress.incomplete, onclick: nextPreparedLabel }, "Next incomplete row")),
-        h("p", { class: "faint" }, "Filters change the rows shown. Apply includes drafts from every slice. Next follows the current slice and wraps to the first incomplete row."),
+          h("button", { class: "btn sm", disabled: state.busy || !progress.incomplete, onclick: () => nextPreparedLabel() }, "Next incomplete row")),
+        h("p", { class: "faint" }, "Filters change the rows shown. Apply includes drafts from every slice. Next follows the current slice and wraps to the first incomplete row. While focused in this panel, Ctrl/⌘+Enter goes to the next incomplete row; Ctrl/⌘+Shift+Enter goes to the previous one. Tab and arrow keys keep their usual behavior."),
         report.items.length && !visible.length ? h("p", { class: "muted" }, "No rows match this labeling status.") : null,
-        visible.map((item) => h("div", { class: "panel-body", id: `prelabel-row-${item.index}`, tabindex: "-1", style: { border: "1px solid var(--border)", borderRadius: "8px" } },
+        visible.map((item) => h("div", { class: "panel-body", id: `prelabel-row-${item.index}`, "data-prelabel-index": item.index, tabindex: "-1", style: { border: "1px solid var(--border)", borderRadius: "8px" } },
           h("b", {}, `Row ${item.index + 1}`),
           h("pre", { class: "code", style: { whiteSpace: "pre-wrap" } }, typeof item.row === "string" ? item.row : JSON.stringify(item.row, null, 2)),
           item.row?._image && W.bulk.pictures[item.row._image] ? photoView(W.bulk.pictures[item.row._image]) : null,
-          item.missing.map((qid) => {
+          item.missing.map((qid, position) => {
             const question = report.questions[qid];
             const choices = question.type === "noul" ? ["yes", "no"] : question.type === "score"
               ? question.criteria.map((_, i) => String(i)) : Object.keys(question.criteria);
             const current = labelText(drafts[item.index]?.[qid], question.type);
             return h("label", {}, qid, h("p", { class: "faint" }, stringify(question.instructions)),
-              h("select", { class: "input sm", "aria-label": `Label ${qid} for row ${item.index + 1}`, disabled: state.busy,
+              h("select", { class: "input sm", id: `prelabel-label-${item.index}-${position}`, "aria-label": `Label ${qid} for row ${item.index + 1}`, disabled: state.busy,
                 onchange: (e) => {
                   state.csvPreview = null;
                   const labels = state.drafts[item.index] ||= Object.create(null);
                   const value = labelValue(e.target.value, question.type);
                   if (value === null) delete labels[qid]; else labels[qid] = value;
+                  state.nextIndex = item.index;
                   render();
+                  ($(`#prelabel-label-${item.index}-${position}`) || $("#prelabel-controls"))?.focus({ preventScroll: true });
                 } }, h("option", { value: "", selected: !current }, "Choose a human label"),
                 choices.map((c) => h("option", { value: c, selected: current === c },
                   question.type === "score" ? `${c} · ${stringify(question.criteria[Number(c)])}` : c))));
