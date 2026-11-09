@@ -48,7 +48,7 @@ def _settlements(dataset_id: str, items: list, settlements: Any, sample: dict) -
     if not settlements:
         return []
     # Recompute internally to validate edits, but never return saved labels on restore.
-    report = agreement.compare(dataset_id, items=items)
+    report = agreement.compare(dataset_id, items=items, all_disagreements=True)
     eligible = {(item["row_id"], item["question"]) for item in report["disagreements"]}
     clean, seen = [], set()
     for item in settlements:

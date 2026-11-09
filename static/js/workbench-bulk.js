@@ -7,7 +7,7 @@ import { bulkPreflightBody, checkBulkPreflight } from "./bulk-preflight.js";
 import { datasetEditsBody, confirmDatasetEditsDiscard } from "./dataset-edits.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W } from "./workbench-state.js";
-import { toQuestions, sampleUrl } from "./workbench-build.js";
+import { toQuestions, sampleUrl, questionEditorError } from "./workbench-build.js";
 import { renderGuide, render } from "./workbench.js";
 import { renderDatasets } from "./workbench-datasets.js";
 import { renderGateExport } from "./workbench-checks.js";
@@ -178,7 +178,8 @@ export function renderBulk() {
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Questions to run on every row")),
           h("div", { class: "panel-body grid", style: { gap: "10px" } },
-            src("current", `Current Build questions (${Object.keys(current).length})`),
+            src("current", questionEditorError() ? "Current Build questions (invalid)" : `Current Build questions (${Object.keys(current).length})`),
+            b.source === "current" && questionEditorError() ? h("p", { class: "critical-text", role: "alert" }, questionEditorError()) : null,
             src("sample", `Sample: support triage (${Object.keys(b.sampleQuestions || {}).length})`),
             b.dataset.questions ? src("dataset", `Saved with “${b.dataset.name}” (${Object.keys(b.dataset.questions).length})`) : null,
             h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run. The sample rows carry labels for the sample questions."),
@@ -207,6 +208,8 @@ async function runBulk() {
   if (W.bulk.running) return;
   W.bulk.running = true;
   try {
+    const error = W.bulk.source === "current" ? questionEditorError() : null;
+    if (error) return toast(error, "error");
     const questions = bulkQuestions();
     if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
     if (!settleLabels("Run the rows box")) return;

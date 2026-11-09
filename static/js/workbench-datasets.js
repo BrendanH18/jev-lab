@@ -2,7 +2,7 @@
 // (jev/agreement.py) and held-out test rows (jev/testsplit.py).
 import { $, api, h, handleError, icon, pct, stat, toast } from "./common.js";
 import { secondItems, settleKey, settledItems, sessionItems, sessionSettlements, changeSecondLabel, agreementEditsUnsaved,
-  restoreAgreementEdits, restoredChoices } from "./agreement.js";
+  restoreAgreementEdits, restoredChoices, unshownSettlements } from "./agreement.js";
 import { matchesDataset } from "./saved-search.js";
 import { createHistory } from "./history.js";
 import { W, canon } from "./workbench-state.js";
@@ -494,7 +494,7 @@ async function compareAgreement(id, text = null) {
       a.labels = Object.fromEntries((a.report.second_items || []).map((item) => [item.row_id, { ...item.labels }]));
     }
     a.choices = restoredChoices(a.report.disagreements, a.pendingSettlements);
-    a.pendingSettlements = [];
+    a.pendingSettlements = unshownSettlements(a.report.disagreements, a.pendingSettlements);
     a.sessionPreview = null;
   } catch (e) { handleError(e); }
   a.busy = false;
@@ -578,14 +578,14 @@ async function saveSettled(id) {
   const a = agreeRun(id);
   const items = settledItems(a.report.disagreements, a.choices);
   if (!items.length) return;
-  const remaining = a.report.disagreements.some((item) => !Object.prototype.hasOwnProperty.call(a.choices, settleKey(item.row_id, item.question)));
+  const remaining = !!a.pendingSettlements?.length || a.report.disagreements_total > a.report.disagreements.length
+    || a.report.disagreements.some((item) => !Object.prototype.hasOwnProperty.call(a.choices, settleKey(item.row_id, item.question)));
   if (remaining && !window.confirm("Saving these settlements changes the dataset and prevents downloading the remaining agreement edits as a session. Those edits stay on this page. Download the agreement session first if you need recovery. Save these settled labels anyway?")) return;
   a.busy = true;
   render();
   try {
     const out = await api("/api/workbench/datasets/agreement/settle", { id, items });
     a.sample.session_context = null;
-    a.pendingSettlements = [];
     a.sessionPreview = null;
     // The rows box holds the labels as they were, and saving it replaces the file: unlink it until fresh rows are in,
     // so a failed refresh below cannot leave a save that undoes the settled labels.

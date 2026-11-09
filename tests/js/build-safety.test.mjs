@@ -163,3 +163,10 @@ test("duplicate editor keys cannot seed an empty Raw JSON view that erases quest
     assert.equal(JSON.stringify(W.questions), original);
   }
 });
+
+test("portable image drafts parse multi-megabyte base64 strings without regex stack overflow", () => {
+  const data_base64 = "A".repeat(8 * 1024 * 1024);
+  const draft = requestDraft({ photo: "image" }, { q: { type: "noul", instructions: "In `photo`?" } },
+    { image: { format: "png", data_base64 } });
+  assert.equal(parseUniqueJson(JSON.stringify(draft)).images.image.data_base64, data_base64);
+});

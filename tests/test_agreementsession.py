@@ -108,3 +108,16 @@ class AgreementSessionTests(Temp):
         self.assertNotIn("wants_refund", only["questions"])
         with self.assertRaisesRegex(WorkbenchError, "eligible"):
             self.export([{"row_id": only["row_id"], "labels": {"wants_refund": False}}])
+
+    def test_retained_settlement_beyond_display_cap_round_trips(self):
+        questions = {"q%d" % i: {"type": "noul", "instructions": "Question %d?" % i} for i in range(3)}
+        self.save([{"text": "Coffee %d" % i, "_expect": {qid: True for qid in questions}} for i in range(180)], questions)
+        self.sample = agreement.sample("tickets", 200, 7)
+        items = [{"row_id": item["row_id"], "labels": {qid: False for qid in questions}} for item in self.sample["items"]]
+        settlement = {"row_id": self.sample["items"][-1]["row_id"], "question": "q2", "value": True}
+        report = agreement.compare("tickets", items=items)
+        self.assertEqual(len(report["disagreements"]), agreement.SHOWN)
+        self.assertEqual(report["disagreements_total"], 540)
+        self.assertNotIn(settlement["row_id"], {item["row_id"] for item in report["disagreements"]})
+        result = agreementsession.import_session("tickets", self.export(items, [settlement]))
+        self.assertEqual(result["settlements"], [settlement])

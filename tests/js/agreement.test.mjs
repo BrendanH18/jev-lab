@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { secondItems, settleKey, settledItems, sessionSettlements, sessionItems, changeSecondLabel, agreementEditsUnsaved,
-  restoreAgreementEdits, restoredChoices } from "../../static/js/agreement.js";
+  restoreAgreementEdits, restoredChoices, unshownSettlements } from "../../static/js/agreement.js";
 
 const ITEMS = [
   { row_id: "aaa", number: 1, row: { text: "Charged twice" }, questions: ["department", "is_urgent"] },
@@ -85,4 +85,15 @@ test("recovery sends all CSV-imported human labels so a mismatched sample cannot
   const labels = { aaa: { is_urgent: false }, outside: { department: "billing" }, empty: {} };
   assert.deepEqual(sessionItems(labels), [{ row_id: "aaa", labels: { is_urgent: false } },
     { row_id: "outside", labels: { department: "billing" } }]);
+});
+
+test("CSV labels outside the current random sample still count as unsaved human edits", () => {
+  assert.equal(agreementEditsUnsaved({ sample: { items: ITEMS }, labels: { outside: { is_urgent: false } } }), true);
+});
+
+test("settlements outside a capped report remain pending for the next download and comparison", () => {
+  const settlements = [{ row_id: "first", question: "q", value: false }, { row_id: "beyond-cap", question: "q", value: true }];
+  const shown = [{ row_id: "first", question: "q" }];
+  assert.deepEqual(restoredChoices(shown, settlements), { [settleKey("first", "q")]: false });
+  assert.deepEqual(unshownSettlements(shown, settlements), [settlements[1]]);
 });

@@ -219,7 +219,7 @@ def _question_report(pairs: List[Tuple[Any, Any]]) -> dict:
             "kappa": kappa(pairs), "mixups": sorted(mixups.values(), key=lambda m: -m["rows"])}
 
 
-def compare(dataset_id: str, items: Any = None, text: Any = None) -> dict:
+def compare(dataset_id: str, items: Any = None, text: Any = None, *, all_disagreements: bool = False) -> dict:
     """Compare second labels, as `items` from the browser or the sample CSV filled in as `text`, with the dataset's.
 
     Returns {"questions": {qid: {"rows", "agree", "agreement", "low", "high", "kappa", "mixups"}}, "overall",
@@ -274,7 +274,8 @@ def compare(dataset_id: str, items: Any = None, text: Any = None) -> dict:
                "rows_agreement": counts["all_agree"] / counts["compared"] if counts["compared"] else None,
                "rows_low": low, "rows_high": high}
     return {"dataset": workbench.dataset_summary(dataset), "questions": report, "overall": overall,
-            "disagreements": disagreements[:SHOWN], "disagreements_total": len(disagreements), "counts": counts,
+            "disagreements": disagreements if all_disagreements else disagreements[:SHOWN],
+            "disagreements_total": len(disagreements), "counts": counts,
             "problems": problems[:PROBLEMS_SHOWN], "problems_total": len(problems), "second_items": second}
 
 

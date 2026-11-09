@@ -1680,7 +1680,8 @@ editor only; neither preview nor Apply calls a model or saves a dataset.
 Restore against the unchanged saved dataset and questions, preview the counts, then accept. The
 original sampled membership is recreated; saved labels stay hidden until **Compare**. A settlement
 is restored as a pending human choice and becomes visible after Compare. Downloads contain human
-edits and sample IDs, not input copies, saved labels, model answers, or measured reports. Keep the
+edits and sample IDs, not input copies, model answers, or measured reports. An explicit human
+settlement can match a saved label; other saved labels are not copied into the download. Keep the
 dataset and pictures separately. Changes to the saved dataset require a fresh session. Unsaved
 agreement work is guarded before leaving or replacing the configuration.
 Comparing a CSV from another random sample remains supported, but those labels cannot be recovered

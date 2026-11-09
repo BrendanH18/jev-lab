@@ -25,7 +25,7 @@ export function parseUniqueJson(text) {
   // JSON.parse keeps the last repeated key. Check the original tokens before accepting
   // question maps, so the Raw JSON editor and downloaded drafts cannot lose a question.
   const stack = [];
-  const tokens = text.match(/"(?:\\.|[^"\\])*"|[{}\[\]:,]|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g) || [];
+  const tokens = text.match(/"(?:[^"\\]+|\\.)*"|[{}\[\]:,]|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g) || [];
   for (const token of tokens) {
     const top = stack[stack.length - 1];
     if (token === "{") stack.push({ object: true, key: true, keys: new Set() });

@@ -63,7 +63,7 @@ export function changeSecondLabel(run, rowId, question, value) {
 }
 
 export function agreementEditsUnsaved(run) {
-  return !!run?.sample && (secondItems(run.sample.items, run.labels).length > 0
+  return !!run?.sample && (sessionItems(run.labels).length > 0
     || Object.keys(run.choices || {}).length > 0 || (run.pendingSettlements || []).length > 0);
 }
 
@@ -77,4 +77,9 @@ export function restoredChoices(disagreements, settlements) {
   const eligible = new Set(disagreements.map((item) => settleKey(item.row_id, item.question)));
   return Object.fromEntries((settlements || []).filter((item) => eligible.has(settleKey(item.row_id, item.question)))
     .map((item) => [settleKey(item.row_id, item.question), item.value]));
+}
+
+export function unshownSettlements(disagreements, settlements) {
+  const shown = new Set(disagreements.map((item) => settleKey(item.row_id, item.question)));
+  return (settlements || []).filter((item) => !shown.has(settleKey(item.row_id, item.question)));
 }
