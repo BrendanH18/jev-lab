@@ -271,3 +271,16 @@ changes without label values, and make no writes or model calls. Match exact inp
 so duplicates remain distinct, with picture names included. Saving a previewed replacement verifies the
 saved file revision under the dataset update lock; changed files require another preview. Preserve the
 existing explicit replacement, check compatibility, and test-history semantics.
+
+Dataset revision history (`jev/history.py`) is the undo for dataset files. Every write that replaces or
+deletes a dataset goes through `workbench.write_dataset`/`delete_dataset`, which first copy the current file
+byte for byte to `data/workbench/datasets/.history/<id>/<timestamp>-<hash>.json` under the dataset update
+lock; a new dataset writer must go through them too. Revisions contain only what dataset files contain
+(inputs, human labels, configuration), never model answers or measured results. Keep the newest 20 per
+dataset, skip unchanged writes and identical consecutive copies, write atomically, and validate ids and
+revision names. Deleting keeps history so the delete can be undone. `.history` is gitignored local state:
+never list it as a dataset, bundle it, or accept it as an id. Listings and restore previews show counts and
+configuration changes only, never label values. Restore validates the revision with `prepare_dataset`,
+reports the `dataset_changes` summary, and requires the preview's file token (a changed file needs another
+preview). It restores the revision's own check when it fits, keeps every test look recorded since (looks
+never shrink), and snapshots the current file first, so a restore is itself undoable.

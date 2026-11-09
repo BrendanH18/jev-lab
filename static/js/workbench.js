@@ -8,6 +8,7 @@ import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "
 import { reverseOptions } from "./variants.js";
 import { labelProgress, visibleLabels, nextLabel, labelShortcut } from "./prelabel.js";
 import { renderWorkbenchGuide } from "./workbench-guide.js";
+import { createHistory } from "./history.js";
 
 const W = {
   guideOpen: false, tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
@@ -809,7 +810,7 @@ async function loadDataset(id) {
 
 async function deleteDataset(id) {
   const b = W.bulk;
-  if (!confirm(`Delete the dataset “${id}”? This removes data/workbench/datasets/${id}.json.`)) return;
+  if (!confirm(`Delete the dataset “${id}”? This removes data/workbench/datasets/${id}.json; its history keeps a copy you can restore.`)) return;
   try {
     await api("/api/workbench/datasets/delete", { id });
     if (b.dataset.id === id) b.dataset.id = null;
@@ -817,6 +818,16 @@ async function deleteDataset(id) {
     render();
   } catch (e) { handleError(e); }
 }
+
+// Dataset revisions (static/js/history.js): after a restore, drop reports about the replaced file and reload it.
+const datasetHistory = createHistory({ h, api, toast, handleError, render: () => render(), afterRestore: async (id) => {
+  const b = W.bulk;
+  delete b.checkRuns[id];
+  delete b.agreeRuns[id];
+  if (b.dataset.id === id) b.testScore = null;
+  b.datasets = (await api("/api/workbench/datasets")).datasets;
+  await loadDataset(id);
+} });
 
 async function exportBundle(id) {
   try {
@@ -931,10 +942,13 @@ function renderDatasets() {
           h("button", { class: "btn sm", onclick: () => exportBundle(x.id) }, "Download ZIP"),
           x.labeled && x.questions ? agreeButton(x) : null,
           testControl(x),
+          x.id === d.id ? datasetHistory.button(x.id) : null,
           h("button", { class: "btn sm ghost danger", "aria-label": `Delete ${x.id}`, onclick: () => deleteDataset(x.id) }, icon("trash"))),
         x.check ? checkItem(x) : null,
-        b.agreeRuns[x.id]?.open ? agreePanel(x) : null))
-        : h("div", { class: "empty" }, "No saved datasets yet. Label some rows, name them, and save.")));
+        b.agreeRuns[x.id]?.open ? agreePanel(x) : null,
+        x.id === d.id ? datasetHistory.panel(x.id) : null))
+        : h("div", { class: "empty" }, "No saved datasets yet. Label some rows, name them, and save."),
+      datasetHistory.deleted()));
 }
 
 // ---------- Checks ----------

@@ -496,6 +496,42 @@ before you commit them.
 | `POST /api/workbench/datasets/load` | `id` | `dataset`: the saved file |
 | `POST /api/workbench/datasets/delete` | `id` | `deleted`: whether a file was removed |
 
+### Undo a dataset change: history
+
+Saving over a dataset replaces its file, so every write that replaces or deletes
+`data/workbench/datasets/<id>.json` first copies the file as it stands, byte for byte, to
+`data/workbench/datasets/.history/<id>/<UTC timestamp>-<short hash>.json`. That covers saving over a
+dataset, saving or removing a check, drawing, scoring or removing a test split, adding labels from Review,
+**Compare new rows** or label agreement, replacing a dataset from a bundle, restoring a revision, and
+deleting a dataset. A write that would leave the file unchanged keeps nothing, and a copy identical to the
+newest revision is not stored twice. The newest 20 revisions of each dataset are kept; older ones are
+removed. A revision holds what the dataset file held, inputs, human labels and configuration, never model
+answers or measured results.
+
+Revisions are local undo state, not fixtures: `.gitignore` excludes `data/workbench/datasets/.history/`,
+they never appear in the dataset list, and bundles never include them. Delete the folder to drop them.
+
+Select **History** beside the loaded dataset to list its revisions, newest first, with their row,
+labeled-row and held-out-row counts, question count and whether they hold a check. Label values are never
+shown. **Preview restore** validates the revision as a save would and shows the same summary as a
+replacement preview: inputs added and removed, label changes as counts, and changes to questions, rules,
+name and notes, the saved check and test history. It writes nothing and makes no model calls. Select
+**Restore this revision** and confirm to write it; the editor then reloads the dataset, asking first if it
+has unsaved rows. If the dataset file changed after the preview, the restore is refused: preview it again.
+
+A restore brings back the revision's rows, labels, questions, rules and its own check (when the check still
+fits the revision's questions). Test-split looks only accumulate: looks recorded after the revision are kept,
+so a restore never hides how often held-out rows were scored. The file a restore replaces becomes a revision
+itself, so a restore can be undone the same way. Deleting a dataset keeps its history: open **Deleted
+datasets with kept history** under the dataset list to restore it, which recreates the file.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/datasets/history` | `id` | `exists`, `keep`, `revisions`: `revision`, `at`, `name`, `saved_at`, `rows`, `labeled`, `test_rows`, `questions` (IDs), `checks`, `current` |
+| `GET /api/workbench/datasets/history/deleted` | | `datasets`: `id`, `name`, `revisions`, `latest` for datasets whose file is gone |
+| `POST /api/workbench/datasets/history/preview` | `id`, `revision` | the replacement-preview summary, with `revision` (the current file's token) and `restoring` |
+| `POST /api/workbench/datasets/history/restore` | `id`, `revision`, `preview_revision` | `dataset`: saved summary; `check_dropped` when the revision's check no longer fits |
+
 ### Share a dataset with its pictures
 
 Choose **Download ZIP** beside a saved dataset to bundle its saved rows, human labels,

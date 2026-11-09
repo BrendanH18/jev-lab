@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, dataset_changes, decisions, dispatch, drift, envfile, examples, find, gate, health, hello,
-                 holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
+                 history, holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -623,6 +623,26 @@ def api_wb_dataset_delete(body):
     return {"deleted": workbench.delete_dataset(str(body.get("id", "")))}
 
 
+def api_wb_dataset_history(body):
+    return history.revisions(str(body.get("id", "")))
+
+
+def api_wb_dataset_history_deleted(_body):
+    return {"datasets": history.deleted()}
+
+
+def api_wb_dataset_history_preview(body):
+    return history.preview(str(body.get("id", "")), body.get("revision"))
+
+
+def api_wb_dataset_history_restore(body):
+    dataset = history.restore(str(body.get("id", "")), body.get("revision"), body.get("preview_revision"))
+    out = {"dataset": workbench.dataset_summary(dataset)}
+    if dataset.get("check_dropped"):
+        out["check_dropped"] = dataset["check_dropped"]
+    return out
+
+
 def api_wb_bundle_export(body):
     return bundles.export_bundle(str(body.get("id", "")))
 
@@ -802,6 +822,10 @@ ROUTES = {
     ("POST", "/api/workbench/prelabel/csv/import"): api_wb_prelabel_csv_import,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
+    ("POST", "/api/workbench/datasets/history"): api_wb_dataset_history,
+    ("GET", "/api/workbench/datasets/history/deleted"): api_wb_dataset_history_deleted,
+    ("POST", "/api/workbench/datasets/history/preview"): api_wb_dataset_history_preview,
+    ("POST", "/api/workbench/datasets/history/restore"): api_wb_dataset_history_restore,
     ("POST", "/api/workbench/datasets/bundle/export"): api_wb_bundle_export,
     ("POST", "/api/workbench/datasets/bundle/preview"): api_wb_bundle_preview,
     ("POST", "/api/workbench/datasets/bundle/import"): api_wb_bundle_import,

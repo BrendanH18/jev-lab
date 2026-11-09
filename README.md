@@ -154,6 +154,12 @@ conditions.
   counts, and changes to questions, rules, saved checks, and test history. Confirm explicitly to replace it;
   a saved file changed since preview must be previewed again. No label values appear in the summary,
   and preview makes no writes or model calls.
+- **Dataset history:** every save, check change, test-split change, label append, bundle replacement,
+  restore, or delete first keeps the dataset file it replaces as a local revision under
+  `data/workbench/datasets/.history/` (newest 20 per dataset, gitignored). **History** on the loaded
+  dataset lists revisions by counts only, previews a restore with the same summary as a replacement, and
+  restores after confirmation; a restore is itself undoable, and a deleted dataset can be recreated.
+  Revisions hold inputs, human labels and configuration, never answers.
 - **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
   in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
   answers.

@@ -311,7 +311,8 @@ def delete_item(item_id: str) -> bool:
 # --- saved datasets ------------------------------------------------------------------------
 # A dataset is Bulk rows and their `_expect` labels, and optionally the question set the labels are for,
 # saved as data/workbench/datasets/<id>.json so labels outlast a reload and can be committed. It holds
-# inputs and labels only: answers are never saved, so every answer the Bulk tab shows comes from a run.
+# inputs and labels only: answers are never saved, so every answer the Bulk tab shows comes from a run. A file that is
+# replaced or deleted is kept first as a local revision under datasets/.history/<id>/ (jev/history.py).
 
 
 def datasets_dir() -> Path:
@@ -485,11 +486,15 @@ def _dataset_text(dataset: dict) -> str:
 
 @dataset_update()
 def write_dataset(dataset: dict) -> None:
-    """Replace data/workbench/datasets/<id>.json with `dataset`, atomically."""
+    """Replace data/workbench/datasets/<id>.json with `dataset`, atomically, after keeping the file it replaces as a
+    revision (jev/history.py). Every dataset writer comes through here."""
+    from . import history  # history imports this module
+
     text = _dataset_text(dataset)
     if len(text) > MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
     path = _dataset_path(dataset["id"])
+    history.snapshot(dataset["id"], text)
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name("%s.%d.partial" % (path.name, threading.get_ident()))  # one per concurrent save
     partial.write_text(text, encoding="utf-8")
@@ -597,8 +602,12 @@ def load_dataset(dataset_id: str) -> dict:
 
 @dataset_update()
 def delete_dataset(dataset_id: str) -> bool:
+    """Delete a saved dataset. Its history (jev/history.py) is kept, with the deleted file as the newest revision."""
+    from . import history
+
     path = _dataset_path(dataset_id)
     if path.exists():
+        history.snapshot(dataset_id)
         path.unlink()
         return True
     return False
