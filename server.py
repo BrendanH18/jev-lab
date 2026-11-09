@@ -20,8 +20,8 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, dataset_changes, decisions, dispatch, drift, envfile, estimate, examples, find, gate, guidelines, health, hello,
-                 history, holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, reviewsession, rules, security, shield, slices, testsplit, upgrade, workbench)
+from jev import (agreement, agreementsession, answersets, bundles, calibrate, checks, claims, compare, compare_workflows, cost, csvimport, dataset_changes, dataset_edits, decisions, dispatch, drift, envfile, estimate, examples, find, gate, guidelines, health, hello,
+                 history, holdout, images, counter, lint, policy, preflight, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, reviewsession, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -469,6 +469,31 @@ def api_wb_lint(body):
     return lint.check(state, questions, refs if isinstance(refs, dict) else {})
 
 
+def api_wb_draft_validate(body):
+    state = workbench.validate_state(body.get("state"))
+    questions = workbench.validate_questions(body.get("questions"))
+    assets = workbench.request_images(state, questions, body.get("images"))
+    return {"questions": len(questions), "pictures": len(assets)}
+
+
+def api_wb_preflight(body):
+    return preflight.check(body.get("rows"), body.get("questions"))
+
+
+def api_wb_dataset_edits_prepare(body):
+    return dataset_edits.prepare(body.get("rows"), body.get("questions"))
+
+
+def api_wb_dataset_edits_preview(body):
+    return dataset_edits.preview(body.get("rows"), body.get("questions"), body.get("context"),
+                                 body.get("action"), body.get("items"))
+
+
+def api_wb_dataset_edits_apply(body):
+    return dataset_edits.apply(body.get("rows"), body.get("questions"), body.get("context"),
+                               body.get("action"), body.get("items"), body.get("token"))
+
+
 def api_wb_items(_body):
     return {"items": workbench.list_items()}
 
@@ -550,6 +575,24 @@ def api_wb_compare(body):
 def api_wb_compare_score(body):
     return compare.evaluate(body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("first") or "A"),
                             str(body.get("bound") or "estimate"))
+
+
+def api_wb_compare_slices(body):
+    return compare_workflows.by_slice(body.get("rows"), body.get("field"), str(body.get("signal") or "confidence"),
+                                      str(body.get("first") or "A"), str(body.get("bound") or "estimate"))
+
+
+def api_wb_compare_labeling(body):
+    return compare_workflows.labeling(body.get("rows"), body.get("questions"), body.get("indices"), body.get("qid"))
+
+
+def api_wb_agreement_session_export(body):
+    return agreementsession.export_session(str(body.get("id", "")), body.get("context"), body.get("rows"),
+                                           body.get("seed"), body.get("items"), body.get("settlements"))
+
+
+def api_wb_agreement_session_import(body):
+    return agreementsession.import_session(str(body.get("id", "")), body.get("session"))
 
 
 def api_wb_recalibrate(body):
@@ -860,6 +903,11 @@ ROUTES = {
     ("GET", "/api/workbench/datasets"): api_wb_datasets,
     ("POST", "/api/workbench/datasets"): api_wb_dataset_save,
     ("POST", "/api/workbench/datasets/preview"): api_wb_dataset_preview,
+    ("POST", "/api/workbench/draft/validate"): api_wb_draft_validate,
+    ("POST", "/api/workbench/preflight"): api_wb_preflight,
+    ("POST", "/api/workbench/dataset-edits/prepare"): api_wb_dataset_edits_prepare,
+    ("POST", "/api/workbench/dataset-edits/preview"): api_wb_dataset_edits_preview,
+    ("POST", "/api/workbench/dataset-edits/apply"): api_wb_dataset_edits_apply,
     ("POST", "/api/workbench/health"): api_wb_health,
     ("POST", "/api/workbench/prelabel"): api_wb_prelabel,
     ("POST", "/api/workbench/prelabel/draft/export"): api_wb_prelabel_draft_export,
@@ -908,6 +956,10 @@ ROUTES = {
     ("POST", "/api/workbench/slices"): api_wb_slices,
     ("POST", "/api/workbench/cost"): api_wb_cost,
     ("POST", "/api/workbench/compare"): api_wb_compare,
+    ("POST", "/api/workbench/compare/slices"): api_wb_compare_slices,
+    ("POST", "/api/workbench/compare/labeling"): api_wb_compare_labeling,
+    ("POST", "/api/workbench/datasets/agreement/session/export"): api_wb_agreement_session_export,
+    ("POST", "/api/workbench/datasets/agreement/session/import"): api_wb_agreement_session_import,
     ("POST", "/api/workbench/compare/score"): api_wb_compare_score,
 }
 

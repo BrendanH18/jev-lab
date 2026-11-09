@@ -6,19 +6,21 @@ import { readHandoff } from "./handoff.js";
 import { renderWorkbenchGuide } from "./workbench-guide.js";
 import { createGuidelines } from "./guidelines.js";
 import { W } from "./workbench-state.js";
-import { loadInto, renderBuild } from "./workbench-build.js";
+import { buildUnsaved, loadInto, renderBuild } from "./workbench-build.js";
 import { renderTests, renderExamples } from "./workbench-tests.js";
 import { rowsText, bulkUnsaved, countRows, bulkQuestions, renderBulk } from "./workbench-bulk.js";
 import { healthContext } from "./workbench-import.js";
+import { datasetEditsUnsaved } from "./dataset-edits.js";
+import { agreementSessionsUnsaved } from "./workbench-datasets.js";
 import { preparedLabelsUnsaved } from "./workbench-labeling.js";
-import { reviewQueuesUnsaved } from "./workbench-review.js";
+import { reviewQueuesUnsaved, confirmReviewDiscard } from "./workbench-review.js";
 import { updateCal, syncAttachedSets } from "./workbench-calibrate.js";
 import { updatePolicy } from "./workbench-policy.js";
 import { renderCompare, updateCmpChart, updateCascade } from "./workbench-compare.js";
 
 // Labeling guidelines (static/js/guidelines.js): human-only, shown beside label controls, never sent to the model.
 // Kept on W so a view rendered without it (tests/js) simply shows no guideline.
-W.guides = createGuidelines({ h, api, handleError, toast, rerender: () => render() });
+W.guides = createGuidelines({ h, api, handleError, toast, rerender: () => render(), beforeSave: (id) => confirmReviewDiscard(id) });
 const TABS = [["build", "Build"], ["tests", "Tests"], ["bulk", "Bulk"], ["compare", "Compare"], ["examples", "Examples"]];
 
 // ---------- boot ----------
@@ -32,7 +34,7 @@ async function boot() {
   W.items = items.items;
   W.bulk.rowsText = W.bulk.savedText = rowsText(sample.rows);
   W.bulk.datasets = sets.datasets;
-  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved() || preparedLabelsUnsaved() || reviewQueuesUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved() || preparedLabelsUnsaved() || reviewQueuesUnsaved() || datasetEditsUnsaved() || buildUnsaved() || agreementSessionsUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
   W.bulk.sampleQuestions = sample.questions;
   W.compare.terse = sample.terse_questions;
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);

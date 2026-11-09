@@ -318,3 +318,23 @@ full normalized slice identities preserve labels across filters. Warn before lea
 queue with unsaved human edits, including check saves/removal/upgrades, bundle replacement, dataset
 deletion and history restore; cancel before any saved configuration changes. Pictures travel
 separately from session files.
+
+Workbench input repairs (`jev/dataset_edits.py`) are separate explicit editor actions: prepare,
+preview, then apply invalid/conflicting Choice/Noul/Score tuning-label corrections or redundant-copy
+cleanup. They make no model calls or dataset writes. Exclude entire input groups containing a
+held-out copy. Cleanup requires identical input identity and identical full label maps; never choose
+between conflicting labels automatically. Preview binds rows, labels, markers, pictures and ordered
+questions; Apply verifies the preview and clears stale Bulk results. Saving remains explicit.
+Bulk preflight (`jev/preflight.py`) reads the same capped request states and picture references as
+Bulk, reports row numbers/paths without label values, and makes no calls or writes. Findings are
+advisory and require a deliberate continue before paid Bulk runs.
+Build drafts contain request inputs, ordered questions and pictures only; validate and preview
+before explicit replacement. Reject duplicate question IDs/Choice keys before serialization, and
+mark answers from changed requests as outdated, including edits during in-flight requests.
+Agreement session recovery contains human second labels and explicit settlements only, bound to
+the saved dataset/schema and original blind sample. Restore does not reveal saved labels until
+Compare. Guard unsaved agreement edits before leaving or replacing their saved configuration.
+Compare slices reuse successful paired tuning answers and the selected confidence basis. Disagreement
+handoffs carry original inputs and blank label controls, never model suggestions; preserve existing
+labels, duplicate positions, pictures and held-out markers. General labeling CSV/draft/apply retains
+the full source snapshot. Saved-item search/filtering changes presentation only, preserving edits.

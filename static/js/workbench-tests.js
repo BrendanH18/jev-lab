@@ -1,6 +1,7 @@
 // Tests tab (saved items, run again live) and the Examples gallery, both of which load a request into Build.
-import { api, callStats, h, handleError, icon, inspect, ms, statusBadge, usd } from "./common.js";
+import { $, api, callStats, h, handleError, icon, inspect, ms, statusBadge, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
+import { matchesSaved } from "./saved-search.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
@@ -8,6 +9,15 @@ import { render } from "./workbench.js";
 // ---------- Tests ----------
 export function renderTests() {
   const res = W.runResults;
+  const query = W.testSearch || "";
+  const search = h("input", { class: "input", type: "search", value: query, placeholder: "Search tests by name or notes",
+    "aria-label": "Search saved tests", oninput: (event) => {
+      W.testSearch = event.target.value;
+      const matches = new Set(W.items.filter((item) => matchesSaved(item, W.testSearch)).map((item) => item.id));
+      $("#saved-test-results")?.querySelectorAll(".saved-test-item").forEach((row) => { row.style.display = matches.has(row.dataset.testId) ? "" : "none"; });
+      const count = $("#saved-test-count");
+      if (count) count.textContent = `${matches.size} of ${W.items.length} tests shown. Run all runs every saved test.`;
+    } });
   const byId = Object.fromEntries((res?.runs || []).map((r) => [r.id, r]));
   const runAll = h("button", { class: "btn primary", disabled: !W.items.length, onclick: () => runTests() }, icon("play"), `Run all ${W.items.length} tests`);
   return h("div", { class: "grid", style: { gap: "16px" } },
@@ -17,9 +27,11 @@ export function renderTests() {
           h("span", { class: `badge ${res.failed ? "critical" : "good"}` }, icon(res.failed ? "x" : "check"), `${res.passed} passed · ${res.failed} failed`),
           h("span", { class: "stat" }, "wall", h("b", {}, ms(res.wall_ms))), h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd)))) : null,
         estimateLine(h, api, "items", () => (W.items.length ? {} : null)), runAll),
-      W.items.length ? W.items.map((it) => {
+      h("div", { class: "panel-body" }, search,
+        h("span", { class: "faint", id: "saved-test-count" }, `${W.items.filter((item) => matchesSaved(item, query)).length} of ${W.items.length} tests shown. Run all runs every saved test.`)),
+      W.items.length ? h("div", { id: "saved-test-results" }, W.items.map((it) => {
         const r = byId[it.id];
-        return h("div", { class: "item" },
+        return h("div", { class: "item saved-test-item", "data-test-id": it.id, style: { display: matchesSaved(it, query) ? "" : "none" } },
           h("div", { class: "grid", style: { gap: "4px" } },
             h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
               r ? statusBadge(r.error ? "fail" : r.ok ? "pass" : "fail") : null, h("b", {}, it.name), h("code", { class: "faint" }, it.id),
@@ -35,7 +47,7 @@ export function renderTests() {
             h("button", { class: "btn sm", onclick: () => openItem(it) }, "Open"),
             h("button", { class: "btn sm ghost", onclick: () => runTests([it.id]) }, icon("play")),
             h("button", { class: "btn sm ghost danger", onclick: () => deleteTest(it.id) }, icon("trash"))));
-      }) : h("div", { class: "empty" }, "No saved tests yet. Run something in Build, then “Save as test”. Files land in data/workbench/ so they can be committed alongside your code.")),
+      })) : h("div", { class: "empty" }, "No saved tests yet. Run something in Build, then “Save as test”. Files land in data/workbench/ so they can be committed alongside your code.")),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "Why tests for a model?")),
       h("div", { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },

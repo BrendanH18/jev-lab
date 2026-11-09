@@ -1,3 +1,4 @@
+import { confirmAgreementDiscard } from "./workbench-datasets.js";
 // Review queue (jev/decisions.py): label the rows an exported gate sent to review and its audit sample.
 import { api, h, handleError, icon, mount, pct, stat, toast } from "./common.js";
 import { labelShortcut } from "./prelabel.js";
@@ -74,6 +75,7 @@ function replaceQueue(q) {
 }
 
 export function confirmReviewDiscard(id) {
+  if (!confirmAgreementDiscard(id)) return false;
   const q = W.bulk.checkRuns[id]?.queue;
   if (!q) return true;
   if (q.busy) { toast("Wait for the Review operation to finish before replacing this queue.", "error"); return false; }

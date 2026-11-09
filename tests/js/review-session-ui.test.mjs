@@ -165,7 +165,7 @@ test("all check and dataset queue-discarding actions honor cancellation before r
 test("discard guard preserves unsaved and busy Review queues", () => {
   const q = { edits: { 1: { topic: "delivery" } } };
   const W = state(q);
-  const guard = make("confirmReviewDiscard", { W, toast: nothing, window: { confirm: () => false } }, ["replaceQueue"]);
+  const guard = make("confirmReviewDiscard", { W, confirmAgreementDiscard: () => true, toast: nothing, window: { confirm: () => false } }, ["replaceQueue"]);
   assert.equal(guard("coffee"), false);
   q.busy = true;
   assert.equal(guard("coffee"), false);

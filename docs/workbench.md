@@ -1646,3 +1646,69 @@ labels, repeated IDs, and stale exports are rejected. Accepting a preview merges
 into drafts, replacing drafts for those cells while retaining other drafts. It makes no model call
 or dataset write. Apply updates the rows editor and clears old Bulk results; save the dataset
 explicitly to retain the labels. Changing rows, questions, or drafts invalidates a pending preview.
+
+
+## Keep requests and inputs safe while iterating
+
+**Download Build draft** saves the current unrun request: input state, ordered questions, and
+pictures. It contains no answers or API settings. **Restore Build draft** validates the request
+and pictures without a model call, previews counts, then replaces the editor only after acceptance.
+An unsaved request asks before replacement or leaving. Apply Raw JSON edits before running,
+exporting, or downloading. Repeated question IDs and Choice keys, including whitespace collisions,
+are rejected rather than overwritten. Editing a request marks prior answers as outdated; rerun
+before saving those answers as a test. This also covers edits made during a request.
+
+**Check Bulk inputs** reads every capped Bulk input through the same state-building helpers as
+the paid run. It reports missing backticked paths and unavailable pictures by row number, without
+label values. Bulk runs this check automatically before spending; findings are advisory, so you
+can review them or deliberately continue. A changed input snapshot requires another check.
+
+**Repair dataset labels** offers invalid and conflicting Choice, Noul, and Score tuning labels
+with their inputs and existing tuning values. Choose the human replacements for each occurrence,
+then **Preview label repairs**. The preview lists only row/question change counts. **Apply previewed
+edits to rows** updates the editor and clears old Bulk results. **Save rows and labels** remains
+separate. Missing labels use the existing pre-run labeling panel; Box labels and unknown question
+keys still require JSON editing. Entire groups containing held-out inputs are protected, even
+when a tuning copy has an invalid label. No held-out values appear in the repair queue.
+
+**Preview duplicate cleanup** keeps the first occurrence of each exact input/full-label-map pair,
+then previews the row numbers it would remove. Conflicting labels remain distinct, and groups with
+any held-out occurrence are excluded. Picture names are part of input identity. Apply affects the
+editor only; neither preview nor Apply calls a model or saves a dataset.
+
+**Download agreement session** preserves partial second labels and explicit settlement choices.
+Restore against the unchanged saved dataset and questions, preview the counts, then accept. The
+original sampled membership is recreated; saved labels stay hidden until **Compare**. A settlement
+is restored as a pending human choice and becomes visible after Compare. Downloads contain human
+edits and sample IDs, not input copies, model answers, or measured reports. An explicit human
+settlement can match a saved label; other saved labels are not copied into the download. Keep the
+dataset and pictures separately. Changes to the saved dataset require a fresh session. Unsaved
+agreement work is guarded before leaving or replacing the configuration.
+Comparing a CSV from another random sample remains supported, but those labels cannot be recovered
+through the current sample's session. Download rejects that mismatch instead of silently omitting
+rows; keep the original filled-in CSV.
+
+Use dataset search by name, ID, or notes and filters for check/label availability. Saved tests
+have the same text search. These controls only hide items; their queues and human edits survive,
+and **Run all** continues to run every saved test.
+
+**Compare by slice** groups successful paired tuning answers by a selected input field, retaining
+full normalized value identities even when display text is shortened. It shows accuracy intervals,
+automation at the selected confidence basis, and exploratory paired comparisons. It uses the current
+run only, with no extra calls or saved results. **Label missing disagreement inputs** opens blank
+controls for disagreements lacking the selected question's label. Accepting replaces the Bulk editor
+with the original Compare inputs and selects variant A's questions; existing labels, duplicate
+positions, pictures, and held-out rows survive. Apply and Save remain explicit. Reopening the general
+labeling panel or its CSV/draft handoff uses the full eligible snapshot rather than only disagreements.
+
+| Endpoint | Request | Result |
+| --- | --- | --- |
+| `POST /api/workbench/draft/validate` | `state`, `questions`, `images` | Validated question/picture counts; no writes |
+| `POST /api/workbench/preflight` | `rows`, `questions` | Row/path/picture findings, with no label values |
+| `POST /api/workbench/dataset-edits/prepare` | `rows`, optional `questions` | Eligible tuning repairs, cleanup positions, snapshot `context` |
+| `POST /api/workbench/dataset-edits/preview` | Same source, `context`, `action` (`repair` or `deduplicate`), `items` (index/labels) | Counts/positions and preview `token` |
+| `POST /api/workbench/dataset-edits/apply` | Same preview request plus `token` | Edited rows for the browser, never saved |
+| `POST /api/workbench/datasets/agreement/session/export` | `id`, `context`, sampled `rows`, `seed`, human `items`, `settlements` | Portable human-edit session |
+| `POST /api/workbench/datasets/agreement/session/import` | `id`, `session` | Blind sample, validated human edits and preview counts |
+| `POST /api/workbench/compare/slices` | Answer `rows` with original inputs, optional `field`, `signal`, `first`, `bound` | Successful-pair scores by input value |
+| `POST /api/workbench/compare/labeling` | Original `rows`, A's `questions`, disagreement `indices`, `qid` | Blank prelabel queue at original row positions |

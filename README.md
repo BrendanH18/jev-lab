@@ -106,6 +106,9 @@ conditions.
 
 - **Build:** supply text or JSON state, attach up to four images, and edit Noul, Choice, Score, and
   Box questions visually or as JSON.
+- **Build drafts and safeguards:** download an unfinished request with its questions and pictures, then
+  preview and restore it without a paid run. Duplicate question IDs and Choice keys are rejected.
+  Editing a request marks previous answers as outdated and prevents saving them as a current test.
 - **Check questions:** before a paid call, read the request for common mistakes, such as a backticked path
   the state does not have, two questions that ask the same thing, or two options with the same description.
   Each finding links to TypeSafe's guide. It is plain code and makes no model call.
@@ -121,12 +124,18 @@ conditions.
 - **Import CSV:** bring rows in from a spreadsheet. Choose which columns the model reads and which hold
   labels for which question. Label values that fit no answer are listed rather than guessed. It makes
   no model calls.
+- **Bulk input checks:** check referenced state paths and named pictures across all run inputs without
+  model calls. Bulk checks automatically before spending and asks whether to continue when findings exist.
 - **Dataset health:** before a paid Bulk run, inspect pasted rows or a loaded dataset for duplicate inputs,
   conflicting human labels, missing or invalid labels, and identical inputs on both sides of a test split.
   Findings list row numbers without revealing test labels. Fixes stay manual; inspection makes no model calls
   or saved changes. Choose an input field to see row and distinct-input counts, plus valid, missing, and invalid
   label counts by value, separately for tuning and held-out rows. Label values stay hidden.
   It compares exact inputs and picture names, not similar text or image contents.
+- **Repair labels and copies:** choose replacements for invalid or conflicting Choice/Noul/Score tuning
+  labels, preview row/question change counts, then explicitly apply to the rows editor. Duplicate cleanup
+  previews removal of redundant copies with identical inputs and labels. Groups containing held-out inputs
+  are excluded. Apply saves nothing; **Save rows and labels** keeps the changes.
 - **Label before running:** fill missing Choice, Noul, and Score labels on tuning rows without paying for
   a Bulk run. Filter by an input slice while keeping drafts across slices, then **Apply labels to rows**
   and explicitly save the dataset. Existing labels and held-out rows stay unchanged; Box and array rows
@@ -181,6 +190,11 @@ conditions.
   95% interval, and Cohen's kappa, the agreement beyond chance. Then settle each difference and save it to
   the dataset. Accuracy is measured against labels, so it means little above the share two people agree on.
   It makes no model call.
+  Download and restore unfinished agreement sessions, including explicit settlement choices. Restore
+  previews human edits against the unchanged dataset and original blind sample; saved labels remain hidden
+  until Compare. Leaving or replacing unsaved agreement work asks for confirmation.
+- **Find saved work:** search datasets and saved tests by name, ID, or notes. Filter datasets by saved
+  check and label availability. Filters preserve queue edits; **Run all** still runs every saved test.
 - **Labeling guidelines:** write, per question, how a person should label it, with short made-up
   examples, and save them with a dataset. They appear collapsed beside every label control: Label before
   running, the Review queue, Label agreement, and Label new traffic. On blind rows, an example matching the
@@ -265,6 +279,10 @@ conditions.
   variant B asks A's questions twice, once with each Choice question's options reversed, and averages
   the answers in code, so the report shows what the second call per row buys. A cascade shows what asking one
   variant first, and the other only when it is unsure, would cost and how accurate it would be.
+  **Compare by slice** scores successful pairs by an input field using this run's answers. **Label missing
+  disagreement inputs** opens blank human controls for disputed inputs, retaining the original rows,
+  existing labels, pictures, and held-out markers. Apply and Save remain explicit. Reopening the general
+  labeling queue or downloading its CSV uses the full eligible input snapshot.
 - **Recalibrate probabilities:** fit Platt or isotonic maps from Bulk labels, compare on unseen folds,
   and copy Python or JavaScript for code that uses the chance an answer is right. Routing stays on raw signals.
 - **Open a demo's request:** **Open in Workbench**, in any demo's **Inspect JSON** drawer, opens the
