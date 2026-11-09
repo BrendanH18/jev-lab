@@ -61,6 +61,8 @@ def validate_questions(questions: Any) -> Dict[str, dict]:
     for qid, q in questions.items():
         if not isinstance(qid, str) or not qid.strip():
             raise WorkbenchError("Question ids must be non-empty strings")
+        if qid.strip() in out:
+            raise WorkbenchError("Question ids must be unique after trimming whitespace: %r" % qid.strip())
         if not isinstance(q, dict):
             raise WorkbenchError("Question %r must be an object" % qid)
         qtype = q.get("type")

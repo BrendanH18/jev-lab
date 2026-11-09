@@ -1,7 +1,9 @@
 // Saved datasets: save, load, delete, revision history and portable bundles, plus label agreement
 // (jev/agreement.py) and held-out test rows (jev/testsplit.py).
 import { $, api, h, handleError, icon, pct, stat, toast } from "./common.js";
-import { secondItems, settleKey, settledItems } from "./agreement.js";
+import { secondItems, settleKey, settledItems, sessionItems, sessionSettlements, changeSecondLabel, agreementEditsUnsaved,
+  restoreAgreementEdits, restoredChoices } from "./agreement.js";
+import { matchesDataset } from "./saved-search.js";
 import { createHistory } from "./history.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
@@ -51,6 +53,7 @@ async function saveDataset() {
   try {
     const preview = await api("/api/workbench/datasets/preview", spec);
     if (!current()) return toast("Rows or dataset settings changed. Save again to preview the current changes.", "error");
+    if (!confirmReviewDiscard(preview.id)) return;
     if (preview.exists && !confirm(datasetChangeMessage(preview))) return;
     const { dataset, check_dropped: dropped, guidelines_dropped: guidesDropped } = await api("/api/workbench/datasets", { ...spec, preview_revision: preview.revision });
     if (current()) {
@@ -192,6 +195,7 @@ function bundleImportForm() {
 export function renderDatasets() {
   const b = W.bulk;
   const d = b.dataset;
+  const filters = b.datasetSearch || (b.datasetSearch = { query: "", check: "all", labels: "all" });
   const name = h("input", { class: "input", placeholder: "Dataset name, e.g. Support tickets, March", value: d.name, "aria-label": "Dataset name" });
   name.addEventListener("input", () => { d.name = name.value; });
   const notes = h("input", { class: "input", placeholder: "Notes (optional)", value: d.notes, "aria-label": "Dataset notes" });
@@ -210,13 +214,15 @@ export function renderDatasets() {
       h("p", { class: "faint", style: { fontSize: "12px" } }, "Saves the rows box, with the labels you chose in the results table, as one JSON file you can commit. Only rows and labels are saved, never answers: run a loaded dataset to get answers."),
       bundleImportForm(),
       b.datasets.some((x) => x.check) ? h("datalist", { id: "cmp-models" }, (W.compare.models || []).map((n) => h("option", { value: n }))) : null,
-      b.datasets.length ? b.datasets.map((x) => h("div", { class: "item" },
+      datasetSearchControls(filters),
+      b.datasets.length ? h("div", { id: "dataset-search-results" }, b.datasets.map((x) => h("div", { class: "item dataset-search-item", "data-dataset-id": x.id,
+        style: { display: matchesDataset(x, filters) ? "" : "none" } },
         h("div", { class: "grid", style: { gap: "2px" } },
           h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
             h("b", {}, x.name || x.id), h("code", { class: "faint" }, x.id), x.id === d.id ? h("span", { class: "badge" }, "loaded") : null),
           h("span", { class: "faint", style: { fontSize: "12px" } }, labeledText(x) + (x.saved_at ? ` · saved ${x.saved_at.slice(0, 10)}` : "")),
           x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
-        h("div", { style: { display: "flex", gap: "6px" } },
+        h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
           h("button", { class: "btn sm", onclick: () => loadDataset(x.id) }, "Load"),
           h("button", { class: "btn sm", onclick: () => exportBundle(x.id) }, "Download ZIP"),
           x.labeled && x.questions ? agreeButton(x) : null,
@@ -227,9 +233,32 @@ export function renderDatasets() {
         x.check ? checkItem(x) : null,
         b.agreeRuns[x.id]?.open ? agreePanel(x) : null,
         W.guides?.panel(x),
-        x.id === d.id ? datasetHistory.panel(x.id) : null))
+        x.id === d.id ? datasetHistory.panel(x.id) : null)))
         : h("div", { class: "empty" }, "No saved datasets yet. Label some rows, name them, and save."),
       datasetHistory.deleted()));
+}
+
+// Filtering keeps every queue mounted, so hidden human edits remain intact.
+function datasetSearchControls(filters) {
+  const update = () => {
+    const matches = new Set(W.bulk.datasets.filter((item) => matchesDataset(item, filters)).map((item) => item.id));
+    const list = $("#dataset-search-results");
+    list?.querySelectorAll(".dataset-search-item").forEach((row) => { row.style.display = matches.has(row.dataset.datasetId) ? "" : "none"; });
+    const count = $("#dataset-search-count");
+    if (count) count.textContent = `${matches.size} of ${W.bulk.datasets.length} datasets shown`;
+  };
+  const search = h("input", { class: "input", type: "search", value: filters.query, placeholder: "Search datasets by name or notes",
+    "aria-label": "Search datasets", oninput: (event) => { filters.query = event.target.value; update(); } });
+  const select = (key, label, options) => h("select", { class: "input", "aria-label": label,
+    onchange: (event) => { filters[key] = event.target.value; update(); } },
+  options.map(([value, text]) => h("option", { value, selected: filters[key] === value }, text)));
+  return h("div", { class: "grid", style: { gap: "6px" } }, search,
+    h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
+      select("check", "Filter datasets by saved check", [["all", "All checks"], ["with", "With a saved check"], ["without", "Without a saved check"]]),
+      select("labels", "Filter datasets by labeling status", [["all", "All labeling states"], ["none", "No rows labeled"],
+        ["some", "Some rows labeled"], ["every", "Every row has a label"]])),
+    h("span", { class: "faint", id: "dataset-search-count" }, `${W.bulk.datasets.filter((item) => matchesDataset(item, filters)).length} of ${W.bulk.datasets.length} datasets shown`),
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } }, "A labeled row has at least one saved label; this does not establish complete or valid labels. Filters only change the list shown."));
 }
 
 // ---------- Label agreement ----------
@@ -239,7 +268,101 @@ export function renderDatasets() {
 // and labels only. Nothing here calls the model.
 function agreeRun(id) {
   return W.bulk.agreeRuns[id] || (W.bulk.agreeRuns[id] = { open: false, rows: "30", busy: false, sample: null, labels: {},
-    report: null, choices: {}, problem: null });
+    report: null, choices: {}, pendingSettlements: [], sessionPreview: null, problem: null });
+}
+
+export function agreementSessionsUnsaved(id = null) {
+  return Object.entries(W.bulk.agreeRuns || {}).some(([key, run]) => (id === null || key === id) && agreementEditsUnsaved(run));
+}
+
+export function confirmAgreementDiscard(id) {
+  return !agreementSessionsUnsaved(id)
+    || window.confirm("This changes the saved dataset used by unfinished Label agreement edits. Download the agreement session first to keep a copy. Continue?");
+}
+
+const agreementEditContext = (run) => JSON.stringify([run.sample?.session_context, run.labels, run.choices, run.pendingSettlements]);
+
+function agreementSessionPanel(id, run) {
+  const file = h("input", { type: "file", accept: ".json,application/json", hidden: true,
+    "aria-label": `Restore agreement session for ${id}`, onchange: async () => {
+      const selected = file.files[0];
+      if (!selected) return;
+      try {
+        if (selected.size > 1024 * 1024) throw new Error("Agreement session must be at most 1 MiB.");
+        await previewAgreementSession(id, JSON.parse(await selected.text()));
+      } catch (e) { handleError(e); }
+      file.value = "";
+    } });
+  const preview = run.sessionPreview;
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: run.busy || !run.sample?.session_context,
+        onclick: () => downloadAgreementSession(id) }, "Download agreement session"),
+      h("button", { class: "btn sm", disabled: run.busy, onclick: () => file.click() }, "Restore agreement session"), file),
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      "Recovery keeps your second labels, explicit settlement choices, and original sample. Restore needs the unchanged saved dataset and questions; saved labels stay hidden until you press Compare. Pictures travel separately."),
+    run.sample && !run.sample.session_context ? h("p", { class: "faint" },
+      "Saving settlements changed this dataset. Remaining labels stay on this page, but the original session can no longer be downloaded. Download before saving settlements when you need recovery.") : null,
+    run.pendingSettlements?.length ? h("p", { class: "faint" }, `${run.pendingSettlements.length} restored settlement choices will appear after Compare.`) : null,
+    preview ? h("div", { class: "callout" }, h("div", {},
+      h("b", {}, "Agreement session preview"),
+      h("p", { class: "muted" }, `${preview.result.counts.rows} sampled rows · ${preview.result.counts.labels} second labels · ${preview.result.counts.settlements} settlement choices. No saved changes or model calls.`),
+      h("button", { class: "btn sm primary", disabled: run.busy, onclick: () => acceptAgreementSession(id) }, "Accept restored agreement session"),
+      h("button", { class: "btn sm ghost", disabled: run.busy, onclick: () => { run.sessionPreview = null; render(); } }, "Cancel restore"))) : null);
+}
+
+async function downloadAgreementSession(id) {
+  const run = agreeRun(id), sample = run.sample;
+  if (run.busy || !sample?.session_context) return;
+  run.busy = true;
+  render();
+  try {
+    const session = await api("/api/workbench/datasets/agreement/session/export", {
+      id, context: sample.session_context, rows: sample.sample_size, seed: sample.seed,
+      items: sessionItems(run.labels),
+      settlements: [...(run.pendingSettlements || []), ...sessionSettlements(run.choices)],
+    });
+    const url = URL.createObjectURL(new Blob([JSON.stringify(session, null, 2)], { type: "application/json" }));
+    h("a", { href: url, download: `${id}-agreement-session.json` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Downloaded agreement session. Keep the unchanged saved dataset to restore it.");
+  } catch (e) { handleError(e); }
+  finally { run.busy = false; render(); }
+}
+
+async function previewAgreementSession(id, session) {
+  const run = agreeRun(id);
+  if (run.busy) return;
+  const context = agreementEditContext(run);
+  run.busy = true;
+  run.sessionPreview = null;
+  render();
+  try {
+    const result = await api("/api/workbench/datasets/agreement/session/import", { id, session });
+    if (W.bulk.agreeRuns[id] === run && agreementEditContext(run) === context) run.sessionPreview = { session, result, context };
+  } catch (e) { handleError(e); }
+  finally { run.busy = false; render(); }
+}
+
+async function acceptAgreementSession(id) {
+  const run = agreeRun(id), preview = run.sessionPreview;
+  if (run.busy || !preview || agreementEditContext(run) !== preview.context) return;
+  if (agreementEditsUnsaved(run) && !window.confirm("Replace the current agreement labels and settlement choices with this session?")) return;
+  run.busy = true;
+  render();
+  try {
+    const result = await api("/api/workbench/datasets/agreement/session/import", { id, session: preview.session });
+    if (W.bulk.agreeRuns[id] !== run || run.sessionPreview !== preview || agreementEditContext(run) !== preview.context) return;
+    run.sample = result.sample;
+    Object.assign(run, restoreAgreementEdits(result));
+    run.rows = String(result.sample.sample_size);
+    run.report = null;
+    run.choices = {};
+    run.sessionPreview = null;
+    await loadPictureUrls(result.sample.items);
+    toast("Restored human agreement edits. Compare explicitly to see saved labels; Save settled labels remains separate.");
+  } catch (e) { handleError(e); }
+  finally { run.busy = false; render(); }
 }
 
 function agreeButton(x) {
@@ -262,6 +385,7 @@ function agreePanel(x) {
       h("label", { class: "faint", style: { fontSize: "12px", display: "flex", gap: "6px", alignItems: "center" } }, "Sample", rows, "labeled rows"),
       h("button", { class: "btn sm", disabled: a.busy, onclick: () => drawAgreeSample(x.id) },
         a.busy && !a.sample ? [h("span", { class: "spin" }), " Drawing…"] : [icon("layers"), a.sample ? "Draw a new sample" : "Draw sample"])),
+    agreementSessionPanel(x.id, a),
     a.sample ? agreeSampleView(x, a) : null,
     a.report ? agreeReport(x, a) : null);
 }
@@ -270,7 +394,7 @@ async function drawAgreeSample(id) {
   const a = agreeRun(id);
   const n = Number(a.rows || 0);
   if (!Number.isInteger(n) || n < 1 || n > 200) return toast("Sample a whole number of rows, from 1 to 200", "error");
-  if (a.sample && (secondItems(a.sample.items, a.labels).length || Object.keys(a.choices).length) && !confirm("Draw a new sample? The labels given on this one are lost.")) return;
+  if (agreementEditsUnsaved(a) && !confirm("Draw a new sample? Download the agreement session first to keep the labels given on this one.")) return;
   a.busy = true;
   render();
   try {
@@ -279,6 +403,8 @@ async function drawAgreeSample(id) {
     a.labels = {};
     a.report = null;
     a.choices = {};
+    a.pendingSettlements = [];
+    a.sessionPreview = null;
     await loadPictureUrls(a.sample.items);
   } catch (e) { handleError(e); }
   a.busy = false;
@@ -301,11 +427,14 @@ function agreeSampleView(x, a) {
       h("div", { class: "queue-labels" }, item.questions.map((qid) => {
         const question = s.questions[qid];
         const current = labelText(labels[qid], question.type);
-        const sel = h("select", { class: "input label-sel", "aria-label": `Second label for ${qid} on row ${item.number}` },
+        const sel = h("select", { class: "input label-sel", disabled: a.busy, "aria-label": `Second label for ${qid} on row ${item.number}` },
           h("option", { value: "", selected: !current }, "—"),
           queueClasses(question).map((c) => h("option", { value: c, selected: c === current },
             question.type === "score" ? `${c} · ${String(question.criteria[Number(c)] ?? "").slice(0, 32)}` : c)));
-        sel.addEventListener("change", () => { labels[qid] = labelValue(sel.value, question.type); render(); });
+        sel.addEventListener("change", () => {
+          changeSecondLabel(a, item.row_id, qid, labelValue(sel.value, question.type));
+          render();
+        });
         return h("label", { class: "queue-label" }, h("span", { class: "mono" }, qid), sel, W.guides?.hint(x.id, qid, question, { row: item.row, blind: true }));
       })));
   };
@@ -354,12 +483,19 @@ export function agreeQuestions(questions) {
 
 async function compareAgreement(id, text = null) {
   const a = agreeRun(id);
+  if (a.busy) return;
+  if (Object.keys(a.choices).length && !confirm("Compare again and clear the current settlement choices? Download an agreement session first to keep them.")) return;
   a.busy = true;
   render();
   try {
     const body = text === null ? { id, items: secondItems(a.sample.items, a.labels) } : { id, text };
     a.report = await api("/api/workbench/datasets/agreement", body);
-    a.choices = {};
+    if (text !== null) {
+      a.labels = Object.fromEntries((a.report.second_items || []).map((item) => [item.row_id, { ...item.labels }]));
+    }
+    a.choices = restoredChoices(a.report.disagreements, a.pendingSettlements);
+    a.pendingSettlements = [];
+    a.sessionPreview = null;
   } catch (e) { handleError(e); }
   a.busy = false;
   render();
@@ -387,10 +523,10 @@ function agreeReport(x, a) {
     const value = Object.prototype.hasOwnProperty.call(a.choices, key) ? a.choices[key] : d.first;
     const current = labelText(value, question.type);
     const options = [...new Set([...queueClasses(question), labelText(d.first, question.type), labelText(d.second, question.type)])];
-    const sel = h("select", { class: "input label-sel", "aria-label": `Settle ${d.question} on row ${d.number}` },
+    const sel = h("select", { class: "input label-sel", disabled: a.busy, "aria-label": `Settle ${d.question} on row ${d.number}` },
       h("option", { value: "", selected: !current }, "no label"),
       options.map((v) => h("option", { value: v, selected: v === current }, v)));
-    sel.addEventListener("change", () => { a.choices[key] = labelValue(sel.value, question.type); render(); });
+    sel.addEventListener("change", () => { a.choices[key] = labelValue(sel.value, question.type); a.sessionPreview = null; render(); });
     return sel;
   };
   return h("div", { class: "check-report grid", id: `agree-${x.id}`, style: { gap: "8px" } },
@@ -442,10 +578,15 @@ async function saveSettled(id) {
   const a = agreeRun(id);
   const items = settledItems(a.report.disagreements, a.choices);
   if (!items.length) return;
+  const remaining = a.report.disagreements.some((item) => !Object.prototype.hasOwnProperty.call(a.choices, settleKey(item.row_id, item.question)));
+  if (remaining && !window.confirm("Saving these settlements changes the dataset and prevents downloading the remaining agreement edits as a session. Those edits stay on this page. Download the agreement session first if you need recovery. Save these settled labels anyway?")) return;
   a.busy = true;
   render();
   try {
     const out = await api("/api/workbench/datasets/agreement/settle", { id, items });
+    a.sample.session_context = null;
+    a.pendingSettlements = [];
+    a.sessionPreview = null;
     // The rows box holds the labels as they were, and saving it replaces the file: unlink it until fresh rows are in,
     // so a failed refresh below cannot leave a save that undoes the settled labels.
     const loaded = b.dataset.id === id;
@@ -504,6 +645,7 @@ async function reloadAfterSplit(id) {
 }
 
 async function lockTest(id, share) {
+  if (!confirmReviewDiscard(id)) return;
   const b = W.bulk;
   if (b.dataset.id === id && bulkUnsaved()) return toast("Save the rows and labels first: the split is drawn from the saved file.", "error");
   if (!confirm(`Hold out about ${Math.round(share * 100)}% of the labeled rows in “${id}” as test rows?\n\n`
@@ -517,6 +659,7 @@ async function lockTest(id, share) {
 }
 
 async function removeTest(id) {
+  if (!confirmReviewDiscard(id)) return;
   const b = W.bulk;
   if (b.dataset.id === id && bulkUnsaved()) return toast("Save the rows and labels first: removing the split rewrites the saved file.", "error");
   if (!confirm(`Put the test rows of “${id}” back among the rest, and forget how often they were scored? Tuning will then read them, so they can no longer give an unbiased number.`)) return;

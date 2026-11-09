@@ -2,12 +2,13 @@
 import {
   $, api, copyText, currentStatus, h, handleError, icon, mount, ms, num, pct, stat, statusBadge, toast, usd,
 } from "./common.js";
+import { parseUniqueJson } from "./build-request.js";
 import { reverseOptions } from "./variants.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
-import { W } from "./workbench-state.js";
-import { toQuestions, fromQuestions } from "./workbench-build.js";
+import { W, canon } from "./workbench-state.js";
+import { toQuestions, applyBuildQuestions } from "./workbench-build.js";
 import { render } from "./workbench.js";
-import { loadSampleRows, countRows, rowsPayload, rowText } from "./workbench-bulk.js";
+import { loadSampleRows, loadPictureUrls, countRows, rowsPayload, rowText } from "./workbench-bulk.js";
 import { svg, SIGNALS, boundSelect, interval, withCI, syncAttachedSets } from "./workbench-calibrate.js";
 
 // ---------- Compare ----------
@@ -29,7 +30,7 @@ function parseVariant(i) {
   const text = W.compare.variants[i].text.trim();
   if (!text) throw new Error(`Variant ${name} has no questions`);
   let questions;
-  try { questions = JSON.parse(text); } catch (e) { throw new Error(`Variant ${name}: invalid JSON (${e.message})`); }
+  try { questions = parseUniqueJson(text); } catch (e) { throw new Error(`Variant ${name}: invalid JSON (${e.message})`); }
   if (!questions || typeof questions !== "object" || Array.isArray(questions)) throw new Error(`Variant ${name}: questions must be an object keyed by question id`);
   return questions;
 }
@@ -171,10 +172,13 @@ async function runCompare() {
   if (c.running) return;
   if (!(await confirmSpend(api, "compare", { rows: rowsPayload(), variants }))) return;
   c.running = true;
+  const sourceText = W.bulk.rowsText;
   render();
   let done = false;
   try {
-    c.result = await api("/api/workbench/compare", { rows: rowsPayload(), variants });
+    c.result = await api("/api/workbench/compare", { rows: rowsPayload(sourceText), variants });
+    c.sourceText = sourceText;
+    c.sliceField = null;
     c.qid = chooseCmpQuestion();
     await rescoreCompare();
     if (c.result.stopped) toast(c.result.stopped, "error");
@@ -211,9 +215,11 @@ async function rescoreCompare() {
   const seq = ++cmpSeq;  // only the latest request may install its report
   c.report = null;
   c.reportError = null;
+  c.slices = null;
+  c.slicesError = null;
   if (!qid) return;
   const rows = c.result.results.filter((r) => r.runs.some((run) => run.answers?.[qid]))
-    .map((r) => ({ index: r.index, label: r.expect?.[qid] ?? null, answers: r.runs.map((run) => run.answers?.[qid] ?? null),
+    .map((r) => ({ index: r.index, row: r.row, label: r.expect?.[qid] ?? null, answers: r.runs.map((run) => run.answers?.[qid] ?? null),
       meta: r.runs.map((run) => (run.meta ? { cost_usd: run.meta.cost_usd, latency_ms: run.meta.latency_ms } : null)) }));
   if (!rows.length) return;
   try {
@@ -224,6 +230,12 @@ async function rescoreCompare() {
       // alone, or nothing does, start at the most accurate point instead.
       const cas = report.cascade;
       if (cas) c.cascadeT = (cas.match?.escalated ? cas.match : cas.best).threshold;
+      try {
+        const bySlice = await api("/api/workbench/compare/slices", {
+          rows, field: c.sliceField, signal: c.signal, first: c.first, bound: c.bound,
+        });
+        if (seq === cmpSeq) c.slices = bySlice;
+      } catch (e) { if (seq === cmpSeq) c.slicesError = e.message; }
     }
   } catch (e) { if (seq === cmpSeq) c.reportError = e.message; }
 }
@@ -307,12 +319,8 @@ function renderCompareReport() {
   const rep = c.report;
   const hasLabels = rep && rep.variants.some((v) => v.labeled);
   const use = (i) => h("button", { class: "btn sm", onclick: () => {
-    W.questions = fromQuestions(res.variants[i].questions);
-    W.result = null;
-    W.raw = false;
-    W.tab = "build";
+    if (!applyBuildQuestions(res.variants[i].questions)) return;
     location.hash = "build";
-    render();
     toast(`Build now has variant ${VARIANTS[i]}'s questions`);
   } }, `Use ${VARIANTS[i]} in Build`);
   const failures = res.results.flatMap((r) => r.runs.map((run, v) => (run.error ? `row ${r.index + 1} (${VARIANTS[v]}): ${run.error}` : null)).filter(Boolean));
@@ -332,6 +340,7 @@ function renderCompareReport() {
   } else {
     body = [
       summaryTable(res, rep),
+      compareSlices(),
       !hasLabels ? h("p", { class: "muted" }, `No labels for “${c.qid}”. Add `, h("code", {}, "\"_expect\""), " to the rows to score accuracy; the disagreements below still show where the variants differ.") : null,
       hasLabels ? pairedBlock(rep) : null,
       hasLabels ? h("div", { class: "cal-chart-wrap" },
@@ -474,7 +483,9 @@ function renderCompareRows() {
     x.correct === null ? null : h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, x.correct ? "right" : "wrong"));
   return h("div", { class: "panel", id: "compare-rows" },
     h("div", { class: "panel-head" }, icon("list"), h("h2", {}, `Rows where A and B answer “${c.qid}” differently · ${rep.disagreements.length}`), h("div", { class: "spacer" }),
-      h("span", { class: "faint", style: { fontSize: "12px" } }, `${rep.agree} of ${rep.answered_both} rows agree`)),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, `${rep.agree} of ${rep.answered_both} rows agree`),
+      h("button", { class: "btn sm", disabled: c.labelingBusy || !rep.disagreements.length || !["choice", "noul", "score"].includes(rep.type),
+        onclick: handoffCompareDisagreements }, c.labelingBusy ? "Preparing labels…" : "Label missing disagreement inputs")),
     rep.disagreements.length
       ? h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
         h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "label"), h("th", {}, "A"), h("th", {}, "B"), h("th", {}, "result"))),
@@ -485,6 +496,83 @@ function renderCompareRows() {
           d.answers.map(answer),
           h("td", {}, d.verdict && verdicts[d.verdict] ? statusBadge(...verdicts[d.verdict]) : h("span", { class: "faint" }, "no label")))))))
       : h("div", { class: "panel-body muted" }, "A and B gave the same answer on every row they both answered."));
+}
+
+function compareSlices() {
+  const c = W.compare;
+  const report = c.slices;
+  if (c.slicesError) return h("p", { class: "faint" }, `Slices unavailable: ${c.slicesError}`);
+  if (!report) return null;
+  const field = h("select", { class: "input sm", "aria-label": "Compare slice field" },
+    h("option", { value: "", selected: !report.field }, "Choose an input field"),
+    report.fields.map((option) => h("option", { value: option.name, selected: option.name === report.field }, option.name)));
+  field.addEventListener("change", async () => { c.sliceField = field.value || null; await rescoreCompare(); render(); });
+  const accuracy = (variant) => variant.accuracy === null ? "No valid paired labels"
+    : withCI(`${variant.correct} of ${variant.labeled} · ${pct(variant.accuracy, 1)}`, variant.accuracy_low, variant.accuracy_high);
+  const target = (variant) => {
+    const at95 = variant.targets.find((entry) => entry.target === 0.95);
+    return at95?.threshold === null || !at95 ? "not reached" : pct(at95.coverage);
+  };
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("h3", { class: "cal-h" }, "Compare by slice"),
+    h("p", { class: "faint" }, "Compare the same successful pairs within each input value. Accuracy has a 95% interval; automation targets use the selected confidence basis. This reuses this run's answers, makes no model calls, and excludes held-out rows. Small slices may not support a conclusion."),
+    report.fields.length ? h("label", {}, "Input field ", field)
+      : h("p", { class: "muted" }, "No input field has 2–20 distinct values among the rows both variants answered."),
+    report.field ? h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, [report.field, "Paired inputs", "A accuracy", "B accuracy", "A automates at 95%", "B automates at 95%", "Paired p"].map((title) => h("th", {}, title)))),
+      h("tbody", {}, report.slices.map((group) => h("tr", {},
+        h("td", { title: group.value }, group.shown), h("td", {}, String(group.rows)),
+        group.error ? h("td", { colspan: "5" }, group.error) : [
+          ...group.variants.map((variant) => h("td", {}, accuracy(variant))),
+          ...group.variants.map((variant) => h("td", {}, target(variant))),
+          h("td", { title: "Exact McNemar test on labels both variants can score. Exploratory slice comparisons are not adjusted for multiple testing." },
+            group.paired.rows ? group.paired.p_value < 0.001 ? "< 0.001" : group.paired.p_value.toFixed(3) : "—"),
+        ]))))) : null);
+}
+
+// Only inputs and the chosen question schema go to the blank-label queue. The server maps
+// Compare's tuning indices back to positions in the full source, including held-out rows.
+async function handoffCompareDisagreements() {
+  const c = W.compare;
+  const b = W.bulk;
+  const result = c.result;
+  const report = c.report;
+  if (c.labelingBusy || !report?.disagreements.length || typeof c.sourceText !== "string") return;
+  const sourceText = c.sourceText;
+  const questions = result.variants[0].questions;
+  const context = () => canon([b.rowsText, b.labels, W.questions, b.prelabel]);
+  const before = context();
+  c.labelingBusy = true;
+  render();
+  try {
+    const prepared = await api("/api/workbench/compare/labeling", {
+      rows: rowsPayload(sourceText), questions, qid: c.qid,
+      indices: report.disagreements.map((item) => item.index),
+    });
+    if (c.result !== result || c.report !== report || context() !== before) return;
+    if (!prepared.items.length) return toast("These disagreement inputs already have labels, or cannot carry labels. Existing labels are preserved.");
+    if (!confirm(`Open ${prepared.items.length} disagreement inputs with blank human-label controls? This replaces the Bulk rows editor with this Compare run's original inputs, sets Build questions to variant A, and replaces any unfinished pre-run labeling or label-repair drafts. Existing source labels and held-out rows are preserved. Apply labels and Save dataset remain explicit.`)) return;
+    if (!applyBuildQuestions(questions)) return;
+    b.rowsText = sourceText;
+    b.source = "current";
+    b.result = null;
+    b.runText = null;
+    b.labels = {};
+    b.labelsDirty = false;
+    b.testScore = null;
+    b.gateExport = null;
+    b.health.report = null;
+    b.prelabel = { busy: false, report: prepared, context: JSON.stringify([b.rowsText, toQuestions(W.questions), false]),
+      drafts: {}, field: null, value: null, status: "all", nextIndex: null, csvPreview: null };
+    await loadPictureUrls(prepared.items);
+    W.tab = "bulk";
+    location.hash = "bulk";
+    syncAttachedSets();
+    toast("Opened blank human labels for missing disagreement inputs. No answers were copied. Apply and Save when ready.");
+    render();
+    $("#prelabel-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { handleError(e); }
+  finally { c.labelingBusy = false; render(); }
 }
 
 // Accuracy of the automated rows against the share automated: one line per variant, one point per

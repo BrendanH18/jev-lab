@@ -33,3 +33,48 @@ export function settledItems(disagreements, choices) {
   }
   return [...rows].map(([row_id, labels]) => ({ row_id, labels: { ...labels } }));
 }
+
+// Recovery records explicit edits only, including false, zero, and a human removing a label.
+export function sessionSettlements(choices) {
+  return Object.entries(choices || {}).map(([key, value]) => {
+    const at = key.indexOf("\u0000");
+    return { row_id: key.slice(0, at), question: key.slice(at + 1), value };
+  });
+}
+
+// Do not filter CSV-imported labels through a different random sample. The server
+// must reject mismatched membership rather than export a truncated recovery file.
+export function sessionItems(labels) {
+  return Object.entries(labels || {}).filter(([, given]) => Object.values(given).some(has))
+    .map(([row_id, given]) => ({ row_id, labels: Object.fromEntries(Object.entries(given).filter(([, value]) => has(value))) }));
+}
+
+export function changeSecondLabel(run, rowId, question, value) {
+  const labels = run.labels[rowId] ||= Object.create(null);
+  if (labels[question] === value) return;
+  labels[question] = value;
+  const changed = settleKey(rowId, question);
+  const kept = new Map([...(run.pendingSettlements || []), ...sessionSettlements(run.choices)]
+    .filter((item) => settleKey(item.row_id, item.question) !== changed)
+    .map((item) => [settleKey(item.row_id, item.question), item]));
+  run.pendingSettlements = [...kept.values()];
+  run.choices = {};
+  run.report = run.sessionPreview = null;
+}
+
+export function agreementEditsUnsaved(run) {
+  return !!run?.sample && (secondItems(run.sample.items, run.labels).length > 0
+    || Object.keys(run.choices || {}).length > 0 || (run.pendingSettlements || []).length > 0);
+}
+
+export function restoreAgreementEdits(result) {
+  return { labels: Object.fromEntries(result.items.map((item) => [item.row_id, { ...item.labels }])),
+    pendingSettlements: result.settlements.map((item) => ({ ...item })) };
+}
+
+// A restored settlement is shown only after the user explicitly compares again.
+export function restoredChoices(disagreements, settlements) {
+  const eligible = new Set(disagreements.map((item) => settleKey(item.row_id, item.question)));
+  return Object.fromEntries((settlements || []).filter((item) => eligible.has(settleKey(item.row_id, item.question)))
+    .map((item) => [settleKey(item.row_id, item.question), item.value]));
+}

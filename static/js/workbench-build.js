@@ -4,10 +4,18 @@ import {
   $, answerCard, api, callStats, copyText, currentStatus, h, handleError, icon, inspect, pct, photoView, prepareImage,
   statusBadge, toast,
 } from "./common.js";
+import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged } from "./build-request.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
 const TYPES = ["noul", "choice", "score", "box"];
+let buildBaseline = null;
+let buildRunContext = null;
+let buildDraftPreview = null;
+let buildRunSequence = 0;
+let buildRunning = false;
+let buildRawText = null;
+let buildDraftBusy = false;
 
 // ---------- data helpers ----------
 const parseMaybeJson = (s) => {
@@ -20,7 +28,10 @@ export const stringify = (v) => (typeof v === "string" ? v : v === null || v ===
 const parseState = (text) => parseMaybeJson(text);
 
 export function toQuestions(rows) {
-  const out = {};
+  // Rendering callers can keep the editor open while invalid keys are being fixed.
+  // Outbound actions also report questionEditorError before making a request.
+  if (editorQuestionError(rows)) return {};
+  const out = Object.create(null);
   for (const r of rows) {
     const id = (r.id || "").trim();
     if (!id) continue;
@@ -37,6 +48,34 @@ export function toQuestions(rows) {
     out[id] = q;
   }
   return out;
+}
+
+export const questionEditorError = (rows = W.questions) => editorQuestionError(rows);
+
+const buildContext = () => buildEditorContext(W.stateText, [W.questions, buildRawText], imagesPayload());
+export const buildUnsaved = () => buildContextChanged(buildContext(), buildBaseline);
+export const buildResultStale = () => !!W.result && buildContextChanged(buildContext(), buildRunContext);
+
+function markBuildEdited() {
+  W.exported = null;
+  W.lint = null;
+  $("#export")?.remove();
+  $("#lint")?.remove();
+  const stale = $("#build-stale");
+  if (stale) stale.style.display = buildResultStale() ? "" : "none";
+  const error = $("#build-validation");
+  if (error) { error.textContent = questionEditorError() || ""; error.hidden = !error.textContent; }
+  const save = $("#build-save-test");
+  if (save) save.disabled = !W.result || buildResultStale();
+}
+
+function validBuildQuestions() {
+  if (buildRawText !== null) { toast("Apply the Raw JSON edits before using this request.", "error"); return null; }
+  const error = questionEditorError();
+  if (error) { toast(error, "error"); return null; }
+  const questions = toQuestions(W.questions);
+  if (!Object.keys(questions).length) { toast("Add at least one question with an id.", "error"); return null; }
+  return questions;
 }
 
 export function fromQuestions(obj) {
@@ -97,6 +136,7 @@ function addImage(img) {
   W.images.push({ ...img, ref });
   toast(placeInState(ref));
   W.result = null;
+  markBuildEdited();
   render();
 }
 
@@ -108,6 +148,7 @@ function removeImage(ref) {
     W.stateText = JSON.stringify(state, null, 2);
   }
   W.result = null;
+  markBuildEdited();
   render();
 }
 
@@ -137,6 +178,9 @@ function imageFor(question, state, images) {
 }
 
 export function loadInto(state, questions, { expect = {}, name = "", notes = "", id = null, example = null, images = {}, handoff = null } = {}) {
+  if (buildUnsaved() && !window.confirm("Replace the unsaved Build request? Download a Build draft first to keep it.")) return false;
+  buildRunSequence += 1;
+  buildRunning = false;
   W.stateText = typeof state === "string" ? state : JSON.stringify(state, null, 2);
   W.questions = fromQuestions(questions);
   W.images = imagesFromSpecs(images);
@@ -151,9 +195,18 @@ export function loadInto(state, questions, { expect = {}, name = "", notes = "",
   W.lint = null;
   W.saveOpen = false;
   W.raw = false;
+  buildRawText = null;
   W.tab = "build";
+  buildRunContext = null;
+  buildDraftPreview = null;
+  buildBaseline = buildContext();
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
+  return true;
+}
+
+export function applyBuildQuestions(questions) {
+  return loadInto(parseState(W.stateText), questions, { images: imagesPayload() });
 }
 
 // ---------- Build ----------
@@ -171,31 +224,33 @@ function handoffNote() {
 
 export function renderBuild() {
   const stateArea = h("textarea", { class: "input", spellcheck: "false", placeholder: "Plain text, or a JSON object/array. Point questions at fields with `backticks`." }, W.stateText);
-  stateArea.addEventListener("input", () => { W.stateText = stateArea.value; });
+  stateArea.addEventListener("input", () => { W.stateText = stateArea.value; markBuildEdited(); });
   const left = h("div", { class: "grid", style: { gap: "16px" } },
     handoffNote(),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "State"), h("div", { class: "spacer" }),
         h("span", { class: "faint", style: { fontSize: "12px" } }, W.loadedExample ? `from example: ${W.loadedExample}` : W.editingId ? `editing test: ${W.editingId}`
           : W.handoff ? `from ${W.handoff.source}` : "")),
-      h("div", { class: "panel-body state-box" }, stateArea)),
+      h("div", { class: "panel-body state-box" }, stateArea, renderBuildDraft())),
     renderImages(),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, `Questions · ${W.questions.length}`), h("div", { class: "spacer" }),
         h("button", { class: `btn sm ${W.raw ? "" : "ghost"}`, onclick: () => { W.raw = !W.raw; render(); } }, icon("code"), W.raw ? "Editor" : "Raw JSON")),
       h("div", { class: "panel-body grid", style: { gap: "10px" } },
+        h("p", { id: "build-validation", class: "critical-text", role: "alert", hidden: !questionEditorError() }, questionEditorError()),
         W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) => renderQuestionCard(row, i))),
         !W.raw ? h("div", { class: "chips" }, TYPES.map((t) =>
-          h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); render(); } }, icon("plus"), `Add ${t}`))) : null)));
+          h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); markBuildEdited(); render(); } }, icon("plus"), `Add ${t}`))) : null)));
 
-  const runBtn = h("button", { class: "btn primary", onclick: run }, icon("bolt"), "Run");
+  const runBtn = h("button", { class: "btn primary", id: "build-run", disabled: buildRunning, onclick: run }, icon("bolt"), buildRunning ? "Running…" : "Run");
   const right = h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "Answers"), h("div", { class: "spacer" }),
         h("button", { class: "btn sm", onclick: checkQuestions, title: "Read the questions for common mistakes. Plain code: no model call, no cost." }, icon("search"), "Check questions"),
         h("button", { class: "btn sm", onclick: exportCode }, icon("code"), "Export code"),
-        h("button", { class: "btn sm", disabled: !W.result, onclick: () => { W.saveOpen = !W.saveOpen; if (W.saveOpen && !Object.keys(W.expect).length) W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)])); render(); } }, icon("save"), "Save as test"),
+        h("button", { class: "btn sm", id: "build-save-test", disabled: !W.result || buildResultStale(), onclick: () => { W.saveOpen = !W.saveOpen; if (W.saveOpen && !Object.keys(W.expect).length) W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)])); render(); } }, icon("save"), "Save as test"),
         runBtn),
+      h("p", { id: "build-stale", class: "callout", role: "status", style: { display: buildResultStale() ? "" : "none" } }, "These answers are from the previous request. Inputs or questions have changed; run again to answer the current request."),
       boxWarning(),
       W.result
         ? h("div", { class: "panel-body grid", style: { gap: "12px" } },
@@ -204,7 +259,7 @@ export function renderBuild() {
           h("div", { class: "answers" }, Object.entries(W.result.answers).map(([qid, a]) => answerCard(qid, a, W.result.trace.request.questions[qid]))))
         : h("div", { class: "empty" }, "Press Run. Every question is evaluated in parallel against the state, in one request.")),
     W.lint ? renderLint() : null,
-    W.saveOpen && W.result ? renderSaveForm() : null,
+    W.saveOpen && W.result && !buildResultStale() ? renderSaveForm() : null,
     W.exported ? renderExport() : null,
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "Writing good questions")),
@@ -216,6 +271,68 @@ export function renderBuild() {
         h("p", { class: "muted" }, "A Box always returns four edges, even when the target is missing. Ask a Noul whether it is there, and ignore the box when that is low."),
         h("p", { class: "faint" }, "Docs: ", h("a", { href: "https://docs.typesafe.ai/concepts/how-to-build-with-system-one", target: "_blank", rel: "noopener" }, "How to build with TypeSafe"), " · ", h("a", { href: "https://docs.typesafe.ai/model-jaggedness/jev-1.13", target: "_blank", rel: "noopener" }, "Known jagged edges")))));
   return h("div", { class: "grid wb-grid" }, left, right);
+}
+
+function renderBuildDraft() {
+  const file = h("input", { type: "file", accept: ".json,application/json", hidden: true,
+    onchange: () => previewBuildDraft(file.files[0]) });
+  const preview = buildDraftPreview;
+  return h("div", { class: "grid", style: { gap: "8px", marginTop: "10px" } },
+    h("div", { class: "chips" },
+      h("button", { class: "btn sm", disabled: buildDraftBusy, onclick: downloadBuildDraft }, "Download Build draft"),
+      h("button", { class: "btn sm", disabled: buildDraftBusy, onclick: () => file.click() }, "Restore Build draft"), file),
+    h("p", { class: "faint" }, "Keep an unrun request with its questions and pictures. Drafts contain no model answers or API settings. Review your input data before sharing."),
+    preview ? h("div", { class: "callout" }, h("div", {},
+      h("b", {}, "Build draft preview"),
+      h("p", {}, `${Object.keys(preview.draft.questions).length} questions · ${Object.keys(preview.draft.images).length} pictures. Accepting replaces the Build request; it makes no model call or saved change.`),
+      h("button", { class: "btn sm primary", disabled: buildDraftBusy, onclick: acceptBuildDraft }, "Accept Build draft"),
+      h("button", { class: "btn sm ghost", onclick: () => { buildDraftPreview = null; render(); } }, "Cancel restore"))) : null);
+}
+
+async function downloadBuildDraft() {
+  if (buildDraftBusy) return;
+  const questions = validBuildQuestions();
+  if (!questions) return;
+  const context = buildContext();
+  const draft = requestDraft(parseState(W.stateText), questions, imagesPayload());
+  buildDraftBusy = true;
+  render();
+  try {
+    await api("/api/workbench/draft/validate", draft);
+    if (context !== buildContext()) return toast("The Build request changed. Download its current draft again.", "error");
+    const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }));
+    h("a", { href: url, download: "jev-build-draft.json" }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    buildBaseline = context;
+    toast("Downloaded the Build draft, including its pictures.");
+  } catch (e) { handleError(e); }
+  finally { buildDraftBusy = false; render(); }
+}
+
+async function previewBuildDraft(file) {
+  if (!file || buildDraftBusy) return;
+  buildDraftBusy = true;
+  buildDraftPreview = null;
+  const context = buildContext();
+  render();
+  try {
+    if (file.size > 12 * 1024 * 1024) throw new Error("Build drafts must be at most 12 MiB.");
+    const draft = parseRequestDraft(parseUniqueJson(await file.text()));
+    const error = questionEditorError(fromQuestions(draft.questions));
+    if (error) throw new Error(error);
+    await api("/api/workbench/draft/validate", draft);
+    if (context !== buildContext()) return toast("The Build request changed. Preview the draft again before replacing it.", "error");
+    buildDraftPreview = { draft, context };
+  } catch (e) { handleError(e); }
+  finally { buildDraftBusy = false; render(); }
+}
+
+function acceptBuildDraft() {
+  const preview = buildDraftPreview;
+  if (!preview) return;
+  if (preview.context !== buildContext()) return toast("The Build request changed. Preview the draft again before replacing it.", "error");
+  const { state, questions, images } = preview.draft;
+  if (loadInto(state, questions, { images })) toast("Restored the Build draft. Run it when ready to get answers.");
 }
 
 function renderImages() {
@@ -277,11 +394,17 @@ function renderBoxes() {
 }
 
 function renderRaw() {
-  const area = h("textarea", { class: "input", spellcheck: "false" }, JSON.stringify(toQuestions(W.questions), null, 2));
+  const area = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Questions as JSON" }, buildRawText ?? JSON.stringify(toQuestions(W.questions), null, 2));
+  area.addEventListener("input", () => { buildRawText = area.value; markBuildEdited(); });
   return h("div", { class: "raw grid", style: { gap: "8px" } }, area,
     h("div", { style: { display: "flex", gap: "8px" } },
       h("button", { class: "btn sm primary", onclick: () => {
-        try { W.questions = fromQuestions(JSON.parse(area.value)); W.raw = false; render(); }
+        try {
+          const rows = fromQuestions(parseUniqueJson(area.value));
+          const error = questionEditorError(rows);
+          if (error) throw new Error(error);
+          W.questions = rows; buildRawText = null; W.raw = false; markBuildEdited(); render();
+        }
         catch (e) { toast(`Invalid JSON: ${e.message}`, "error"); }
       } }, "Apply"),
       h("span", { class: "faint", style: { fontSize: "12px", alignSelf: "center" } }, "Same shape as the API's questions map. Structured instructions and criteria (objects, arrays) are allowed.")));
@@ -289,13 +412,13 @@ function renderRaw() {
 
 function renderQuestionCard(row, i) {
   const idInput = h("input", { class: "input mono", value: row.id, placeholder: "question_id" });
-  idInput.addEventListener("input", () => { row.id = idInput.value; });
+  idInput.addEventListener("input", () => { row.id = idInput.value; markBuildEdited(); });
   const typeSel = h("select", { class: "input" }, TYPES.map((t) => h("option", { value: t, selected: row.type === t }, t)));
-  typeSel.addEventListener("change", () => { row.type = typeSel.value; render(); });
+  typeSel.addEventListener("change", () => { row.type = typeSel.value; markBuildEdited(); render(); });
   const instr = h("textarea", { class: "input", placeholder: row.type === "box"
     ? "What to find and in which picture, e.g. the coffee mug in `photo`."
     : "Instructions: the question, as a person would ask it. Refer to state fields with `backticks`." }, row.instructions);
-  instr.addEventListener("input", () => { row.instructions = instr.value; });
+  instr.addEventListener("input", () => { row.instructions = instr.value; markBuildEdited(); });
 
   let crit;
   if (row.type === "box") {
@@ -307,52 +430,60 @@ function renderQuestionCard(row, i) {
       row.choice.map((pair, j) => {
         const k = h("input", { class: "input mono", value: pair[0], placeholder: "option_key" });
         const d = h("input", { class: "input", value: pair[1], placeholder: "what this option means" });
-        k.addEventListener("input", () => { pair[0] = k.value; });
-        d.addEventListener("input", () => { pair[1] = d.value; });
-        return h("div", { class: "cr" }, k, d, h("button", { class: "btn sm ghost", onclick: () => { row.choice.splice(j, 1); render(); } }, icon("x")));
+        k.addEventListener("input", () => { pair[0] = k.value; markBuildEdited(); });
+        d.addEventListener("input", () => { pair[1] = d.value; markBuildEdited(); });
+        return h("div", { class: "cr" }, k, d, h("button", { class: "btn sm ghost", onclick: () => { row.choice.splice(j, 1); markBuildEdited(); render(); } }, icon("x")));
       }),
-      h("div", {}, h("button", { class: "chip", onclick: () => { row.choice.push(["", ""]); render(); } }, icon("plus"), "Add option")));
+      h("div", {}, h("button", { class: "chip", onclick: () => { row.choice.push(["", ""]); markBuildEdited(); render(); } }, icon("plus"), "Add option")));
   } else if (row.type === "score") {
     crit = h("div", { class: "crit" },
       h("div", { class: "section-label", style: { margin: 0 } }, "Levels, in order from 0 (each should describe a concrete situation)"),
       row.score.map((lvl, j) => {
         const d = h("input", { class: "input", value: lvl, placeholder: `level ${j}` });
-        d.addEventListener("input", () => { row.score[j] = d.value; });
-        return h("div", { class: "cr score" }, h("span", { class: "lv" }, String(j)), d, h("button", { class: "btn sm ghost", onclick: () => { row.score.splice(j, 1); render(); } }, icon("x")));
+        d.addEventListener("input", () => { row.score[j] = d.value; markBuildEdited(); });
+        return h("div", { class: "cr score" }, h("span", { class: "lv" }, String(j)), d, h("button", { class: "btn sm ghost", onclick: () => { row.score.splice(j, 1); markBuildEdited(); render(); } }, icon("x")));
       }),
-      h("div", {}, h("button", { class: "chip", onclick: () => { row.score.push(""); render(); } }, icon("plus"), "Add level")));
+      h("div", {}, h("button", { class: "chip", onclick: () => { row.score.push(""); markBuildEdited(); render(); } }, icon("plus"), "Add level")));
   } else {
     const yes = h("input", { class: "input", value: row.noulYes, placeholder: "optional: what a yes means" });
     const no = h("input", { class: "input", value: row.noulNo, placeholder: "optional: what a no means" });
-    yes.addEventListener("input", () => { row.noulYes = yes.value; });
-    no.addEventListener("input", () => { row.noulNo = no.value; });
+    yes.addEventListener("input", () => { row.noulYes = yes.value; markBuildEdited(); });
+    no.addEventListener("input", () => { row.noulNo = no.value; markBuildEdited(); });
     crit = h("div", { class: "crit" }, h("div", { class: "cr noul" }, h("span", { class: "k" }, "yes"), yes), h("div", { class: "cr noul" }, h("span", { class: "k" }, "no"), no));
   }
   return h("div", { class: "qcard" },
-    h("div", { class: "row" }, idInput, typeSel, h("button", { class: "btn sm ghost", title: "Remove question", onclick: () => { W.questions.splice(i, 1); render(); } }, icon("trash"))),
+    h("div", { class: "row" }, idInput, typeSel, h("button", { class: "btn sm ghost", title: "Remove question", onclick: () => { W.questions.splice(i, 1); markBuildEdited(); render(); } }, icon("trash"))),
     instr, crit);
 }
 
 async function run() {
-  const questions = toQuestions(W.questions);
-  if (!Object.keys(questions).length) return toast("Add at least one question with an id.", "error");
-  const btn = $(".btn.primary");
-  btn.disabled = true;
+  if (buildRunning) return;
+  const questions = validBuildQuestions();
+  if (!questions) return;
+  const context = buildContext();
+  const sequence = ++buildRunSequence;
+  buildRunning = true;
+  render();
   try {
     const images = W.images.map((i) => ({ ...i }));
-    W.result = await api("/api/workbench/run", { state: parseState(W.stateText), questions, images: imagesPayload() });
-    W.result.images = images;
+    const result = await api("/api/workbench/run", { state: parseState(W.stateText), questions, images: imagesPayload() });
+    if (sequence !== buildRunSequence) return;
+    result.images = images;
+    W.result = result;
+    buildRunContext = context;
     W.saveOpen = false;
-    if (W.lint) await checkQuestions({ scroll: false });
-    render();
-  } catch (e) { handleError(e); btn.disabled = false; }
+  } catch (e) { handleError(e); }
+  finally { if (sequence === buildRunSequence) { buildRunning = false; render(); } }
 }
 
 async function checkQuestions({ scroll = true } = {}) {
-  const questions = toQuestions(W.questions);
-  if (!Object.keys(questions).length) return toast("Add at least one question with an id.", "error");
+  const questions = validBuildQuestions();
+  if (!questions) return;
+  const context = buildContext();
   try {
-    W.lint = await api("/api/workbench/lint", { state: parseState(W.stateText), questions, images: imageNames() });
+    const report = await api("/api/workbench/lint", { state: parseState(W.stateText), questions, images: imageNames() });
+    if (context !== buildContext()) return;
+    W.lint = report;
     render();
     if (scroll) $("#lint")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { handleError(e); }
@@ -385,7 +516,12 @@ function renderLint() {
 
 async function exportCode() {
   try {
-    W.exported = await api("/api/workbench/export", { state: parseState(W.stateText), questions: toQuestions(W.questions), images: imageNames() });
+    const questions = validBuildQuestions();
+    if (!questions) return;
+    const context = buildContext();
+    const exported = await api("/api/workbench/export", { state: parseState(W.stateText), questions, images: imageNames() });
+    if (context !== buildContext()) return;
+    W.exported = exported;
     render();
     $("#export")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { handleError(e); }
@@ -440,7 +576,12 @@ function renderSaveForm() {
 
 async function saveTest() {
   try {
+    if (W.result && buildResultStale()) return toast("Run the edited request before saving its expectations as a test.", "error");
+    if (buildRawText !== null) return toast("Apply the Raw JSON edits before saving this request.", "error");
     const questions = toQuestions(W.questions);
+    const error = questionEditorError();
+    if (error) return toast(error, "error");
+    const submittedContext = buildContext();
     const expect = Object.fromEntries(Object.entries(W.expect).filter(([qid]) => Object.hasOwn(questions, qid)));
     const { item } = await api("/api/workbench/items", {
       id: W.editingId || undefined, name: W.saveName, notes: W.saveNotes, state: parseState(W.stateText),
@@ -449,6 +590,7 @@ async function saveTest() {
     W.items = (await api("/api/workbench/items")).items;
     W.editingId = item.id;
     W.saveOpen = false;
+    buildBaseline = submittedContext;
     toast(`Saved data/workbench/${item.id}.json`);
     render();
   } catch (e) { handleError(e); }

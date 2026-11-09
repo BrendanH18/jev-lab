@@ -78,6 +78,28 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
                 self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
 
+    def test_dataset_editor_routes_require_preview_and_make_no_calls_or_writes(self):
+        questions = {"urgent": {"type": "noul", "instructions": "Is `text` urgent?"}}
+        data = {"rows": [{"text": "new", "_expect": {"urgent": "invalid"}}], "questions": questions}
+        def post(path, body):
+            status, _, raw = self.request("POST", path, json.dumps(body), self.post_headers())
+            return status, json.loads(raw)
+        with patch.object(server.client, "system_one", side_effect=AssertionError("No model call")), \
+                patch("jev.workbench.write_dataset", side_effect=AssertionError("No dataset write")):
+            status, prepared = post("/api/workbench/dataset-edits/prepare", data)
+            self.assertEqual(status, 200)
+            edit = dict(data, context=prepared["context"], action="repair", items=[{"index": 0, "labels": {"urgent": False}}])
+            self.assertEqual(post("/api/workbench/dataset-edits/apply", edit)[0], 400)
+            status, preview = post("/api/workbench/dataset-edits/preview", edit)
+            self.assertEqual(status, 200)
+            status, result = post("/api/workbench/dataset-edits/apply", dict(edit, token=preview["token"]))
+            self.assertEqual(status, 200)
+            self.assertIs(result["rows"][0]["_expect"]["urgent"], False)
+            status, report = post("/api/workbench/preflight", data)
+            self.assertEqual((status, report["findings"]), (200, []))
+            status, report = post("/api/workbench/draft/validate", {"state": "draft", "questions": questions, "images": {}})
+            self.assertEqual((status, report["questions"]), (200, 1))
+
     def test_dataset_health_is_read_only_and_needs_no_model(self):
         rows = [{"text": "same", "_expect": {"urgent": True}},
                 {"text": "same", "_expect": {"urgent": False}, "_test": True},

@@ -19,10 +19,10 @@ function harness({ approve = true, onPreview, onSave } = {}) {
     if (onSave) await onSave(W);
     return { dataset: { id: "tickets", name: "Tickets", rows: 1, labeled: 1 } };
   };
-  const fn = new Function("W", "api", "slugOf", "toast", "settleLabels", "bulkQuestions", "rowsPayload", "confirm", "handleError", "render",
+  const fn = new Function("W", "api", "slugOf", "toast", "settleLabels", "bulkQuestions", "rowsPayload", "confirm", "handleError", "render", "confirmReviewDiscard",
     body("datasetChangeMessage") + "\n" + body("saveDataset") + "; return saveDataset;"
   )(W, api, () => "tickets", () => {}, () => true, () => questions, () => W.bulk.rowsText,
-    (message) => { confirms.push(message); return approve; }, (error) => errors.push(error), () => {});
+    (message) => { confirms.push(message); return approve; }, (error) => errors.push(error), () => {}, () => true);
   return { W, calls, confirms, errors, save: fn };
 }
 

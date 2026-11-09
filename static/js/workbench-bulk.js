@@ -3,6 +3,8 @@
 import {
   $, api, currentStatus, h, handleError, icon, mount, ms, num, pct, prepareImage, statusBadge, toast, usd,
 } from "./common.js";
+import { bulkPreflightBody, checkBulkPreflight } from "./bulk-preflight.js";
+import { datasetEditsBody, confirmDatasetEditsDiscard } from "./dataset-edits.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W } from "./workbench-state.js";
 import { toQuestions, sampleUrl } from "./workbench-build.js";
@@ -58,6 +60,7 @@ function markUnsaved() {
 export function replaceRows(text, what) {
   const b = W.bulk;
   if (bulkUnsaved() && !confirm(`Replace the rows box with ${what}? Rows and labels you have not saved will be lost.`)) return false;
+  if (!confirmDatasetEditsDiscard()) return false;
   b.rowsText = b.savedText = text;
   b.labelsDirty = false;
   return true;
@@ -156,7 +159,7 @@ export function renderBulk() {
     r.addEventListener("change", () => { b.source = value; b.csv.columns = {}; render(); });
     return h("label", { class: "toggle", style: { gap: "6px" } }, r, h("span", { class: "track" }), label);
   };
-  const runBtn = h("button", { class: "btn primary", id: "bulk-run", onclick: runBulk }, icon("layers"), `Run ${Math.min(nRows, 200)} rows`);
+  const runBtn = h("button", { class: "btn primary", id: "bulk-run", disabled: !!b.running, onclick: runBulk }, icon("layers"), `Run ${Math.min(nRows, 200)} rows`);
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "grid wb-grid" },
       h("div", { class: "panel bulk", id: "bulk-rows" },
@@ -180,12 +183,14 @@ export function renderBulk() {
             b.dataset.questions ? src("dataset", `Saved with “${b.dataset.name}” (${Object.keys(b.dataset.questions).length})`) : null,
             h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run. The sample rows carry labels for the sample questions."),
             h("div", { id: "dataset-health" }, healthBody()),
+            bulkPreflightBody(),
             h("div", {}, runBtn, " ", estimateLine(h, api, "bulk", () => (Object.keys(bulkQuestions()).length ? { rows: rowsPayload(), questions: bulkQuestions() } : null))))),
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Why this matters")),
           h("div", { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
             h("p", { class: "muted" }, "At $0.042 per million input tokens, a question set over a million short messages costs about ", h("b", {}, "$10"), ". That is why “classify everything, then sort” is finally practical."),
             h("p", { class: "muted" }, "With labeled rows, Calibrate shows how often each answer was right and where to set the confidence threshold: above it your code acts, below it a person reviews. Choose the threshold from your own data, not a default."))))),
+    datasetEditsBody(),
     h("div", { id: "prelabel-panel" }, prelabelBody()),
     b.csv.open ? renderImport() : null,
     b.gateExport ? renderGateExport() : null,
@@ -199,40 +204,54 @@ export function renderBulk() {
 }
 
 async function runBulk() {
-  const questions = bulkQuestions();
-  if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
-  if (!settleLabels("Run the rows box")) return;
-  if (!(await confirmSpend(api, "bulk", { rows: rowsPayload(), questions }))) return;
-  const btn = $("#bulk-run");
-  btn.disabled = true;
-  mount(btn, h("span", { class: "spin" }), " Running…");
+  if (W.bulk.running) return;
+  W.bulk.running = true;
   try {
-    const b = W.bulk;
-    const ranText = b.rowsText;
-    const runModel = currentStatus()?.model || "";  // the model can change in Settings after the run
-    b.result = await api("/api/workbench/bulk", { rows: rowsPayload(), questions });
-    b.runText = ranText;
-    b.ranQuestions = questions;
-    b.runModel = runModel;
-    b.pin = true;
-    b.checkForm = { accuracy: null, coverage: null };
-    b.testScore = null;
-    b.labelsDirty = false;
-    b.sortKey = null;
-    b.labels = {};
-    for (const r of b.result.results) if (r.expect) b.labels[r.index] = { ...r.expect };
-    b.review = { report: null, kept: new Set(), all: { suspects: false, next: false } };
-    // Keep priced mistakes that still name a question and two of its answers; the new run may ask other questions.
-    const asked = bulkQuestionsForResult(b.result);
-    b.costs.mistakes = b.costs.mistakes.filter((m) => GATEABLE.has(asked[m.question]?.type)
-      && answerClasses(asked[m.question]).includes(m.label) && answerClasses(asked[m.question]).includes(m.answer));
-    b.cal.qid = chooseCalQuestion();
-    resetPolicy();
-    await Promise.all([recalibrate(), repolicy(), loadPictureUrls(b.result.results)]);
-    if (b.result.stopped) toast(b.result.stopped, "error");
-    render();
-    $("#calibrate")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) { handleError(e); render(); }
+    const questions = bulkQuestions();
+    if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
+    if (!settleLabels("Run the rows box")) return;
+    const snapshot = JSON.stringify([W.bulk.rowsText, questions]);
+    try {
+      const checked = await checkBulkPreflight(false);
+      if (checked.findings.length && !confirm(`Bulk input checks found ${checked.findings.length} issues. Review Check Bulk inputs before spending, or continue anyway?`)) { render(); return; }
+      if (!(await confirmSpend(api, "bulk", { rows: rowsPayload(), questions }))) return;
+      if (snapshot !== JSON.stringify([W.bulk.rowsText, bulkQuestions()])) return toast("Rows or questions changed. Run again with the current inputs.", "error");
+    } catch (e) { handleError(e); render(); return; }
+    const btn = $("#bulk-run");
+    btn.disabled = true;
+    mount(btn, h("span", { class: "spin" }), " Running…");
+    try {
+      const b = W.bulk;
+      const ranText = b.rowsText;
+      const runModel = currentStatus()?.model || "";  // the model can change in Settings after the run
+      b.result = await api("/api/workbench/bulk", { rows: rowsPayload(), questions });
+      b.runText = ranText;
+      b.ranQuestions = questions;
+      b.runModel = runModel;
+      b.pin = true;
+      b.checkForm = { accuracy: null, coverage: null };
+      b.testScore = null;
+      b.labelsDirty = false;
+      b.sortKey = null;
+      b.labels = {};
+      for (const r of b.result.results) if (r.expect) b.labels[r.index] = { ...r.expect };
+      b.review = { report: null, kept: new Set(), all: { suspects: false, next: false } };
+      // Keep priced mistakes that still name a question and two of its answers; the new run may ask other questions.
+      const asked = bulkQuestionsForResult(b.result);
+      b.costs.mistakes = b.costs.mistakes.filter((m) => GATEABLE.has(asked[m.question]?.type)
+        && answerClasses(asked[m.question]).includes(m.label) && answerClasses(asked[m.question]).includes(m.answer));
+      b.cal.qid = chooseCalQuestion();
+      resetPolicy();
+      await Promise.all([recalibrate(), repolicy(), loadPictureUrls(b.result.results)]);
+      if (b.result.stopped) toast(b.result.stopped, "error");
+      render();
+      $("#calibrate")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) { handleError(e); render(); }
+  } finally {
+    W.bulk.running = false;
+    const runButton = $("#bulk-run");
+    if (runButton) runButton.disabled = false;
+  }
 }
 
 function cellValue(answers, qid) {

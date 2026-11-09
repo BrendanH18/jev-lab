@@ -67,6 +67,12 @@ def _state(row: Any) -> Any:
     return workbench.without_marks(row)  # a test row is the same row, and a second labeler need not see the marker
 
 
+def session_context(dataset: dict) -> str:
+    # Choice option order is part of the schema; keep mapping order in this snapshot.
+    text = json.dumps(dataset, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _index(dataset: dict) -> Dict[str, List[int]]:
     """{row_id: the positions of the dataset rows with that content}."""
     out: Dict[str, List[int]] = {}
@@ -130,7 +136,8 @@ def sample(dataset_id: str, n: Any = 30, seed: Any = 0) -> dict:
         raise WorkbenchError("Dataset %r has no labeled rows to compare. Label some rows and save them first." % dataset_id)
     items = sorted(random.Random(seed).sample(eligible, min(n, len(eligible))), key=lambda i: i["number"])
     return {"dataset": workbench.dataset_summary(dataset), "questions": questions, "items": items,
-            "eligible": len(eligible), "csv": sample_csv(items, questions)}
+            "eligible": len(eligible), "csv": sample_csv(items, questions),
+            "session_context": session_context(dataset), "seed": seed, "sample_size": n}
 
 
 def _from_csv(text: Any, questions: Dict[str, dict]) -> Tuple[List[dict], List[str]]:
@@ -268,7 +275,7 @@ def compare(dataset_id: str, items: Any = None, text: Any = None) -> dict:
                "rows_low": low, "rows_high": high}
     return {"dataset": workbench.dataset_summary(dataset), "questions": report, "overall": overall,
             "disagreements": disagreements[:SHOWN], "disagreements_total": len(disagreements), "counts": counts,
-            "problems": problems[:PROBLEMS_SHOWN], "problems_total": len(problems)}
+            "problems": problems[:PROBLEMS_SHOWN], "problems_total": len(problems), "second_items": second}
 
 
 @workbench.dataset_update()
