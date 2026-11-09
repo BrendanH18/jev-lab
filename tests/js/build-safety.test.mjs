@@ -170,3 +170,11 @@ test("portable image drafts parse multi-megabyte base64 strings without regex st
     { image: { format: "png", data_base64 } });
   assert.equal(parseUniqueJson(JSON.stringify(draft)).images.image.data_base64, data_base64);
 });
+
+test("key scanning skips escaped quotes, slashes, punctuation and long string values", () => {
+  const state = { 'quoted"key': ["\\\"[{},:]", { nested: "!".repeat(100000) }], "comma,key": true };
+  assert.deepEqual(parseUniqueJson(JSON.stringify(state)), state);
+  const text = JSON.stringify({ a: "!".repeat(100000) });
+  assert.throws(() => parseUniqueJson(text.slice(0, -1) + ',"a":null}'), /repeats key/);
+  assert.throws(() => parseUniqueJson('"' + "!".repeat(100000)), SyntaxError);
+});

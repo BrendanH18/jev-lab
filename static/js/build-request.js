@@ -22,22 +22,29 @@ export function editorQuestionError(rows) {
 
 export function parseUniqueJson(text) {
   const parsed = JSON.parse(text);
-  // JSON.parse keeps the last repeated key. Check the original tokens before accepting
-  // question maps, so the Raw JSON editor and downloaded drafts cannot lose a question.
+  // JSON.parse validates the grammar but keeps the last repeated key. Walk each
+  // character once, skipping escaped string contents, to detect keys without a
+  // backtracking regex or a token array containing large image strings.
   const stack = [];
-  const tokens = text.match(/"(?:[^"\\]+|\\.)*"|[{}\[\]:,]|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g) || [];
-  for (const token of tokens) {
+  for (let i = 0; i < text.length; i++) {
+    const token = text[i];
     const top = stack[stack.length - 1];
-    if (token === "{") stack.push({ object: true, key: true, keys: new Set() });
+    if (token === '"') {
+      const start = i;
+      for (i++; i < text.length; i++) {
+        if (text[i] === "\\") i++;
+        else if (text[i] === '"') break;
+      }
+      if (top?.object && top.key) {
+        const key = JSON.parse(text.slice(start, i + 1));
+        if (top.keys.has(key)) throw new Error(`JSON repeats key “${key}”. Keep each question and option key unique.`);
+        top.keys.add(key);
+        top.key = false;
+      }
+    } else if (token === "{") stack.push({ object: true, key: true, keys: new Set() });
     else if (token === "[") stack.push({ object: false });
     else if (token === "}" || token === "]") stack.pop();
     else if (token === "," && top?.object) top.key = true;
-    else if (token.startsWith('"') && top?.object && top.key) {
-      const key = JSON.parse(token);
-      if (top.keys.has(key)) throw new Error(`JSON repeats key “${key}”. Keep each question and option key unique.`);
-      top.keys.add(key);
-      top.key = false;
-    }
   }
   return parsed;
 }
