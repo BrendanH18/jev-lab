@@ -38,7 +38,7 @@ export function restoreMessage(report, entry) {
     + "The editor then reloads the dataset (you are asked first if it has unsaved rows). No model calls.";
 }
 
-// deps: { h, api, icon, toast, handleError, render, afterRestore(id), confirm }
+// deps: { h, api, icon, toast, handleError, render, beforeRestore(id), afterRestore(id), confirm }
 export function createHistory(deps) {
   const ask = deps.confirm || ((text) => globalThis.confirm(text));
   const runs = {};
@@ -82,6 +82,7 @@ export function createHistory(deps) {
     const state = run(id);
     const { entry, report } = state.preview || {};
     if (state.busy || !report || !ask(restoreMessage(report, entry))) return;
+    if (deps.beforeRestore && !deps.beforeRestore(id)) return;
     state.busy = true;
     deps.render();
     try {

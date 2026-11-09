@@ -45,7 +45,7 @@ test("restore confirmation says it can be undone, or that it recreates a deleted
   assert.doesNotMatch(deleted, /can be undone/);
 });
 
-function harness({ confirmAnswer = true, failRestore = null } = {}) {
+function harness({ confirmAnswer = true, failRestore = null, beforeRestore = null } = {}) {
   const calls = [];
   const restored = [];
   const responses = {
@@ -58,6 +58,7 @@ function harness({ confirmAnswer = true, failRestore = null } = {}) {
   const errors = [];
   const ui = createHistory({ h, render: () => {}, toast: () => {}, handleError: (e) => errors.push(e),
     api: async (path, body) => { calls.push([path, body]); return responses[path](); },
+    beforeRestore,
     afterRestore: async (id) => { restored.push(id); },
     confirm: (message) => { asked.push(message); return confirmAnswer; } });
   return { ui, calls, restored, asked, errors };
@@ -118,4 +119,18 @@ test("deleted datasets load when the section opens and offer their own history",
   const section = ui.deleted();
   assert.match(text(section), /Old/);
   assert.ok(buttonNamed(section, "History"));
+});
+
+
+test("Review discard cancellation prevents history writes and keeps the restore preview", async () => {
+  const { ui, calls, restored } = harness({ beforeRestore: (id) => { assert.equal(id, "tickets"); return false; } });
+  ui.button("tickets").attrs.onclick();
+  await settle();
+  buttonNamed(ui.panel("tickets"), "Preview restore").attrs.onclick();
+  await settle();
+  buttonNamed(ui.panel("tickets"), "Restore this revision").attrs.onclick();
+  await settle();
+  assert.equal(calls.filter(([path]) => path.endsWith("/restore")).length, 0);
+  assert.deepEqual(restored, []);
+  assert.ok(buttonNamed(ui.panel("tickets"), "Restore this revision"));
 });

@@ -11,6 +11,7 @@ import { renderTests, renderExamples } from "./workbench-tests.js";
 import { rowsText, bulkUnsaved, countRows, bulkQuestions, renderBulk } from "./workbench-bulk.js";
 import { healthContext } from "./workbench-import.js";
 import { preparedLabelsUnsaved } from "./workbench-labeling.js";
+import { reviewQueuesUnsaved } from "./workbench-review.js";
 import { updateCal, syncAttachedSets } from "./workbench-calibrate.js";
 import { updatePolicy } from "./workbench-policy.js";
 import { renderCompare, updateCmpChart, updateCascade } from "./workbench-compare.js";
@@ -31,7 +32,7 @@ async function boot() {
   W.items = items.items;
   W.bulk.rowsText = W.bulk.savedText = rowsText(sample.rows);
   W.bulk.datasets = sets.datasets;
-  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved() || preparedLabelsUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved() || preparedLabelsUnsaved() || reviewQueuesUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
   W.bulk.sampleQuestions = sample.questions;
   W.compare.terse = sample.terse_questions;
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);

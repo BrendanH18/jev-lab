@@ -9,7 +9,7 @@ import {
   rowsText, bulkUnsaved, replaceRows, loadPictureUrls, settleLabels, rowsPayload, bulkQuestions, isTest, rowText,
 } from "./workbench-bulk.js";
 import { checkItem } from "./workbench-checks.js";
-import { queueClasses, shownAnswer } from "./workbench-review.js";
+import { queueClasses, shownAnswer, confirmReviewDiscard } from "./workbench-review.js";
 import { withCI, labelText, labelValue } from "./workbench-calibrate.js";
 import { activeGates, policyRules, policyRows, updatePolicy } from "./workbench-policy.js";
 
@@ -87,6 +87,7 @@ async function loadDataset(id) {
 
 async function deleteDataset(id) {
   const b = W.bulk;
+  if (!confirmReviewDiscard(id)) return;
   if (!confirm(`Delete the dataset “${id}”? This removes data/workbench/datasets/${id}.json; its history keeps a copy you can restore.`)) return;
   try {
     await api("/api/workbench/datasets/delete", { id });
@@ -97,7 +98,7 @@ async function deleteDataset(id) {
 }
 
 // Dataset revisions (static/js/history.js): after a restore, drop reports about the replaced file and reload it.
-const datasetHistory = createHistory({ h, api, toast, handleError, render: () => render(), afterRestore: async (id) => {
+const datasetHistory = createHistory({ h, api, toast, handleError, render: () => render(), beforeRestore: confirmReviewDiscard, afterRestore: async (id) => {
   const b = W.bulk;
   delete b.checkRuns[id];
   delete b.agreeRuns[id];
@@ -146,6 +147,7 @@ async function importBundle() {
   const id = slugOf(name);
   if (!id) return toast("Give the imported dataset a name", "error");
   const replace = bulk.datasets.some((x) => x.id === id);
+  if (!confirmReviewDiscard(id)) return;
   if (replace && !confirm(`Replace the saved dataset “${id}” with this bundle, including its check and test history?`)) return;
   b.busy = true;
   render();

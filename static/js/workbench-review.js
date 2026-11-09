@@ -1,5 +1,6 @@
 // Review queue (jev/decisions.py): label the rows an exported gate sent to review and its audit sample.
-import { api, h, handleError, icon, pct, stat, toast } from "./common.js";
+import { api, h, handleError, icon, mount, pct, stat, toast } from "./common.js";
+import { labelShortcut } from "./prelabel.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 import { rowsText, bulkUnsaved, loadPictureUrls, rowText } from "./workbench-bulk.js";
@@ -15,7 +16,8 @@ import { withCI, labelText, labelValue } from "./workbench-calibrate.js";
 // only. Nothing here calls the model: the answers shown are the ones the user's own gate returned.
 export function newQueue() {
   return { open: false, text: "", audit: "10", busy: false, report: null, audit_report: null, csvPreview: null,
-    kindFilter: "all", statusFilter: "all", nextLine: null };
+    kindFilter: "all", statusFilter: "all", nextLine: null, sliceField: "", sliceValue: "",
+    edits: {}, sessionPreview: null, readText: null };
 }
 
 export function queueClasses(question) {
@@ -34,21 +36,24 @@ export function queueReady(item, gates) {
   return Object.keys(gates).every((q) => item.labels[q] !== null && item.labels[q] !== undefined);
 }
 
-function queueVisible(items, gates, kind = "all", status = "all") {
+function queueVisible(items, gates, kind = "all", status = "all", field = "", value = "") {
   return items.filter((item) => (kind === "all" || item.kind === kind)
-    && (status === "all" || queueReady(item, gates) === (status === "ready")));
+    && (status === "all" || queueReady(item, gates) === (status === "ready"))
+    && (!field || item.slice_values?.[field] === value));
 }
 
-function queueNextIncomplete(items, gates, kind = "all", afterLine = null) {
-  const start = items.findIndex((item) => item.line === afterLine);
-  const ordered = [...items.slice(start + 1), ...items.slice(0, start + 1)];
-  return ordered.find((item) => (kind === "all" || item.kind === kind) && !queueReady(item, gates));
+function queueNextIncomplete(items, gates, kind = "all", afterLine = null, field = "", value = "", direction = 1) {
+  const ordered = direction < 0 ? [...items].reverse() : items;
+  const start = ordered.findIndex((item) => item.line === afterLine);
+  return [...ordered.slice(start + 1), ...ordered.slice(0, start + 1)].find((item) =>
+    (kind === "all" || item.kind === kind) && !queueReady(item, gates)
+    && (!field || item.slice_values?.[field] === value));
 }
 
-function nextQueueRow(id) {
+function nextQueueRow(id, direction = 1) {
   const q = W.bulk.checkRuns[id].queue;
   if (q.busy) return;
-  const item = queueNextIncomplete(q.report.items, q.report.gates, q.kindFilter, q.nextLine);
+  const item = queueNextIncomplete(q.report.items, q.report.gates, q.kindFilter, q.nextLine, q.sliceField, q.sliceValue, direction);
   if (!item) return;
   q.statusFilter = "incomplete";
   q.nextLine = item.line;
@@ -58,10 +63,32 @@ function nextQueueRow(id) {
   (card?.querySelector(".label-sel.open") || card)?.focus({ preventScroll: true });
 }
 
+export function reviewQueuesUnsaved() {
+  return Object.values(W.bulk.checkRuns).some((run) => Object.values(run.queue?.edits || {})
+    .some((labels) => Object.keys(labels).length));
+}
+
+function replaceQueue(q) {
+  return !Object.values(q.edits || {}).some((labels) => Object.keys(labels).length)
+    || window.confirm("Replace this Review queue and discard its unsaved human labels? Download the Review session first to keep them.");
+}
+
+export function confirmReviewDiscard(id) {
+  const q = W.bulk.checkRuns[id]?.queue;
+  if (!q) return true;
+  if (q.busy) { toast("Wait for the Review operation to finish before replacing this queue.", "error"); return false; }
+  return replaceQueue(q);
+}
+
 export function queueForm(x, q) {
-  const area = h("textarea", { class: "input", spellcheck: "false", rows: "5", "aria-label": `Gate decisions for ${x.id}`,
+  const area = h("textarea", { class: "input", spellcheck: "false", rows: "5", "aria-label": `Gate decisions for ${x.id}`, disabled: q.busy,
     placeholder: '{"route": "review", "held": ["department"], "rules": [], "answers": {...}, "row": {"text": "..."}}' }, q.text);
-  area.addEventListener("input", () => { q.text = area.value; });
+  const session = h("div", {}, queueSession(x.id, q));
+  area.addEventListener("input", () => {
+    q.text = area.value;
+    q.sessionPreview = null;
+    mount(session, queueSession(x.id, q));  // Refresh controls without replacing the focused textarea.
+  });
   const file = h("input", { type: "file", accept: ".jsonl,.json,.txt,.log", style: { display: "none" } });
   file.addEventListener("change", async () => {
     const f = file.files[0];
@@ -70,7 +97,7 @@ export function queueForm(x, q) {
     render();
     readQueue(x.id);
   });
-  const audit = h("input", { class: "input sm", type: "number", min: "0", max: "200", step: "1", value: q.audit, style: { width: "70px" },
+  const audit = h("input", { class: "input sm", type: "number", min: "0", max: "200", step: "1", value: q.audit, disabled: q.busy, style: { width: "70px" },
     "aria-label": "Automated rows to audit" });
   audit.addEventListener("input", () => { q.audit = audit.value; });
   return h("div", { class: "grid", style: { gap: "6px" } },
@@ -81,9 +108,10 @@ export function queueForm(x, q) {
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm", disabled: q.busy, onclick: () => readQueue(x.id) },
         q.busy ? [h("span", { class: "spin" }), " Reading…"] : [icon("layers"), "Read decisions"]),
-      h("button", { class: "btn sm ghost", onclick: () => file.click() }, "Choose file"), file,
+      h("button", { class: "btn sm ghost", disabled: q.busy, onclick: () => file.click() }, "Choose file"), file,
       h("label", { class: "faint", style: { fontSize: "12px", display: "flex", gap: "6px", alignItems: "center" } },
-        "Audit", audit, "automated rows")));
+        "Audit", audit, "automated rows")),
+    session);
 }
 
 async function readQueue(id) {
@@ -92,17 +120,23 @@ async function readQueue(id) {
   if (!q.text.trim()) return toast("Paste the gate's decisions, one JSON line per row", "error");
   const audit = Number(q.audit || 0);
   if (!Number.isInteger(audit) || audit < 0 || audit > 200) return toast("Audit a whole number of rows, from 0 to 200", "error");
+  if (!replaceQueue(q)) return;
+  const text = q.text;
   q.busy = true;
   render();
   try {
-    q.csvPreview = null;
-    q.report = await api("/api/workbench/checks/decisions", { id, text: q.text, audit });
+    const report = await api("/api/workbench/checks/decisions", { id, text, audit });
+    if (W.bulk.checkRuns[id]?.queue !== q || q.text !== text) return;
+    q.report = report;
+    q.readText = text;
+    q.edits = {};
+    q.sessionPreview = q.csvPreview = null;
+    q.sliceField = q.sliceValue = "";
     q.nextLine = null;
     await loadPictureUrls(q.report.items);
     q.audit_report = null;
   } catch (e) { handleError(e); }
-  q.busy = false;
-  render();
+  finally { q.busy = false; render(); }
 }
 
 export function queueSelect(item, qid, question, onChange, disabled = false) {
@@ -121,7 +155,7 @@ export function queueView(x, q) {
   const c = rep.counts;
   const gates = rep.gates;
   const ready = rep.items.filter((i) => queueReady(i, gates));
-  const visible = queueVisible(rep.items, gates, q.kindFilter, q.statusFilter);
+  const visible = queueVisible(rep.items, gates, q.kindFilter, q.statusFilter, q.sliceField, q.sliceValue);
   const filter = (name, label, options) => h("label", { class: "faint", style: { display: "flex", gap: "6px", alignItems: "center" } },
     label, h("select", { class: "input sm", disabled: q.busy, "aria-label": label,
       onchange: (e) => { q[name] = e.target.value; q.nextLine = null; render(); } },
@@ -142,7 +176,7 @@ export function queueView(x, q) {
     const why = item.kind === "audit" ? h("span", { class: "badge info", title: "Label it before you read the gate's answers" }, "audit · label blind")
       : [item.held.length ? h("span", { class: "badge warning" }, `held: ${item.held.join(", ")}`) : null,
         item.rules.map((r) => h("span", { class: "badge warning", title: r }, "breaks a rule"))];
-    return h("div", { class: `queue-item${done ? " done" : ""}`, id: `queue-${x.id}-${item.line}`, tabindex: "-1" },
+    return h("div", { class: `queue-item${done ? " done" : ""}`, id: `queue-${x.id}-${item.line}`, tabindex: "-1", onfocusin: () => { q.nextLine = item.line; } },
       h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
         h("span", { class: "faint mono", style: { fontSize: "11.5px" } }, `line ${item.line}`), why,
         h("span", { class: `badge ${item.provenance ? "info" : "warning"}` },
@@ -158,13 +192,21 @@ export function queueView(x, q) {
           h("span", { class: "mono" }, qid, qid in gates ? h("span", { class: "faint" }, " · gated") : null),
           reveal && item.candidates?.[qid]?.length ? h("span", { class: "faint", style: { fontSize: "11.5px" } },
             `Suggested shortlist: ${item.candidates[qid].map((v) => labelText(v, question.type)).join(", ")}. All options remain available.`) : null,
-          queueSelect(item, qid, question, () => { q.csvPreview = null; q.nextLine = item.line; render(); }, q.busy),
+          queueSelect(item, qid, question, () => {
+            ((q.edits ||= {})[item.line] ||= Object.create(null))[qid] = item.labels[qid];
+            q.sessionPreview = q.csvPreview = null; q.nextLine = item.line; render();
+          }, q.busy),
           reveal ? h("span", { class: `faint${differs ? " differs" : ""}`, style: { fontSize: "11.5px" } },
             `gate: ${shownAnswer(answer)}`) : null,
           W.guides?.hint(x.id, qid, question, { row: item.row, blind: item.kind === "audit" }));
       })));
   };
-  return h("div", { class: "check-report grid", style: { gap: "8px" } },
+  return h("div", { class: "check-report grid", style: { gap: "8px" }, onkeydown: (event) => {
+    const direction = labelShortcut(event);
+    if (direction === null || q.busy) return;
+    event.preventDefault();
+    nextQueueRow(x.id, direction);
+  } },
     h("div", { class: "faint", style: { fontSize: "12px" } }, summary),
     c.unverified ? h("p", { class: "muted" },
       "Older decisions have no gate provenance. Review rows start without suggested labels; automated rows are excluded from audit sampling and scores. Export this check's current gate and route rows again to verify them.") : null,
@@ -176,13 +218,18 @@ export function queueView(x, q) {
     rep.items.length ? queueCsv(x.id, q) : null,
     rep.items.length ? h("div", { class: "grid", style: { gap: "6px" } },
       h("div", { class: "faint", role: "status" }, `${ready.length} of ${rep.items.length} rows ready · ${rep.items.length - ready.length} incomplete · showing ${visible.length}`),
+      h("div", { class: "faint", "aria-label": "Labeling progress by question" }, Object.keys(rep.questions).map((qid) => {
+        const labeled = rep.items.filter((item) => item.labels[qid] !== null && item.labels[qid] !== undefined).length;
+        return h("div", {}, `${qid}: ${labeled} of ${rep.items.length} labeled · ${rep.items.length - labeled} missing`);
+      })),
+      rep.slice_fields?.length ? queueSliceControls(q) : null,
       h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
         filter("kindFilter", "Queue rows", [["all", "Review and audit"], ["review", "Review only"], ["audit", "Audit only"]]),
         filter("statusFilter", "Labeling status", [["all", "All statuses"], ["incomplete", "Incomplete"], ["ready", "Ready"]]),
-        h("button", { class: "btn sm", disabled: q.busy || !queueNextIncomplete(rep.items, gates, q.kindFilter),
+        h("button", { class: "btn sm", disabled: q.busy || !queueNextIncomplete(rep.items, gates, q.kindFilter, null, q.sliceField, q.sliceValue),
           onclick: () => nextQueueRow(x.id) }, "Next incomplete row")),
       h("p", { class: "faint", style: { margin: 0, fontSize: "12px" } },
-        "Filters change only the rows shown. CSV handoff and Add use the whole queue; Next follows the selected row kind and shows incomplete rows."),
+        "Filters change only the rows shown. CSV handoff and Add use the whole queue. Next follows the selected row kind and slice. Ctrl/⌘+Enter moves to the next incomplete row; Ctrl/⌘+Shift+Enter moves to the previous one. Progress counts current labels, including suggested labels on review rows."),
       visible.length ? h("div", { class: "queue-list" }, visible.map(card))
         : h("div", { class: "empty" }, "No rows match these filters. Choose another row kind or labeling status."))
       : h("div", { class: "empty" }, "No eligible rows to label. Check the file problems and provenance notices above; matching rows may already be in the dataset."),
@@ -191,6 +238,106 @@ export function queueView(x, q) {
         icon("save"), `Add ${adding < ready.length ? `${adding} of ${ready.length}` : adding} labeled row${ready.length === 1 ? "" : "s"} to “${x.name || x.id}”`),
       h("span", { class: "faint", style: { fontSize: "12px" } },
         `A row is ready once every gated question (${Object.keys(gates).join(", ")}) has a label. Room for ${rep.room} more rows; ready rows past that stay here. Rows and labels are saved, never answers.`)) : null);
+}
+
+function queueSliceControls(q) {
+  const fields = q.report.slice_fields;
+  const selected = fields.find((field) => field.name === q.sliceField);
+  const shown = (value) => value.length <= 80 ? value : `${value.slice(0, 79)}…`;
+  return h("div", { class: "row", style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+    h("label", {}, "Input slice ", h("select", { class: "input sm", disabled: q.busy, "aria-label": "Review slice field",
+      onchange: (event) => {
+        q.sliceField = event.target.value;
+        q.sliceValue = fields.find((field) => field.name === q.sliceField)?.values[0] || "";
+        q.nextLine = null;
+        render();
+      } }, h("option", { value: "", selected: !selected }, "All inputs"),
+    fields.map((field) => h("option", { value: field.name, selected: field === selected }, field.name)))),
+    selected ? h("label", {}, "Value ", h("select", { class: "input sm", disabled: q.busy, "aria-label": "Review slice value",
+      onchange: (event) => { q.sliceValue = event.target.value; q.nextLine = null; render(); } },
+    selected.values.map((value) => h("option", { value, title: value, selected: value === q.sliceValue }, shown(value))))) : null);
+}
+
+function queueSession(id, q) {
+  const file = h("input", { type: "file", accept: ".json,application/json", class: "hidden", disabled: q.busy });
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    if (!f) return;
+    try { await previewQueueSession(id, JSON.parse(await f.text())); }
+    catch (e) { handleError(e); }
+  });
+  const preview = q.sessionPreview;
+  return h("div", { class: "panel grid", style: { gap: "6px" } }, file,
+    h("div", {},
+      h("button", { class: "btn sm", disabled: q.busy || !q.report?.session_context || q.text !== q.readText,
+        onclick: () => downloadQueueSession(id) }, "Download Review session"),
+      h("button", { class: "btn sm", disabled: q.busy || !q.text.trim(), onclick: () => file.click() }, "Restore Review session")),
+    h("p", { class: "faint", style: { margin: 0 } },
+      "Session files keep your human label edits and the original review/audit membership, without model answers or shortlists. Keep the original decisions file and dataset unchanged to restore. Pictures travel separately. Download does not append labels; Add remains explicit."),
+    q.report && !q.report.session_context ? h("p", { class: "faint" },
+      "Rows were appended since this queue was read. Remaining labels stay here, but cannot be downloaded as a session. Reading decisions again enables session downloads and discards these remaining labels.") : null,
+    preview ? h("div", { class: "grid", style: { gap: "6px" } },
+      h("p", {}, `Restore preview: ${preview.result.report.items.length} queued rows, including ${preview.result.report.counts.audit} in the original audit sample; ${preview.result.edits.reduce((n, item) => n + Object.keys(item.labels).length, 0)} human label edits. No labels have been applied or saved.`),
+      h("div", {},
+        h("button", { class: "btn sm primary", disabled: q.busy, onclick: () => acceptQueueSession(id) }, "Accept restored Review session"),
+        h("button", { class: "btn sm", disabled: q.busy, onclick: () => { q.sessionPreview = null; render(); } }, "Cancel restore"))) : null);
+}
+
+async function downloadQueueSession(id) {
+  const q = W.bulk.checkRuns[id].queue;
+  if (q.busy || !q.report?.session_context || q.text !== q.readText) return;
+  const report = q.report;
+  q.busy = true;
+  render();
+  try {
+    const session = await api("/api/workbench/checks/decisions/session/export", {
+      id, text: q.readText, seed: report.seed, audit: report.audit_requested, context: report.session_context,
+      items: Object.entries(q.edits || {}).map(([line, labels]) => ({ line: Number(line), labels })),
+    });
+    if (W.bulk.checkRuns[id]?.queue !== q || q.report !== report) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(session, null, 2)], { type: "application/json" }));
+    h("a", { href: url, download: `${id}-review-session.json` }).click();
+    URL.revokeObjectURL(url);
+    toast("Downloaded Review session. Keep the original decisions file and unchanged dataset to restore it.");
+  } catch (e) { handleError(e); }
+  finally { q.busy = false; render(); }
+}
+
+async function previewQueueSession(id, session) {
+  const q = W.bulk.checkRuns[id].queue;
+  if (q.busy || !q.text.trim()) return;
+  const text = q.text;
+  q.busy = true;
+  q.sessionPreview = null;
+  render();
+  try {
+    const result = await api("/api/workbench/checks/decisions/session/import", { id, text, session });
+    if (W.bulk.checkRuns[id]?.queue === q && q.text === text) q.sessionPreview = { text, session, result };
+  } catch (e) { handleError(e); }
+  finally { q.busy = false; render(); }
+}
+
+async function acceptQueueSession(id) {
+  const q = W.bulk.checkRuns[id].queue;
+  const preview = q.sessionPreview;
+  if (q.busy || !preview || preview.text !== q.text || !replaceQueue(q)) return;
+  q.busy = true;
+  render();
+  try {
+    // Revalidate at accept time as the saved dataset may have changed since preview.
+    const result = await api("/api/workbench/checks/decisions/session/import", { id, text: q.text, session: preview.session });
+    if (W.bulk.checkRuns[id]?.queue !== q || q.sessionPreview !== preview || q.text !== preview.text) return;
+    q.report = result.report;
+    q.edits = Object.fromEntries(result.edits.map((item) => [item.line, item.labels]));
+    q.readText = preview.text;
+    q.audit = String(result.report.audit_requested);
+    q.sessionPreview = q.csvPreview = q.audit_report = null;
+    q.sliceField = q.sliceValue = "";
+    q.nextLine = null;
+    await loadPictureUrls(q.report.items);
+    toast("Restored Review session. Add labeled rows when you are ready to save them.");
+  } catch (e) { handleError(e); }
+  finally { q.busy = false; render(); }
 }
 
 function queueCsv(id, q) {
@@ -244,7 +391,9 @@ async function previewQueueLabels(id, text) {
   q.csvPreview = null;
   render();
   try {
-    q.csvPreview = await api("/api/workbench/checks/decisions/import", { id, items: q.report.items, text });
+    const report = q.report;
+    const result = await api("/api/workbench/checks/decisions/import", { id, items: report.items, text });
+    if (W.bulk.checkRuns[id]?.queue === q && q.report === report) q.csvPreview = result;
   } catch (e) { handleError(e); }
   finally { q.busy = false; render(); }
 }
@@ -252,6 +401,13 @@ async function previewQueueLabels(id, text) {
 function applyQueueLabels(id) {
   const q = W.bulk.checkRuns[id].queue;
   if (q.busy || !q.csvPreview) return;
+  for (const item of q.csvPreview.items) {
+    const old = q.report.items.find((i) => i.line === item.line);
+    for (const [qid, value] of Object.entries(item.labels)) {
+      if (value !== old.labels[qid]) ((q.edits ||= {})[item.line] ||= Object.create(null))[qid] = value;
+    }
+  }
+  q.sessionPreview = null;
   q.report.items = q.csvPreview.items;
   q.csvPreview = null;
   q.audit_report = null;
@@ -266,6 +422,8 @@ async function addQueued(id) {
   // Only as many ready rows as the dataset has room for, in queue order; the rest stay in the queue with their labels.
   const ready = rep.items.filter((i) => queueReady(i, rep.gates)).slice(0, rep.room);
   if (!ready.length) return toast("The dataset is full: it holds 200 rows. Save these rows as a new dataset instead.", "error");
+  const remains = rep.items.some((item) => !ready.includes(item) && Object.keys(q.edits?.[item.line] || {}).length);
+  if (remains && !window.confirm("Adding rows changes this dataset and prevents session downloads for the remaining human labels. Those labels stay on this page, but reading decisions again discards them. Finish labeling the queue first if you need portable recovery. Add these ready rows anyway?")) return;
   q.busy = true;
   render();
   try {
@@ -275,6 +433,9 @@ async function addQueued(id) {
     const out = await api("/api/workbench/checks/decisions/add", { id, items });
     q.csvPreview = null;
     rep.items = rep.items.filter((i) => !ready.includes(i));
+    for (const item of ready) delete (q.edits ||= {})[item.line];
+    rep.session_context = null;
+    q.sessionPreview = null;
     rep.room = Math.max(0, rep.room - out.added);
     q.audit_report = out.audit;
     b.datasets = (await api("/api/workbench/datasets")).datasets;

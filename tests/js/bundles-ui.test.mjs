@@ -26,9 +26,9 @@ function setup(confirm) {
     calls.push({ path, body });
     return path.endsWith("/import") ? { dataset: { id: "existing-dataset" } } : { datasets: bulk.datasets };
   };
-  const run = new Function("W", "api", "slugOf", "confirm", "toast", "render", "handleError",
+  const run = new Function("W", "api", "slugOf", "confirm", "toast", "render", "handleError", "confirmReviewDiscard",
     `${handler}; return importBundle;`)({ bulk }, api, () => "existing-dataset", confirm,
-    () => {}, () => {}, (e) => { throw e; });
+    () => {}, () => {}, (e) => { throw e; }, () => true);
   return { run, bulk, calls };
 }
 

@@ -233,9 +233,18 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
     for d in sampled:
         items.append(dict(d, kind="audit", labels={q: None for q in questions}, open=list(questions)))
     counts.update({"queued": len(items), "audit": len(sampled), "dropped": waiting - len(review)})
+    from . import reviewsession
+
+    slice_fields = [{"name": option["name"],
+                     "values": sorted({slices._value(item["row"], option["name"]) for item in items})}
+                    for option in slices.fields(items) if option["name"] not in ("_expect", "_test")]
+    for item in items:
+        item["slice_values"] = {option["name"]: slices._value(item["row"], option["name"])
+                                for option in slice_fields}
     return {"dataset": workbench.dataset_summary(dataset), "items": items, "questions": questions,
             "gates": check["gates"], "counts": counts, "problems": problems[:PROBLEMS_SHOWN],
-            "problems_total": len(problems), "room": room}
+            "problems_total": len(problems), "room": room, "slice_fields": slice_fields,
+            "seed": seed, "audit_requested": audit, "session_context": reviewsession.context(dataset, text)}
 
 
 def _item(item: Any, number: int, questions: Dict[str, dict]) -> dict:
