@@ -249,6 +249,23 @@ class HistoryTests(unittest.TestCase):
         looks = workbench.load_dataset("tickets")["test"]["looks"]
         self.assertEqual([x["n"] for x in looks], list(range(2, cap + 2)))
 
+    def test_restore_keeps_identical_looks_scored_in_the_same_second(self):
+        workbench.save_dataset(self.spec())
+        testsplit.lock("tickets", 0.3, seed=1)
+        dataset = workbench.load_dataset("tickets")
+        same = {"at": "2026-11-01T00:00:00Z", "gates": {"urgent": 0.5}, "signal": "confidence"}
+        dataset["test"]["looks"] = [dict(same), dict(same)]
+        workbench.write_dataset(dataset)
+        target = self.kept()[-1]  # the split before any look
+        report = history.preview("tickets", target)
+        history.restore("tickets", target, report["revision"])
+        self.assertEqual(len(workbench.load_dataset("tickets")["test"]["looks"]), 2)
+        workbench.delete_dataset("tickets")  # every kept revision holds both looks now: not doubled
+        target = self.kept()[-1]
+        report = history.preview("tickets", target)
+        history.restore("tickets", target, report["revision"])
+        self.assertEqual(len(workbench.load_dataset("tickets")["test"]["looks"]), 2)
+
     def test_ids_and_revisions_are_validated_against_traversal(self):
         workbench.save_dataset(self.spec())
         workbench.save_dataset(self.spec(notes="two"))

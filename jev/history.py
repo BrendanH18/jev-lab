@@ -157,13 +157,21 @@ NOTES = ("check_dropped", "guidelines_dropped")  # reported by a restore, never 
 
 
 def _looks(*tests: Any) -> list:
-    """Test-split looks from several records, in order, each once: a restore never forgets that test rows were scored."""
-    out, seen = [], set()
+    """Test-split looks from several records, in order: a restore never forgets that test rows were scored.
+
+    Records are snapshots of one growing history, so a look appears in several of them. Each distinct look is kept as
+    many times as the record holding the most copies of it: two identical looks scored in the same second both stay,
+    and the same look seen in two snapshots is not doubled."""
+    out, kept = [], {}
     for test in tests:
+        here = {}
         for look in (test.get("looks") or []) if isinstance(test, dict) else []:
+            if not isinstance(look, dict):
+                continue
             key = json.dumps(look, sort_keys=True)
-            if isinstance(look, dict) and key not in seen:
-                seen.add(key)
+            here[key] = here.get(key, 0) + 1
+            if here[key] > kept.get(key, 0):
+                kept[key] = here[key]
                 out.append(look)
     return out[-testsplit.MAX_LOOKS_KEPT:]
 
