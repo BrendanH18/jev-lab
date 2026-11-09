@@ -27,6 +27,11 @@ browser's `localStorage` ([`static/js/handoff.js`](../static/js/handoff.js)); it
 Compare's **Reverse A's options** builds its order-check variant in the browser
 ([`static/js/variants.js`](../static/js/variants.js)), and Label agreement shapes the labels it sends
 ([`static/js/agreement.js`](../static/js/agreement.js)). These modules have no DOM code, so `tests/js` tests them under Node.
+The Workbench page's entry, [`static/js/workbench.js`](../static/js/workbench.js), boots the page, switches
+tabs and renders; each panel (Build, Tests, Bulk, CSV import and health, labeling, datasets, checks, drift, the
+review queue, Calibrate, costs, Policy, Compare) lives in a `static/js/workbench-*.js` module, and all of them
+share the page state `W` from [`static/js/workbench-state.js`](../static/js/workbench-state.js). The browser
+loads them as ES modules; there is no build step.
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,
@@ -62,6 +67,7 @@ arithmetic, lookups, or authorization checks.
 | [`jev/holdout.py`](../jev/holdout.py) | Five-fold cross-validation of tuned thresholds: deterministic folds by row, tuning on the other folds, and pooled accuracy on held-out rows |
 | [`jev/cost.py`](../jev/cost.py) | Thresholds chosen by price: per-row costs from a review price, a default mistake price, and prices for specific mistakes; the cheapest gates on one or several questions; the cost at every threshold; and a cross-validated cost on held-out rows |
 | [`jev/checks.py`](../jev/checks.py) | Checks: a gate saved with a dataset, rerun over its rows and judged against an accuracy and an automation target; used by the Workbench and `scripts/check.py` |
+| [`jev/history.py`](../jev/history.py) | Dataset revision history: keeps the file each dataset write replaces or deletes under `data/workbench/datasets/.history/` (newest 20, gitignored), lists revisions by counts only, and previews and restores one through the replacement preview's validation and file-token check |
 | [`jev/testsplit.py`](../jev/testsplit.py) | Test split: marks a random share of a dataset's labeled rows `"_test": true`, held out of every tuning panel and Compare, and scores a gate on them on request, recording each look but never its answers |
 | [`jev/upgrade.py`](../jev/upgrade.py) | Upgrade: a check's dataset asked of its tuned-on version and a candidate, both live; the saved gate judged on each, a paired McNemar comparison, changed answers, and the gate retuned on the candidate at the check's targets, cross-validated |
 | [`jev/drift.py`](../jev/drift.py) | Drift: a check's dataset and unlabeled new rows, both run live, compared through its gate: automated share, answer mix, and confidence, each with a Holm-adjusted test, and an estimated accuracy on the new rows |

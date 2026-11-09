@@ -1,4 +1,4 @@
-"""Portable Workbench datasets: configuration, human labels, and their picture bytes, never run results."""
+"""Portable Workbench datasets: configuration, human labels, labeling guidelines, and their picture bytes, never run results."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import zipfile
 import zlib
 from typing import Any, Dict, Tuple
 
-from . import calibrate, checks, images, policy, rules, testsplit, workbench
+from . import calibrate, checks, guidelines, images, policy, rules, testsplit, workbench
 from .workbench import WorkbenchError
 
 FORMAT = "jev-lab-dataset"
@@ -75,6 +75,8 @@ def _dataset(raw: Any, name: Any = None) -> dict:
             raise WorkbenchError(str(err)) from err
         if parsed:
             out["rules"] = raw["rules"].strip()
+    if raw.get("guidelines"):  # human-only labeling guidelines travel with the dataset
+        out["guidelines"] = guidelines.validate(raw["guidelines"], out.get("questions"))
     if "check" in raw:
         out["check"] = checks.validate_check(raw["check"], out.get("questions"))
         if "saved_at" in raw["check"]:

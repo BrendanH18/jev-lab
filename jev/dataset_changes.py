@@ -7,7 +7,7 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from . import decisions, workbench
+from . import decisions, guidelines, workbench
 from .workbench import WorkbenchError
 
 
@@ -38,6 +38,12 @@ def preview(spec: dict) -> dict:
     candidate = workbench.prepare_dataset(spec)
     revision = _revision(candidate["id"])
     prior = workbench.load_dataset(candidate["id"]) if revision != "missing" else {}
+    return summarize(prior, candidate, revision)
+
+
+def summarize(prior: dict, candidate: dict, revision: str) -> dict:
+    """Counts and configuration changes from the saved file `prior` ({} when missing) to `candidate`, without label
+    values. `revision` is the saved file's token that a save or restore must still match (jev/history.py uses this too)."""
     before, after = _groups(prior.get("rows", [])), _groups(candidate["rows"])
     added = removed = labels_added = labels_removed = labels_changed = split_changed = 0
     for key in before.keys() | after.keys():
@@ -67,6 +73,10 @@ def preview(spec: dict) -> dict:
             "metadata_changed": any(prior.get(k, "") != candidate.get(k, "") for k in ("name", "notes")),
             "check": "removed" if candidate.get("check_dropped") else "preserved" if candidate.get("check") else "none",
             "check_dropped": candidate.get("check_dropped"),
+            "check_changed": json.dumps(prior.get("check"), sort_keys=True) != json.dumps(candidate.get("check"), sort_keys=True),
+            # Labeling guidelines by question id only: never a note, an example, or a label value.
+            "guidelines": dict(guidelines.changes(prior.get("guidelines"), candidate.get("guidelines")),
+                               dropped=candidate.get("guidelines_dropped") or []),
             "test": {"before": test_before, "after": test_after, "changed_membership": split_changed,
                      "history": "preserved" if test_after and prior.get("test") else "started" if test_after else
                                 "removed" if prior.get("test") else "none"}}

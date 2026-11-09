@@ -124,6 +124,19 @@ class HttpTests(unittest.TestCase):
                 self.assertIn("charset=utf-8", headers["Content-Type"])
                 self.assertTrue(body)
 
+    def test_workbench_modules_are_served_as_javascript(self):
+        # The Workbench page loads workbench.js, which imports its panels from static/js/workbench-*.js.
+        modules = sorted(path.name for path in (server.STATIC / "js").glob("workbench*.js"))
+        self.assertIn("workbench-state.js", modules)
+        for name in modules:
+            with self.subTest(module=name):
+                status, headers, body = self.request("GET", "/js/" + name)
+                self.assertEqual(status, 200)
+                # Python 3.12+ names .js text/javascript; older versions may say application/javascript.
+                self.assertRegex(headers["Content-Type"], r"^(text|application)/javascript; charset=utf-8$")
+                self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
+                self.assertTrue(body)
+
     def test_foreign_host_is_rejected(self):
         status, _, body = self.request("GET", "/", headers={"Host": "attacker.example"})
         self.assertEqual(status, 403)
@@ -209,6 +222,54 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(status, 200)
             status, _ = post("preview", {"data": "not a zip"})
             self.assertEqual(status, 400)
+
+    def test_dataset_history_routes_preview_and_restore_without_model_calls(self):
+        from jev import workbench
+
+        questions = {"urgent": {"type": "noul", "instructions": "Is it urgent?"}}
+        with tempfile.TemporaryDirectory() as folder, patch.object(workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            workbench.save_dataset({"name": "Tickets", "notes": "first", "questions": questions,
+                                    "rows": [{"text": "private input", "_expect": {"urgent": "secret-label"}}]})
+            workbench.save_dataset({"name": "Tickets", "notes": "second", "rows": ["other"]})
+
+            def post(path, payload, headers=None):
+                status, _, body = self.request("POST", "/api/workbench/datasets/history" + path,
+                                               json.dumps(payload), headers or self.post_headers())
+                return status, json.loads(body)
+
+            status, listed = post("", {"id": "tickets"})
+            self.assertEqual(status, 200, listed)
+            [entry] = listed["revisions"]
+            self.assertEqual((entry["rows"], entry["labeled"], entry["questions"]), (1, 1, ["urgent"]))
+            self.assertNotIn("secret-label", json.dumps(listed))
+            status, preview = post("/preview", {"id": "tickets", "revision": entry["revision"]})
+            self.assertEqual(status, 200, preview)
+            self.assertEqual((preview["restoring"], preview["questions_changed"]), (entry["revision"], True))
+            self.assertNotIn("secret-label", json.dumps(preview))
+            restore = {"id": "tickets", "revision": entry["revision"], "preview_revision": preview["revision"]}
+            status, _ = post("/restore", restore, {"Content-Type": "application/json"})
+            self.assertEqual(status, 403, "restoring needs the session token")
+            status, stale = post("/restore", dict(restore, preview_revision="0" * 64))
+            self.assertEqual(status, 400)
+            self.assertIn("Preview the restore again", stale["error"])
+            kept = Path(folder, "datasets", ".history", "tickets", entry["revision"] + ".json")
+            raw = json.loads(kept.read_text())
+            raw["guidelines"] = {"gone": {"note": "for a question the revision lacks"}}
+            kept.write_text(json.dumps(raw))
+            status, restored = post("/restore", restore)
+            self.assertEqual(status, 200, restored)
+            self.assertIn("gone", " ".join(restored["guidelines_dropped"]), "drops reach the page")
+            self.assertEqual(workbench.load_dataset("tickets")["notes"], "first")
+            status, again = post("/restore", restore)
+            self.assertEqual(status, 400, "a used preview is stale")
+            status, _ = post("", {"id": "../.env"})
+            self.assertEqual(status, 400)
+            self.request("POST", "/api/workbench/datasets/delete", json.dumps({"id": "tickets"}), self.post_headers())
+            status, _, body = self.request("GET", "/api/workbench/datasets/history/deleted")
+            self.assertEqual((status, [d["id"] for d in json.loads(body)["datasets"]]), (200, ["tickets"]))
+            status, _, body = self.request("GET", "/api/workbench/datasets")
+            self.assertEqual(json.loads(body)["datasets"], [])
 
     def test_static_traversal_cannot_read_sibling_with_matching_prefix(self):
         with tempfile.TemporaryDirectory(prefix="static-private-", dir=server.PROJECT_ROOT) as folder:
@@ -371,7 +432,7 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(json.loads(body)["dataset"], {"id": "tickets", "name": "Tickets", "notes": "",
                                                            "saved_at": json.loads(body)["dataset"]["saved_at"], "rows": 2,
                                                            "labeled": 1, "labels": {"dept": 1}, "questions": 0,
-                                                           "check": None, "check_notes": [], "test": None})
+                                                           "check": None, "check_notes": [], "guidelines": 0, "test": None})
             status, _, body = self.request("GET", "/api/workbench/datasets")
             self.assertEqual([d["id"] for d in json.loads(body)["datasets"]], ["tickets"])
             status, _, body = self.request("POST", "/api/workbench/datasets/load", json.dumps({"id": "tickets"}),
@@ -387,7 +448,8 @@ class HttpTests(unittest.TestCase):
             status, _, body = self.request("POST", "/api/workbench/datasets/delete", json.dumps({"id": "tickets"}),
                                            self.post_headers())
             self.assertTrue(json.loads(body)["deleted"])
-            self.assertEqual(list(Path(folder, "datasets").iterdir()), [])
+            # The deleted file is kept as a revision (jev/history.py) so the delete can be undone.
+            self.assertEqual(list(Path(folder, "datasets").iterdir()), [Path(folder, "datasets", ".history")])
 
     def test_test_split_over_http(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
@@ -408,6 +470,37 @@ class HttpTests(unittest.TestCase):
             status, _, body = self.request("POST", "/api/workbench/datasets/test/remove", json.dumps({"id": "tickets"}),
                                            self.post_headers())
             self.assertTrue(json.loads(body)["removed"])
+
+    def test_spend_estimate_over_http(self):
+        boom = AssertionError("an estimate must not call the model")
+        with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=boom), \
+                patch.object(server.client, "models", side_effect=boom), \
+                patch.object(server.client.guard, "check", side_effect=boom):
+            before = server.client.guard.snapshot()
+            questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}
+            body = {"kind": "bulk", "rows": "first row\nsecond row\nthird row", "questions": questions}
+            status, _, raw = self.request("POST", "/api/workbench/estimate", json.dumps(body), self.post_headers())
+            self.assertEqual(status, 200, raw)
+            out = json.loads(raw)
+            self.assertEqual((out["kind"], out["calls"], out["upper_bound"]), ("bulk", 3, True))
+            self.assertGreater(out["usd"], 0)
+            self.assertIn("fits", out)
+            variants = [{"questions": questions}, {"questions": questions, "average_orders": False, "model": "jev-9.9.9"}]
+            status, _, raw = self.request("POST", "/api/workbench/estimate", json.dumps(
+                {"kind": "compare", "rows": "a\nb", "variants": variants}), self.post_headers())
+            self.assertEqual((status, json.loads(raw)["calls"]), (200, 4), raw)
+            self.assertIn("jev-9.9.9", json.loads(raw)["models"])
+            bad, _, err = self.request("POST", "/api/workbench/estimate", json.dumps({"kind": "nope"}), self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("kind must be one of", json.loads(err)["error"])
+            bad, _, err = self.request("POST", "/api/workbench/estimate", json.dumps({"kind": "check", "id": "missing"}),
+                                       self.post_headers())
+            self.assertEqual(bad, 400, err)
+            forged, _, _ = self.request("POST", "/api/workbench/estimate", json.dumps(body),
+                                        {"Content-Type": "application/json"})
+            self.assertEqual(forged, 403, "a POST needs the session token")
+            self.assertEqual(server.client.guard.snapshot(), before)
 
     def test_checks_over_http(self):
         questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}

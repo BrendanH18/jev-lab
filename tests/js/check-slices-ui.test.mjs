@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { workbenchSource } from "./workbench-source.mjs";
 
-const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
+const source = workbenchSource;
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const target = { field: "channel", value: "email", min_accuracy: 0.95, min_coverage: 0.5 };
 

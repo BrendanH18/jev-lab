@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
-const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
+import { workbenchSource } from "./workbench-source.mjs";
+const source = workbenchSource;
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 function harness(api) {
   const W = { bulk: { rowsText: "original", prelabel: { busy: false, report: {}, context: "original", drafts: { 0: { keep: false } } } } };

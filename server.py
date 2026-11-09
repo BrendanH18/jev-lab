@@ -20,8 +20,8 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, dataset_changes, decisions, dispatch, drift, envfile, examples, find, gate, health, hello,
-                 holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
+from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, dataset_changes, decisions, dispatch, drift, envfile, estimate, examples, find, gate, guidelines, health, hello,
+                 history, holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -485,7 +485,7 @@ def api_wb_delete(body):
     return {"deleted": workbench.delete_item(str(body.get("id", "")))}
 
 
-def api_wb_run_items(body):
+def selected_items(body):
     ids = body.get("ids")
     items = workbench.list_items()
     if ids:
@@ -494,7 +494,11 @@ def api_wb_run_items(body):
         items = [dict(body["item"], questions=workbench.validate_questions(body["item"].get("questions")))]
     if not items:
         raise BadRequest("No saved tests yet. Save one from the Workbench first.")
-    return workbench.run_items(client, items)
+    return items
+
+
+def api_wb_run_items(body):
+    return workbench.run_items(client, selected_items(body))
 
 
 def bulk_rows(body):
@@ -608,6 +612,8 @@ def api_wb_dataset_save(body):
     out = {"dataset": workbench.dataset_summary(dataset)}
     if dataset.get("check_dropped"):
         out["check_dropped"] = dataset["check_dropped"]
+    if dataset.get("guidelines_dropped"):
+        out["guidelines_dropped"] = dataset["guidelines_dropped"]
     return out
 
 
@@ -619,8 +625,37 @@ def api_wb_dataset_load(body):
     return {"dataset": workbench.load_dataset(str(body.get("id", "")))}
 
 
+def api_wb_guidelines(body):
+    return guidelines.load(str(body.get("id", "")))
+
+
+def api_wb_guidelines_save(body):
+    return guidelines.save(str(body.get("id", "")), body.get("guidelines"))
+
+
 def api_wb_dataset_delete(body):
     return {"deleted": workbench.delete_dataset(str(body.get("id", "")))}
+
+
+def api_wb_dataset_history(body):
+    return history.revisions(str(body.get("id", "")))
+
+
+def api_wb_dataset_history_deleted(_body):
+    return {"datasets": history.deleted()}
+
+
+def api_wb_dataset_history_preview(body):
+    return history.preview(str(body.get("id", "")), body.get("revision"))
+
+
+def api_wb_dataset_history_restore(body):
+    dataset = history.restore(str(body.get("id", "")), body.get("revision"), body.get("preview_revision"))
+    out = {"dataset": workbench.dataset_summary(dataset)}
+    for note in history.NOTES:
+        if dataset.get(note):
+            out[note] = dataset[note]
+    return out
 
 
 def api_wb_bundle_export(body):
@@ -643,6 +678,28 @@ def api_wb_check_save(body):
     if isinstance(spec, dict):
         check_model(str(spec.get("model")).strip())
     return {"dataset": workbench.dataset_summary(checks.save_check(str(body.get("id", "")), spec))}
+
+
+def api_wb_estimate(body):
+    """What a paid Workbench run would send and hold against the budget (jev/estimate.py). Takes the run's own body
+    plus its kind; makes no model call and reserves nothing. Model names are not checked against the key here, since
+    that would call GET /v1/models; the run checks them."""
+    kind = body.get("kind")
+    field = str(body.get("field") or "text")
+    model = str(body.get("model") or "").strip() or None
+    if kind == "bulk":
+        return estimate.for_bulk(client, bulk_rows(body), body.get("questions"), field)
+    if kind == "compare":
+        return estimate.for_compare(client, bulk_rows(body), body.get("variants"), field)
+    if kind == "check":
+        return estimate.for_check(client, str(body.get("id", "")), model)
+    if kind == "drift":
+        return estimate.for_drift(client, str(body.get("id", "")), body.get("rows"), model)
+    if kind == "upgrade":
+        return estimate.for_upgrade(client, str(body.get("id", "")), model)
+    if kind == "items":
+        return estimate.for_items(client, selected_items(body))
+    raise BadRequest("kind must be one of: %s" % ", ".join(estimate.KINDS))
 
 
 def api_wb_check_delete(body):
@@ -786,6 +843,7 @@ ROUTES = {
     ("POST", "/api/workbench/items/images"): api_wb_item_images,
     ("POST", "/api/workbench/items/run"): api_wb_run_items,
     ("POST", "/api/workbench/bulk"): api_wb_bulk,
+    ("POST", "/api/workbench/estimate"): api_wb_estimate,
     ("GET", "/api/workbench/bulk/sample"): api_wb_bulk_sample,
     ("POST", "/api/workbench/pictures"): api_wb_pictures_save,
     ("POST", "/api/workbench/pictures/load"): api_wb_pictures_load,
@@ -802,6 +860,12 @@ ROUTES = {
     ("POST", "/api/workbench/prelabel/csv/import"): api_wb_prelabel_csv_import,
     ("POST", "/api/workbench/datasets/load"): api_wb_dataset_load,
     ("POST", "/api/workbench/datasets/delete"): api_wb_dataset_delete,
+    ("POST", "/api/workbench/datasets/history"): api_wb_dataset_history,
+    ("GET", "/api/workbench/datasets/history/deleted"): api_wb_dataset_history_deleted,
+    ("POST", "/api/workbench/datasets/history/preview"): api_wb_dataset_history_preview,
+    ("POST", "/api/workbench/datasets/history/restore"): api_wb_dataset_history_restore,
+    ("POST", "/api/workbench/datasets/guidelines"): api_wb_guidelines,
+    ("POST", "/api/workbench/datasets/guidelines/save"): api_wb_guidelines_save,
     ("POST", "/api/workbench/datasets/bundle/export"): api_wb_bundle_export,
     ("POST", "/api/workbench/datasets/bundle/preview"): api_wb_bundle_preview,
     ("POST", "/api/workbench/datasets/bundle/import"): api_wb_bundle_import,

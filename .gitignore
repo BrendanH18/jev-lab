@@ -19,3 +19,6 @@ __pycache__/
 # Claude Code machine-local files
 .claude/settings.local.json
 .claude/worktrees/
+
+# Workbench dataset revisions (jev/history.py): local undo state, not fixtures
+/data/workbench/datasets/.history/

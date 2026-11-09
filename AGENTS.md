@@ -37,6 +37,8 @@ uv run scripts/check.py                       # rerun the checks saved in Workbe
                                                # dataset through its gate (jev/drift.py); exits 1 on a shift.
                                                # --upgrade-to <version> asks each check's tuned-on version and
                                                # <version> every row (jev/upgrade.py); exits 1 if one should stay.
+                                               # --estimate prints the calls and an upper-bound cost instead of
+                                               # running (with --model/--drift/--upgrade-to); no calls, no key.
 ```
 
 Lint with `uv run --locked ruff check` (configured in `pyproject.toml`; CI runs it). No formatter is
@@ -94,9 +96,13 @@ its own pair of `World`s — don't let those get confused with each other.
 raise `BadRequest`/`jev.workbench.WorkbenchError`/`jev.envfile.EnvFileError` for 400s, `JevError`
 (from `jev/client.py`) carries its own HTTP status through to the response. To add an endpoint:
 write the handler, add it to `ROUTES`, and (if the response should ever come back non-JSON or the
-page needs new markup) update the relevant `static/*.html`+`static/js/*.js` pair — each app page
+page needs new markup) update the relevant `static/*.html`+`static/js/*.js` pair — each demo page
 has one JS file with no shared framework, only the helpers in `static/js/common.js` (DOM builder
-`h()`, `api()` fetch wrapper, the JSON "Inspect" drawer, toasts, the key/settings modal). The drawer's
+`h()`, `api()` fetch wrapper, the JSON "Inspect" drawer, toasts, the key/settings modal). The Workbench
+page loads one entry, `static/js/workbench.js` (boot, tabs, `render()`), which imports panel modules
+`static/js/workbench-*.js` (build, tests, bulk, import, labeling, datasets, checks, drift, review, calibrate,
+costs, policy, compare) that share page state through `W` in `workbench-state.js`; their imports form cycles, so
+a module may only declare functions and constants at load time (`tests/js/workbench-modules.test.mjs`). The drawer's
 **Open in Workbench** button (`static/js/handoff.js`) hands the inspected request — state, questions,
 pictures, never answers — to the Workbench's Build tab through `localStorage`, with no server route;
 `tests/test_handoff.py` checks that every demo's request passes Workbench validation, so a demo that
@@ -166,6 +172,14 @@ only, deduplicates against all saved rows (including test rows), and preserves t
 These targeted rows are not a random audit and must never produce audit-accuracy statistics. Adding
 labels makes no model call; rerunning the check is explicit. Saved held-out row identities are excluded
 from new-traffic comparisons even when pasted without their `_test` marker.
+
+Spend previews (`jev/estimate.py`, `POST /api/workbench/estimate`, `static/js/estimate.js`, `scripts/check.py
+--estimate`) count the calls a paid Workbench run would make and add up `client.request_reserve_usd` for the exact
+requests it would send, built through the run's own helpers (`workbench.prepare_bulk`/`prepare_compare`/`job_state`,
+`checks.load`, `drift.prepare`, `upgrade.prepare`) so counts, test-row exclusion, the 200-row cap and image uses match
+the run. Estimates make no model call (not even the model-list check) and never reserve or record budget; they only
+read the guard's snapshot. They are upper bounds: always show them as "≤"/"at most"/"upper bound", rounded up, and
+never as measured spend. A run whose bound exceeds the budget left needs an explicit confirm before it starts.
 
 Dataset health (`jev/health.py`, Bulk's **Check dataset health**) inspects current inputs and human labels
 without model calls or writes. It reports duplicates, conflicting or invalid labels, missing labels, and
@@ -266,8 +280,31 @@ explicit. Pictures travel separately. Warn before unload when current unapplied 
 Labeling keyboard shortcuts act only inside that panel, preserve native editing behavior, and only
 navigate incomplete rows within the current slice; they never apply, save, or call the model.
 
+Labeling guidelines (`jev/guidelines.py`, `static/js/guidelines.js`) are a dataset's optional `guidelines`:
+question id -> note and generic examples with valid Choice/Noul/Score labels (Box takes a note only). They are
+human-only: never send them to the model (Bulk, checks, drift, upgrade, Compare, request export) and never make
+them gate configuration, so exported gates and decision provenance must not change with them. Show them collapsed
+beside label controls; on blind audit and agreement rows hide examples matching the row. Bundles carry them, check
+saves and upgrades preserve them, a save without them keeps the saved ones, and guidelines for removed questions
+are dropped with a warning naming the question. Replacement previews and warnings report question ids and counts,
+never notes, examples, or label values. The labeling CSV handoffs do not include them.
+
 Dataset replacement previews use the same candidate validation as saving, show counts and configuration
 changes without label values, and make no writes or model calls. Match exact input occurrences in order
 so duplicates remain distinct, with picture names included. Saving a previewed replacement verifies the
 saved file revision under the dataset update lock; changed files require another preview. Preserve the
 existing explicit replacement, check compatibility, and test-history semantics.
+
+Dataset revision history (`jev/history.py`) is the undo for dataset files. Every write that replaces or
+deletes a dataset goes through `workbench.write_dataset`/`delete_dataset`, which first copy the current file
+byte for byte to `data/workbench/datasets/.history/<id>/<timestamp>-<hash>.json` under the dataset update
+lock; a new dataset writer must go through them too. Revisions contain only what dataset files contain
+(inputs, human labels, configuration), never model answers or measured results. Keep the newest 20 per
+dataset, skip unchanged writes and identical consecutive copies, write atomically, and validate ids and
+revision names. Deleting keeps history so the delete can be undone. `.history` is gitignored local state:
+never list it as a dataset, bundle it, or accept it as an id. Listings and restore previews show counts and
+configuration changes only, never label values. Restore validates the revision with `prepare_dataset`,
+reports the `dataset_changes` summary, and requires the preview's file token (a changed file needs another
+preview). It restores the revision's own check and labeling guidelines where they fit (drops are reported,
+never written), keeps every test look recorded since (looks
+never shrink), and snapshots the current file first, so a restore is itself undoable.

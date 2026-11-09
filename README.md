@@ -113,6 +113,11 @@ conditions.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
   A row can carry a picture, a sample or one of your own, so photo questions and Box questions run in
   bulk too, and Calibrate scores a Box answer by how much it overlaps its label.
+- **Spend preview:** next to every paid run button (Bulk, Compare, saved tests, and a check's run, drift
+  comparison and version upgrade) a line such as `120 calls · ≤ $0.0040 · fits the $1.98 left in this
+  session's budget` counts the calls the run would make and an upper bound on their cost, built from the
+  same requests the run sends. A run over the budget left asks you to confirm first. Estimating makes no
+  model call and reserves nothing; `scripts/check.py --estimate` prints the same for checks.
 - **Import CSV:** bring rows in from a spreadsheet. Choose which columns the model reads and which hold
   labels for which question. Label values that fit no answer are listed rather than guessed. It makes
   no model calls.
@@ -154,6 +159,12 @@ conditions.
   counts, and changes to questions, rules, saved checks, and test history. Confirm explicitly to replace it;
   a saved file changed since preview must be previewed again. No label values appear in the summary,
   and preview makes no writes or model calls.
+- **Dataset history:** every save, check change, test-split change, label append, bundle replacement,
+  restore, or delete first keeps the dataset file it replaces as a local revision under
+  `data/workbench/datasets/.history/` (newest 20 per dataset, gitignored). **History** on the loaded
+  dataset lists revisions by counts only, previews a restore with the same summary as a replacement, and
+  restores after confirmation; a restore is itself undoable, and a deleted dataset can be recreated.
+  Revisions hold inputs, human labels and configuration, never answers.
 - **Datasets:** save the Bulk rows and the labels you chose, with their question set, as a JSON file
   in `data/workbench/datasets/`, and load them again later. Only rows and labels are saved, never
   answers.
@@ -170,6 +181,11 @@ conditions.
   95% interval, and Cohen's kappa, the agreement beyond chance. Then settle each difference and save it to
   the dataset. Accuracy is measured against labels, so it means little above the share two people agree on.
   It makes no model call.
+- **Labeling guidelines:** write, per question, how a person should label it, with short made-up
+  examples, and save them with a dataset. They appear collapsed beside every label control: Label before
+  running, the Review queue, Label agreement, and Label new traffic. On blind rows, an example matching the
+  row is hidden. Guidelines are human-only: never sent to the model, not part of a check or an exported gate.
+  They travel in dataset ZIPs and survive check saves and model upgrades.
 - **Test rows:** hold a random share of a dataset's labeled rows out of every tuning panel and Compare, with their
   answers hidden, then score the chosen gate on them for a number no choice was fit to. Each score is counted in
   the dataset, since a gate changed after a look is partly tuned on the test rows too.

@@ -311,7 +311,8 @@ def delete_item(item_id: str) -> bool:
 # --- saved datasets ------------------------------------------------------------------------
 # A dataset is Bulk rows and their `_expect` labels, and optionally the question set the labels are for,
 # saved as data/workbench/datasets/<id>.json so labels outlast a reload and can be committed. It holds
-# inputs and labels only: answers are never saved, so every answer the Bulk tab shows comes from a run.
+# inputs and labels only: answers are never saved, so every answer the Bulk tab shows comes from a run. A file that is
+# replaced or deleted is kept first as a local revision under datasets/.history/<id>/ (jev/history.py).
 
 
 def datasets_dir() -> Path:
@@ -470,6 +471,7 @@ def dataset_summary(dataset: dict) -> dict:
     return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
             "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
             "questions": len(dataset.get("questions") or {}), "check": check, "check_notes": [pin] if pin else [],
+            "guidelines": len(dataset["guidelines"]) if isinstance(dataset.get("guidelines"), dict) else 0,
             "test": {"rows": test_rows, "labeled": test_labeled,
                      "share": test_labeled / labeled_rows if labeled_rows else None,
                      "looks": len(test.get("looks") or []) if test else 0,
@@ -485,11 +487,15 @@ def _dataset_text(dataset: dict) -> str:
 
 @dataset_update()
 def write_dataset(dataset: dict) -> None:
-    """Replace data/workbench/datasets/<id>.json with `dataset`, atomically."""
+    """Replace data/workbench/datasets/<id>.json with `dataset`, atomically, after keeping the file it replaces as a
+    revision (jev/history.py). Every dataset writer comes through here."""
+    from . import history  # history imports this module
+
     text = _dataset_text(dataset)
     if len(text) > MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
     path = _dataset_path(dataset["id"])
+    history.snapshot(dataset["id"], text)
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name("%s.%d.partial" % (path.name, threading.get_ident()))  # one per concurrent save
     partial.write_text(text, encoding="utf-8")
@@ -515,8 +521,10 @@ def prepare_dataset(spec: dict) -> dict:
 
     A check saved in the file it replaces (jev/checks.py) is kept while it still fits the questions saved
     now, so adding rows or labels keeps it. Otherwise it is dropped and the returned dataset says why under
-    "check_dropped" (not written to the file)."""
-    from . import checks  # checks imports this module
+    "check_dropped" (not written to the file). Labeling guidelines (jev/guidelines.py) given in `spec` replace the
+    saved ones; otherwise the saved ones are kept where they still fit the questions, and any dropped are listed
+    under "guidelines_dropped" (not written to the file either)."""
+    from . import checks, guidelines  # both import this module
 
     name = str(spec.get("name") or "").strip()[:120]
     if not SLUG.sub("", name.lower()):
@@ -544,6 +552,12 @@ def prepare_dataset(spec: dict) -> dict:
                                     saved_at=prior.get("saved_at"))
         except WorkbenchError as err:
             dropped = str(err)
+    if spec.get("guidelines") is not None:  # human-only: never part of a request, a check, or a gate
+        guides, guides_dropped = guidelines.validate(spec["guidelines"], dataset.get("questions")), []
+    else:
+        guides, guides_dropped = guidelines.reconcile(_prior(dataset["id"], "guidelines"), dataset.get("questions"))
+    if guides:
+        dataset["guidelines"] = guides
     dataset["rows"] = validate_rows(spec.get("rows"))
     if any(row_test(split_labels(r, i + 1)[0]) for i, r in enumerate(dataset["rows"])):
         # Keep the record of how often the test rows were scored; a dataset saved with test rows and no record starts one.
@@ -554,16 +568,17 @@ def prepare_dataset(spec: dict) -> dict:
         _need_pictures([split_labels(r, i + 1) for i, r in enumerate(dataset["rows"])], dataset["questions"])
     if len(_dataset_text(dataset)) > MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
-    return dict(dataset, check_dropped=dropped) if dropped else dataset
+    notes = {"check_dropped": dropped, "guidelines_dropped": guides_dropped}
+    return dict(dataset, **{k: v for k, v in notes.items() if v})
 
 
 @dataset_update()
 def save_dataset(spec: dict) -> dict:
-    """Write a validated dataset; preserve compatible checks and test history."""
+    """Write a validated dataset; preserve compatible checks, labeling guidelines, and test history."""
     dataset = prepare_dataset(spec)
-    dropped = dataset.pop("check_dropped", None)
+    notes = {k: dataset.pop(k) for k in ("check_dropped", "guidelines_dropped") if k in dataset}
     write_dataset(dataset)
-    return dict(dataset, check_dropped=dropped) if dropped else dataset
+    return dict(dataset, **notes)
 
 
 def list_datasets() -> List[dict]:
@@ -597,8 +612,12 @@ def load_dataset(dataset_id: str) -> dict:
 
 @dataset_update()
 def delete_dataset(dataset_id: str) -> bool:
+    """Delete a saved dataset. Its history (jev/history.py) is kept, with the deleted file as the newest revision."""
+    from . import history
+
     path = _dataset_path(dataset_id)
     if path.exists():
+        history.snapshot(dataset_id)
         path.unlink()
         return True
     return False
@@ -747,6 +766,25 @@ def _picture(split: List[tuple], index: int) -> Optional[Dict[str, dict]]:
     return {_ref(picture): picture_asset(picture)} if picture is not None else None
 
 
+def job_state(split: List[tuple], index: int, field: str, kind: Optional[str]) -> tuple:
+    """(state a job sends, {"input": state} when a perturbation changed the row, else {}). jev/estimate.py prices the
+    same state, so its spend preview is of the request a run sends."""
+    state = _state(split, index, field)
+    if kind:
+        rewritten = perturb.apply(kind, state, index)
+        if isinstance(rewritten, dict) and isinstance(state, dict) and PHOTO_FIELD in state:
+            rewritten[PHOTO_FIELD] = state[PHOTO_FIELD]  # rewrite the words, never the picture's reference
+        if perturb.changed(state, rewritten):
+            return rewritten, {"input": rewritten}
+    return state, {}
+
+
+def picture_refs(split: List[tuple], index: int) -> List[str]:
+    """The asset references a row's request carries, without reading the picture (the keys of _picture)."""
+    picture = row_picture(split[index][0])
+    return [_ref(picture)] if picture is not None else []
+
+
 def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
     """jobs: [(row index, questions, model or None, perturbation or None)]. Returns (one outcome per job,
     first stopping error).
@@ -762,14 +800,7 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
 
     def one(job):
         index, questions, model, kind = job
-        state = _state(split, index, field)
-        sent = {}
-        if kind:
-            rewritten = perturb.apply(kind, state, index)
-            if isinstance(rewritten, dict) and isinstance(state, dict) and PHOTO_FIELD in state:
-                rewritten[PHOTO_FIELD] = state[PHOTO_FIELD]  # rewrite the words, never the picture's reference
-            if perturb.changed(state, rewritten):
-                state, sent = rewritten, {"input": rewritten}
+        state, sent = job_state(split, index, field, kind)
         try:
             result = client.system_one(state, questions, model=model, assets=pictures[index])
             return dict(sent, answers=result.answers, meta=result.meta())
@@ -785,11 +816,17 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
     return outcomes, stopped["error"]
 
 
-def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None) -> dict:
-    """Every row with the same questions. model: None asks the current model."""
+def prepare_bulk(rows: List[Any], questions: Any) -> tuple:
+    """(validated questions, split rows) for a Bulk run: one call per row, the first MAX_BULK_ROWS rows."""
     questions = bulk_questions(questions)
     split = _split_rows(rows)
     _need_pictures(split, questions)
+    return questions, split
+
+
+def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None) -> dict:
+    """Every row with the same questions. model: None asks the current model."""
+    questions, split = prepare_bulk(rows, questions)
     started = time.perf_counter()
     outcomes, stopped = _run_jobs(client, split, [(i, questions, model, None) for i in range(len(split))], field)
     results = [dict(_row_base(split, i), **outcome) for i, outcome in enumerate(outcomes)]
@@ -849,10 +886,9 @@ def _pair(outcomes: List[dict], questions: Dict[str, dict]) -> dict:
     return dict(sent, **meta, **({"error": failed["error"]} if failed else {"skipped": True}))
 
 
-def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
-    """Both variants over the same rows: one call per row and variant, two for a variant that averages
-    over both orders, interleaved row by row so a run stopped by the budget leaves the variants with
-    nearly the same rows. Scoring (compare.evaluate) uses only rows both variants answered."""
+def prepare_compare(client: JevClient, rows: List[Any], variants: Any) -> tuple:
+    """(variants, models, question sets asked per variant, split rows, test rows left out, jobs) for a Compare run.
+    jobs: [(row index, questions, model, perturbation)], one per call, interleaved row by row."""
     variants = validate_variants(variants)
     # Resolve a blank model once: the current model can change in Settings while the run is going,
     # and every call of a variant must use the same model.
@@ -865,9 +901,17 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
         raise WorkbenchError("Every row is a test row. Compare chooses between variants, so it leaves test rows out.")
     for v in variants:
         _need_pictures(split, v["questions"])
-    started = time.perf_counter()
     jobs = [(i, questions, model, v["perturb"]) for i in range(len(split))
             for v, model, sets in zip(variants, models, asked) for questions in sets]
+    return variants, models, asked, split, held_out, jobs
+
+
+def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
+    """Both variants over the same rows: one call per row and variant, two for a variant that averages
+    over both orders, interleaved row by row so a run stopped by the budget leaves the variants with
+    nearly the same rows. Scoring (compare.evaluate) uses only rows both variants answered."""
+    variants, models, asked, split, held_out, jobs = prepare_compare(client, rows, variants)
+    started = time.perf_counter()
     flat, stopped = _run_jobs(client, split, jobs, field)
     width = sum(len(sets) for sets in asked)
     results = []

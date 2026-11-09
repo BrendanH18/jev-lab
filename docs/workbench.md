@@ -179,6 +179,32 @@ Empty rows are removed, and only the first 200 remaining rows are processed. Eac
 separate model call. A missing-key or budget error stops new work where possible; already admitted
 calls may complete. Per-row errors remain visible in the results.
 
+### Preview the spend before a paid run
+
+Next to every paid Workbench run button (Bulk's and Compare's **Run** buttons, a saved check's **Run
+check**, the **Compare** buttons under **Compare new rows** and **Try a new version**, and **Run all
+tests**) a short line previews the run, for example `120 calls · ≤ $0.0040 · fits the $1.98 left in this session's budget`. Hover it for
+the calls per part (each Compare variant, the dataset rows and the new rows, the tuned-on version and the
+candidate), the test rows left out, and any notes. It refreshes a moment after you change the rows,
+questions, variants or model.
+
+The server (`POST /api/workbench/estimate`, [`jev/estimate.py`](../jev/estimate.py)) builds the requests the
+run would send through the same code the run uses, and adds up the high estimate each live call holds
+against the session budget until it settles (two characters per token, plus a fixed allowance for each
+use of a picture). So the dollar figure is an **upper bound**, rounded up, never a measured cost; the
+bill is usually far lower. The call count follows each run: one call per row in Bulk, after the 200-row
+cap; one per row and Compare variant, two for a variant that averages both orders, with test rows left
+out; checks, drift and upgrades send only the dataset's tuning rows; drift adds the new rows that are not
+test rows; an upgrade asks both versions. When the first half of a drift or upgrade run stops early the
+run skips the second half; the preview still counts both.
+
+Estimating makes no model call and reserves nothing in the budget. When the upper bound is more than
+the budget left, the line turns amber and the run asks you to confirm before it starts; the budget then
+stops the run once it is spent, and the remaining rows get no answer. A run that cannot be estimated
+(for example, a Box question on a row without a picture) shows no line; starting it shows the preview's
+error and asks before it runs, so you can cancel and fix the input or start it anyway. In the terminal, `uv run scripts/check.py <id> --estimate` prints the same preview for a
+check, and composes with `--model`, `--drift rows.jsonl` and `--upgrade-to <version>`.
+
 ### Picture rows
 
 A JSON row can carry a picture under `"_image"`: the name of a bundled sample (`torn-bag`,
@@ -492,15 +518,52 @@ before you commit them.
 | Endpoint | Body | Returns |
 | --- | --- | --- |
 | `GET /api/workbench/datasets` | | `datasets`: `id`, `name`, `notes`, `saved_at`, counts of `rows`, `labeled` rows, `labels` per question, and `questions`, and the saved [`check`](#keep-a-gate-as-a-check) or `null` |
-| `POST /api/workbench/datasets` | `name`, `rows` (text or a list), optional `notes` and `questions` | `dataset`: the same summary; `check_dropped` says why a saved check was removed |
+| `POST /api/workbench/datasets` | `name`, `rows` (text or a list), optional `notes`, `questions`, and [`guidelines`](#write-labeling-guidelines) (left out: the saved ones are kept) | `dataset`: the same summary; `check_dropped` says why a saved check was removed; `guidelines_dropped` lists guidelines that no longer fit |
 | `POST /api/workbench/datasets/load` | `id` | `dataset`: the saved file |
 | `POST /api/workbench/datasets/delete` | `id` | `deleted`: whether a file was removed |
+
+### Undo a dataset change: history
+
+Saving over a dataset replaces its file, so every write that replaces or deletes
+`data/workbench/datasets/<id>.json` first copies the file as it stands, byte for byte, to
+`data/workbench/datasets/.history/<id>/<UTC timestamp>-<short hash>.json`. That covers saving over a
+dataset, saving or removing a check, drawing, scoring or removing a test split, adding labels from Review,
+**Compare new rows** or label agreement, replacing a dataset from a bundle, restoring a revision, and
+deleting a dataset. A write that would leave the file unchanged keeps nothing, and a copy identical to the
+newest revision is not stored twice. The newest 20 revisions of each dataset are kept; older ones are
+removed. A revision holds what the dataset file held, inputs, human labels and configuration, never model
+answers or measured results.
+
+Revisions are local undo state, not fixtures: `.gitignore` excludes `data/workbench/datasets/.history/`,
+they never appear in the dataset list, and bundles never include them. Delete the folder to drop them.
+
+Select **History** beside the loaded dataset to list its revisions, newest first, with their row,
+labeled-row and held-out-row counts, question count and whether they hold a check. Label values are never
+shown. **Preview restore** validates the revision as a save would and shows the same summary as a
+replacement preview: inputs added and removed, label changes as counts, and changes to questions, rules,
+name and notes, the saved check and test history. It writes nothing and makes no model calls. Select
+**Restore this revision** and confirm to write it; the editor then reloads the dataset, asking first if it
+has unsaved rows. If the dataset file changed after the preview, the restore is refused: preview it again.
+
+A restore brings back the revision's rows, labels, questions, rules, its own check (when the check still
+fits the revision's questions) and its labeling guidelines (any for a question the revision lacks are dropped and
+reported). Test-split looks only accumulate: looks recorded after the revision are kept,
+so a restore never hides how often held-out rows were scored. The file a restore replaces becomes a revision
+itself, so a restore can be undone the same way. Deleting a dataset keeps its history: open **Deleted
+datasets with kept history** under the dataset list to restore it, which recreates the file.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/datasets/history` | `id` | `exists`, `keep`, `revisions`: `revision`, `at`, `name`, `saved_at`, `rows`, `labeled`, `test_rows`, `questions` (IDs), `checks`, `current` |
+| `GET /api/workbench/datasets/history/deleted` | | `datasets`: `id`, `name`, `revisions`, `latest` for datasets whose file is gone |
+| `POST /api/workbench/datasets/history/preview` | `id`, `revision` | the replacement-preview summary, with `revision` (the current file's token) and `restoring` |
+| `POST /api/workbench/datasets/history/restore` | `id`, `revision`, `preview_revision` | `dataset`: saved summary; `check_dropped` when the revision's check no longer fits |
 
 ### Share a dataset with its pictures
 
 Choose **Download ZIP** beside a saved dataset to bundle its saved rows, human labels,
-questions, consistency rules, check settings (including review shortlists), test markers and
-test-evaluation history, and every picture its rows reference. Unsaved browser edits are not
+questions, consistency rules, labeling guidelines, check settings (including review shortlists), test
+markers and test-evaluation history, and every picture its rows reference. Unsaved browser edits are not
 included. The bundle adds no model answers, measured check results, or application credentials;
 the rows, labels, notes, and pictures are your data, so review them before sharing.
 
@@ -521,6 +584,55 @@ No dependencies or model calls are needed.
 | `POST /api/workbench/datasets/bundle/export` | `id` | `filename`, `data`: base64 ZIP |
 | `POST /api/workbench/datasets/bundle/preview` | `data`: base64 ZIP | `dataset`: validated contents, `summary`, `images`: count, `exists`: whether its ID is saved |
 | `POST /api/workbench/datasets/bundle/import` | `data`, optional `name`, `replace` (default false) | `dataset`: saved summary |
+
+### Write labeling guidelines
+
+Two people often label the same row differently because nobody wrote down what each answer
+means, and [Label agreement](#measure-label-agreement) shows how much that caps any accuracy you
+can measure. Choose **Guidelines** beside a saved dataset to write, for each saved question:
+
+- a **note**: what each answer means here and how to decide the hard cases;
+- up to 10 **examples** (Choice, Noul, and Score only): a short, made-up input, the label it
+  should get, and optionally why. Box labels are edges, so a Box question takes a note only.
+
+**Save guidelines** changes only the guidelines: rows, labels, questions, the check, and test
+history stay as they are. Each guideline then appears, collapsed as **How to label …**, beside
+the label controls for that question in **Label before running** (for the loaded dataset), the
+**Review queue**, **Label agreement**, and **Label new traffic**. On a blind row (an audit row in
+the Review queue, or any Label agreement row) an example whose input matches the row is hidden,
+so its label cannot reveal the row's saved label. Write examples that are generic rather than
+copied from the dataset's rows.
+
+Guidelines are for people only. No request to the model reads them, in Bulk, checks, Compare new
+rows, Try a new version, Compare, or an exported request; and they are not gate configuration,
+so an exported gate and its decision provenance do not change when they do. The Review queue and
+pre-run labeling CSVs do not include them.
+
+They are saved in the dataset file under `guidelines`, keyed by question ID. Example labels use
+the same values as `_expect` (`true`/`false` for Noul, a level number for Score):
+
+```json
+"guidelines": {
+  "wants_refund": {
+    "note": "Yes only when the customer asks for money back, not for a replacement.",
+    "examples": [
+      {"input": "Please send a new one, mine arrived broken", "label": false, "why": "Asks for a replacement"}
+    ]
+  }
+}
+```
+
+Saving the dataset again without changing its questions keeps its guidelines. If a question is
+removed, or an option an example names no longer exists, that guideline or example is dropped
+and the save says so, naming the question but not the label. The replacement preview lists the
+questions whose guidelines are added, changed, removed, or dropped, without notes, examples, or
+labels. Guidelines travel in [dataset bundles](#share-a-dataset-with-its-pictures), and saving a
+check or moving it to a new version keeps them.
+
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST /api/workbench/datasets/guidelines` | `id` | `questions`, `guidelines`, `warnings` for any dropped, `saved_at` |
+| `POST /api/workbench/datasets/guidelines/save` | `id`, `guidelines` (`{}` removes them) | `guidelines` as saved, `dataset`: summary |
 
 ## Review labels
 
@@ -1463,6 +1575,7 @@ request with one file part per picture.
 | Bulk rows | First 200 nonempty rows |
 | Imported CSV | 2,000,000 characters and 100 columns; the first 200 rows with state |
 | Saved dataset | 200 nonempty rows and 2,000,000 characters as JSON |
+| Labeling guidelines | One per saved question: a note up to 2,000 characters and up to 10 examples (input and why up to 500 characters each) |
 | Check | One per dataset; up to 10 gated questions; one call per row on every run |
 | Compare new rows | 200 new rows, plus the dataset's rows: up to 400 calls per comparison |
 | Try a new version | The dataset's rows, asked of two versions: up to 400 calls per comparison |
