@@ -747,6 +747,25 @@ def _picture(split: List[tuple], index: int) -> Optional[Dict[str, dict]]:
     return {_ref(picture): picture_asset(picture)} if picture is not None else None
 
 
+def job_state(split: List[tuple], index: int, field: str, kind: Optional[str]) -> tuple:
+    """(state a job sends, {"input": state} when a perturbation changed the row, else {}). jev/estimate.py prices the
+    same state, so its spend preview is of the request a run sends."""
+    state = _state(split, index, field)
+    if kind:
+        rewritten = perturb.apply(kind, state, index)
+        if isinstance(rewritten, dict) and isinstance(state, dict) and PHOTO_FIELD in state:
+            rewritten[PHOTO_FIELD] = state[PHOTO_FIELD]  # rewrite the words, never the picture's reference
+        if perturb.changed(state, rewritten):
+            return rewritten, {"input": rewritten}
+    return state, {}
+
+
+def picture_refs(split: List[tuple], index: int) -> List[str]:
+    """The asset references a row's request carries, without reading the picture (the keys of _picture)."""
+    picture = row_picture(split[index][0])
+    return [_ref(picture)] if picture is not None else []
+
+
 def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
     """jobs: [(row index, questions, model or None, perturbation or None)]. Returns (one outcome per job,
     first stopping error).
@@ -762,14 +781,7 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
 
     def one(job):
         index, questions, model, kind = job
-        state = _state(split, index, field)
-        sent = {}
-        if kind:
-            rewritten = perturb.apply(kind, state, index)
-            if isinstance(rewritten, dict) and isinstance(state, dict) and PHOTO_FIELD in state:
-                rewritten[PHOTO_FIELD] = state[PHOTO_FIELD]  # rewrite the words, never the picture's reference
-            if perturb.changed(state, rewritten):
-                state, sent = rewritten, {"input": rewritten}
+        state, sent = job_state(split, index, field, kind)
         try:
             result = client.system_one(state, questions, model=model, assets=pictures[index])
             return dict(sent, answers=result.answers, meta=result.meta())
@@ -785,11 +797,17 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
     return outcomes, stopped["error"]
 
 
-def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None) -> dict:
-    """Every row with the same questions. model: None asks the current model."""
+def prepare_bulk(rows: List[Any], questions: Any) -> tuple:
+    """(validated questions, split rows) for a Bulk run: one call per row, the first MAX_BULK_ROWS rows."""
     questions = bulk_questions(questions)
     split = _split_rows(rows)
     _need_pictures(split, questions)
+    return questions, split
+
+
+def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None) -> dict:
+    """Every row with the same questions. model: None asks the current model."""
+    questions, split = prepare_bulk(rows, questions)
     started = time.perf_counter()
     outcomes, stopped = _run_jobs(client, split, [(i, questions, model, None) for i in range(len(split))], field)
     results = [dict(_row_base(split, i), **outcome) for i, outcome in enumerate(outcomes)]
@@ -849,10 +867,9 @@ def _pair(outcomes: List[dict], questions: Dict[str, dict]) -> dict:
     return dict(sent, **meta, **({"error": failed["error"]} if failed else {"skipped": True}))
 
 
-def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
-    """Both variants over the same rows: one call per row and variant, two for a variant that averages
-    over both orders, interleaved row by row so a run stopped by the budget leaves the variants with
-    nearly the same rows. Scoring (compare.evaluate) uses only rows both variants answered."""
+def prepare_compare(client: JevClient, rows: List[Any], variants: Any) -> tuple:
+    """(variants, models, question sets asked per variant, split rows, test rows left out, jobs) for a Compare run.
+    jobs: [(row index, questions, model, perturbation)], one per call, interleaved row by row."""
     variants = validate_variants(variants)
     # Resolve a blank model once: the current model can change in Settings while the run is going,
     # and every call of a variant must use the same model.
@@ -865,9 +882,17 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
         raise WorkbenchError("Every row is a test row. Compare chooses between variants, so it leaves test rows out.")
     for v in variants:
         _need_pictures(split, v["questions"])
-    started = time.perf_counter()
     jobs = [(i, questions, model, v["perturb"]) for i in range(len(split))
             for v, model, sets in zip(variants, models, asked) for questions in sets]
+    return variants, models, asked, split, held_out, jobs
+
+
+def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
+    """Both variants over the same rows: one call per row and variant, two for a variant that averages
+    over both orders, interleaved row by row so a run stopped by the budget leaves the variants with
+    nearly the same rows. Scoring (compare.evaluate) uses only rows both variants answered."""
+    variants, models, asked, split, held_out, jobs = prepare_compare(client, rows, variants)
+    started = time.perf_counter()
     flat, stopped = _run_jobs(client, split, jobs, field)
     width = sum(len(sets) for sets in asked)
     results = []

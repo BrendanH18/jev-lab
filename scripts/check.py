@@ -7,6 +7,7 @@
     uv run scripts/check.py --list             # show the checks, and any that ask a moving alias; no model calls
     uv run scripts/check.py support-tickets --drift new.jsonl  # do these unlabeled rows still look like the dataset?
     uv run scripts/check.py --upgrade-to jev-1.15.0  # can each check move to this version, and with which thresholds?
+    uv run scripts/check.py support-tickets --estimate  # calls and an upper bound on their cost; no model calls
 
 A check (jev/checks.py) gates some of a dataset's questions at fixed thresholds and names two targets: the
 accuracy the automated rows must reach and the share of labeled rows that must be automated. This script
@@ -27,19 +28,25 @@ compares the two row by row, and tunes the gates again on MODEL's answers at the
 calls per row and never changes a check: to move one, save it from the Workbench. Exit status: 0 when every check
 can move (KEEP, with its saved thresholds, or RETUNE, with new ones), 1 when any should stay on its version (STAY),
 2 when a comparison could not be judged.
+
+--estimate prints what the run would send instead of running it: the calls, and an upper bound on their cost
+(jev/estimate.py; the same high estimate each live call holds against the budget), next to this script's budget. It
+makes no model call and needs no key. It works with --model, --drift FILE and --upgrade-to MODEL. Exit status: 0, or 2
+when a run could not be estimated, as it could not be run.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jev import checks, drift, upgrade, workbench  # noqa: E402
+from jev import checks, drift, estimate, upgrade, workbench  # noqa: E402
 from jev.client import JevClient, JevError  # noqa: E402
 
 MISTAKES_PRINTED = 5
@@ -252,21 +259,82 @@ def run_upgrade(args, ids) -> int:
     return 1 if "stay" in verdicts else 0
 
 
-def run_drift(args, with_checks: dict) -> int:
+def drift_rows(args, with_checks: dict):
+    """The new rows in --drift FILE, or None after printing why there are none."""
     ids = args.ids or sorted(with_checks)
     if len(ids) != 1:
         print("--drift compares new rows with one dataset. Name it: %s" % ", ".join(sorted(with_checks)))
-        return 2
+        return None
     try:
         text = Path(args.drift).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as err:
         print("Cannot read %s: %s" % (args.drift, err))
-        return 2
+        return None
     try:
-        rows = drift.new_rows(text)
+        return drift.new_rows(text)
     except workbench.WorkbenchError as err:
         print(str(err))
+        return None
+
+
+def usd_up(value: float) -> str:
+    """An upper bound in dollars, rounded up to two significant digits, so it never reads lower than it is."""
+    if value <= 0:
+        return "$0"
+    places = max(2, 1 - math.floor(math.log10(value)))
+    step = 10 ** -places
+    return "$%.*f" % (places, math.ceil(value / step - 1e-9) * step)
+
+
+def run_estimate(args, ids, with_checks: dict) -> int:
+    """Print the calls each run would make and an upper bound on their cost. No model call, no key needed."""
+    rows = None
+    if args.drift is not None:
+        rows = drift_rows(args, with_checks)
+        if rows is None:
+            return 2
+        ids = args.ids or sorted(with_checks)
+    client = JevClient()
+    what = "drift" if rows is not None else "upgrade" if args.upgrade_to is not None else "check"
+    calls, usd, failed = 0, 0.0, False
+    for dataset_id in ids:
+        try:
+            if rows is not None:
+                rep = estimate.for_drift(client, dataset_id, rows, args.model)
+            elif args.upgrade_to is not None:
+                rep = estimate.for_upgrade(client, dataset_id, args.upgrade_to)
+            else:
+                rep = estimate.for_check(client, dataset_id, args.model)
+        except workbench.WorkbenchError as err:
+            print("%s\n  - %s\n  ERROR" % (dataset_id, err))
+            failed = True
+            continue
+        calls, usd = calls + rep["calls"], usd + rep["usd"]
+        held = rep.get("held_out") or 0
+        print("%s  %s: %d call%s, at most %s%s" % (dataset_id, what, rep["calls"], "" if rep["calls"] == 1 else "s",
+                                                 usd_up(rep["usd"]),
+                                                 "  (%d test row%s left out)" % (held, "" if held == 1 else "s") if held else ""))
+        for part in rep["parts"]:
+            print("  %-17s %4d calls to %s, at most %s" % (part["label"], part["calls"], part["model"], usd_up(part["usd"])))
+        for note in rep["notes"]:
+            if "budget" not in note:
+                print("  note: " + note)
+    budget = client.guard.budget_usd
+    if budget > 0:
+        fits = "fits" if usd <= budget + 1e-12 else "is MORE than"
+        limit = "%s the $%.2f budget of one run (JEV_LAB_BUDGET_USD)" % (fits, budget)
+    else:
+        limit = "no budget set"
+    print("\nTotal: %d call%s, at most %s, an upper bound, not a measured cost; %s. No model calls were made." % (
+        calls, "" if calls == 1 else "s", usd_up(usd), limit))
+    return 2 if failed else 0
+
+
+def run_drift(args, with_checks: dict) -> int:
+    rows = drift_rows(args, with_checks)
+    if rows is None:
         return 2
+    ids = args.ids or sorted(with_checks)
     client = JevClient()
     if not client.configured:
         print("No API key. Set TYPESAFE_API_KEY or add it to .env.")
@@ -301,6 +369,8 @@ def main(argv=None) -> int:
     parser.add_argument("--drift", metavar="FILE", help="compare the unlabeled rows in FILE with one check's dataset")
     parser.add_argument("--upgrade-to", metavar="MODEL",
                         help="ask each check's tuned-on version and MODEL every row, and say whether the check can move")
+    parser.add_argument("--estimate", action="store_true",
+                        help="print the calls and an upper bound on their cost instead of running; no model calls")
     args = parser.parse_args(argv)
 
     with_checks = {d["id"]: d for d in checks.listed()}
@@ -318,6 +388,8 @@ def main(argv=None) -> int:
     if args.drift is not None and args.upgrade_to is not None:
         print("--drift and --upgrade-to each run the dataset again; run them one at a time.")
         return 2
+    if args.estimate:
+        return run_estimate(args, ids, with_checks)
     if args.upgrade_to is not None:
         return run_upgrade(args, ids)
     if args.drift is not None:  # an empty path is an error, not a request for the ordinary check

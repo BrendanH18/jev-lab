@@ -8,6 +8,7 @@ import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "
 import { reverseOptions } from "./variants.js";
 import { labelProgress, visibleLabels, nextLabel, labelShortcut } from "./prelabel.js";
 import { renderWorkbenchGuide } from "./workbench-guide.js";
+import { confirmSpend, estimateLine } from "./estimate.js";
 
 const W = {
   guideOpen: false, tab: "build", stateText: "", questions: [], raw: false, result: null, exported: null, exportTab: "python",
@@ -585,7 +586,7 @@ function renderTests() {
         res ? h("div", { class: "stat-row" },
           h("span", { class: `badge ${res.failed ? "critical" : "good"}` }, icon(res.failed ? "x" : "check"), `${res.passed} passed · ${res.failed} failed`),
           h("span", { class: "stat" }, "wall", h("b", {}, ms(res.wall_ms))), h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd)))) : null,
-        runAll),
+        estimateLine(h, api, "items", () => (W.items.length ? {} : null)), runAll),
       W.items.length ? W.items.map((it) => {
         const r = byId[it.id];
         return h("div", { class: "item" },
@@ -621,6 +622,7 @@ async function openItem(it) {
 }
 
 async function runTests(ids = null) {
+  if (!(await confirmSpend(api, "items", ids ? { ids } : {}))) return;
   try {
     W.runResults = await api("/api/workbench/items/run", ids ? { ids } : {});
     render();
@@ -974,7 +976,7 @@ function checkItem(x) {
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm", disabled: run.running || run.drift.running || run.drift.busy || run.upgrade.running, onclick: () => runCheck(x.id) },
         run.running ? [h("span", { class: "spin" }), " Checking…"] : [icon("layers"), `Run check · ${n} call${n === 1 ? "" : "s"}`]),
-      model,
+      model, estimateLine(h, api, "check", () => ({ id: x.id, model: run.model.trim() || undefined })),
       h("button", { class: `btn sm${run.drift.open ? " active" : ""}`, "aria-expanded": String(run.drift.open),
         title: "Do new, unlabeled rows still look like the rows this gate was tuned on?",
         onclick: () => { run.drift.open = !run.drift.open; render(); } }, icon("search"), "Compare new rows"),
@@ -1283,6 +1285,7 @@ async function runCheck(id) {
   const b = W.bulk;
   const run = b.checkRuns[id];
   if (!run || run.running || run.drift.running || run.drift.busy || run.upgrade.running) return;
+  if (!(await confirmSpend(api, "check", { id, model: run.model.trim() || undefined }))) return;
   run.running = true;
   run.report = null;
   render();
@@ -1377,7 +1380,8 @@ function upgradeForm(x, run) {
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       model,
       h("button", { class: "btn sm", disabled: run.running || run.drift.running || run.drift.busy || u.running, onclick: () => runUpgrade(x.id) },
-        u.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), `Compare · ${n} calls`])));
+        u.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), `Compare · ${n} calls`]),
+      estimateLine(h, api, "upgrade", () => (u.model.trim() ? { id: x.id, model: u.model.trim() } : null))));
 }
 
 async function runUpgrade(id) {
@@ -1385,6 +1389,7 @@ async function runUpgrade(id) {
   if (!run || run.running || run.drift.running || run.drift.busy || run.upgrade.running) return;
   const u = run.upgrade;
   if (!u.model.trim()) return toast("Name the version to try, such as jev-latest or jev-1.15.0", "error");
+  if (!(await confirmSpend(api, "upgrade", { id, model: u.model.trim() }))) return;
   u.running = true;
   u.report = null;
   render();
@@ -1488,6 +1493,7 @@ function driftForm(x, run) {
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm", disabled: run.running || d.running || d.busy || run.upgrade.running, onclick: () => runDrift(x.id) },
         d.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), label]),
+      estimateLine(h, api, "drift", () => (lineCount(d.text) ? { id: x.id, rows: rowsPayload(d.text), model: run.model.trim() || undefined } : null)),
       h("button", { class: "btn sm ghost", onclick: fromBox, title: "Copy the Bulk rows box into this box" }, "Use the rows box"),
       h("span", { class: "faint", style: { fontSize: "12px" } }, "Up to 200 new rows. Comparing saves nothing.")));
 }
@@ -1499,6 +1505,7 @@ async function runDrift(id) {
   if (!lineCount(d.text)) return toast("Paste the new rows to compare, one per line", "error");
   if (d.report?.labeling?.items.some((i) => Object.values(i.labels).some((v) => v !== null && v !== undefined))
       && !confirm("Compare again and discard the unsaved labels in this traffic queue?")) return;
+  if (!(await confirmSpend(api, "drift", { id, rows: rowsPayload(d.text), model: run.model.trim() || undefined }))) return;
   d.running = true;
   d.report = null;
   d.labelsOpen = false;
@@ -2829,7 +2836,7 @@ function renderBulk() {
             b.dataset.questions ? src("dataset", `Saved with “${b.dataset.name}” (${Object.keys(b.dataset.questions).length})`) : null,
             h("p", { class: "faint", style: { fontSize: "12px" } }, "Each row is its own live request; they run 8 at a time and count against the session budget. Cap: 200 rows per run. The sample rows carry labels for the sample questions."),
             h("div", { id: "dataset-health" }, healthBody()),
-            h("div", {}, runBtn))),
+            h("div", {}, runBtn, " ", estimateLine(h, api, "bulk", () => (Object.keys(bulkQuestions()).length ? { rows: rowsPayload(), questions: bulkQuestions() } : null))))),
         h("div", { class: "panel" },
           h("div", { class: "panel-head" }, h("h2", {}, "Why this matters")),
           h("div", { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
@@ -2851,6 +2858,7 @@ async function runBulk() {
   const questions = bulkQuestions();
   if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
   if (!settleLabels("Run the rows box")) return;
+  if (!(await confirmSpend(api, "bulk", { rows: rowsPayload(), questions }))) return;
   const btn = $("#bulk-run");
   btn.disabled = true;
   mount(btn, h("span", { class: "spin" }), " Running…");
@@ -4776,18 +4784,21 @@ function renderCompare() {
         h("div", { class: "panel-body grid", style: { gap: "10px", fontSize: "12.5px" } },
           h("p", { class: "muted" }, "Each row is sent once per variant, so 40 rows make 80 live calls, or 120 when B asks in both orders. They run 8 at a time and count against the session budget. The report scores both variants only on rows both answered, so a stopped run or a failed call cannot tilt the comparison."),
           h("p", { class: "muted" }, "Labels come from ", h("code", {}, "\"_expect\""), " in the rows. To label in the browser, use the label column on the Bulk tab, then ", h("b", {}, "Keep labels in rows"), ". Only question ids that both variants share, with the same type, are compared."),
-          h("div", {}, runBtn)))),
+          h("div", {}, runBtn, " ", estimateLine(h, api, "compare", () => ({ rows: rowsPayload(), variants: compareVariants() })))))),
     c.result ? renderCompareReport() : null,
     c.result && c.report ? renderCompareRows() : null);
 }
 
+const compareVariants = () => VARIANTS.map((_, i) => ({ questions: parseVariant(i), model: W.compare.variants[i].model.trim(),
+  perturb: W.compare.variants[i].perturb || null, average_orders: !!W.compare.variants[i].average }));
+
 async function runCompare() {
   const c = W.compare;
   let variants;
-  try { variants = VARIANTS.map((_, i) => ({ questions: parseVariant(i), model: c.variants[i].model.trim(), perturb: c.variants[i].perturb || null,
-    average_orders: !!c.variants[i].average })); }
+  try { variants = compareVariants(); }
   catch (e) { return toast(e.message, "error"); }
   if (c.running) return;
+  if (!(await confirmSpend(api, "compare", { rows: rowsPayload(), variants }))) return;
   c.running = true;
   render();
   let done = false;

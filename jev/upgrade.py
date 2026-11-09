@@ -173,19 +173,22 @@ def _side(bulk: dict, asked: str) -> dict:
             "latency_ms_median": statistics.median(latencies) if latencies else None}
 
 
-def run(client: JevClient, dataset_id: str, candidate: Any) -> dict:
-    """Ask the check's tuned-on version and `candidate` every row of the dataset, and say whether the check can move."""
-    dataset = workbench.load_dataset(dataset_id)
-    if not isinstance(dataset.get("check"), dict):
-        raise WorkbenchError("The dataset %r has no check. Save one from the Workbench's Policy panel." % dataset_id)
-    check = checks.validate_check(dataset["check"], dataset.get("questions"))
+def prepare(dataset_id: str, candidate: Any) -> tuple:
+    """(dataset, check, tuned-on version, candidate, questions) for an upgrade run, which asks both versions every
+    tuning row of the dataset."""
+    dataset, check = checks.load(dataset_id)
     candidate = candidate.strip() if isinstance(candidate, str) else ""
     if not candidate or len(candidate) > checks.MAX_MODEL_CHARS:
         raise WorkbenchError("Name the model to try, such as jev-1.15.0 or jev-latest")
     current = check.get("tuned_on") or check["model"]
     if candidate == current:
         raise WorkbenchError("The check was tuned on %s already. Name another version to try." % current)
-    questions = workbench.bulk_questions(dataset["questions"])
+    return dataset, check, current, candidate, workbench.bulk_questions(dataset["questions"])
+
+
+def run(client: JevClient, dataset_id: str, candidate: Any) -> dict:
+    """Ask the check's tuned-on version and `candidate` every row of the dataset, and say whether the check can move."""
+    dataset, check, current, candidate, questions = prepare(dataset_id, candidate)
     ran = {"current": workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=current)}
     if ran["current"]["stopped"]:  # a missing key or the budget: the candidate would stop too
         ran["candidate"] = {"results": [], "rows": len(workbench.tuning_rows(dataset)), "completed": 0,

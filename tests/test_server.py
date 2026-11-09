@@ -409,6 +409,37 @@ class HttpTests(unittest.TestCase):
                                            self.post_headers())
             self.assertTrue(json.loads(body)["removed"])
 
+    def test_spend_estimate_over_http(self):
+        boom = AssertionError("an estimate must not call the model")
+        with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)), \
+                patch.object(server.client, "system_one", side_effect=boom), \
+                patch.object(server.client, "models", side_effect=boom), \
+                patch.object(server.client.guard, "check", side_effect=boom):
+            before = server.client.guard.snapshot()
+            questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}
+            body = {"kind": "bulk", "rows": "first row\nsecond row\nthird row", "questions": questions}
+            status, _, raw = self.request("POST", "/api/workbench/estimate", json.dumps(body), self.post_headers())
+            self.assertEqual(status, 200, raw)
+            out = json.loads(raw)
+            self.assertEqual((out["kind"], out["calls"], out["upper_bound"]), ("bulk", 3, True))
+            self.assertGreater(out["usd"], 0)
+            self.assertIn("fits", out)
+            variants = [{"questions": questions}, {"questions": questions, "average_orders": False, "model": "jev-9.9.9"}]
+            status, _, raw = self.request("POST", "/api/workbench/estimate", json.dumps(
+                {"kind": "compare", "rows": "a\nb", "variants": variants}), self.post_headers())
+            self.assertEqual((status, json.loads(raw)["calls"]), (200, 4), raw)
+            self.assertIn("jev-9.9.9", json.loads(raw)["models"])
+            bad, _, err = self.request("POST", "/api/workbench/estimate", json.dumps({"kind": "nope"}), self.post_headers())
+            self.assertEqual(bad, 400)
+            self.assertIn("kind must be one of", json.loads(err)["error"])
+            bad, _, err = self.request("POST", "/api/workbench/estimate", json.dumps({"kind": "check", "id": "missing"}),
+                                       self.post_headers())
+            self.assertEqual(bad, 400, err)
+            forged, _, _ = self.request("POST", "/api/workbench/estimate", json.dumps(body),
+                                        {"Content-Type": "application/json"})
+            self.assertEqual(forged, 403, "a POST needs the session token")
+            self.assertEqual(server.client.guard.snapshot(), before)
+
     def test_checks_over_http(self):
         questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}
         fake = FakeClient(lambda state, qs: {"refund": 0.98 if "refund" in state["text"] else 0.05})
