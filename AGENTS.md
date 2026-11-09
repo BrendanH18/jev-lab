@@ -96,9 +96,13 @@ its own pair of `World`s — don't let those get confused with each other.
 raise `BadRequest`/`jev.workbench.WorkbenchError`/`jev.envfile.EnvFileError` for 400s, `JevError`
 (from `jev/client.py`) carries its own HTTP status through to the response. To add an endpoint:
 write the handler, add it to `ROUTES`, and (if the response should ever come back non-JSON or the
-page needs new markup) update the relevant `static/*.html`+`static/js/*.js` pair — each app page
+page needs new markup) update the relevant `static/*.html`+`static/js/*.js` pair — each demo page
 has one JS file with no shared framework, only the helpers in `static/js/common.js` (DOM builder
-`h()`, `api()` fetch wrapper, the JSON "Inspect" drawer, toasts, the key/settings modal). The drawer's
+`h()`, `api()` fetch wrapper, the JSON "Inspect" drawer, toasts, the key/settings modal). The Workbench
+page loads one entry, `static/js/workbench.js` (boot, tabs, `render()`), which imports panel modules
+`static/js/workbench-*.js` (build, tests, bulk, import, labeling, datasets, checks, drift, review, calibrate,
+costs, policy, compare) that share page state through `W` in `workbench-state.js`; their imports form cycles, so
+a module may only declare functions and constants at load time (`tests/js/workbench-modules.test.mjs`). The drawer's
 **Open in Workbench** button (`static/js/handoff.js`) hands the inspected request — state, questions,
 pictures, never answers — to the Workbench's Build tab through `localStorage`, with no server route;
 `tests/test_handoff.py` checks that every demo's request passes Workbench validation, so a demo that

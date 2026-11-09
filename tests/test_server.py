@@ -124,6 +124,19 @@ class HttpTests(unittest.TestCase):
                 self.assertIn("charset=utf-8", headers["Content-Type"])
                 self.assertTrue(body)
 
+    def test_workbench_modules_are_served_as_javascript(self):
+        # The Workbench page loads workbench.js, which imports its panels from static/js/workbench-*.js.
+        modules = sorted(path.name for path in (server.STATIC / "js").glob("workbench*.js"))
+        self.assertIn("workbench-state.js", modules)
+        for name in modules:
+            with self.subTest(module=name):
+                status, headers, body = self.request("GET", "/js/" + name)
+                self.assertEqual(status, 200)
+                # Python 3.12+ names .js text/javascript; older versions may say application/javascript.
+                self.assertRegex(headers["Content-Type"], r"^(text|application)/javascript; charset=utf-8$")
+                self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
+                self.assertTrue(body)
+
     def test_foreign_host_is_rejected(self):
         status, _, body = self.request("GET", "/", headers={"Host": "attacker.example"})
         self.assertEqual(status, 403)

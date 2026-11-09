@@ -1,11 +1,11 @@
 // Run with: node --test tests/js/
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
   confirmMessage, confirmSpend, estimateDetail, estimateLine, estimateText, needsConfirm, usdDown, usdUp,
 } from "../../static/js/estimate.js";
+import { workbenchSource } from "./workbench-source.mjs";
 
 const est = (over = {}) => ({ kind: "bulk", calls: 120, usd: 0.0039123, upper_bound: true, models: ["jev-1.14.0"],
   parts: [{ label: "rows", model: "jev-1.14.0", calls: 120, usd: 0.0039123 }], budget_usd: 2, remaining_usd: 1.98765,
@@ -85,7 +85,7 @@ test("estimateLine builds a quiet line and tolerates inputs that are not ready",
 });
 
 test("every paid Workbench run asks confirmSpend before its paid request", () => {
-  const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
+  const source = workbenchSource;
   const body = (name) => source.match(new RegExp(`async function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
   for (const [fn, kind, path] of [["runBulk", "bulk", "/api/workbench/bulk"], ["runCompare", "compare", "/api/workbench/compare"],
     ["runCheck", "check", "/api/workbench/checks/run"], ["runDrift", "drift", "/api/workbench/checks/drift"],

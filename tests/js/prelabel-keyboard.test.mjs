@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { labelShortcut, nextLabel, labelProgress, visibleLabels } from "../../static/js/prelabel.js";
+import { workbenchSource } from "./workbench-source.mjs";
 
 const items = [{ index: 0, missing: ["label"] }, { index: 3, missing: ["label"] }, { index: 7, missing: ["label"] }];
 
@@ -24,7 +24,7 @@ test("previous incomplete skips ready rows and wraps within the supplied slice",
   assert.equal(nextLabel([], drafts, null, -1), null);
 });
 
-const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
+const source = workbenchSource;
 const body = (name) => source.match(new RegExp(`function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const h = (tag, attrs, ...children) => ({ tag, attrs, children });
 

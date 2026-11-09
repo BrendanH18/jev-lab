@@ -1,12 +1,12 @@
 // Run with: node --test tests/js/
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
   createGuidelines, draftPayload, editorDraft, exampleLabelText, guidelineChangeText, guidelineView, labelOptions,
   rowStrings, shownExamples, validExampleLabel,
 } from "../../static/js/guidelines.js";
+import { workbenchSource } from "./workbench-source.mjs";
 
 const h = (tag, attrs, ...children) => ({ tag, attrs,
   children: children.flat(Infinity).filter((x) => x != null && x !== false) });
@@ -165,7 +165,7 @@ test("the toggle shows the saved count and the panel stays closed until opened",
 });
 
 // The real labeling views from static/js/workbench.js, rendered with a guideline store on W. No browser or model calls.
-const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
+const source = workbenchSource;
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const hl = (tag, attrs, ...children) => ({ ...h(tag, attrs, ...children), addEventListener() {} });
 

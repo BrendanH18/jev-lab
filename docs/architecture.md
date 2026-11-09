@@ -27,6 +27,11 @@ browser's `localStorage` ([`static/js/handoff.js`](../static/js/handoff.js)); it
 Compare's **Reverse A's options** builds its order-check variant in the browser
 ([`static/js/variants.js`](../static/js/variants.js)), and Label agreement shapes the labels it sends
 ([`static/js/agreement.js`](../static/js/agreement.js)). These modules have no DOM code, so `tests/js` tests them under Node.
+The Workbench page's entry, [`static/js/workbench.js`](../static/js/workbench.js), boots the page, switches
+tabs and renders; each panel (Build, Tests, Bulk, CSV import and health, labeling, datasets, checks, drift, the
+review queue, Calibrate, costs, Policy, Compare) lives in a `static/js/workbench-*.js` module, and all of them
+share the page state `W` from [`static/js/workbench-state.js`](../static/js/workbench-state.js). The browser
+loads them as ES modules; there is no build step.
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,

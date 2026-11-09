@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { labelProgress, visibleLabels } from "../../static/js/prelabel.js";
+import { workbenchSource } from "./workbench-source.mjs";
 
-const source = readFileSync(new URL("../../static/js/workbench.js", import.meta.url), "utf8");
+const source = workbenchSource;
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const h = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat(Infinity).filter((x) => x != null && x !== false) });
 const nodes = (n, tag) => typeof n !== "object" ? [] : [...(n.tag === tag ? [n] : []), ...n.children.flatMap((c) => nodes(c, tag))];
