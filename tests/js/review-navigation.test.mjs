@@ -79,3 +79,14 @@ test("jump changes only presentation, then scrolls and focuses the next incomple
   next("tickets");
   assert.equal(calls.length, 4);
 });
+
+test("slice filtering uses full normalized identities and previous navigation wraps inside the slice", () => {
+  const common = "a".repeat(80);
+  const items = [row(1, "audit", null), row(2, "audit", null), row(3, "review", null), row(4, "audit", null)];
+  for (const item of items) item.slice_values = { channel: item.line === 2 ? `${common}right` : `${common}left` };
+  const snapshot = structuredClone(items);
+  assert.deepEqual(queueVisible(items, gates, "all", "all", "channel", `${common}right`), [items[1]]);
+  assert.equal(queueNextIncomplete(items, gates, "audit", 4, "channel", `${common}left`, -1).line, 1);
+  assert.equal(queueNextIncomplete(items, gates, "audit", 1, "channel", `${common}left`, -1).line, 4);
+  assert.deepEqual(items, snapshot, "filters and navigation cannot mutate labels, audit membership, or inputs");
+});

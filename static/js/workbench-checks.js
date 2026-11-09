@@ -6,7 +6,7 @@ import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
 import { bulkUnsaved } from "./workbench-bulk.js";
 import { driftForm, pval, driftReport } from "./workbench-drift.js";
-import { newQueue, queueForm, queueView, auditReport } from "./workbench-review.js";
+import { newQueue, queueForm, queueView, auditReport, confirmReviewDiscard } from "./workbench-review.js";
 import { withCI, attachedSetsPayload, attachedSetsText } from "./workbench-calibrate.js";
 import { activeGates, policyRules } from "./workbench-policy.js";
 import { loadModels } from "./workbench-compare.js";
@@ -130,6 +130,7 @@ export async function runCheck(id) {
 }
 
 async function removeCheck(id) {
+  if (!confirmReviewDiscard(id)) return;
   if (!confirm(`Remove the check from “${id}”? The rows, labels, and questions stay.`)) return;
   try {
     await api("/api/workbench/checks/delete", { id });
@@ -234,6 +235,7 @@ async function runUpgrade(id) {
 }
 
 async function moveCheck(id, check, what) {
+  if (!confirmReviewDiscard(id)) return;
   if (!confirm(`Move the check saved with “${id}” to ${check.model}, ${what}? It then asks ${check.model} on every run.`)) return;
   try {
     await api("/api/workbench/checks", { id, check });
@@ -463,6 +465,7 @@ async function saveCheck() {
   const id = b.dataset.id;
   const blocker = checkBlocker();  // the rows box or labels may have changed since the panel was drawn
   if (blocker) return toast(blocker, "error");
+  if (!confirmReviewDiscard(id)) return;
   if (b.datasets.find((x) => x.id === id)?.check && !confirm(`Replace the check saved with “${id}”?`)) return;
   try {
     const check = { gates: activeGates(), signal: p.signal, bound: p.bound, model: gateModel(), tuned_on: tunedOn() || undefined,

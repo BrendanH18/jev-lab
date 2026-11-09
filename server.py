@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from jev import (agreement, answersets, bundles, calibrate, checks, claims, compare, cost, csvimport, dataset_changes, decisions, dispatch, drift, envfile, estimate, examples, find, gate, guidelines, health, hello,
-                 history, holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, rules, security, shield, slices, testsplit, upgrade, workbench)
+                 history, holdout, images, counter, lint, policy, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, reviewsession, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -760,6 +760,15 @@ def api_wb_decisions_add(body):
     return decisions.append(str(body.get("id", "")), body.get("items"))
 
 
+def api_wb_decisions_session_export(body):
+    return reviewsession.export_session(str(body.get("id", "")), body.get("text"), body.get("seed"),
+                                        body.get("audit"), body.get("context"), body.get("items"))
+
+
+def api_wb_decisions_session_import(body):
+    return reviewsession.import_session(str(body.get("id", "")), body.get("text"), body.get("session"))
+
+
 def api_wb_agreement_sample(body):
     return agreement.sample(str(body.get("id", "")), body.get("rows", 30), body.get("seed", 0))
 
@@ -885,6 +894,8 @@ ROUTES = {
     ("POST", "/api/workbench/checks/decisions/add"): api_wb_decisions_add,
     ("POST", "/api/workbench/checks/decisions/export"): api_wb_decisions_export,
     ("POST", "/api/workbench/checks/decisions/import"): api_wb_decisions_import,
+    ("POST", "/api/workbench/checks/decisions/session/export"): api_wb_decisions_session_export,
+    ("POST", "/api/workbench/checks/decisions/session/import"): api_wb_decisions_session_import,
     ("POST", "/api/workbench/recalibrate"): api_wb_recalibrate,
     ("POST", "/api/workbench/calibrate"): api_wb_calibrate,
     ("POST", "/api/workbench/policy"): api_wb_policy,

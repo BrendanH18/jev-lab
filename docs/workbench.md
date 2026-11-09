@@ -1388,6 +1388,28 @@ Queue controls filter rows by **Review/Audit** and **Incomplete/Ready** and show
 current queue. **Next incomplete** moves to the next unfinished row. Filters preserve labels and
 audit membership; CSV handoff and **Add** still operate on the whole queue, including hidden rows.
 
+**Download Review session** keeps unfinished human edits and the original audit sample in a JSON file.
+It excludes suggested labels, model answers and shortlists. Keep the original decisions file and named
+pictures separately. To resume, select the same saved dataset/check, paste the original decisions,
+and choose **Restore Review session**. Restore validates the whole file and previews counts before
+you accept it into the queue. The dataset and check must be unchanged; a different decisions file or
+changed dataset requires a new session. Accepting replaces the queue after confirmation when it has
+unsaved edits; **Add labeled rows** remains the explicit dataset write. No model calls are made.
+Appending rows changes the dataset snapshot, so session download is disabled afterward until the
+decisions are read again. Finish the queue before appending when you need a recoverable session;
+Add warns if unfinished human edits would remain. Those edits stay in the page, and rereading
+discards them only after confirmation.
+Restored audit rows keep their original membership, and answers remain hidden until their gated
+questions are labeled. Session matching is a compatibility check, not file authenticity.
+
+Choose a top-level input field and value to narrow the queue by slice. Full normalized values identify
+slices even when their display text is shortened. Filtering preserves every label and the original
+audit sample; downloads, CSV handoff and Add still use the whole queue. Per-question progress counts
+labels without revealing hidden audit answers. With focus in the queue, Ctrl/⌘+Enter navigates to the
+next incomplete row in the current filters; Ctrl/⌘+Shift+Enter goes to the previous one. Native text
+editing remains available, and navigation never saves labels. Leaving the page or replacing a queue
+with unsaved human edits warns first.
+
 The rows sent to review are the hard ones, so a dataset that grows mostly from them automates a smaller
 share than your traffic does, and its accuracy describes harder rows. Add audit rows too, and read the
 check's coverage target with that in mind. A dataset holds up to 200 rows, and the queue says how much
@@ -1401,6 +1423,8 @@ asks the model again.
 | Endpoint | Body | Returns |
 | --- | --- | --- |
 | `POST /api/workbench/checks/decisions` | `id`, `text` (the decision lines), optional `audit` (0 to 200, default 0) and `seed` | `items`, each with its `line`, `kind` (`review` or `audit`), `row`, `route`, `held`, `rules`, `answers`, `labels` to start from, and `open` questions; the dataset's `questions` and the check's `gates`; `counts` (`decisions`, `review`, `auto`, `in_dataset`, `repeated`, `queued`, `audit`, `dropped`, `unverified`); `problems` by line; and `room` |
+| `POST /api/workbench/checks/decisions/session/export` | `id`, original `text`, report's `seed`, `audit` (`audit_requested`), `context` (`session_context`), human-only `items` (`line`, `labels`) | Portable versioned session: dataset/source binding, seed, audit membership and human edits only |
+| `POST /api/workbench/checks/decisions/session/import` | `id`, original `text`, `session` | Validated `report`, human `edits`, count-only summary; no writes or model calls |
 | `POST /api/workbench/checks/decisions/add` | `id`, `items`, each with its `row`, `labels`, and, for the audit, `kind` and `answers` | `dataset`: the summary; `added`; `already`, rows the dataset had; and `audit`: `rows`, `correct`, `accuracy` with `accuracy_low` and `accuracy_high`, the `target` and whether it is met (`ok`), the `wrong` rows, and `by_slice` (each `field` and its `slices`, with `value`, counts, accuracy and interval), or `null` without audited rows |
 
 ## Compare two variants

@@ -249,6 +249,11 @@ conditions.
   Filter the queue by review/audit or incomplete/ready, follow labeling progress, and jump to the next
   incomplete row. After adding audits, choose an input field to see each slice's audited count,
   accuracy, and 95% interval for that batch. Slice reports make no extra calls and are not saved.
+  Download unfinished Review sessions and restore them against the original decisions file and unchanged
+  dataset/check, with a preview before accepting. Session files keep human edits and the original audit
+  selection, never model answers or shortlists; pictures travel separately. Filter by input slice, follow
+  per-question progress, and use Ctrl/⌘+Enter (Shift for previous) to navigate incomplete rows.
+  Leaving or replacing a queue with unsaved edits asks for confirmation.
 - **Compare:** run two variants, each a question set and a model, over the same labeled rows. See
   accuracy, calibration, automation at a target accuracy, cost, and latency side by side, a paired
   significance test, and the rows where the variants disagree. **Reverse A's options** makes variant B an

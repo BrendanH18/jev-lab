@@ -71,13 +71,13 @@ test("slice form adds selected values, edits percentages, and removes targets", 
 test("save handler sends the current slice configuration with the check", async () => {
   let saved;
   const W = { bulk: { policy: { signal: "confidence", bound: "lower" }, dataset: { id: "coffee" }, datasets: [], checkRuns: {} } };
-  const handler = new Function("W", "$", "checkBlocker", "activeGates", "gateModel", "tunedOn", "policyRules", "attachedSetsPayload", "checkSliceTargets", "api", "toast", "render", "handleError",
+  const handler = new Function("W", "$", "checkBlocker", "activeGates", "gateModel", "tunedOn", "policyRules", "attachedSetsPayload", "checkSliceTargets", "api", "toast", "render", "handleError", "confirmReviewDiscard",
     `${body("saveCheck")}; return saveCheck;`)(W, (selector) => ({ value: selector.includes("accuracy") ? "95" : "50" }), () => null,
     () => ({ topic: 0.8 }), () => "jev-1.14.0", () => "jev-1.14.0", () => "", () => undefined, () => [target],
     async (path, payload) => {
       if (payload) saved = payload.check;
       return { datasets: [] };
-    }, () => {}, () => {}, (error) => { throw error; });
+    }, () => {}, () => {}, (error) => { throw error; }, () => true);
   await handler();
   assert.deepEqual(saved.slice_targets, [target]);
   assert.equal(saved.bound, "lower");

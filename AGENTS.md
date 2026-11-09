@@ -308,3 +308,13 @@ reports the `dataset_changes` summary, and requires the preview's file token (a 
 preview). It restores the revision's own check and labeling guidelines where they fit (drops are reported,
 never written), keeps every test look recorded since (looks
 never shrink), and snapshots the current file first, so a restore is itself undoable.
+
+Review session recovery downloads human edits only, never suggested model labels, answers, or shortlists.
+Restore requires the original decisions text and the same dataset/check snapshot, validates before preview,
+and preserves the original random audit membership and blind labeling behavior. Download/restore make
+no model calls or dataset writes; accepting a restore changes the queue only, and Add stays explicit.
+Review input-slice filters, per-question progress and keyboard navigation change presentation only;
+full normalized slice identities preserve labels across filters. Warn before leaving or replacing a
+queue with unsaved human edits, including check saves/removal/upgrades, bundle replacement, dataset
+deletion and history restore; cancel before any saved configuration changes. Pictures travel
+separately from session files.
