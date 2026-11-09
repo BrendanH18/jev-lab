@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from jev import bundles, checks, dataset_changes, drift, history, testsplit, workbench
+from jev import bundles, checks, dataset_changes, drift, guidelines, history, testsplit, workbench
 from jev.workbench import WorkbenchError
 
 Q = {"urgent": {"type": "noul", "instructions": "Urgent?"}}
@@ -169,6 +169,28 @@ class HistoryTests(unittest.TestCase):
         history.restore("tickets", newest, undo["revision"])
         self.assertEqual(workbench.load_dataset("tickets")["notes"], "smaller")
         self.assertNotIn("check", workbench.load_dataset("tickets"))
+
+    def test_restore_brings_back_the_revisions_guidelines_and_writes_no_notes(self):
+        workbench.save_dataset(self.spec())
+        guidelines.save("tickets", {"urgent": {"note": "Urgent means a customer is blocked today."}})
+        guidelines.save("tickets", {"urgent": {"note": "Rewritten note."}})
+        target = self.kept()[-1]  # the file holding the first note
+        report = history.preview("tickets", target)
+        self.assertEqual(report["guidelines"]["changed"], ["urgent"])
+        self.assertNotIn("Urgent means", json.dumps(report))
+        history.restore("tickets", target, report["revision"])
+        self.assertEqual(workbench.load_dataset("tickets")["guidelines"]["urgent"]["note"],
+                         "Urgent means a customer is blocked today.")
+        # A revision whose guideline names a question the restore no longer has: dropped, reported, never written.
+        raw = json.loads((history.history_dir() / "tickets" / (target + ".json")).read_text())
+        raw["guidelines"]["gone"] = {"note": "for a removed question"}
+        (history.history_dir() / "tickets" / (target + ".json")).write_text(json.dumps(raw))
+        report = history.preview("tickets", target)
+        restored = history.restore("tickets", target, report["revision"])
+        self.assertTrue(restored["guidelines_dropped"])
+        saved = workbench.load_dataset("tickets")
+        self.assertNotIn("guidelines_dropped", saved)
+        self.assertEqual(sorted(saved["guidelines"]), ["urgent"])
 
     def test_stale_preview_is_rejected_without_writing(self):
         workbench.save_dataset(self.spec())

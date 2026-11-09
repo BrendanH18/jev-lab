@@ -471,6 +471,7 @@ def dataset_summary(dataset: dict) -> dict:
     return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
             "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
             "questions": len(dataset.get("questions") or {}), "check": check, "check_notes": [pin] if pin else [],
+            "guidelines": len(dataset["guidelines"]) if isinstance(dataset.get("guidelines"), dict) else 0,
             "test": {"rows": test_rows, "labeled": test_labeled,
                      "share": test_labeled / labeled_rows if labeled_rows else None,
                      "looks": len(test.get("looks") or []) if test else 0,
@@ -520,8 +521,10 @@ def prepare_dataset(spec: dict) -> dict:
 
     A check saved in the file it replaces (jev/checks.py) is kept while it still fits the questions saved
     now, so adding rows or labels keeps it. Otherwise it is dropped and the returned dataset says why under
-    "check_dropped" (not written to the file)."""
-    from . import checks  # checks imports this module
+    "check_dropped" (not written to the file). Labeling guidelines (jev/guidelines.py) given in `spec` replace the
+    saved ones; otherwise the saved ones are kept where they still fit the questions, and any dropped are listed
+    under "guidelines_dropped" (not written to the file either)."""
+    from . import checks, guidelines  # both import this module
 
     name = str(spec.get("name") or "").strip()[:120]
     if not SLUG.sub("", name.lower()):
@@ -549,6 +552,12 @@ def prepare_dataset(spec: dict) -> dict:
                                     saved_at=prior.get("saved_at"))
         except WorkbenchError as err:
             dropped = str(err)
+    if spec.get("guidelines") is not None:  # human-only: never part of a request, a check, or a gate
+        guides, guides_dropped = guidelines.validate(spec["guidelines"], dataset.get("questions")), []
+    else:
+        guides, guides_dropped = guidelines.reconcile(_prior(dataset["id"], "guidelines"), dataset.get("questions"))
+    if guides:
+        dataset["guidelines"] = guides
     dataset["rows"] = validate_rows(spec.get("rows"))
     if any(row_test(split_labels(r, i + 1)[0]) for i, r in enumerate(dataset["rows"])):
         # Keep the record of how often the test rows were scored; a dataset saved with test rows and no record starts one.
@@ -559,16 +568,17 @@ def prepare_dataset(spec: dict) -> dict:
         _need_pictures([split_labels(r, i + 1) for i, r in enumerate(dataset["rows"])], dataset["questions"])
     if len(_dataset_text(dataset)) > MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % MAX_DATASET_CHARS)
-    return dict(dataset, check_dropped=dropped) if dropped else dataset
+    notes = {"check_dropped": dropped, "guidelines_dropped": guides_dropped}
+    return dict(dataset, **{k: v for k, v in notes.items() if v})
 
 
 @dataset_update()
 def save_dataset(spec: dict) -> dict:
-    """Write a validated dataset; preserve compatible checks and test history."""
+    """Write a validated dataset; preserve compatible checks, labeling guidelines, and test history."""
     dataset = prepare_dataset(spec)
-    dropped = dataset.pop("check_dropped", None)
+    notes = {k: dataset.pop(k) for k in ("check_dropped", "guidelines_dropped") if k in dataset}
     write_dataset(dataset)
-    return dict(dataset, check_dropped=dropped) if dropped else dataset
+    return dict(dataset, **notes)
 
 
 def list_datasets() -> List[dict]:

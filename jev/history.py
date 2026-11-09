@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from typing import Any, List, Optional
 
-from . import checks, dataset_changes, testsplit, workbench
+from . import checks, dataset_changes, guidelines, testsplit, workbench
 from .workbench import WorkbenchError
 
 HISTORY_DIR = ".history"
@@ -153,6 +153,9 @@ def deleted() -> List[dict]:
     return out
 
 
+NOTES = ("check_dropped", "guidelines_dropped")  # reported by a restore, never written to the file
+
+
 def _looks(*tests: Any) -> list:
     """Test-split looks from several records, in order, each once: a restore never forgets that test rows were scored."""
     out, seen = [], set()
@@ -187,6 +190,14 @@ def _candidate(dataset_id: str, revision: Any) -> tuple:
                                       saved_at=raw["check"].get("saved_at"))
         except WorkbenchError as err:
             candidate["check_dropped"] = str(err)
+    # Likewise the revision's own labeling guidelines, kept where they still fit the revision's questions.
+    candidate.pop("guidelines", None)
+    candidate.pop("guidelines_dropped", None)
+    guides, guides_dropped = guidelines.reconcile(raw.get("guidelines"), candidate.get("questions"))
+    if guides:
+        candidate["guidelines"] = guides
+    if guides_dropped:
+        candidate["guidelines_dropped"] = guides_dropped
     if "test" in candidate:
         # Test looks only accumulate: keep those recorded in the revision and since, so restoring an older
         # revision never hides how often the held-out rows were scored.
@@ -194,7 +205,7 @@ def _candidate(dataset_id: str, revision: Any) -> tuple:
         now = prior.get("test") if isinstance(prior.get("test"), dict) else {}
         candidate["test"] = {"locked_at": old.get("locked_at") or now.get("locked_at") or candidate["test"]["locked_at"],
                              "looks": _looks(old, now)}
-    if len(workbench._dataset_text({k: v for k, v in candidate.items() if k != "check_dropped"})) > workbench.MAX_DATASET_CHARS:
+    if len(workbench._dataset_text({k: v for k, v in candidate.items() if k not in NOTES})) > workbench.MAX_DATASET_CHARS:
         raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % workbench.MAX_DATASET_CHARS)
     return prior, token, candidate
 
@@ -212,6 +223,6 @@ def restore(dataset_id: str, revision: Any, preview_revision: Any) -> dict:
     if not isinstance(preview_revision, str) or preview_revision != dataset_changes._revision(dataset_id):
         raise WorkbenchError("The saved dataset changed after preview. Preview the restore again.")
     _prior, _token, candidate = _candidate(dataset_id, revision)
-    dropped = candidate.pop("check_dropped", None)
+    notes = {k: candidate.pop(k) for k in NOTES if k in candidate}
     workbench.write_dataset(candidate)
-    return dict(candidate, check_dropped=dropped) if dropped else candidate
+    return dict(candidate, **notes)
