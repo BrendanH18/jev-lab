@@ -5,14 +5,26 @@ export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved" } = {}) {
+export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [] } = {}) {
   const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
+  const selectedSet = new Set(selected);
+  const presenceMatches = (value, mode) => mode === "all" || (mode === "with" ? value : !value);
   const shown = items.filter((item) => matchesSaved(item, query)
     && (status === "all" || testResultStatus(byId.get(item.id)) === status)
-    && (type === "all" || Object.values(item.questions || {}).some((question) => question.type === type)));
+    && (type === "all" || Object.values(item.questions || {}).some((question) => question.type === type))
+    && presenceMatches(Object.keys(item.expect || {}).length > 0, expectations)
+    && presenceMatches(Object.keys(item.images || {}).length > 0, images)
+    && (selection === "all" || selectedSet.has(item.id) === (selection === "selected")));
   // Array#sort is stable; ties retain the saved list's order.
   if (sort === "name") shown.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
   if (sort === "questions") shown.sort((a, b) => Object.keys(b.questions || {}).length - Object.keys(a.questions || {}).length);
+  if (sort === "name-desc") shown.sort((a, b) => (b.name || b.id).localeCompare(a.name || a.id));
+  if (sort === "fewest-questions") shown.sort((a, b) => Object.keys(a.questions || {}).length - Object.keys(b.questions || {}).length);
+  if (sort === "expectations") shown.sort((a, b) => Object.keys(b.expect || {}).length - Object.keys(a.expect || {}).length);
+  if (sort === "problems") {
+    const priority = { error: 0, fail: 1, "not-run": 2, pass: 3 };
+    shown.sort((a, b) => priority[testResultStatus(byId.get(a.id))] - priority[testResultStatus(byId.get(b.id))]);
+  }
   return shown;
 }
 
@@ -23,6 +35,20 @@ export function selectedTestIds(items, selected) {
 
 export function selectVisibleTests(items, selected, visible) {
   return selectedTestIds(items, [...selected, ...visible.map((item) => item.id)]);
+}
+
+export function deselectVisibleTests(items, selected, visible) {
+  const removed = new Set(visible.map((item) => item.id));
+  return selectedTestIds(items, selected.filter((id) => !removed.has(id)));
+}
+
+export function invertVisibleTests(items, selected, visible) {
+  const toggled = new Set(selectedTestIds(items, selected));
+  for (const id of new Set(visible.map((item) => item.id))) {
+    if (toggled.has(id)) toggled.delete(id);
+    else toggled.add(id);
+  }
+  return selectedTestIds(items, toggled);
 }
 
 export function testRunBody(items, ids = null) {

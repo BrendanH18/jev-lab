@@ -169,10 +169,49 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   select("Sort datasets").attrs.onchange({ target: { value: "name" } });
   assert.deepEqual(rows.map((row) => row.dataset.datasetId), ["reviews", "tickets", "orders"]);
   assert.ok(rows.every((row) => row.draft.label === "human edit"));
+  select("Minimum rows without labels").attrs.oninput({ target: { value: "4" } });
+  assert.ok(rows.every((row) => row.style.display === "none"), "count bounds combine with the held-out filter");
+  select("Filter datasets by held-out split").attrs.onchange({ target: { value: "all" } });
+  assert.equal(rows.find((row) => row.dataset.datasetId === "orders").style.display, "");
+  assert.equal(dom["#dataset-catalog-download"].disabled, false);
+  select("Sort datasets").attrs.onchange({ target: { value: "unlabeled" } });
+  assert.deepEqual(rows.map((row) => row.dataset.datasetId), ["orders", "tickets", "reviews"]);
+  assert.ok(rows.every((row) => row.draft.label === "human edit"));
   select("Search datasets").attrs.oninput({ target: { value: "missing" } });
   assert.equal(dom["#dataset-search-empty"].hidden, false);
   nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
   assert.deepEqual(filters, catalogDefaults());
+  assert.equal(select("Minimum rows without labels").value, "");
   assert.ok(rows.every((row) => row.style.display === ""));
   assert.deepEqual(rows.map((row) => row.dataset.datasetId), items.map((item) => item.id));
+});
+
+test("catalog count bounds combine and treat zero as an explicit bound", () => {
+  const before = structuredClone(items);
+  const ids = (filters) => items.filter((item) => matchesCatalog(item, filters)).map((item) => item.id);
+  assert.deepEqual(ids({ minRows: "5" }), ["tickets", "orders"]);
+  assert.deepEqual(ids({ maxRows: "2" }), ["reviews"]);
+  assert.deepEqual(ids({ minLabeled: "3" }), ["tickets"]);
+  assert.deepEqual(ids({ minUnlabeled: "3" }), ["orders"]);
+  assert.deepEqual(ids({ minQuestions: "2" }), ["tickets"]);
+  assert.deepEqual(ids({ minRows: "2", maxRows: "5", minLabeled: "2", minQuestions: "1" }), ["tickets", "reviews"]);
+  assert.deepEqual(ids({ maxRows: "0" }), []);
+  assert.deepEqual(ids({ minRows: "6", maxRows: "2" }), []);
+  assert.deepEqual(ids({ minRows: "" }), items.map((item) => item.id));
+  for (const value of ["-1", "1.5", "NaN", "Infinity"]) assert.deepEqual(ids({ minRows: value }), []);
+  assert.equal(matchesCatalog({ rows: 0 }, { minRows: 0, maxRows: 0, minUnlabeled: 0 }), true);
+  assert.deepEqual(items, before);
+});
+
+test("catalog metadata sorts order datasets without mutating saved order", () => {
+  const before = structuredClone(items);
+  for (const [sort, expected] of [
+    ["name-desc", ["orders", "tickets", "reviews"]],
+    ["rows-asc", ["reviews", "tickets", "orders"]],
+    ["unlabeled", ["orders", "tickets", "reviews"]],
+    ["questions", ["tickets", "reviews", "orders"]],
+    ["held-out", ["tickets", "orders", "reviews"]],
+  ]) assert.deepEqual(sortedCatalog(items, sort).map((item) => item.id), expected);
+  assert.deepEqual(items, before);
+  assert.deepEqual(sortedCatalog([{ id: "empty" }, { id: "also-empty" }], "unlabeled").map((item) => item.id), ["empty", "also-empty"]);
 });

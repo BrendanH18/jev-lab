@@ -1,14 +1,15 @@
 // Tests tab (saved items, run again live) and the Examples gallery, both of which load a request into Build.
 import { $, api, callStats, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
-import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, testRunBody,
+import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, deselectVisibleTests, invertVisibleTests, testRunBody,
   testRunSnapshot, pruneTestResults, mergeTestResults } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
-const testView = { status: "all", type: "all", sort: "saved", selected: [], busy: false };
+const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved" });
+const testView = { ...testFilterDefaults(), selected: [], busy: false };
 
 function reconcileTests() {
   testView.selected = selectedTestIds(W.items, testView.selected);
@@ -39,6 +40,10 @@ function refreshTestVisibility() {
   if (empty) empty.hidden = visible.size > 0;
   const selectVisible = $("#saved-test-select-visible");
   if (selectVisible) selectVisible.disabled = testView.busy || !visible.size;
+  for (const id of ["saved-test-deselect-visible", "saved-test-invert-visible"]) {
+    const button = $(`#${id}`);
+    if (button) button.disabled = testView.busy || !visible.size;
+  }
 }
 
 // ---------- Tests ----------
@@ -83,10 +88,20 @@ export function renderTests() {
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
           filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
           filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
-          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["questions", "Most questions"]])),
+          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"]]),
+          filter("Test expectations", "expectations", [["all", "Any expectations"], ["with", "With expectations"], ["without", "Without expectations"]]),
+          filter("Test pictures", "images", [["all", "Any pictures"], ["with", "With pictures"], ["without", "Without pictures"]]),
+          filter("Test selection", "selection", [["all", "All tests"], ["selected", "Selected tests"], ["unselected", "Unselected tests"]]),
+          h("button", { class: "btn sm ghost", onclick: () => {
+            Object.assign(testView, testFilterDefaults()); W.testSearch = ""; render();
+          } }, "Reset test filters")),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
           h("button", { class: "btn sm", id: "saved-test-select-visible", disabled: busy || !shown.size,
             onclick: () => { testView.selected = selectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Select visible"),
+          h("button", { class: "btn sm", id: "saved-test-deselect-visible", disabled: busy || !shown.size,
+            onclick: () => { testView.selected = deselectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Deselect visible"),
+          h("button", { class: "btn sm", id: "saved-test-invert-visible", disabled: busy || !shown.size,
+            onclick: () => { testView.selected = invertVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Invert visible selection"),
           h("button", { class: "btn sm ghost", disabled: busy || !selected.size,
             onclick: () => { testView.selected = []; render(); } }, "Clear selection"),
           h("button", { class: "btn sm primary", disabled: busy || !selected.size,

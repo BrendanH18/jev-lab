@@ -1781,6 +1781,59 @@ have the same text search. These controls only hide items; their queues and huma
 and **Run all** continues to run every saved test. **Run selected** uses the explicit selection,
 including selected tests hidden by a filter.
 
+### Thirty editor and catalog improvements
+
+Build provides ten additional tools:
+
+1. Search question IDs, instructions, and criteria.
+2. Filter questions by type.
+3. Clear question filters.
+4. Read the live shown/total count; runs and exports still include every question.
+5. Collapse all shown questions.
+6. Expand all shown questions.
+7. Move a question first.
+8. Move a question last.
+9. Copy one question's request JSON, without expectations or answers.
+10. Compact object/array state JSON, preserving values and rejecting duplicate keys.
+
+Question filters and collapse state affect presentation only. Reordering and state edits mark
+existing answers outdated. Plain text state remains supported.
+
+Saved Tests provides ten additional controls:
+
+1. Filter tests with or without expectations.
+2. Filter tests with or without pictures.
+3. Show selected or unselected tests.
+4. Sort names Z–A.
+5. Sort by fewest questions.
+6. Sort by most expectations.
+7. Sort problems first: errors, failed expectations, not run, then passed.
+8. Deselect visible tests while retaining hidden selections.
+9. Invert visible selection while retaining hidden selections.
+10. Reset filters, search, and sorting without clearing selection or session results.
+
+Selections and results remain in the current page session. These controls never start a paid run;
+Run selected still uses all selected IDs, including hidden ones.
+
+The dataset catalog provides ten additional metadata controls:
+
+1. Sort names Z–A.
+2. Sort by fewest rows.
+3. Sort by most rows without labels.
+4. Sort by most saved questions.
+5. Sort by most held-out rows.
+6. Filter by minimum row count.
+7. Filter by maximum row count.
+8. Filter by minimum labeled-row count.
+9. Filter by minimum count of rows without labels.
+10. Filter by minimum saved-question count.
+
+Open **Filter by counts** to combine whole, nonnegative bounds with the other catalog filters.
+Blank bounds are disabled; zero is an explicit bound. Counts use catalog summaries: a row with
+labels may still lack labels for some questions. Filtering and sorting preserve mounted queues
+and human drafts. Clear dataset filters resets count bounds too; catalog CSV uses the shown order
+and contains summary metadata only.
+
 **Compare by slice** groups successful paired tuning answers by a selected input field, retaining
 full normalized value identities even when display text is shortened. It shows accuracy intervals,
 automation at the selected confidence basis, and exploratory paired comparisons. It uses the current

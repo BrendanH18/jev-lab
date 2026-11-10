@@ -169,3 +169,136 @@ test("reordering through the real editor control invalidates stale request produ
   assert.equal(edits, 1);
   assert.equal(renders, 1);
 });
+
+test("question filters search ids, instructions and criteria without removing hidden requests", async () => {
+  const { matchesEditorQuestion } = await import("../../static/js/build-editing.js");
+  const rows = [question("route"), question("urgent", "noul")];
+  const before = JSON.stringify(rows);
+  assert.equal(matchesEditorQuestion(rows[0], { query: "  INVOICES " }), true);
+  assert.equal(matchesEditorQuestion(rows[0], { query: "route", type: "noul" }), false);
+  assert.equal(matchesEditorQuestion(rows[1], { type: "noul" }), true);
+  assert.equal(matchesEditorQuestion(rows[1], { query: "missing" }), false);
+  assert.equal(JSON.stringify(rows), before);
+});
+
+test("moving questions directly to either end preserves identity, criteria and expectations", async () => {
+  const { moveEditorEntryTo } = await import("../../static/js/build-editing.js");
+  const rows = [question("first"), question("middle"), question("last")];
+  const expect = { middle: { choice: "billing" } };
+  const first = moveEditorEntryTo(rows, 1, 0), last = moveEditorEntryTo(rows, 1, 2);
+  assert.deepEqual(first.map((row) => row.id), ["middle", "first", "last"]);
+  assert.deepEqual(last.map((row) => row.id), ["first", "last", "middle"]);
+  assert.equal(first[0], rows[1]);
+  assert.deepEqual(expect[first[0].id], { choice: "billing" });
+  assert.equal(moveEditorEntryTo(rows, 0, 0), rows);
+  assert.equal(moveEditorEntryTo(rows, 0, 3), rows);
+});
+
+test("question tools clear filters and collapse only shown cards without editing the request", async () => {
+  const { matchesEditorQuestion } = await import("../../static/js/build-editing.js");
+  const W = { questions: [question("route"), question("urgent", "noul")] };
+  const view = { query: "", type: "noul" }, state = { collapsed: new WeakSet() };
+  let renders = 0;
+  const tools = new Function("W", "$", "buildQuestionView", "matchesEditorQuestion", "h", "TYPES", "buildEditState", "render", `
+    ${body("visibleBuildQuestions")}; ${body("renderQuestionTools")}; return renderQuestionTools;
+  `)(W, () => null, view, matchesEditorQuestion, h, ["noul", "choice", "score", "box"], () => state, () => renders++);
+  const before = JSON.stringify(W);
+  const nodes = descendants(tools());
+  const button = (name) => nodes.find((node) => node.tag === "button" && node.children.includes(name));
+  assert.match(nodes.find((node) => node.attrs?.id === "build-question-count").children[0], /^1 of 2/);
+  button("Collapse shown").attrs.onclick();
+  assert.equal(state.collapsed.has(W.questions[0]), false);
+  assert.equal(state.collapsed.has(W.questions[1]), true);
+  button("Expand shown").attrs.onclick();
+  assert.equal(state.collapsed.has(W.questions[1]), false);
+  button("Clear question filters").attrs.onclick();
+  assert.deepEqual(view, { query: "", type: "all" });
+  assert.equal(JSON.stringify(W), before);
+  assert.equal(renders, 3);
+});
+
+test("compacting JSON preserves values and rejects duplicates while leaving prose alone", () => {
+  const W = { stateText: '{ "text": "é", "arr": [1, false] }' }, messages = [];
+  let edits = 0;
+  const compact = new Function("W", "parseState", "toast", "markBuildEdited", "render", `${body("compactBuildStateText")}; return compactBuildStateText;`)(
+    W, parseBuildState, (message) => messages.push(message), () => edits++, () => {});
+  compact();
+  assert.equal(W.stateText, '{"text":"é","arr":[1,false]}');
+  assert.equal(edits, 1);
+  W.stateText = ' {"a":1,"a":2}';
+  compact();
+  assert.match(messages.at(-1), /repeats key/);
+  assert.equal(edits, 1);
+  W.stateText = " ordinary prose ";
+  compact();
+  assert.equal(W.stateText, " ordinary prose ");
+  assert.equal(edits, 1);
+});
+
+test("copying one question exports only its request JSON", () => {
+  const row = question(), W = { questions: [row], expect: { route: { choice: "billing" } }, result: { answers: { secret: true } } };
+  let copied;
+  const renderQuestionCard = new Function("W", "h", "buildEditState", "TYPES", "markBuildEdited", "render", "icon", "editorMoveButtons", "questionEditorError", "toQuestions", "copyText", `
+    ${body("renderQuestionCard")}; return renderQuestionCard;
+  `)(W, h, () => ({ collapsed: new WeakSet() }), ["choice"], () => assert.fail("copy must not edit"), () => {}, () => null, () => [],
+    editorQuestionError, (rows) => ({ [rows[0].id]: { type: rows[0].type, instructions: rows[0].instructions } }), (text) => { copied = JSON.parse(text); });
+  const view = renderQuestionCard(row, 0);
+  descendants(view).find((node) => node.attrs?.["aria-label"] === "Copy question route JSON").attrs.onclick();
+  assert.deepEqual(copied, { route: { type: "choice", instructions: "Which department?" } });
+});
+
+test("question edits refresh filter membership and count while retaining the focused card", async () => {
+  const { matchesEditorQuestion } = await import("../../static/js/build-editing.js");
+  const W = { questions: [question("route"), question("other")], expect: {}, images: [] };
+  const cards = W.questions.map((_, i) => ({ dataset: { questionIndex: String(i) }, hidden: i !== 0 }));
+  const count = {}, empty = {}, list = { querySelectorAll: () => cards };
+  let focused = cards[0];
+  const $ = (selector) => ({ ".qlist": list, "#build-question-count": count, "#build-question-no-match": empty,
+    ".build-question-card:focus-within": focused })[selector];
+  const harness = new Function("W", "$", "matchesEditorQuestion", `
+    const buildQuestionView = { query: "route", type: "all" };
+    ${body("visibleBuildQuestions")}; ${body("refreshQuestionVisibility")}; ${body("markBuildEdited")};
+    return { edit: markBuildEdited, refresh: refreshQuestionVisibility, shown: visibleBuildQuestions };
+  `)(W, $, matchesEditorQuestion);
+  W.questions[0].id = "renamed";
+  harness.edit();
+  assert.equal(cards[0].hidden, false, "typing never hides its focused editor");
+  assert.match(count.textContent, /^1 of 2/);
+  assert.deepEqual(harness.shown(), [W.questions[0]], "collapse and count use the same membership");
+  focused = null; // The focusout microtask uses this same refresh after focus moves.
+  harness.refresh();
+  assert.equal(cards[0].hidden, true);
+  assert.match(count.textContent, /^0 of 2/);
+  assert.equal(empty.hidden, false);
+  W.questions[1].instructions = "route this request";
+  harness.edit();
+  assert.equal(cards[1].hidden, false);
+  assert.match(count.textContent, /^1 of 2/);
+  W.questions[1].instructions = "updated";
+  W.questions[1].choice[0][1] = "route invoices";
+  harness.edit();
+  assert.equal(cards[1].hidden, false, "criteria participate in refreshed filtering too");
+});
+
+test("Copy JSON availability follows ID edits immediately and its click guard rejects blank IDs", () => {
+  const row = question(""), W = { questions: [row] }, messages = [], copies = [];
+  const renderQuestionCard = new Function("W", "h", "buildEditState", "TYPES", "markBuildEdited", "render", "icon", "editorMoveButtons", "questionEditorError", "toQuestions", "copyText", "toast", `
+    ${body("renderQuestionCard")}; return renderQuestionCard;
+  `)(W, h, () => ({ collapsed: new WeakSet() }), ["choice"], () => {}, () => {}, () => null, () => [],
+    editorQuestionError, (rows) => ({ [rows[0].id]: { type: rows[0].type } }), (text) => copies.push(text), (message) => messages.push(message));
+  const nodes = descendants(renderQuestionCard(row, 0));
+  const id = nodes.find((node) => node.attrs?.["aria-label"] === "Question 1 id");
+  const copy = nodes.find((node) => node.children?.includes("Copy JSON"));
+  assert.equal(copy.attrs.disabled, true);
+  id.value = "valid";
+  id.events.input();
+  assert.equal(copy.disabled, false);
+  copy.attrs.onclick();
+  assert.deepEqual(JSON.parse(copies[0]), { valid: { type: "choice" } });
+  id.value = "   ";
+  id.events.input();
+  assert.equal(copy.disabled, true);
+  copy.attrs.onclick(); // Also reject a stale/programmatic activation.
+  assert.equal(copies.length, 1);
+  assert.match(messages[0], /Give this question an id/);
+});
