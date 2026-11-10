@@ -4,7 +4,8 @@ import {
   $, answerCard, api, callStats, copyText, currentStatus, h, handleError, icon, inspect, pct, photoView, prepareImage,
   statusBadge, toast,
 } from "./common.js";
-import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged } from "./build-request.js";
+import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
+import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary } from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
@@ -25,7 +26,7 @@ const parseMaybeJson = (s) => {
   return s;
 };
 export const stringify = (v) => (typeof v === "string" ? v : v === null || v === undefined ? "" : JSON.stringify(v));
-const parseState = (text) => parseMaybeJson(text);
+const parseState = (text) => parseBuildState(text);
 
 export function toQuestions(rows) {
   // Rendering callers can keep the editor open while invalid keys are being fixed.
@@ -67,10 +68,13 @@ function markBuildEdited() {
   if (error) { error.textContent = questionEditorError() || ""; error.hidden = !error.textContent; }
   const save = $("#build-save-test");
   if (save) save.disabled = !W.result || buildResultStale();
+  const summary = $("#build-request-summary");
+  if (summary) summary.textContent = buildRequestSummary(W.stateText, W.questions, W.images.length);
 }
 
 function validBuildQuestions() {
   if (buildRawText !== null) { toast("Apply the Raw JSON edits before using this request.", "error"); return null; }
+  try { parseState(W.stateText); } catch (e) { toast(`State: ${e.message}`, "error"); return null; }
   const error = questionEditorError();
   if (error) { toast(error, "error"); return null; }
   const questions = toQuestions(W.questions);
@@ -88,7 +92,7 @@ export function fromQuestions(obj) {
 }
 
 const blankRow = (type) => ({
-  id: `${type}_${W.questions.length + 1}`, type, instructions: "",
+  id: uniqueQuestionId(W.questions, `${type}_${W.questions.length + 1}`), type, instructions: "",
   choice: [["", ""], ["", ""]], score: ["", "", ""], noulYes: "", noulNo: "",
 });
 
@@ -132,6 +136,7 @@ function placeInState(ref) {
 
 function addImage(img) {
   if (W.images.length >= W.maxImages) return toast(`At most ${W.maxImages} images per request.`, "error");
+  try { parseState(W.stateText); } catch (e) { return toast(`State: ${e.message}`, "error"); }
   const ref = newRef();
   W.images.push({ ...img, ref });
   toast(placeInState(ref));
@@ -141,8 +146,9 @@ function addImage(img) {
 }
 
 function removeImage(ref) {
+  let state;
+  try { state = parseState(W.stateText); } catch (e) { return toast(`State: ${e.message}`, "error"); }
   W.images = W.images.filter((i) => i.ref !== ref);
-  const state = parseState(W.stateText);
   if (state && typeof state === "object" && !Array.isArray(state)) {
     for (const [k, v] of Object.entries(state)) if (v === ref) delete state[k];
     W.stateText = JSON.stringify(state, null, 2);
@@ -195,6 +201,7 @@ export function loadInto(state, questions, { expect = {}, name = "", notes = "",
   W.lint = null;
   W.saveOpen = false;
   W.raw = false;
+  W.buildEditing = null;
   buildRawText = null;
   W.tab = "build";
   buildRunContext = null;
@@ -206,7 +213,66 @@ export function loadInto(state, questions, { expect = {}, name = "", notes = "",
 }
 
 export function applyBuildQuestions(questions) {
-  return loadInto(parseState(W.stateText), questions, { images: imagesPayload() });
+  try { return loadInto(parseState(W.stateText), questions, { images: imagesPayload() }); }
+  catch (e) { toast(`State: ${e.message}`, "error"); return false; }
+}
+
+const buildEditState = () => W.buildEditing || (W.buildEditing = { collapsed: new WeakSet(), deleted: null });
+
+function deleteBuildQuestion(index) {
+  const removed = removeEditorQuestion(W.questions, W.expect, index);
+  if (!removed) return;
+  W.questions = removed.rows;
+  W.expect = removed.expect;
+  buildEditState().deleted = removed.undo;
+  markBuildEdited();
+  render();
+}
+
+function undoBuildQuestion() {
+  try {
+    const restored = restoreEditorQuestion(W.questions, W.expect, buildEditState().deleted);
+    if (!restored) return;
+    W.questions = restored.rows;
+    W.expect = restored.expect;
+    buildEditState().deleted = null;
+    markBuildEdited();
+    render();
+  } catch (e) { toast(e.message, "error"); }
+}
+
+function duplicateBuildQuestion(index) {
+  const row = duplicateQuestionRow(W.questions[index], W.questions);
+  W.questions.splice(index + 1, 0, row);
+  markBuildEdited();
+  render();
+}
+
+function formatBuildStateText() {
+  try {
+    const formatted = formatBuildState(W.stateText);
+    W.stateText = formatted.text;
+    markBuildEdited();
+    render();
+    toast(formatted.message);
+  } catch (e) { toast(`Could not format JSON: ${e.message}`, "error"); }
+}
+
+function discardBuildRaw() {
+  if (buildRawText === null || !window.confirm("Discard the unapplied Raw JSON edits? The question editor will keep its current questions.")) return;
+  buildRawText = null;
+  W.raw = false;
+  markBuildEdited();
+  render();
+}
+
+function editorMoveButtons(entries, index, label, apply) {
+  return [-1, 1].map((direction) => {
+    const title = `Move ${label} ${direction < 0 ? "up" : "down"}`;
+    return h("button", { class: "btn sm ghost", title, "aria-label": title,
+      disabled: index + direction < 0 || index + direction >= entries.length,
+      onclick: () => { apply(moveEditorEntry(entries, index, direction)); markBuildEdited(); render(); } }, direction < 0 ? "↑" : "↓");
+  });
 }
 
 // ---------- Build ----------
@@ -223,24 +289,31 @@ function handoffNote() {
 }
 
 export function renderBuild() {
-  const stateArea = h("textarea", { class: "input", spellcheck: "false", placeholder: "Plain text, or a JSON object/array. Point questions at fields with `backticks`." }, W.stateText);
+  const stateArea = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Request state", placeholder: "Plain text, or a JSON object/array. Point questions at fields with `backticks`." }, W.stateText);
   stateArea.addEventListener("input", () => { W.stateText = stateArea.value; markBuildEdited(); });
   const left = h("div", { class: "grid", style: { gap: "16px" } },
     handoffNote(),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "State"), h("div", { class: "spacer" }),
+        h("button", { class: "btn sm", onclick: formatBuildStateText, title: "Format a JSON object or array without changing plain text" }, "Format JSON"),
         h("span", { class: "faint", style: { fontSize: "12px" } }, W.loadedExample ? `from example: ${W.loadedExample}` : W.editingId ? `editing test: ${W.editingId}`
           : W.handoff ? `from ${W.handoff.source}` : "")),
-      h("div", { class: "panel-body state-box" }, stateArea, renderBuildDraft())),
+      h("div", { class: "panel-body state-box" }, stateArea,
+        h("p", { id: "build-request-summary", class: "faint", style: { fontSize: "12px" } }, buildRequestSummary(W.stateText, W.questions, W.images.length)), renderBuildDraft())),
     renderImages(),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, `Questions · ${W.questions.length}`), h("div", { class: "spacer" }),
         h("button", { class: `btn sm ${W.raw ? "" : "ghost"}`, onclick: () => { W.raw = !W.raw; render(); } }, icon("code"), W.raw ? "Editor" : "Raw JSON")),
       h("div", { class: "panel-body grid", style: { gap: "10px" } },
         h("p", { id: "build-validation", class: "critical-text", role: "alert", hidden: !questionEditorError() }, questionEditorError()),
+        !W.raw && buildRawText !== null ? h("div", { class: "callout", role: "status" },
+          h("span", {}, "Raw JSON has unapplied edits. Apply or discard them before using the request."),
+          h("button", { class: "btn sm", onclick: () => { W.raw = true; render(); } }, "Review Raw JSON"),
+          h("button", { class: "btn sm ghost", onclick: discardBuildRaw }, "Discard Raw edits")) : null,
         W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) => renderQuestionCard(row, i))),
         !W.raw ? h("div", { class: "chips" }, TYPES.map((t) =>
-          h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); markBuildEdited(); render(); } }, icon("plus"), `Add ${t}`))) : null)));
+          h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); markBuildEdited(); render(); } }, icon("plus"), `Add ${t}`)),
+        buildEditState().deleted ? h("button", { class: "btn sm", onclick: undoBuildQuestion }, `Undo remove ${buildEditState().deleted.id || "question"}`) : null) : null)));
 
   const runBtn = h("button", { class: "btn primary", id: "build-run", disabled: buildRunning, onclick: run }, icon("bolt"), buildRunning ? "Running…" : "Run");
   const right = h("div", { class: "grid", style: { gap: "16px" } },
@@ -398,8 +471,9 @@ function renderRaw() {
   if (error) return h("div", { class: "raw grid", style: { gap: "8px" } },
     h("p", { role: "alert" }, `Fix the editor errors before opening Raw JSON: ${error}`),
     h("button", { class: "btn sm", onclick: () => { W.raw = false; render(); } }, "Back to editor"));
+  const discard = h("button", { class: "btn sm ghost", disabled: buildRawText === null, onclick: discardBuildRaw }, "Discard Raw edits");
   const area = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Questions as JSON" }, buildRawText ?? JSON.stringify(toQuestions(W.questions), null, 2));
-  area.addEventListener("input", () => { buildRawText = area.value; markBuildEdited(); });
+  area.addEventListener("input", () => { buildRawText = area.value; discard.disabled = false; markBuildEdited(); });
   return h("div", { class: "raw grid", style: { gap: "8px" } }, area,
     h("div", { style: { display: "flex", gap: "8px" } },
       h("button", { class: "btn sm primary", onclick: () => {
@@ -407,19 +481,21 @@ function renderRaw() {
           const rows = fromQuestions(parseUniqueJson(area.value));
           const error = questionEditorError(rows);
           if (error) throw new Error(error);
-          W.questions = rows; buildRawText = null; W.raw = false; markBuildEdited(); render();
+          W.questions = rows; W.buildEditing = null; buildRawText = null; W.raw = false; markBuildEdited(); render();
         }
         catch (e) { toast(`Invalid JSON: ${e.message}`, "error"); }
       } }, "Apply"),
+      discard,
       h("span", { class: "faint", style: { fontSize: "12px", alignSelf: "center" } }, "Same shape as the API's questions map. Structured instructions and criteria (objects, arrays) are allowed.")));
 }
 
 function renderQuestionCard(row, i) {
-  const idInput = h("input", { class: "input mono", value: row.id, placeholder: "question_id" });
+  const collapsed = buildEditState().collapsed.has(row);
+  const idInput = h("input", { class: "input mono", value: row.id, placeholder: "question_id", "aria-label": `Question ${i + 1} id` });
   idInput.addEventListener("input", () => { row.id = idInput.value; markBuildEdited(); });
-  const typeSel = h("select", { class: "input" }, TYPES.map((t) => h("option", { value: t, selected: row.type === t }, t)));
+  const typeSel = h("select", { class: "input", "aria-label": `Question ${i + 1} type` }, TYPES.map((t) => h("option", { value: t, selected: row.type === t }, t)));
   typeSel.addEventListener("change", () => { row.type = typeSel.value; markBuildEdited(); render(); });
-  const instr = h("textarea", { class: "input", placeholder: row.type === "box"
+  const instr = h("textarea", { class: "input", "aria-label": `Instructions for ${row.id || `question ${i + 1}`}`, placeholder: row.type === "box"
     ? "What to find and in which picture, e.g. the coffee mug in `photo`."
     : "Instructions: the question, as a person would ask it. Refer to state fields with `backticks`." }, row.instructions);
   instr.addEventListener("input", () => { row.instructions = instr.value; markBuildEdited(); });
@@ -436,16 +512,20 @@ function renderQuestionCard(row, i) {
         const d = h("input", { class: "input", value: pair[1], placeholder: "what this option means" });
         k.addEventListener("input", () => { pair[0] = k.value; markBuildEdited(); });
         d.addEventListener("input", () => { pair[1] = d.value; markBuildEdited(); });
-        return h("div", { class: "cr" }, k, d, h("button", { class: "btn sm ghost", onclick: () => { row.choice.splice(j, 1); markBuildEdited(); render(); } }, icon("x")));
+        return h("div", { class: "cr" }, k, d, h("div", { style: { display: "flex" } },
+          editorMoveButtons(row.choice, j, `option ${pair[0] || j + 1}`, (entries) => { row.choice = entries; }),
+          h("button", { class: "btn sm ghost", title: "Remove option", "aria-label": `Remove option ${pair[0] || j + 1}`, onclick: () => { row.choice.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
       }),
       h("div", {}, h("button", { class: "chip", onclick: () => { row.choice.push(["", ""]); markBuildEdited(); render(); } }, icon("plus"), "Add option")));
   } else if (row.type === "score") {
     crit = h("div", { class: "crit" },
-      h("div", { class: "section-label", style: { margin: 0 } }, "Levels, in order from 0 (each should describe a concrete situation)"),
+      h("div", { class: "section-label", style: { margin: 0 } }, "Levels, in order from 0 (moving a level changes its numeric score)"),
       row.score.map((lvl, j) => {
         const d = h("input", { class: "input", value: lvl, placeholder: `level ${j}` });
         d.addEventListener("input", () => { row.score[j] = d.value; markBuildEdited(); });
-        return h("div", { class: "cr score" }, h("span", { class: "lv" }, String(j)), d, h("button", { class: "btn sm ghost", onclick: () => { row.score.splice(j, 1); markBuildEdited(); render(); } }, icon("x")));
+        return h("div", { class: "cr score" }, h("span", { class: "lv" }, String(j)), d, h("div", { style: { display: "flex" } },
+          editorMoveButtons(row.score, j, `level ${j}`, (entries) => { row.score = entries; }),
+          h("button", { class: "btn sm ghost", title: "Remove level", "aria-label": `Remove level ${j}`, onclick: () => { row.score.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
       }),
       h("div", {}, h("button", { class: "chip", onclick: () => { row.score.push(""); markBuildEdited(); render(); } }, icon("plus"), "Add level")));
   } else {
@@ -456,8 +536,15 @@ function renderQuestionCard(row, i) {
     crit = h("div", { class: "crit" }, h("div", { class: "cr noul" }, h("span", { class: "k" }, "yes"), yes), h("div", { class: "cr noul" }, h("span", { class: "k" }, "no"), no));
   }
   return h("div", { class: "qcard" },
-    h("div", { class: "row" }, idInput, typeSel, h("button", { class: "btn sm ghost", title: "Remove question", onclick: () => { W.questions.splice(i, 1); markBuildEdited(); render(); } }, icon("trash"))),
-    instr, crit);
+    h("div", { class: "row" }, idInput, typeSel, h("button", { class: "btn sm ghost", "aria-expanded": String(!collapsed),
+      "aria-label": `${collapsed ? "Expand" : "Collapse"} question ${row.id || i + 1}`,
+      onclick: () => { const state = buildEditState(); if (collapsed) state.collapsed.delete(row); else state.collapsed.add(row); render(); } }, collapsed ? "Expand" : "Collapse")),
+    h("div", { class: "chips" },
+      editorMoveButtons(W.questions, i, `question ${row.id || i + 1}`, (entries) => { W.questions = entries; }),
+      h("button", { class: "btn sm ghost", onclick: () => duplicateBuildQuestion(i), "aria-label": `Duplicate question ${row.id || i + 1}` }, "Duplicate"),
+      h("button", { class: "btn sm ghost", title: "Remove question", "aria-label": `Remove question ${row.id || i + 1}`, onclick: () => deleteBuildQuestion(i) }, icon("trash"), "Remove")),
+    collapsed ? h("p", { class: "faint", style: { margin: 0, overflowWrap: "anywhere" } },
+      row.instructions ? `${row.instructions.slice(0, 160)}${row.instructions.length > 160 ? "…" : ""}` : "No instructions yet") : [instr, crit]);
 }
 
 async function run() {

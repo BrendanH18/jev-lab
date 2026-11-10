@@ -3,7 +3,7 @@
 import { $, api, h, handleError, icon, pct, stat, toast } from "./common.js";
 import { secondItems, settleKey, settledItems, sessionItems, sessionSettlements, changeSecondLabel, agreementEditsUnsaved,
   restoreAgreementEdits, restoredChoices, unshownSettlements } from "./agreement.js";
-import { matchesDataset } from "./saved-search.js";
+import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, datasetCopyName, canCopyDataset } from "./dataset-catalog.js";
 import { createHistory } from "./history.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
@@ -11,6 +11,7 @@ import {
   rowsText, bulkUnsaved, replaceRows, loadPictureUrls, settleLabels, rowsPayload, bulkQuestions, isTest, rowText,
 } from "./workbench-bulk.js";
 import { checkItem } from "./workbench-checks.js";
+import { preparedLabelsUnsaved } from "./workbench-labeling.js";
 import { queueClasses, shownAnswer, confirmReviewDiscard } from "./workbench-review.js";
 import { withCI, labelText, labelValue } from "./workbench-calibrate.js";
 import { activeGates, policyRules, policyRows, updatePolicy } from "./workbench-policy.js";
@@ -86,6 +87,33 @@ async function loadDataset(id) {
     toast(`Loaded ${dataset.rows.length} rows. Run them to get answers.`);
     render();
   } catch (e) { handleError(e); }
+}
+
+async function loadDatasetCopy(id) {
+  const b = W.bulk;
+  if (b.datasetCopyBusy) return;
+  const context = () => JSON.stringify([b.rowsText, b.labelsDirty, b.dataset, b.source, b.rules.text]);
+  const before = context();
+  b.datasetCopyBusy = true;
+  render();
+  try {
+    const { dataset } = await api("/api/workbench/datasets/load", { id });
+    if (before !== context()) return toast("The editor changed while loading. Load the copy again when ready.", "error");
+    if (!canCopyDataset(dataset)) return toast("This dataset has test history. Download and import its ZIP to preserve that history in a copy.", "error");
+    if (preparedLabelsUnsaved() && !confirm("Load a dataset copy with unapplied labeling drafts? Apply or download the drafts first to keep them; different inputs or questions make these drafts unavailable.")) return;
+    if (!replaceRows(rowsText(dataset.rows), `a copy of “${dataset.name || id}”`)) return;
+    b.dataset = { id: null, name: datasetCopyName(dataset.name || id, b.datasets), notes: dataset.notes || "",
+      withQuestions: !!dataset.questions, questions: dataset.questions || null };
+    b.savedText = "";
+    b.result = null;
+    b.testScore = null;
+    b.checkSlices = { datasetId: null, targets: null };
+    b.rules = { ...b.rules, text: dataset.rules || "", applied: "", checked: "", report: null, error: null };
+    if (dataset.questions) b.source = "dataset";
+    else if (b.source === "dataset") b.source = "current";
+    toast(`Loaded an unsaved copy as “${b.dataset.name}”. Save explicitly to create it. Saved checks and guidelines stay with the original.`);
+  } catch (e) { handleError(e); }
+  finally { b.datasetCopyBusy = false; render(); }
 }
 
 async function deleteDataset(id) {
@@ -195,7 +223,7 @@ function bundleImportForm() {
 export function renderDatasets() {
   const b = W.bulk;
   const d = b.dataset;
-  const filters = b.datasetSearch || (b.datasetSearch = { query: "", check: "all", labels: "all" });
+  const filters = b.datasetSearch = { ...catalogDefaults(), ...b.datasetSearch };
   const name = h("input", { class: "input", placeholder: "Dataset name, e.g. Support tickets, March", value: d.name, "aria-label": "Dataset name" });
   name.addEventListener("input", () => { d.name = name.value; });
   const notes = h("input", { class: "input", placeholder: "Notes (optional)", value: d.notes, "aria-label": "Dataset notes" });
@@ -215,8 +243,8 @@ export function renderDatasets() {
       bundleImportForm(),
       b.datasets.some((x) => x.check) ? h("datalist", { id: "cmp-models" }, (W.compare.models || []).map((n) => h("option", { value: n }))) : null,
       datasetSearchControls(filters),
-      b.datasets.length ? h("div", { id: "dataset-search-results" }, b.datasets.map((x) => h("div", { class: "item dataset-search-item", "data-dataset-id": x.id,
-        style: { display: matchesDataset(x, filters) ? "" : "none" } },
+      b.datasets.length ? h("div", { id: "dataset-search-results" }, sortedCatalog(b.datasets, filters.sort).map((x) => h("div", { class: "item dataset-search-item", "data-dataset-id": x.id,
+        style: { display: matchesCatalog(x, filters) ? "" : "none" } },
         h("div", { class: "grid", style: { gap: "2px" } },
           h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
             h("b", {}, x.name || x.id), h("code", { class: "faint" }, x.id), x.id === d.id ? h("span", { class: "badge" }, "loaded") : null),
@@ -224,6 +252,9 @@ export function renderDatasets() {
           x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
         h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
           h("button", { class: "btn sm", onclick: () => loadDataset(x.id) }, "Load"),
+          h("button", { class: "btn sm", disabled: b.datasetCopyBusy || !canCopyDataset(x),
+            title: canCopyDataset(x) ? "Load rows, labels, questions and rules under a new name; save explicitly" : "Use Download ZIP and Import to copy the held-out evaluation history too",
+            onclick: () => loadDatasetCopy(x.id) }, "Load as copy"),
           h("button", { class: "btn sm", onclick: () => exportBundle(x.id) }, "Download ZIP"),
           x.labeled && x.questions ? agreeButton(x) : null,
           testControl(x),
@@ -240,24 +271,62 @@ export function renderDatasets() {
 
 // Filtering keeps every queue mounted, so hidden human edits remain intact.
 function datasetSearchControls(filters) {
+  const visible = () => sortedCatalog(W.bulk.datasets, filters.sort).filter((item) => matchesCatalog(item, filters));
   const update = () => {
-    const matches = new Set(W.bulk.datasets.filter((item) => matchesDataset(item, filters)).map((item) => item.id));
+    const shown = visible();
+    const matches = new Set(shown.map((item) => item.id));
     const list = $("#dataset-search-results");
-    list?.querySelectorAll(".dataset-search-item").forEach((row) => { row.style.display = matches.has(row.dataset.datasetId) ? "" : "none"; });
+    const nodes = new Map([...(list?.querySelectorAll(".dataset-search-item") || [])].map((row) => [row.dataset.datasetId, row]));
+    sortedCatalog(W.bulk.datasets, filters.sort).forEach((item) => {
+      const row = nodes.get(item.id);
+      if (row) { row.style.display = matches.has(item.id) ? "" : "none"; list.append(row); }
+    });
     const count = $("#dataset-search-count");
     if (count) count.textContent = `${matches.size} of ${W.bulk.datasets.length} datasets shown`;
+    const summary = $("#dataset-search-summary");
+    if (summary) summary.textContent = catalogSummary(shown);
+    const empty = $("#dataset-search-empty");
+    if (empty) empty.hidden = !W.bulk.datasets.length || !!shown.length;
+    const download = $("#dataset-catalog-download");
+    if (download) download.disabled = !shown.length;
   };
+  const controls = {};
   const search = h("input", { class: "input", type: "search", value: filters.query, placeholder: "Search datasets by name or notes",
     "aria-label": "Search datasets", oninput: (event) => { filters.query = event.target.value; update(); } });
-  const select = (key, label, options) => h("select", { class: "input", "aria-label": label,
+  const select = (key, label, options) => controls[key] = h("select", { class: "input", "aria-label": label,
     onchange: (event) => { filters[key] = event.target.value; update(); } },
   options.map(([value, text]) => h("option", { value, selected: filters[key] === value }, text)));
+  const clear = () => {
+    Object.assign(filters, catalogDefaults());
+    search.value = "";
+    for (const [key, element] of Object.entries(controls)) element.value = filters[key];
+    update();
+    search.focus();
+  };
+  const shown = visible();
   return h("div", { class: "grid", style: { gap: "6px" } }, search,
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
       select("check", "Filter datasets by saved check", [["all", "All checks"], ["with", "With a saved check"], ["without", "Without a saved check"]]),
       select("labels", "Filter datasets by labeling status", [["all", "All labeling states"], ["none", "No rows labeled"],
-        ["some", "Some rows labeled"], ["every", "Every row has a label"]])),
-    h("span", { class: "faint", id: "dataset-search-count" }, `${W.bulk.datasets.filter((item) => matchesDataset(item, filters)).length} of ${W.bulk.datasets.length} datasets shown`),
+        ["some", "Some rows labeled"], ["every", "Every row has a label"]]),
+      select("questions", "Filter datasets by saved questions", [["all", "All question states"], ["with", "With saved questions"], ["without", "Without saved questions"]]),
+      select("test", "Filter datasets by held-out split", [["all", "All test splits"], ["with", "With held-out rows"], ["without", "Without held-out rows"]]),
+      select("guidelines", "Filter datasets by labeling guidelines", [["all", "All guideline states"], ["with", "With guidelines"], ["without", "Without guidelines"]]),
+      select("sort", "Sort datasets", [["saved", "Saved order"], ["name", "Name A–Z"], ["rows", "Most rows first"], ["labeled", "Most labeled rows first"]])),
+    h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
+      h("button", { class: "btn sm ghost", onclick: clear }, "Clear dataset filters"),
+      h("button", { class: "btn sm", id: "dataset-catalog-download", disabled: !shown.length,
+        title: "Names and counts for the shown datasets, without inputs, label values or check configuration", onclick: () => {
+          const items = visible();
+          if (!items.length) return;
+          const url = URL.createObjectURL(new Blob([catalogCsv(items)], { type: "text/csv;charset=utf-8" }));
+          h("a", { href: url, download: "jev-dataset-catalog.csv" }).click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } }, "Download shown catalog CSV")),
+    h("span", { class: "faint", id: "dataset-search-count", "aria-live": "polite" }, `${shown.length} of ${W.bulk.datasets.length} datasets shown`),
+    h("span", { class: "faint", id: "dataset-search-summary" }, catalogSummary(shown)),
+    h("div", { class: "empty", id: "dataset-search-empty", hidden: !W.bulk.datasets.length || !!shown.length },
+      "No datasets match these filters. ", h("button", { class: "btn sm", onclick: clear }, "Show all datasets")),
     h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } }, "A labeled row has at least one saved label; this does not establish complete or valid labels. Filters only change the list shown."));
 }
 

@@ -355,3 +355,20 @@ acceptance, works without a paid comparison, and never restores model answers, s
 drift results. Pictures travel separately. Download/restore make no model calls or dataset writes;
 Add remains explicit. Guard unsaved traffic labels before leaving or replacing queues or their saved
 configuration, including check changes, dataset replacement/deletion and history restore.
+
+Build editor operations preserve question IDs and ordered criteria. Duplicates get independent criteria
+and a unique ID, without copied expectations. Deletion undo must not overwrite a reused ID or changed
+expectation. Collapse state is presentation only. Valid JSON state with duplicate keys is rejected
+before outbound actions rather than silently losing input; plain text remains supported.
+
+Saved-test selections and results are session-only. Filters never change selection or Run all's scope.
+Every paid test run and its spend preview use the same explicit nonempty IDs; an empty list must never
+reach the API, whose legacy semantics mean all tests. Guard duplicate runs and changed selections or
+requests during preview. Partial batches preserve other current results, invalidate results for changed
+or deleted tests, and accumulate spend and wall time across completed batches.
+
+Dataset catalog filters/sorts use summary metadata and preserve open queues and edits. Catalog CSV
+exports names/IDs/counts/timestamps only, with spreadsheet formula escaping, never inputs, label values,
+notes, answers or check configuration. Load as copy is an unsaved editor action, with a unique name,
+dirty-editor guards and stale-result invalidation; checks/guidelines stay with the original. Copies
+with held-out rows or evaluation history use bundles so their test history is preserved.
