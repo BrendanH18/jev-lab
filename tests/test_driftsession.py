@@ -68,6 +68,35 @@ class TrafficDraftTests(Temp):
         self.assertIs(restored["labeling"]["items"][0]["labels"]["is_urgent"], False)
         self.assertEqual(workbench._dataset_path("tickets").read_bytes(), self.before)
 
+    def test_numeric_duplicate_inputs_do_not_block_unrelated_human_draft_labels(self):
+        queue = drift._labeling(self.dataset, [
+            {"index": 0, "row": {"amount": 5.0}}, {"index": 1, "row": {"amount": 5}},
+            {"index": 2, "row": {"text": "An unrelated new input"}},
+        ], self.dataset["questions"], self.dataset["check"]["gates"])
+        self.assertEqual(queue["counts"]["repeated"], 1)
+        members = [{"line": item["line"], "row": item["row"]} for item in queue["items"]]
+        members[0]["row"] = {"amount": 5}  # browser JSON round trip
+        session = driftsession.export_session("tickets", queue["session_context"], members,
+                                             [{"line": 3, "labels": {"is_urgent": False}}])
+        restored = driftsession.import_session("tickets", session)
+        self.assertEqual([item["line"] for item in restored["labeling"]["items"]], [1, 3])
+        self.assertIs(restored["labeling"]["items"][1]["labels"]["is_urgent"], False)
+
+    def test_numeric_saved_inputs_stay_excluded_during_prepare_recovery_and_append(self):
+        saved = copy.deepcopy(self.dataset)
+        saved["rows"].append({"amount": 5.0, "_test": True})
+        workbench.write_dataset(saved)
+        _, _, fresh, held_out, _, _ = drift.prepare("tickets", [{"amount": 5}, {"amount": 6}])
+        self.assertEqual((fresh, held_out), ([{"amount": 6}], 1))
+        queue = drift._labeling(saved, [{"index": 0, "row": {"amount": 5}}],
+                                saved["questions"], saved["check"]["gates"])
+        self.assertEqual((queue["items"], queue["counts"]["in_dataset"]), ([], 1))
+        with self.assertRaises(WorkbenchError):
+            driftsession.export_session("tickets", "old", [{"line": 1, "row": {"amount": 5}}], [])
+        out = drift.append_labels("tickets", [{"row": {"amount": 5},
+            "labels": {"department": "billing", "is_urgent": True}}], queue["questions"])
+        self.assertEqual((out["added"], out["already"]), (0, 1))
+
     def test_members_and_picture_names_are_bound_without_merging_duplicate_positions(self):
         original = self.export()
         for mutate in (lambda x: x["members"].reverse(),

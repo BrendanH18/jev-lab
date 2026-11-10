@@ -19,9 +19,14 @@ def _browser_numbers(value: Any) -> Any:
     return int(value) if isinstance(value, float) and value.is_integer() else value
 
 
+def input_key(row: Any) -> str:
+    """One browser-stable traffic input identity for queueing, recovery and append."""
+    return decisions._key(_browser_numbers(row))
+
+
 def context(dataset: dict, members: list) -> str:
     # Question/Choice order belongs to the saved snapshot; row field order does not.
-    raw = json.dumps([dataset, [[item["line"], decisions._key(_browser_numbers(item["row"]))] for item in members]],
+    raw = json.dumps([dataset, [[item["line"], input_key(item["row"])] for item in members]],
                      ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -30,7 +35,7 @@ def _queue(dataset: dict, members: Any) -> dict:
     questions, check = decisions._check(dataset)
     if not isinstance(members, list) or len(members) > workbench.MAX_BULK_ROWS:
         raise WorkbenchError("Supply at most %d traffic queue rows" % workbench.MAX_BULK_ROWS)
-    have = {decisions._key(row) for row in dataset["rows"]}
+    have = {input_key(row) for row in dataset["rows"]}
     lines, seen, items = set(), set(), []
     for member in members:
         if not isinstance(member, dict) or set(member) != {"line", "row"}:
@@ -44,7 +49,7 @@ def _queue(dataset: dict, members: Any) -> dict:
             raise WorkbenchError("Traffic queue inputs must be objects without labels or test markers")
         workbench.validate_state(row)
         workbench.row_picture(row)
-        key = decisions._key(row)
+        key = input_key(row)
         if key in have or key in seen:
             raise WorkbenchError("Traffic queue contains repeated inputs or inputs already in the dataset")
         seen.add(key)
