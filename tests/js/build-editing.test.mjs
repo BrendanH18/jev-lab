@@ -217,6 +217,23 @@ test("question tools clear filters and collapse only shown cards without editing
   assert.equal(renders, 3);
 });
 
+test("question focus transitions retain the card internally and refresh after outside focus settles", () => {
+  const queued = [];
+  let refreshes = 0;
+  const handler = new Function("setTimeout", "refreshQuestionVisibility", `${body("questionFocusOut")}; return questionFocusOut;`)(
+    (callback) => queued.push(callback), () => refreshes++);
+  const inside = {}, outside = {};
+  const card = { contains: (node) => node === inside };
+  handler({ currentTarget: card, relatedTarget: inside });
+  assert.equal(queued.length, 0);
+  handler({ currentTarget: card, relatedTarget: outside });
+  handler({ currentTarget: card, relatedTarget: null });
+  assert.equal(refreshes, 0);
+  assert.equal(queued.length, 2);
+  queued.forEach((callback) => callback());
+  assert.equal(refreshes, 2);
+});
+
 test("compacting JSON preserves values and rejects duplicates while leaving prose alone", () => {
   const W = { stateText: '{ "text": "é", "arr": [1, false] }' }, messages = [];
   let edits = 0;

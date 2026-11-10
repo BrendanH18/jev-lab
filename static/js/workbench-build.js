@@ -299,6 +299,12 @@ function refreshQuestionVisibility() {
   if (empty) empty.hidden = shown.size > 0;
 }
 
+function questionFocusOut(event) {
+  if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return;
+  // Focus events can run before the next element becomes :focus-within.
+  setTimeout(refreshQuestionVisibility, 0);
+}
+
 function renderQuestionTools() {
   const shown = visibleBuildQuestions().length;
   return h("div", { class: "grid", style: { gap: "8px" } },
@@ -377,7 +383,7 @@ export function renderBuild() {
         !W.raw ? renderQuestionTools() : null,
         W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) =>
           h("div", { class: "build-question-card", "data-question-index": String(i), hidden: !visibleBuildQuestions().includes(row),
-            onfocusout: () => queueMicrotask(refreshQuestionVisibility) }, renderQuestionCard(row, i)))),
+            onfocusout: questionFocusOut }, renderQuestionCard(row, i)))),
         !W.raw ? h("div", { class: "chips" }, TYPES.map((t) =>
           h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); markBuildEdited(); render(); } }, icon("plus"), `Add ${t}`)),
         buildEditState().deleted ? h("button", { class: "btn sm", onclick: undoBuildQuestion }, `Undo remove ${buildEditState().deleted.id || "question"}`) : null) : null)));
