@@ -19,7 +19,8 @@ export const W = {
     // pin: save the check and export the gate with the version that answered the run, when the run asked an alias.
     // checkForm: Policy's "Save as a check" targets as typed (percent strings; null takes a default from the run).
     // checkRuns: per dataset id, a check run in flight or its report (jev/checks.py), and the model typed to ask instead.
-    ranQuestions: null, runModel: null, pin: true, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
+    // runRequest: cloned original inputs, ordered questions and requested model for session-only partial retries.
+    ranQuestions: null, runModel: null, runRequest: null, pin: true, checkForm: { accuracy: null, coverage: null }, checkRuns: {},
     checkSlices: { datasetId: null, targets: null },
     // agreeRuns: per dataset id, a blind second-labeling sample, its labels, and the comparison (jev/agreement.py).
     agreeRuns: {},

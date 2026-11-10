@@ -526,11 +526,11 @@ def api_wb_run_items(body):
     return workbench.run_items(client, selected_items(body))
 
 
-def bulk_rows(body):
+def bulk_rows(body, fallback=True):
     rows = body.get("rows")
     if isinstance(rows, str):
         rows = workbench.parse_rows(rows)
-    return rows or workbench.load_sample_rows()
+    return rows or (workbench.load_sample_rows() if fallback else [])
 
 
 def api_wb_health(body):
@@ -562,7 +562,18 @@ def api_wb_prelabel_apply(body):
 
 
 def api_wb_bulk(body):
-    return workbench.run_bulk(client, bulk_rows(body), body.get("questions"), str(body.get("field") or "text"))
+    model = bulk_model(body)
+    if model:
+        check_model(model)
+    return workbench.run_bulk(client, bulk_rows(body, body.get("indices") is None), body.get("questions"),
+                              str(body.get("field") or "text"), model, body.get("indices"))
+
+
+def bulk_model(body):
+    model = body.get("model")
+    if model is not None and not isinstance(model, str):
+        raise BadRequest("model must be a string")
+    return (model or "").strip() or None
 
 
 def api_wb_compare(body):
@@ -731,7 +742,8 @@ def api_wb_estimate(body):
     field = str(body.get("field") or "text")
     model = str(body.get("model") or "").strip() or None
     if kind == "bulk":
-        return estimate.for_bulk(client, bulk_rows(body), body.get("questions"), field)
+        return estimate.for_bulk(client, bulk_rows(body, body.get("indices") is None), body.get("questions"),
+                                 field, bulk_model(body), body.get("indices"))
     if kind == "compare":
         return estimate.for_compare(client, bulk_rows(body), body.get("variants"), field)
     if kind == "check":

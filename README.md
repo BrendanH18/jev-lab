@@ -116,6 +116,10 @@ conditions.
 - **Bulk:** apply one question set to up to 200 rows, with eight concurrent calls, and download CSV.
   A row can carry a picture, a sample or one of your own, so photo questions and Box questions run in
   bulk too, and Calibrate scores a Box answer by how much it overlaps its label.
+- **Retry unanswered rows:** after a partial Bulk run, retry only failed or skipped rows with a separate
+  spend preview. Successful answers and human labels stay in the current page session; totals include
+  every attempt. Changed rows, questions, or model settings require a fresh run. Answers are never saved
+  for recovery after a reload.
 - **Spend preview:** next to every paid run button (Bulk, Compare, saved tests, and a check's run, drift
   comparison and version upgrade) a line such as `120 calls · ≤ $0.0040 · fits the $1.98 left in this
   session's budget` counts the calls the run would make and an upper bound on their cost, built from the

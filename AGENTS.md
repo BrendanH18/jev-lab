@@ -338,3 +338,9 @@ Compare slices reuse successful paired tuning answers and the selected confidenc
 handoffs carry original inputs and blank label controls, never model suggestions; preserve existing
 labels, duplicate positions, pictures and held-out markers. General labeling CSV/draft/apply retains
 the full source snapshot. Saved-item search/filtering changes presentation only, preserving edits.
+
+Bulk retries are explicit paid runs of unanswered original row indices only, with matching spend
+previews. Preserve successful session answers, human labels, duplicate positions, pictures and test
+markers; combine only an unchanged request and compatible model version. Freeze the requested model
+for every batch, refresh derived evaluation after retries, and count spend across attempts. Never
+persist answers for retry recovery or let an empty selection fall back to running the full batch.

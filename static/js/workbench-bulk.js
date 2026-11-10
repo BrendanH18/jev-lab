@@ -4,6 +4,7 @@ import {
   $, api, currentStatus, h, handleError, icon, mount, ms, num, pct, prepareImage, statusBadge, toast, usd,
 } from "./common.js";
 import { bulkPreflightBody, checkBulkPreflight } from "./bulk-preflight.js";
+import { bulkRetryContext, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "./bulk-retry.js";
 import { datasetEditsBody, confirmDatasetEditsDiscard } from "./dataset-edits.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W } from "./workbench-state.js";
@@ -47,6 +48,7 @@ export const bulkUnsaved = () => W.bulk.rowsText !== W.bulk.savedText || W.bulk.
 
 function markUnsaved() {
   syncAttachedSets();
+  updateBulkRetry();
   renderGuide();
   const healthPanel = $("#dataset-health");
   if (healthPanel) mount(healthPanel, healthBody());
@@ -148,7 +150,36 @@ export function bulkQuestions() {
   return b.source === "sample" ? b.sampleQuestions : toQuestions(W.questions);
 }
 
+function bulkRequestSnapshot() {
+  const b = W.bulk;
+  return { rowsText: b.rowsText, rows: structuredClone(rowsPayload()), questions: structuredClone(bulkQuestions()),
+    model: currentStatus()?.model || "", source: b.source, datasetId: b.dataset.id };
+}
+
+function currentBulkRetryPlan() {
+  return bulkRetryPlan(W.bulk.result, W.bulk.runRequest, {
+    ...bulkRequestSnapshot(), error: W.bulk.source === "current" ? questionEditorError() : null,
+  });
+}
+
+let bulkRetryListening = false;
+function updateBulkRetry() {
+  const host = $("#bulk-retry");
+  if (host) mount(host, ...bulkRetryControls());
+}
+
+function bulkRetryControls() {
+  const plan = currentBulkRetryPlan();
+  if (!plan.indices.length) return [];
+  return [h("button", { class: "btn sm", id: "bulk-retry-run", disabled: W.bulk.running || !plan.body,
+    onclick: retryBulk }, W.bulk.running ? "Running…" : `Retry ${plan.indices.length} unanswered row${plan.indices.length === 1 ? "" : "s"}`),
+  estimateLine(h, api, "bulk", () => currentBulkRetryPlan().body),
+  h("span", { class: "faint", style: { fontSize: "12px" } }, plan.reason
+    || "Only unanswered rows make new calls. Successful answers and your labels stay in this page; totals include every attempt.")];
+}
+
 export function renderBulk() {
+  if (!bulkRetryListening) { window.addEventListener("jev:status", updateBulkRetry); bulkRetryListening = true; }
   const b = W.bulk;
   const rows = h("textarea", { class: "input", spellcheck: "false", placeholder: "One item per line. A text line becomes the state {\"text\": line}; a JSON object line is sent as it is. Or paste a JSON array of objects." }, b.rowsText);
   rows.addEventListener("input", () => { b.rowsText = rows.value; markUnsaved(); });
@@ -213,24 +244,29 @@ async function runBulk() {
     const questions = bulkQuestions();
     if (!Object.keys(questions).length) return toast("No questions. Build some first or pick the sample.", "error");
     if (!settleLabels("Run the rows box")) return;
-    const snapshot = JSON.stringify([W.bulk.rowsText, questions]);
+    const request = bulkRequestSnapshot();
+    const snapshot = bulkRetryContext(request);
     try {
       const checked = await checkBulkPreflight(false);
       if (checked.findings.length && !confirm(`Bulk input checks found ${checked.findings.length} issues. Review Check Bulk inputs before spending, or continue anyway?`)) { render(); return; }
-      if (!(await confirmSpend(api, "bulk", { rows: rowsPayload(), questions }))) return;
-      if (snapshot !== JSON.stringify([W.bulk.rowsText, bulkQuestions()])) return toast("Rows or questions changed. Run again with the current inputs.", "error");
+      if (!(await confirmSpend(api, "bulk", { rows: request.rows, questions: request.questions, model: request.model }))) return;
+      if (snapshot !== bulkRetryContext(bulkRequestSnapshot())) return toast("Rows, questions, or model changed. Run again with the current inputs.", "error");
     } catch (e) { handleError(e); render(); return; }
     const btn = $("#bulk-run");
-    btn.disabled = true;
-    mount(btn, h("span", { class: "spin" }), " Running…");
+    if (btn) { btn.disabled = true; mount(btn, h("span", { class: "spin" }), " Running…"); }
+    updateBulkRetry();
     try {
       const b = W.bulk;
-      const ranText = b.rowsText;
-      const runModel = currentStatus()?.model || "";  // the model can change in Settings after the run
-      b.result = await api("/api/workbench/bulk", { rows: rowsPayload(), questions });
-      b.runText = ranText;
-      b.ranQuestions = questions;
-      b.runModel = runModel;
+      const before = b.result;
+      const result = await api("/api/workbench/bulk", { rows: request.rows, questions: request.questions, model: request.model });
+      if (b.result !== before || snapshot !== bulkRetryContext(bulkRequestSnapshot())) {
+        return toast("Bulk finished for an earlier request. The current editor and results were kept; run the current inputs again.", "error");
+      }
+      b.result = result;
+      b.runText = request.rowsText;
+      b.ranQuestions = request.questions;
+      b.runModel = result.model || request.model;
+      b.runRequest = { ...request, model: b.runModel };
       b.pin = true;
       b.checkForm = { accuracy: null, coverage: null };
       b.testScore = null;
@@ -253,7 +289,52 @@ async function runBulk() {
   } finally {
     W.bulk.running = false;
     const runButton = $("#bulk-run");
-    if (runButton) runButton.disabled = false;
+    if (runButton) {
+      runButton.disabled = false;
+      mount(runButton, icon("layers"), `Run ${Math.min(countRows(W.bulk.rowsText), 200)} rows`);
+    }
+    updateBulkRetry();
+  }
+}
+
+async function retryBulk() {
+  const b = W.bulk;
+  if (b.running) return;
+  const plan = currentBulkRetryPlan();
+  if (!plan.body) return toast(plan.reason || "Every row already has an answer.", "error");
+  const previous = b.result;
+  const request = b.runRequest;
+  b.running = true;
+  updateBulkRetry();
+  const runButton = $("#bulk-run");
+  if (runButton) runButton.disabled = true;
+  try {
+    if (!(await confirmSpend(api, "bulk", plan.body))) return;
+    // An estimate can take time. Recheck the editor, model, and exact batch before spending.
+    const ready = currentBulkRetryPlan();
+    if (b.result !== previous || b.runRequest !== request || JSON.stringify(ready.body) !== JSON.stringify(plan.body)) {
+      return toast("The batch changed. Retry again with the current inputs.", "error");
+    }
+    const attempt = await api("/api/workbench/bulk", plan.body);
+    const now = currentBulkRetryPlan();
+    if (b.result !== previous || b.runRequest !== request || JSON.stringify(now.body) !== JSON.stringify(plan.body)) {
+      return toast("Retry finished for an earlier request. The current editor and results were kept; run the current inputs again.", "error");
+    }
+    b.result = mergeBulkRetry(previous, attempt, plan.indices, plan.body.model);
+    clearBulkRetryReports(b);
+    b.cal.qid = chooseCalQuestion();
+    // A batch with no successful first call has no gates yet. Otherwise keep the user's choices.
+    if (!Object.keys(b.policy.gates).length) resetPolicy();
+    await Promise.all([recalibrate(), repolicy(), loadPictureUrls(b.result.results)]);
+    if (b.result.stopped) toast(b.result.stopped, "error");
+    if (b.result.retry_error) toast(b.result.retry_error, "error");
+    render();
+  } catch (e) { handleError(e); }
+  finally {
+    b.running = false;
+    const button = $("#bulk-run");
+    if (button) button.disabled = false;
+    updateBulkRetry();
   }
 }
 
@@ -336,6 +417,7 @@ function renderBulkTable() {
         h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd))),
         h("button", { class: "btn sm", onclick: () => keepLabels(), title: "Rewrite the rows box as JSON lines that carry these labels, so the next run keeps them" }, "Keep labels in rows"),
         h("button", { class: "btn sm", onclick: csv }, "Download CSV"))),
+    h("div", { class: "panel-body", id: "bulk-retry", style: { display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" } }, bulkRetryControls()),
     tests ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: "8px 16px 0" } }, icon("eye"),
       ` ${tests} test row${tests === 1 ? "" : "s"}: their answers stay hidden and no tuning panel reads them. Score a gate on them from Policy's Test rows.`) : null,
     h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
