@@ -264,7 +264,19 @@ function compactBuildStateText() {
   try {
     const state = parseState(W.stateText);
     if (!state || typeof state !== "object") return toast("Compact JSON needs an object or array; plain text stays unchanged.");
-    W.stateText = JSON.stringify(state);
+    // Validate above, then remove only whitespace outside strings. Re-serializing would
+    // round large numeric literals or turn overflowing numbers into null.
+    let compact = "", quoted = false, escaped = false;
+    for (const char of W.stateText) {
+      if (quoted) {
+        compact += char;
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') { quoted = true; compact += char; }
+      else if (!/[ \t\r\n]/.test(char)) compact += char;
+    }
+    W.stateText = compact;
     markBuildEdited();
     render();
   } catch (e) { toast(`Could not compact JSON: ${e.message}`, "error"); }
