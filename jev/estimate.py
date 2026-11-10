@@ -22,10 +22,10 @@ KINDS = ("bulk", "compare", "check", "drift", "upgrade", "items")
 
 
 def _rows_cost(split: List[tuple], questions: Dict[str, dict], model: str, field: str = "text",
-               kind: Optional[str] = None) -> List[float]:
+               kind: Optional[str] = None, indices: Optional[List[int]] = None) -> List[float]:
     """One reserve per row: the state the run sends for that row, with its picture's reference."""
     out = []
-    for index in range(len(split)):
+    for index in range(len(split)) if indices is None else indices:
         state, _sent = workbench.job_state(split, index, field, kind)
         out.append(request_reserve_usd(state, questions, model, workbench.picture_refs(split, index)))
     return out
@@ -65,12 +65,13 @@ def summarize(client: JevClient, kind: str, parts: List[dict], **extra: Any) -> 
     return out
 
 
-def for_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None) -> dict:
-    """workbench.run_bulk: one call per row, the first MAX_BULK_ROWS rows. Bulk sends test rows too."""
-    questions, split = workbench.prepare_bulk(rows, questions)
+def for_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None,
+             indices: Any = None) -> dict:
+    """workbench.run_bulk: one call per selected row of the first MAX_BULK_ROWS. Bulk sends test rows too."""
+    questions, split, selected = workbench.prepare_bulk_selection(rows, questions, indices)
     asked = model or client.model
-    return summarize(client, "bulk", [_part("rows", asked, _rows_cost(split, questions, asked, field))],
-                     rows=len(split), capped=max(0, _nonempty(rows) - len(split)), held_out=0)
+    return summarize(client, "bulk", [_part("rows", asked, _rows_cost(split, questions, asked, field, indices=selected))],
+                     rows=len(selected), capped=max(0, _nonempty(rows) - len(split)), held_out=0)
 
 
 def for_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:

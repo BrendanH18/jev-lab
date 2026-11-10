@@ -716,9 +716,10 @@ def bulk_questions(questions: Any) -> Dict[str, dict]:
     return validate_questions(questions)
 
 
-def _need_pictures(split: List[tuple], questions: Dict[str, dict]) -> None:
+def _need_pictures(split: List[tuple], questions: Dict[str, dict], indices: Optional[List[int]] = None) -> None:
     if has_box(questions):
-        bare = [i + 1 for i, (row, _) in enumerate(split) if row_picture(row) is None]
+        selected = range(len(split)) if indices is None else indices
+        bare = [i + 1 for i in selected if row_picture(split[i][0]) is None]
         if bare:
             raise WorkbenchError("Box questions need a picture on every row: row %d has no %s. Add pictures, or "
                                  "remove the Box questions." % (bare[0], IMAGE_KEY))
@@ -795,7 +796,8 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
     row, the outcome also holds the state it sent as "input". A missing key or exhausted budget stops new
     calls; other errors stay with their row.
     """
-    pictures = [_picture(split, i) for i in range(len(split))]  # read once, so a missing file fails before any call
+    # Read each selected picture once, before any call. A retry never needs an already answered row's picture.
+    pictures = {i: _picture(split, i) for i in dict.fromkeys(job[0] for job in jobs)}
     stop = threading.Event()
     stopped = {"error": None}
     lock = threading.Lock()
@@ -820,21 +822,38 @@ def _run_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: s
 
 def prepare_bulk(rows: List[Any], questions: Any) -> tuple:
     """(validated questions, split rows) for a Bulk run: one call per row, the first MAX_BULK_ROWS rows."""
-    questions = bulk_questions(questions)
-    split = _split_rows(rows)
-    _need_pictures(split, questions)
+    questions, split, _selected = prepare_bulk_selection(rows, questions)
     return questions, split
 
 
-def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None) -> dict:
-    """Every row with the same questions. model: None asks the current model."""
-    questions, split = prepare_bulk(rows, questions)
+def prepare_bulk_selection(rows: List[Any], questions: Any, indices: Any = None) -> tuple:
+    """Questions, full capped split, and the original indices to run. Explicit empty selections make no calls."""
+    questions = bulk_questions(questions)
+    split = _split_rows(rows)
+    if indices is None:
+        selected = list(range(len(split)))
+    else:
+        if not isinstance(indices, list) or any(type(i) is not int or not 0 <= i < len(split) for i in indices):
+            raise WorkbenchError("indices must be a list of row numbers within the first %d rows (starting at 0)"
+                                 % len(split))
+        if len(set(indices)) != len(indices):
+            raise WorkbenchError("indices must not repeat a row number")
+        selected = list(indices)
+    _need_pictures(split, questions, selected)
+    return questions, split, selected
+
+
+def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None,
+             indices: Any = None) -> dict:
+    """Selected rows with the same questions. Freeze the requested model once for the whole batch."""
+    questions, split, selected = prepare_bulk_selection(rows, questions, indices)
+    asked = model or client.model
     started = time.perf_counter()
-    outcomes, stopped = _run_jobs(client, split, [(i, questions, model, None) for i in range(len(split))], field)
-    results = [dict(_row_base(split, i), **outcome) for i, outcome in enumerate(outcomes)]
+    outcomes, stopped = _run_jobs(client, split, [(i, questions, asked, None) for i in selected], field)
+    results = [dict(_row_base(split, i), **outcome) for i, outcome in zip(selected, outcomes)]
     done = [r for r in results if "answers" in r]
     return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
-            "rows": len(split), "completed": len(done), "stopped": stopped,
+            "rows": len(selected), "completed": len(done), "stopped": stopped, "model": asked,
             "labeled": sum(1 for r in results if r.get("expect")),
             "cost_usd": sum(r["meta"]["cost_usd"] for r in done),
             "input_tokens": sum(r["meta"]["input_tokens"] for r in done)}

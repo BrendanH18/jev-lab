@@ -179,6 +179,26 @@ Empty rows are removed, and only the first 200 remaining rows are processed. Eac
 separate model call. A missing-key or budget error stops new work where possible; already admitted
 calls may complete. Per-row errors remain visible in the results.
 
+### Retry a partial run
+
+After a run with failed or skipped rows, **Retry unanswered rows** sends only those rows again.
+Its spend preview counts just the retry's calls and shows their cost upper bound. Successful answers
+stay in the current page session, along with labels you typed in the results table. Row numbers,
+duplicate copies, pictures, and held-out markers keep their original positions. Completion counts
+update when the retry finishes; cost, input tokens, and wall time include all attempts. Evaluation reports
+refresh against the combined answers.
+
+Retry requires the original rows, ordered questions, and model settings. If any changed, run the
+whole batch again. When successful answers identify a single model version, retries ask that version
+so an alias moving cannot mix versions in one result. These answers live only in the page: reloading
+does not restore a partial run. Retry is an explicit paid action, and never saves answers to a dataset.
+
+`POST /api/workbench/bulk` and its `kind: "bulk"` spend preview accept optional `indices` and `model`.
+Indices address the original nonempty rows after the 200-row cap, starting at zero; duplicates in the
+inputs keep separate indices. A selection must contain unique, valid indices. An empty selection
+never runs the whole batch. Bulk returns selected results with their original indices and a `model`
+field naming the requested configuration used for every call in that attempt.
+
 ### Preview the spend before a paid run
 
 Next to every paid Workbench run button (Bulk's and Compare's **Run** buttons, a saved check's **Run
