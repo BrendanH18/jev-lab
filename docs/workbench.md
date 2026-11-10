@@ -185,7 +185,7 @@ After a run with failed or skipped rows, **Retry unanswered rows** sends only th
 Its spend preview counts just the retry's calls and shows their cost upper bound. Successful answers
 stay in the current page session, along with labels you typed in the results table. Row numbers,
 duplicate copies, pictures, and held-out markers keep their original positions. Completion counts
-update as answers arrive; cost, input tokens, and wall time include all attempts. Evaluation reports
+update when the retry finishes; cost, input tokens, and wall time include all attempts. Evaluation reports
 refresh against the combined answers.
 
 Retry requires the original rows, ordered questions, and model settings. If any changed, run the
