@@ -5,7 +5,7 @@ import {
   statusBadge, toast,
 } from "./common.js";
 import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
-import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo } from "./build-editing.js";
+import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption } from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
@@ -72,6 +72,12 @@ function markBuildEdited() {
   const summary = $("#build-request-summary");
   if (summary) summary.textContent = buildRequestSummary(W.stateText, W.questions, W.images.length);
   if ($(".qlist")) refreshQuestionVisibility();
+  W.questions.forEach((row, index) => {
+    const count = $(`#build-criteria-count-${index}`);
+    if (count) count.textContent = row.type === "choice" ? `${row.choice.filter(([key]) => key.trim()).length} named options`
+      : row.type === "score" ? `${row.score.filter((level) => level.trim()).length} defined levels`
+      : row.type === "noul" ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes` : "Coordinates only · no criteria";
+  });
 }
 
 function validBuildQuestions() {
@@ -246,6 +252,26 @@ function undoBuildQuestion() {
 function duplicateBuildQuestion(index) {
   const row = duplicateQuestionRow(W.questions[index], W.questions);
   W.questions.splice(index + 1, 0, row);
+  markBuildEdited();
+  render();
+}
+
+function renameBuildQuestion(index) {
+  const requested = window.prompt("New question id (human expectations move with it):", W.questions[index].id);
+  if (requested === null) return;
+  try {
+    const renamed = renameEditorQuestion(W.questions, W.expect, index, requested);
+    W.questions = renamed.rows;
+    W.expect = renamed.expect;
+    markBuildEdited();
+    render();
+  } catch (e) { toast(e.message, "error"); }
+}
+
+function insertBuildQuestion(index, after) {
+  W.questions.splice(index + Number(after), 0, blankRow(W.questions[index].type));
+  buildQuestionView.query = "";
+  buildQuestionView.type = "all";
   markBuildEdited();
   render();
 }
@@ -591,8 +617,14 @@ function renderQuestionCard(row, i) {
         const d = h("input", { class: "input", value: pair[1], placeholder: "what this option means" });
         k.addEventListener("input", () => { pair[0] = k.value; markBuildEdited(); });
         d.addEventListener("input", () => { pair[1] = d.value; markBuildEdited(); });
-        return h("div", { class: "cr" }, k, d, h("div", { style: { display: "flex" } },
+        return h("div", { class: "cr" }, k, d, h("div", { style: { display: "flex", flexWrap: "wrap", gridColumn: "1 / -1" } },
           editorMoveButtons(row.choice, j, `option ${pair[0] || j + 1}`, (entries) => { row.choice = entries; }),
+          [[0, "first"], [row.choice.length - 1, "last"]].map(([target, label]) => h("button", {
+            class: "btn sm ghost", disabled: j === target, "aria-label": `Move option ${pair[0] || j + 1} ${label}`,
+            onclick: () => { row.choice = moveEditorEntryTo(row.choice, j, target); markBuildEdited(); render(); },
+          }, label)),
+          h("button", { class: "btn sm ghost", "aria-label": `Duplicate option ${pair[0] || j + 1}`,
+            onclick: () => { row.choice = duplicateChoiceOption(row.choice, j); markBuildEdited(); render(); } }, "Duplicate"),
           h("button", { class: "btn sm ghost", title: "Remove option", "aria-label": `Remove option ${pair[0] || j + 1}`, onclick: () => { row.choice.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
       }),
       h("div", {}, h("button", { class: "chip", onclick: () => { row.choice.push(["", ""]); markBuildEdited(); render(); } }, icon("plus"), "Add option")));
@@ -602,8 +634,15 @@ function renderQuestionCard(row, i) {
       row.score.map((lvl, j) => {
         const d = h("input", { class: "input", value: lvl, placeholder: `level ${j}` });
         d.addEventListener("input", () => { row.score[j] = d.value; markBuildEdited(); });
-        return h("div", { class: "cr score" }, h("span", { class: "lv" }, String(j)), d, h("div", { style: { display: "flex" } },
+        return h("div", { class: "cr score" }, h("span", { class: "lv" }, String(j)), d, h("div", { style: { display: "flex", flexWrap: "wrap", gridColumn: "1 / -1" } },
           editorMoveButtons(row.score, j, `level ${j}`, (entries) => { row.score = entries; }),
+          [[0, "first"], [row.score.length - 1, "last"]].map(([target, label]) => h("button", {
+            class: "btn sm ghost", disabled: j === target, "aria-label": `Move level ${j} ${label}`,
+            title: "Moving levels changes their numeric scores",
+            onclick: () => { row.score = moveEditorEntryTo(row.score, j, target); markBuildEdited(); render(); },
+          }, label)),
+          h("button", { class: "btn sm ghost", "aria-label": `Duplicate level ${j}`, title: "Insert a copy after this level; later numeric scores move up",
+            onclick: () => { row.score.splice(j + 1, 0, row.score[j]); markBuildEdited(); render(); } }, "Duplicate"),
           h("button", { class: "btn sm ghost", title: "Remove level", "aria-label": `Remove level ${j}`, onclick: () => { row.score.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
       }),
       h("div", {}, h("button", { class: "chip", onclick: () => { row.score.push(""); markBuildEdited(); render(); } }, icon("plus"), "Add level")));
@@ -625,8 +664,22 @@ function renderQuestionCard(row, i) {
         onclick: () => { W.questions = moveEditorEntryTo(W.questions, i, target); markBuildEdited(); render(); },
       }, `Move ${label}`)),
       copyButton,
+      h("button", { class: "btn sm ghost", onclick: () => renameBuildQuestion(i) }, "Rename safely"),
+      [false, true].map((after) => h("button", { class: "btn sm ghost", onclick: () => insertBuildQuestion(i, after) }, after ? "Insert after" : "Insert before")),
+      h("button", { class: "btn sm ghost", onclick: () => copyText(row.instructions || "") }, "Copy instructions"),
+      h("button", { class: "btn sm ghost", onclick: () => {
+        const normalized = [{ ...row, id: "question" }];
+        const error = questionEditorError(normalized);
+        if (error) return toast(error, "error");
+        const question = Object.values(toQuestions(normalized))[0];
+        copyText(JSON.stringify(question.criteria ?? {}, null, 2));
+      } }, "Copy criteria"),
       h("button", { class: "btn sm ghost", onclick: () => duplicateBuildQuestion(i), "aria-label": `Duplicate question ${row.id || i + 1}` }, "Duplicate"),
       h("button", { class: "btn sm ghost", title: "Remove question", "aria-label": `Remove question ${row.id || i + 1}`, onclick: () => deleteBuildQuestion(i) }, icon("trash"), "Remove")),
+    h("span", { class: "faint", id: `build-criteria-count-${i}`, "aria-live": "polite" },
+      row.type === "choice" ? `${row.choice.filter(([key]) => key.trim()).length} named options`
+        : row.type === "score" ? `${row.score.filter((level) => level.trim()).length} defined levels`
+        : row.type === "noul" ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes` : "Coordinates only · no criteria"),
     collapsed ? h("p", { class: "faint", style: { margin: 0, overflowWrap: "anywhere" } },
       row.instructions ? `${row.instructions.slice(0, 160)}${row.instructions.length > 160 ? "…" : ""}` : "No instructions yet") : [instr, crit]);
 }

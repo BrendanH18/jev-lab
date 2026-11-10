@@ -57,7 +57,7 @@ test("stale request snapshots include state, question wording/order and exact im
 
 test("editing updates the stale warning and save guard without replacing the focused editor", () => {
   const nodes = { "#build-stale": { style: {} }, "#build-validation": {}, "#build-save-test": {} };
-  const W = { result: {}, exported: {}, lint: {} };
+  const W = { result: {}, exported: {}, lint: {}, questions: [] };
   let stale = true;
   const edit = new Function("W", "$", "buildResultStale", "questionEditorError", `${body("markBuildEdited")}; return markBuildEdited;`)(
     W, (selector) => nodes[selector], () => stale, () => "duplicate id");
