@@ -67,3 +67,35 @@ export function moveEditorEntryTo(entries, index, target) {
   moved.splice(target, 0, moved.splice(index, 1)[0]);
   return moved;
 }
+
+// Rename is explicit so existing human expectations travel with their question.
+export function renameEditorQuestion(rows, expect, index, requestedId) {
+  const id = String(requestedId).trim(), row = rows[index];
+  if (!row || !id) throw new Error("Give the question a nonempty id.");
+  const previous = String(row.id || "").trim();
+  if (rows.some((other, i) => i !== index && String(other.id || "").trim() === id)) {
+    throw new Error(`Another question already uses “${id}”.`);
+  }
+  if (previous !== id && Object.hasOwn(expect, id)) throw new Error(`Expectations already exist for “${id}”. Keep or remove them before renaming.`);
+  if (previous !== id && rows.some((other, i) => i !== index && String(other.id || "").trim() === previous)
+      && Object.hasOwn(expect, previous)) throw new Error("Fix the repeated original id before moving its expectations.");
+  const expectations = { ...expect };
+  if (previous !== id && Object.hasOwn(expectations, previous)) {
+    const value = expectations[previous];
+    delete expectations[previous];
+    Object.defineProperty(expectations, id, { value, enumerable: true, writable: true, configurable: true });
+  }
+  return { rows: rows.map((other, i) => i === index ? { ...other, id } : other), expect: expectations };
+}
+
+export function duplicateChoiceOption(options, index) {
+  if (!options[index]) return options;
+  const [key, description] = options[index];
+  const used = new Set(options.map(([value]) => value.trim()));
+  const base = `${key.trim() || "option"}_copy`;
+  let copy = base;
+  for (let n = 2; used.has(copy); n++) copy = `${base}_${n}`;
+  const result = options.slice();
+  result.splice(index + 1, 0, [copy, description]);
+  return result;
+}

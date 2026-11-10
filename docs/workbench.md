@@ -7,6 +7,11 @@ Expand **Workbench guide** above the current tab to follow the path from questio
 traffic. Its shortcuts open existing panels and describe the current workspace. They never run
 requests, apply labels, or save data. You can keep using the tabs and panels independently.
 
+The latest editor and catalog controls are listed in three focused guides:
+[Build editing](build-improvements.md), [saved-test diagnostics](test-improvements.md),
+and [dataset browsing](catalog-improvements.md). Each describes ten controls and their
+data and spending boundaries.
+
 ## Build a request
 
 State may be text or a JSON value. Questions are an object keyed by stable question IDs. Start

@@ -1,10 +1,24 @@
 // Dataset-list metadata only. Filters never load rows, labels or model answers.
 import { matchesDataset } from "./saved-search.js";
 
-export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "" });
+export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [] });
 
 export function matchesCatalog(item, filters = {}) {
   if (!matchesDataset(item, filters)) return false;
+  if (filters.pinned === "with" && !filters.pinnedIds?.includes(item.id)) return false;
+  const saved = String(item.saved_at || "").slice(0, 10);
+  for (const key of ["savedAfter", "savedBefore"]) {
+    const value = filters[key];
+    if (!value) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !saved || (key === "savedAfter" ? saved < value : saved > value)) return false;
+  }
+  const share = Number(item.rows || 0) > 0 ? 100 * Number(item.labeled || 0) / Number(item.rows) : null;
+  for (const key of ["minLabelShare", "maxLabelShare"]) {
+    if (filters[key] === undefined || String(filters[key]).trim() === "") continue;
+    const value = Number(filters[key]);
+    if (!Number.isFinite(value) || value < 0 || value > 100 || share === null
+      || (key === "minLabelShare" ? share < value : share > value)) return false;
+  }
   for (const [key, present] of [["questions", Number(item.questions || 0) > 0], ["test", !!item.test],
     ["guidelines", Number(item.guidelines || 0) > 0]]) {
     if (filters[key] === "with" && !present || filters[key] === "without" && present) return false;
@@ -23,7 +37,17 @@ export function matchesCatalog(item, filters = {}) {
 
 export function sortedCatalog(items, sort = "saved") {
   const copy = [...items];
-  if (sort === "name") copy.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+  if (sort === "newest" || sort === "oldest") copy.sort((a, b) => {
+    // Unknown timestamps always follow dated datasets.
+    const left = String(a.saved_at || ""), right = String(b.saved_at || "");
+    if (!left || !right) return Number(!left) - Number(!right);
+    return sort === "newest" ? right.localeCompare(left) : left.localeCompare(right);
+  });
+  else if (sort === "label-share") copy.sort((a, b) => {
+    const share = (item) => Number(item.rows || 0) > 0 ? Number(item.labeled || 0) / Number(item.rows) : Infinity;
+    return share(a) - share(b);
+  });
+  else if (sort === "name") copy.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
   else if (sort === "name-desc") copy.sort((a, b) => String(b.name || b.id).localeCompare(String(a.name || a.id)));
   else if (sort === "rows-asc") copy.sort((a, b) => Number(a.rows || 0) - Number(b.rows || 0));
   else if (sort === "unlabeled") copy.sort((a, b) => Math.max(0, Number(b.rows || 0) - Number(b.labeled || 0)) - Math.max(0, Number(a.rows || 0) - Number(a.labeled || 0)));
@@ -76,4 +100,20 @@ export function canCopyDataset(dataset) {
 
 export function matchesDeletedDataset(item, query = "") {
   return `${item.id}\n${item.name || ""}`.toLocaleLowerCase().includes(String(query).trim().toLocaleLowerCase());
+}
+
+// Catalog downloads deliberately exclude notes, input data, label values and check configuration.
+export function catalogJson(items) {
+  return JSON.stringify(items.map((item) => ({ id: item.id, name: item.name || item.id,
+    rows: item.rows || 0, labeled_rows: item.labeled || 0, questions: item.questions || 0,
+    held_out_rows: item.test?.rows || 0, saved_check: !!item.check,
+    guideline_questions: item.guidelines || 0, saved_at: item.saved_at || "" })), null, 2) + "\n";
+}
+
+export function catalogPreset(name) {
+  const defaults = catalogDefaults();
+  if (name === "label") return { ...defaults, labels: "some", sort: "label-share" };
+  if (name === "unlabeled") return { ...defaults, labels: "none", sort: "rows" };
+  if (name === "check") return { ...defaults, questions: "with", labels: "every", check: "without" };
+  return defaults;
 }

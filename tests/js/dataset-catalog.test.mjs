@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { catalogDefaults, matchesCatalog, sortedCatalog, catalogTotals, catalogSummary, catalogCsv, datasetCopyName,
-  canCopyDataset, matchesDeletedDataset } from "../../static/js/dataset-catalog.js";
+  canCopyDataset, matchesDeletedDataset, catalogJson, catalogPreset } from "../../static/js/dataset-catalog.js";
 import { workbenchSource } from "./workbench-source.mjs";
 
 const items = [
@@ -160,7 +160,7 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   const nodes = (node) => typeof node !== "object" ? [] : [node, ...node.children.flatMap(nodes)];
   const filters = catalogDefaults();
   const tree = make("datasetSearchControls", { W, $: (id) => dom[id], h, catalogDefaults, matchesCatalog, sortedCatalog,
-    catalogSummary, catalogCsv })(filters);
+    catalogSummary, catalogCsv, catalogJson, catalogPreset })(filters);
   const select = (label) => nodes(tree).find((node) => node.attrs["aria-label"] === label);
   select("Filter datasets by held-out split").attrs.onchange({ target: { value: "with" } });
   assert.equal(rows[0].style.display, "");
@@ -214,4 +214,57 @@ test("catalog metadata sorts order datasets without mutating saved order", () =>
   ]) assert.deepEqual(sortedCatalog(items, sort).map((item) => item.id), expected);
   assert.deepEqual(items, before);
   assert.deepEqual(sortedCatalog([{ id: "empty" }, { id: "also-empty" }], "unlabeled").map((item) => item.id), ["empty", "also-empty"]);
+});
+
+
+test("saved-date boundaries are inclusive and unknown dates never match a date filter", () => {
+  const dated = { ...items[0], saved_at: "2026-11-10T23:59:00Z" };
+  assert.equal(matchesCatalog(dated, { savedAfter: "2026-11-10", savedBefore: "2026-11-10" }), true);
+  assert.equal(matchesCatalog(dated, { savedAfter: "2026-11-11" }), false);
+  assert.equal(matchesCatalog(dated, { savedBefore: "2026-11-09" }), false);
+  assert.equal(matchesCatalog(items[0], { savedAfter: "2026-11-01" }), false);
+  assert.equal(matchesCatalog(dated, { savedAfter: "invalid" }), false);
+});
+
+test("label-share filters accept fractions and zero but exclude empty datasets", () => {
+  assert.equal(matchesCatalog(items[0], { minLabelShare: "60", maxLabelShare: "60" }), true);
+  assert.equal(matchesCatalog(items[0], { minLabelShare: "60.1" }), false);
+  assert.equal(matchesCatalog(items[1], { maxLabelShare: "0" }), true);
+  assert.equal(matchesCatalog({ rows: 0 }, { minLabelShare: "0" }), false);
+  for (const value of ["-1", "101", "Infinity", "oops"]) {
+    assert.equal(matchesCatalog(items[0], { minLabelShare: value }), false);
+  }
+});
+
+test("timestamp and label-share sorting keeps unknown or empty datasets last", () => {
+  const rows = [{ id: "unknown", rows: 0 }, { id: "older", rows: 2, labeled: 2, saved_at: "2026-01-01" },
+    { id: "newer", rows: 10, labeled: 1, saved_at: "2026-11-10" }];
+  assert.deepEqual(sortedCatalog(rows, "newest").map((x) => x.id), ["newer", "older", "unknown"]);
+  assert.deepEqual(sortedCatalog(rows, "oldest").map((x) => x.id), ["older", "newer", "unknown"]);
+  assert.deepEqual(sortedCatalog(rows, "label-share").map((x) => x.id), ["newer", "older", "unknown"]);
+  assert.equal(rows[0].id, "unknown");
+});
+
+test("pin filtering is session metadata and presets return independent filter sets", () => {
+  assert.equal(matchesCatalog(items[0], { pinned: "with", pinnedIds: ["tickets"] }), true);
+  assert.equal(matchesCatalog(items[1], { pinned: "with", pinnedIds: ["tickets"] }), false);
+  assert.equal(matchesCatalog(items[0], { pinned: "with" }), false);
+  assert.deepEqual(items.filter((x) => matchesCatalog(x, catalogPreset("label"))), [items[0]]);
+  assert.deepEqual(items.filter((x) => matchesCatalog(x, catalogPreset("unlabeled"))), [items[1]]);
+  assert.deepEqual(items.filter((x) => matchesCatalog(x, catalogPreset("check"))), [items[2]]);
+  const preset = catalogPreset("label");
+  preset.pinnedIds.push("tickets");
+  assert.deepEqual(catalogPreset("label").pinnedIds, []);
+});
+
+test("JSON catalog uses only allowlisted metadata and preserves names verbatim", () => {
+  const output = catalogJson([{ ...items[0], name: "=name", answers: "forbidden", labels: "forbidden" }]);
+  const [item] = JSON.parse(output);
+  assert.equal(item.name, "=name");
+  assert.equal(item.saved_check, true);
+  assert.equal(item.held_out_rows, 2);
+  assert.equal(item.guideline_questions, 1);
+  assert.equal(item.labeled_rows, 3);
+  assert.doesNotMatch(output, /private configuration|Email traffic|forbidden/);
+  assert.deepEqual(Object.keys(item), ["id", "name", "rows", "labeled_rows", "questions", "held_out_rows", "saved_check", "guideline_questions", "saved_at"]);
 });

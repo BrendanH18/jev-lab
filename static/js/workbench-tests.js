@@ -2,14 +2,14 @@
 import { $, api, callStats, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, deselectVisibleTests, invertVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults } from "./test-selection.js";
+  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
-const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved" });
-const testView = { ...testFilterDefaults(), selected: [], busy: false };
+const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all" });
+const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true };
 
 function reconcileTests() {
   testView.selected = selectedTestIds(W.items, testView.selected);
@@ -66,6 +66,8 @@ export function renderTests() {
     } }, options.map(([value, text]) => h("option", { value, selected: testView[field] === value }, text))));
   const byId = new Map((res?.runs || []).map((run) => [run.id, run]));
   const failed = unsuccessfulTestIds();
+  const unrun = W.items.filter((item) => !byId.has(item.id)).map((item) => item.id);
+  const summary = selectedTestSummary(W.items, testView.selected);
   const ordered = visibleTests(W.items, res, { sort: testView.sort });
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "panel tests", "aria-busy": String(busy) },
@@ -80,6 +82,7 @@ export function renderTests() {
           h("button", { class: "btn primary", disabled: busy || !W.items.length, onclick: () => runTests() }, icon("play"), `Run all ${W.items.length} tests`),
           estimateLine(h, api, "items", () => testRunBody(W.items)),
           h("button", { class: "btn", disabled: busy || !failed.length, onclick: () => runTests(unsuccessfulTestIds()) }, `Rerun ${failed.length} failed / errors`),
+          h("button", { class: "btn", disabled: busy || !unrun.length, onclick: () => runTests(unrun) }, `Run ${unrun.length} not run`),
           h("button", { class: "btn ghost", disabled: busy || !res, onclick: () => { W.runResults = null; render(); } }, "Clear session results")),
         busy ? h("p", { class: "faint", role: "status" }, "Checking spend or running saved tests…") : null,
         res ? h("p", { class: "faint", style: { margin: 0, fontSize: "12px" } },
@@ -88,9 +91,16 @@ export function renderTests() {
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
           filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
           filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
-          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"]]),
+          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"]]),
           filter("Test expectations", "expectations", [["all", "Any expectations"], ["with", "With expectations"], ["without", "Without expectations"]]),
           filter("Test pictures", "images", [["all", "Any pictures"], ["with", "With pictures"], ["without", "Without pictures"]]),
+          filter("Test input shape", "stateType", [["all", "Any input shape"], ["text", "Plain text"], ["object", "JSON object"], ["array", "JSON array"]]),
+          filter("Test notes", "notes", [["all", "Any notes"], ["with", "With notes"], ["without", "Without notes"]]),
+          [ ["Minimum test questions", "minQuestions"], ["Maximum test questions", "maxQuestions"] ].map(([label, field]) =>
+            h("label", { class: "faint" }, label, " ", h("input", { class: "input sm", type: "number", min: 0, step: 1,
+              value: testView[field], "aria-label": label, style: { width: "90px" }, oninput: (event) => {
+                testView[field] = event.target.value; refreshTestVisibility();
+              } }))),
           filter("Test selection", "selection", [["all", "All tests"], ["selected", "Selected tests"], ["unselected", "Unselected tests"]]),
           h("button", { class: "btn sm ghost", onclick: () => {
             Object.assign(testView, testFilterDefaults()); W.testSearch = ""; render();
@@ -102,11 +112,17 @@ export function renderTests() {
             onclick: () => { testView.selected = deselectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Deselect visible"),
           h("button", { class: "btn sm", id: "saved-test-invert-visible", disabled: busy || !shown.size,
             onclick: () => { testView.selected = invertVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Invert visible selection"),
+          h("button", { class: "btn sm", disabled: busy || !failed.length,
+            onclick: () => { testView.selected = selectedTestIds(W.items, [...testView.selected, ...unsuccessfulTestIds()]); render(); } }, "Select failed / errors"),
           h("button", { class: "btn sm ghost", disabled: busy || !selected.size,
             onclick: () => { testView.selected = []; render(); } }, "Clear selection"),
           h("button", { class: "btn sm primary", disabled: busy || !selected.size,
             onclick: () => runTests(testView.selected, true) }, `Run selected (${selected.size})`),
           estimateLine(h, api, "items", () => testRunBody(W.items, testView.selected))),
+        h("p", { class: "faint", style: { margin: 0 } },
+          `Selected requests: ${summary.tests} tests · ${summary.questions} questions · ${summary.expectations} expectations · ${summary.images} pictures. Counts describe saved inputs, not spend.`),
+        h("label", { class: "faint" }, h("input", { type: "checkbox", checked: testView.details,
+          onchange: (event) => { testView.details = event.target.checked; render(); } }), " Show result checks and call details"),
         h("span", { class: "faint", id: "saved-test-count", "aria-live": "polite" }, testCountText())),
       W.items.length ? h("div", { id: "saved-test-results" },
         h("div", { class: "empty", id: "saved-test-no-match", hidden: shown.size > 0 }, "No saved tests match these filters. Your selection is kept."),
@@ -126,10 +142,10 @@ export function renderTests() {
                   + (it.images ? ` · ${Object.keys(it.images).length} image${Object.keys(it.images).length > 1 ? "s" : ""}` : ""))),
               it.notes ? h("div", { class: "muted", style: { fontSize: "12.5px" } }, it.notes) : null,
               r?.error ? h("div", { class: "checks", style: { color: "var(--critical-text)" } }, r.error) : null,
-              r && !r.error ? h("div", { class: "checks" }, Object.entries(r.results).map(([qid, q]) =>
+              testView.details && r && !r.error ? h("div", { class: "checks" }, Object.entries(r.results).map(([qid, q]) =>
                 h("span", { style: { marginRight: "12px", color: q.ok === false ? "var(--critical-text)" : q.ok ? "var(--good-text)" : "var(--faint)" } },
                   `${qid}: ${q.checks.join(", ")}`))) : null,
-              r?.meta ? h("div", {}, callStats(r.meta, () => inspect(r.trace, `Test · ${it.name}`))) : null),
+              testView.details && r?.meta ? h("div", {}, callStats(r.meta, () => inspect(r.trace, `Test · ${it.name}`))) : null),
             h("div", { style: { display: "flex", gap: "6px" } },
               h("button", { class: "btn sm", onclick: () => openItem(it) }, "Open"),
               h("button", { class: "btn sm ghost", disabled: busy, "aria-label": `Run test ${it.name || it.id}`,

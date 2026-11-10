@@ -372,3 +372,11 @@ exports names/IDs/counts/timestamps only, with spreadsheet formula escaping, nev
 notes, answers or check configuration. Load as copy is an unsaved editor action, with a unique name,
 dirty-editor guards and stale-result invalidation; checks/guidelines stay with the original. Copies
 with held-out rows or evaluation history use bundles so their test history is preserved.
+
+Build's explicit rename action migrates human expectations with the question and rejects ID or
+expectation collisions. Inserting questions and duplicating criteria preserve the surrounding
+order; moving or duplicating Score levels changes their numeric meaning. Clipboard helpers copy
+only authored instructions or criteria. Saved-test cost/latency sorts use current session results
+only, with unknown values last; request-size summaries are counts, never spend estimates. Catalog
+date/label-share filters, workflow presets and pins are presentation-only; pins stay in the page
+session. Catalog JSON uses the same metadata-only boundary as CSV.

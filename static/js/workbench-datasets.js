@@ -3,7 +3,7 @@
 import { $, api, h, handleError, icon, pct, stat, toast } from "./common.js";
 import { secondItems, settleKey, settledItems, sessionItems, sessionSettlements, changeSecondLabel, agreementEditsUnsaved,
   restoreAgreementEdits, restoredChoices, unshownSettlements } from "./agreement.js";
-import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, datasetCopyName, canCopyDataset } from "./dataset-catalog.js";
+import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, catalogJson, catalogPreset, datasetCopyName, canCopyDataset } from "./dataset-catalog.js";
 import { createHistory } from "./history.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
@@ -251,6 +251,14 @@ export function renderDatasets() {
           h("span", { class: "faint", style: { fontSize: "12px" } }, labeledText(x) + (x.saved_at ? ` · saved ${x.saved_at.slice(0, 10)}` : "")),
           x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
         h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
+          h("button", { class: "btn sm", "aria-label": `Pin dataset ${x.id}`, "aria-pressed": String(filters.pinnedIds.includes(x.id)),
+            onclick: (event) => {
+              const index = filters.pinnedIds.indexOf(x.id);
+              if (index < 0) filters.pinnedIds.push(x.id); else filters.pinnedIds.splice(index, 1);
+              event.currentTarget.setAttribute("aria-pressed", String(index < 0));
+              event.currentTarget.textContent = index < 0 ? "Unpin" : "Pin";
+              $("#dataset-catalog-pin-filter")?.dispatchEvent(new Event("change"));
+            } }, filters.pinnedIds.includes(x.id) ? "Unpin" : "Pin"),
           h("button", { class: "btn sm", onclick: () => loadDataset(x.id) }, "Load"),
           h("button", { class: "btn sm", disabled: b.datasetCopyBusy || !canCopyDataset(x),
             title: canCopyDataset(x) ? "Load rows, labels, questions and rules under a new name; save explicitly" : "Use Download ZIP and Import to copy the held-out evaluation history too",
@@ -289,41 +297,59 @@ function datasetSearchControls(filters) {
     if (empty) empty.hidden = !W.bulk.datasets.length || !!shown.length;
     const download = $("#dataset-catalog-download");
     if (download) download.disabled = !shown.length;
+    const jsonDownload = $("#dataset-catalog-json");
+    if (jsonDownload) jsonDownload.disabled = !shown.length;
   };
   const controls = {};
   const search = h("input", { class: "input", type: "search", value: filters.query, placeholder: "Search datasets by name or notes",
     "aria-label": "Search datasets", oninput: (event) => { filters.query = event.target.value; update(); } });
-  const select = (key, label, options) => controls[key] = h("select", { class: "input", "aria-label": label,
+  const select = (key, label, options) => controls[key] = h("select", { class: "input", id: key === "pinned" ? "dataset-catalog-pin-filter" : undefined, "aria-label": label,
     onchange: (event) => { filters[key] = event.target.value; update(); } },
   options.map(([value, text]) => h("option", { value, selected: filters[key] === value }, text)));
   const countFilter = (key, label) => h("label", { class: "faint" }, label, " ",
     controls[key] = h("input", { class: "input sm", type: "number", min: 0, step: 1,
       value: filters[key], "aria-label": label, style: { width: "90px" },
       oninput: (event) => { filters[key] = event.target.value; update(); } }));
-  const clear = () => {
-    Object.assign(filters, catalogDefaults());
-    search.value = "";
+  const applyFilters = (next) => {
+    const pins = filters.pinnedIds;
+    Object.assign(filters, next, { pinnedIds: pins });
+    search.value = filters.query;
     for (const [key, element] of Object.entries(controls)) element.value = filters[key];
     update();
+  };
+  const clear = () => {
+    applyFilters(catalogDefaults());
     search.focus();
   };
   const shown = visible();
   return h("div", { class: "grid", style: { gap: "6px" } }, search,
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
+      h("label", { class: "faint" }, "Quick view ", h("select", { class: "input", "aria-label": "Dataset workflow preset",
+        onchange: (event) => { applyFilters(catalogPreset(event.target.value)); event.target.value = ""; } },
+        h("option", { value: "" }, "Choose a workflow…"), h("option", { value: "label" }, "Continue partial labeling"),
+        h("option", { value: "unlabeled" }, "Start labeling"), h("option", { value: "check" }, "Prepare a saved check"))),
+      select("pinned", "Filter pinned datasets", [["all", "All pins"], ["with", "Pinned datasets only"]]),
       select("check", "Filter datasets by saved check", [["all", "All checks"], ["with", "With a saved check"], ["without", "Without a saved check"]]),
       select("labels", "Filter datasets by labeling status", [["all", "All labeling states"], ["none", "No rows labeled"],
         ["some", "Some rows labeled"], ["every", "Every row has a label"]]),
       select("questions", "Filter datasets by saved questions", [["all", "All question states"], ["with", "With saved questions"], ["without", "Without saved questions"]]),
       select("test", "Filter datasets by held-out split", [["all", "All test splits"], ["with", "With held-out rows"], ["without", "Without held-out rows"]]),
       select("guidelines", "Filter datasets by labeling guidelines", [["all", "All guideline states"], ["with", "With guidelines"], ["without", "Without guidelines"]]),
-      select("sort", "Sort datasets", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"],
+      select("sort", "Sort datasets", [["saved", "Saved order"], ["newest", "Newest saved first"], ["oldest", "Oldest saved first"], ["label-share", "Lowest labeled share first"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"],
         ["rows", "Most rows first"], ["rows-asc", "Fewest rows first"], ["labeled", "Most labeled rows first"],
         ["unlabeled", "Most rows without labels"], ["questions", "Most questions first"], ["held-out", "Most held-out rows first"]])),
     h("details", {}, h("summary", {}, "Filter by counts"),
       h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", paddingTop: "8px" } },
         countFilter("minRows", "Minimum rows"), countFilter("maxRows", "Maximum rows"),
         countFilter("minLabeled", "Minimum labeled rows"), countFilter("minUnlabeled", "Minimum rows without labels"),
-        countFilter("minQuestions", "Minimum saved questions"))),
+        countFilter("minQuestions", "Minimum saved questions"),
+        ...[["minLabelShare", "Minimum labeled share (%)"], ["maxLabelShare", "Maximum labeled share (%)"]].map(([key, label]) =>
+          h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input sm", type: "number", min: 0, max: 100, step: "any",
+            value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => { filters[key] = event.target.value; update(); } }))))),
+    h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+      ...[["savedAfter", "Saved on or after"], ["savedBefore", "Saved on or before"]].map(([key, label]) =>
+        h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input", type: "date", value: filters[key],
+          "aria-label": label, oninput: (event) => { filters[key] = event.target.value; update(); } })))),
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
       h("button", { class: "btn sm ghost", onclick: clear }, "Clear dataset filters"),
       h("button", { class: "btn sm", id: "dataset-catalog-download", disabled: !shown.length,
@@ -333,12 +359,19 @@ function datasetSearchControls(filters) {
           const url = URL.createObjectURL(new Blob([catalogCsv(items)], { type: "text/csv;charset=utf-8" }));
           h("a", { href: url, download: "jev-dataset-catalog.csv" }).click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } }, "Download shown catalog CSV")),
+        } }, "Download shown catalog CSV"),
+      h("button", { class: "btn sm", id: "dataset-catalog-json", disabled: !shown.length, onclick: () => {
+        const items = visible();
+        if (!items.length) return;
+        const url = URL.createObjectURL(new Blob([catalogJson(items)], { type: "application/json" }));
+        h("a", { href: url, download: "jev-dataset-catalog.json" }).click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } }, "Download shown catalog JSON")),
     h("span", { class: "faint", id: "dataset-search-count", "aria-live": "polite" }, `${shown.length} of ${W.bulk.datasets.length} datasets shown`),
     h("span", { class: "faint", id: "dataset-search-summary" }, catalogSummary(shown)),
     h("div", { class: "empty", id: "dataset-search-empty", hidden: !W.bulk.datasets.length || !!shown.length },
       "No datasets match these filters. ", h("button", { class: "btn sm", onclick: clear }, "Show all datasets")),
-    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } }, "A labeled row has at least one saved label; this does not establish complete or valid labels. Filters only change the list shown."));
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } }, "A labeled row has at least one saved label; this does not establish complete or valid labels. Filters only change the list shown. Pins last for this page session; clearing filters keeps them."));
 }
 
 // ---------- Label agreement ----------
