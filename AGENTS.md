@@ -344,3 +344,14 @@ previews. Preserve successful session answers, human labels, duplicate positions
 markers; combine only an unchanged request and compatible model version. Freeze the requested model
 for every batch, refresh derived evaluation after retries, and count spend across attempts. Never
 persist answers for retry recovery or let an empty selection fall back to running the full batch.
+
+Bulk retry selection uses original unanswered row indices only. Failed/skipped filters change
+presentation, preserving selections across filters; estimates and paid requests use the same explicit
+selection. Selection changes during spend preview require another deliberate retry.
+
+Drift labeling draft recovery carries original weak-support inputs, ordered question schema and human
+draft labels only, bound to the unchanged saved dataset/check snapshot. Restore previews before explicit
+acceptance, works without a paid comparison, and never restores model answers, shortlists or measured
+drift results. Pictures travel separately. Download/restore make no model calls or dataset writes;
+Add remains explicit. Guard unsaved traffic labels before leaving or replacing queues or their saved
+configuration, including check changes, dataset replacement/deletion and history restore.

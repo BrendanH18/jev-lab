@@ -103,6 +103,7 @@ test("saving sends only human labels and inputs, refreshes clean rows, and never
   assert.deepEqual(s.calls.map((c) => c.path), ["/api/workbench/checks/drift/add", "/api/workbench/datasets/load"]);
   assert.deepEqual(s.calls[0].payload, { id: "tickets", questions, items: [{ row: fresh(1).row, labels: fresh(1).labels }] });
   assert.deepEqual(s.rep.items, [pending]);
+  assert.equal(s.rep.session_context, null, "dataset changes invalidate recovery of the original snapshot");
   assert.equal(s.bulk.dataset.id, "tickets");
   assert.match(s.bulk.rowsText, /Traffic 1/);
   assert.equal(s.bulk.rowsText, s.bulk.savedText);

@@ -4,7 +4,7 @@ import {
   $, api, currentStatus, h, handleError, icon, mount, ms, num, pct, prepareImage, statusBadge, toast, usd,
 } from "./common.js";
 import { bulkPreflightBody, checkBulkPreflight } from "./bulk-preflight.js";
-import { bulkRetryContext, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "./bulk-retry.js";
+import { bulkRetryContext, bulkRetryRows, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "./bulk-retry.js";
 import { datasetEditsBody, confirmDatasetEditsDiscard } from "./dataset-edits.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W } from "./workbench-state.js";
@@ -156,10 +156,24 @@ function bulkRequestSnapshot() {
     model: currentStatus()?.model || "", source: b.source, datasetId: b.dataset.id };
 }
 
+// Selection belongs to the original page-session run, including after sparse retry merges.
+const bulkRetrySelections = new WeakMap();
+
+function bulkRetrySelection() {
+  const request = W.bulk.runRequest;
+  if (!request) return null;
+  const pending = new Set(bulkRetryRows(W.bulk.result).map((row) => row.index));
+  if (!bulkRetrySelections.has(request)) bulkRetrySelections.set(request, { selected: pending, filter: "all", open: false });
+  const selection = bulkRetrySelections.get(request);
+  selection.selected = new Set([...selection.selected].filter((index) => pending.has(index)));
+  return selection;
+}
+
 function currentBulkRetryPlan() {
+  const selection = bulkRetrySelection();
   return bulkRetryPlan(W.bulk.result, W.bulk.runRequest, {
     ...bulkRequestSnapshot(), error: W.bulk.source === "current" ? questionEditorError() : null,
-  });
+  }, selection ? [...selection.selected] : undefined);
 }
 
 let bulkRetryListening = false;
@@ -170,12 +184,39 @@ function updateBulkRetry() {
 
 function bulkRetryControls() {
   const plan = currentBulkRetryPlan();
-  if (!plan.indices.length) return [];
+  if (!bulkRetryRows(W.bulk.result).length) return [];
+  const selection = bulkRetrySelection();
+  const visible = bulkRetryRows(W.bulk.result, selection?.filter);
+  const changeShown = (checked) => {
+    for (const row of visible) if (checked) selection.selected.add(row.index); else selection.selected.delete(row.index);
+    updateBulkRetry();
+  };
   return [h("button", { class: "btn sm", id: "bulk-retry-run", disabled: W.bulk.running || !plan.body,
-    onclick: retryBulk }, W.bulk.running ? "Running…" : `Retry ${plan.indices.length} unanswered row${plan.indices.length === 1 ? "" : "s"}`),
+    onclick: retryBulk }, W.bulk.running ? "Running…" : `Retry ${plan.indices.length} selected row${plan.indices.length === 1 ? "" : "s"}`),
   estimateLine(h, api, "bulk", () => currentBulkRetryPlan().body),
   h("span", { class: "faint", style: { fontSize: "12px" } }, plan.reason
-    || "Only unanswered rows make new calls. Successful answers and your labels stay in this page; totals include every attempt.")];
+    || "Only selected unanswered rows make new calls. Successful answers and your labels stay in this page; totals include every attempt."),
+  selection ? h("details", { open: selection.open, style: { flexBasis: "100%" },
+    ontoggle: (e) => { selection.open = e.target.open; } },
+    h("summary", {}, `Choose retry rows · ${plan.indices.length} selected`),
+    h("div", { class: "grid", style: { gap: "8px", paddingTop: "8px" } },
+      h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+        h("label", {}, "Show ", h("select", { class: "input", "aria-label": "Retry row filter", disabled: W.bulk.running,
+          onchange: (e) => { selection.filter = e.target.value; updateBulkRetry(); } },
+          [["all", "All unanswered"], ["failed", "Failed"], ["skipped", "Skipped"]].map(([value, label]) =>
+            h("option", { value, selected: selection.filter === value }, label)))),
+        h("button", { class: "btn sm ghost", disabled: W.bulk.running || !visible.length, onclick: () => changeShown(true) }, "Select shown"),
+        h("button", { class: "btn sm ghost", disabled: W.bulk.running || !visible.length, onclick: () => changeShown(false) }, "Clear shown"),
+        h("span", { class: "faint", style: { fontSize: "12px" } }, "Filters keep your selection; the retry includes selected rows in every filter.")),
+      h("div", { class: "grid", style: { gap: "6px", maxHeight: "260px", overflow: "auto" } }, visible.length ? visible.map((row) =>
+        h("label", { style: { display: "flex", gap: "8px", alignItems: "start", fontSize: "12px" } },
+          h("input", { type: "checkbox", checked: selection.selected.has(row.index), disabled: W.bulk.running,
+            "aria-label": `Retry row ${row.index + 1}`, onchange: (e) => {
+              if (e.target.checked) selection.selected.add(row.index); else selection.selected.delete(row.index);
+              updateBulkRetry();
+            } }),
+          h("span", {}, `Row ${row.index + 1} · ${row.error ? "Failed" : "Skipped"}${isTest(row) ? " · test" : ""} · ${rowText(row.row)}`)))
+        : h("span", { class: "faint" }, "No unanswered rows match this filter.")))) : null];
 }
 
 export function renderBulk() {

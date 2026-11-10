@@ -30,7 +30,7 @@ from itertools import combinations
 from math import comb, erfc, exp, lgamma, pi, sqrt
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import calibrate, checks, decisions, policy, rules as rulebook, workbench
+from . import calibrate, checks, decisions, driftsession, policy, rules as rulebook, workbench
 from .client import JevClient
 from .workbench import WorkbenchError
 
@@ -479,6 +479,7 @@ def _labeling(dataset: dict, thin: List[dict], questions: Dict[str, dict], gates
                       "labels": {q: None for q in questions}, "open": list(gates)})
     counts["queued"] = len(items)
     return {"questions": questions, "gates": gates, "items": items, "counts": counts,
+            "session_context": driftsession.context(dataset, items),
             "room": max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"]))}
 
 
