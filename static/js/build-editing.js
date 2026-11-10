@@ -51,3 +51,19 @@ export function buildRequestSummary(stateText, rows, imageCount) {
   const bytes = new TextEncoder().encode(stateText).length;
   return `${rows.length} question${rows.length === 1 ? "" : "s"}${types ? ` (${types})` : ""} · ${bytes} state-text bytes · ${imageCount} image${imageCount === 1 ? "" : "s"}`;
 }
+
+// Filtering keeps the complete editor request intact, including hidden questions.
+export function matchesEditorQuestion(row, { query = "", type = "all" } = {}) {
+  if (type !== "all" && row.type !== type) return false;
+  const text = [row.id, row.instructions, ...(row.choice || []).flat(), ...(row.score || []), row.noulYes, row.noulNo]
+    .filter((value) => value != null).join("\n").toLocaleLowerCase();
+  return text.includes(String(query).trim().toLocaleLowerCase());
+}
+
+export function moveEditorEntryTo(entries, index, target) {
+  if (!Number.isInteger(index) || !Number.isInteger(target) || index < 0 || index >= entries.length
+    || target < 0 || target >= entries.length || index === target) return entries;
+  const moved = entries.slice();
+  moved.splice(target, 0, moved.splice(index, 1)[0]);
+  return moved;
+}

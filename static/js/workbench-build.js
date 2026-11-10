@@ -5,7 +5,7 @@ import {
   statusBadge, toast,
 } from "./common.js";
 import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
-import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary } from "./build-editing.js";
+import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo } from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
@@ -17,6 +17,7 @@ let buildRunSequence = 0;
 let buildRunning = false;
 let buildRawText = null;
 let buildDraftBusy = false;
+const buildQuestionView = { query: "", type: "all" };
 
 // ---------- data helpers ----------
 const parseMaybeJson = (s) => {
@@ -70,6 +71,7 @@ function markBuildEdited() {
   if (save) save.disabled = !W.result || buildResultStale();
   const summary = $("#build-request-summary");
   if (summary) summary.textContent = buildRequestSummary(W.stateText, W.questions, W.images.length);
+  if ($(".qlist")) refreshQuestionVisibility();
 }
 
 function validBuildQuestions() {
@@ -258,6 +260,73 @@ function formatBuildStateText() {
   } catch (e) { toast(`Could not format JSON: ${e.message}`, "error"); }
 }
 
+function compactBuildStateText() {
+  try {
+    const state = parseState(W.stateText);
+    if (!state || typeof state !== "object") return toast("Compact JSON needs an object or array; plain text stays unchanged.");
+    // Validate above, then remove only whitespace outside strings. Re-serializing would
+    // round large numeric literals or turn overflowing numbers into null.
+    let compact = "", quoted = false, escaped = false;
+    for (const char of W.stateText) {
+      if (quoted) {
+        compact += char;
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') { quoted = true; compact += char; }
+      else if (!/[ \t\r\n]/.test(char)) compact += char;
+    }
+    W.stateText = compact;
+    markBuildEdited();
+    render();
+  } catch (e) { toast(`Could not compact JSON: ${e.message}`, "error"); }
+}
+
+function visibleBuildQuestions() {
+  // Keep an edited card visible until focus leaves it, so filtering never interrupts typing.
+  const focusedIndex = Number($(".build-question-card:focus-within")?.dataset.questionIndex ?? -1);
+  return W.questions.filter((row, index) => index === focusedIndex || matchesEditorQuestion(row, buildQuestionView));
+}
+
+function refreshQuestionVisibility() {
+  const shown = new Set(visibleBuildQuestions());
+  $(".qlist")?.querySelectorAll(".build-question-card").forEach((card) => {
+    card.hidden = !shown.has(W.questions[Number(card.dataset.questionIndex)]);
+  });
+  const count = $("#build-question-count");
+  if (count) count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.`;
+  const empty = $("#build-question-no-match");
+  if (empty) empty.hidden = shown.size > 0;
+}
+
+function questionFocusOut(event) {
+  if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return;
+  // Focus events can run before the next element becomes :focus-within.
+  setTimeout(refreshQuestionVisibility, 0);
+}
+
+function renderQuestionTools() {
+  const shown = visibleBuildQuestions().length;
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("input", { class: "input", type: "search", "aria-label": "Search Build questions", value: buildQuestionView.query,
+      placeholder: "Search ids, instructions or criteria", oninput: (event) => {
+        buildQuestionView.query = event.target.value; refreshQuestionVisibility();
+      } }),
+    h("div", { class: "chips" },
+      h("select", { class: "input sm", "aria-label": "Filter Build question type", onchange: (event) => {
+        buildQuestionView.type = event.target.value; refreshQuestionVisibility();
+      } }, ["all", ...TYPES].map((type) => h("option", { value: type, selected: buildQuestionView.type === type }, type === "all" ? "All question types" : type))),
+      h("button", { class: "btn sm ghost", onclick: () => { buildQuestionView.query = ""; buildQuestionView.type = "all"; render(); } }, "Clear question filters"),
+      [true, false].map((collapse) => h("button", { class: "btn sm ghost", onclick: () => {
+        for (const row of visibleBuildQuestions()) {
+          if (collapse) buildEditState().collapsed.add(row); else buildEditState().collapsed.delete(row);
+        }
+        render();
+      } }, collapse ? "Collapse shown" : "Expand shown"))),
+    h("span", { class: "faint", id: "build-question-count", "aria-live": "polite" }, `${shown} of ${W.questions.length} questions shown. Run and export include every question.`),
+    h("p", { class: "faint", id: "build-question-no-match", hidden: shown > 0 }, "No questions match. Clear filters to show every question."));
+}
+
 function discardBuildRaw() {
   if (buildRawText === null || !window.confirm("Discard the unapplied Raw JSON edits? The question editor will keep its current questions.")) return;
   buildRawText = null;
@@ -296,6 +365,7 @@ export function renderBuild() {
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "State"), h("div", { class: "spacer" }),
         h("button", { class: "btn sm", onclick: formatBuildStateText, title: "Format a JSON object or array without changing plain text" }, "Format JSON"),
+        h("button", { class: "btn sm ghost", onclick: compactBuildStateText, title: "Remove JSON whitespace while preserving every value" }, "Compact JSON"),
         h("span", { class: "faint", style: { fontSize: "12px" } }, W.loadedExample ? `from example: ${W.loadedExample}` : W.editingId ? `editing test: ${W.editingId}`
           : W.handoff ? `from ${W.handoff.source}` : "")),
       h("div", { class: "panel-body state-box" }, stateArea,
@@ -310,7 +380,10 @@ export function renderBuild() {
           h("span", {}, "Raw JSON has unapplied edits. Apply or discard them before using the request."),
           h("button", { class: "btn sm", onclick: () => { W.raw = true; render(); } }, "Review Raw JSON"),
           h("button", { class: "btn sm ghost", onclick: discardBuildRaw }, "Discard Raw edits")) : null,
-        W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) => renderQuestionCard(row, i))),
+        !W.raw ? renderQuestionTools() : null,
+        W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) =>
+          h("div", { class: "build-question-card", "data-question-index": String(i), hidden: !visibleBuildQuestions().includes(row),
+            onfocusout: questionFocusOut }, renderQuestionCard(row, i)))),
         !W.raw ? h("div", { class: "chips" }, TYPES.map((t) =>
           h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); markBuildEdited(); render(); } }, icon("plus"), `Add ${t}`)),
         buildEditState().deleted ? h("button", { class: "btn sm", onclick: undoBuildQuestion }, `Undo remove ${buildEditState().deleted.id || "question"}`) : null) : null)));
@@ -491,8 +564,14 @@ function renderRaw() {
 
 function renderQuestionCard(row, i) {
   const collapsed = buildEditState().collapsed.has(row);
+  const copyButton = h("button", { class: "btn sm ghost", disabled: !String(row.id || "").trim(), "aria-label": `Copy question ${row.id || i + 1} JSON`, onclick: () => {
+    if (!String(row.id || "").trim()) return toast("Give this question an id before copying it.", "error");
+    const error = questionEditorError([row]);
+    if (error) return toast(error, "error");
+    copyText(JSON.stringify(toQuestions([row]), null, 2));
+  } }, "Copy JSON");
   const idInput = h("input", { class: "input mono", value: row.id, placeholder: "question_id", "aria-label": `Question ${i + 1} id` });
-  idInput.addEventListener("input", () => { row.id = idInput.value; markBuildEdited(); });
+  idInput.addEventListener("input", () => { row.id = idInput.value; copyButton.disabled = !String(row.id || "").trim(); markBuildEdited(); });
   const typeSel = h("select", { class: "input", "aria-label": `Question ${i + 1} type` }, TYPES.map((t) => h("option", { value: t, selected: row.type === t }, t)));
   typeSel.addEventListener("change", () => { row.type = typeSel.value; markBuildEdited(); render(); });
   const instr = h("textarea", { class: "input", "aria-label": `Instructions for ${row.id || `question ${i + 1}`}`, placeholder: row.type === "box"
@@ -541,6 +620,11 @@ function renderQuestionCard(row, i) {
       onclick: () => { const state = buildEditState(); if (collapsed) state.collapsed.delete(row); else state.collapsed.add(row); render(); } }, collapsed ? "Expand" : "Collapse")),
     h("div", { class: "chips" },
       editorMoveButtons(W.questions, i, `question ${row.id || i + 1}`, (entries) => { W.questions = entries; }),
+      [[0, "first"], [W.questions.length - 1, "last"]].map(([target, label]) => h("button", {
+        class: "btn sm ghost", disabled: i === target, "aria-label": `Move question ${row.id || i + 1} ${label}`,
+        onclick: () => { W.questions = moveEditorEntryTo(W.questions, i, target); markBuildEdited(); render(); },
+      }, `Move ${label}`)),
+      copyButton,
       h("button", { class: "btn sm ghost", onclick: () => duplicateBuildQuestion(i), "aria-label": `Duplicate question ${row.id || i + 1}` }, "Duplicate"),
       h("button", { class: "btn sm ghost", title: "Remove question", "aria-label": `Remove question ${row.id || i + 1}`, onclick: () => deleteBuildQuestion(i) }, icon("trash"), "Remove")),
     collapsed ? h("p", { class: "faint", style: { margin: 0, overflowWrap: "anywhere" } },

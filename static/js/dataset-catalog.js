@@ -1,7 +1,7 @@
 // Dataset-list metadata only. Filters never load rows, labels or model answers.
 import { matchesDataset } from "./saved-search.js";
 
-export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved" });
+export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "" });
 
 export function matchesCatalog(item, filters = {}) {
   if (!matchesDataset(item, filters)) return false;
@@ -9,12 +9,26 @@ export function matchesCatalog(item, filters = {}) {
     ["guidelines", Number(item.guidelines || 0) > 0]]) {
     if (filters[key] === "with" && !present || filters[key] === "without" && present) return false;
   }
+  const counts = { minRows: [Number(item.rows || 0), false], maxRows: [Number(item.rows || 0), true],
+    minLabeled: [Number(item.labeled || 0), false],
+    minUnlabeled: [Math.max(0, Number(item.rows || 0) - Number(item.labeled || 0)), false],
+    minQuestions: [Number(item.questions || 0), false] };
+  for (const [key, [count, maximum]] of Object.entries(counts)) {
+    if (filters[key] === undefined || String(filters[key]).trim() === "") continue;
+    const limit = Number(filters[key]);
+    if (!Number.isInteger(limit) || limit < 0 || (maximum ? count > limit : count < limit)) return false;
+  }
   return true;
 }
 
 export function sortedCatalog(items, sort = "saved") {
   const copy = [...items];
   if (sort === "name") copy.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+  else if (sort === "name-desc") copy.sort((a, b) => String(b.name || b.id).localeCompare(String(a.name || a.id)));
+  else if (sort === "rows-asc") copy.sort((a, b) => Number(a.rows || 0) - Number(b.rows || 0));
+  else if (sort === "unlabeled") copy.sort((a, b) => Math.max(0, Number(b.rows || 0) - Number(b.labeled || 0)) - Math.max(0, Number(a.rows || 0) - Number(a.labeled || 0)));
+  else if (sort === "questions") copy.sort((a, b) => Number(b.questions || 0) - Number(a.questions || 0));
+  else if (sort === "held-out") copy.sort((a, b) => Number(b.test?.rows || 0) - Number(a.test?.rows || 0));
   else if (sort === "rows" || sort === "labeled") copy.sort((a, b) => Number(b[sort] || 0) - Number(a[sort] || 0));
   return copy;
 }

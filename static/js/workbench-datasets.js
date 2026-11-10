@@ -296,6 +296,10 @@ function datasetSearchControls(filters) {
   const select = (key, label, options) => controls[key] = h("select", { class: "input", "aria-label": label,
     onchange: (event) => { filters[key] = event.target.value; update(); } },
   options.map(([value, text]) => h("option", { value, selected: filters[key] === value }, text)));
+  const countFilter = (key, label) => h("label", { class: "faint" }, label, " ",
+    controls[key] = h("input", { class: "input sm", type: "number", min: 0, step: 1,
+      value: filters[key], "aria-label": label, style: { width: "90px" },
+      oninput: (event) => { filters[key] = event.target.value; update(); } }));
   const clear = () => {
     Object.assign(filters, catalogDefaults());
     search.value = "";
@@ -312,7 +316,14 @@ function datasetSearchControls(filters) {
       select("questions", "Filter datasets by saved questions", [["all", "All question states"], ["with", "With saved questions"], ["without", "Without saved questions"]]),
       select("test", "Filter datasets by held-out split", [["all", "All test splits"], ["with", "With held-out rows"], ["without", "Without held-out rows"]]),
       select("guidelines", "Filter datasets by labeling guidelines", [["all", "All guideline states"], ["with", "With guidelines"], ["without", "Without guidelines"]]),
-      select("sort", "Sort datasets", [["saved", "Saved order"], ["name", "Name A–Z"], ["rows", "Most rows first"], ["labeled", "Most labeled rows first"]])),
+      select("sort", "Sort datasets", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"],
+        ["rows", "Most rows first"], ["rows-asc", "Fewest rows first"], ["labeled", "Most labeled rows first"],
+        ["unlabeled", "Most rows without labels"], ["questions", "Most questions first"], ["held-out", "Most held-out rows first"]])),
+    h("details", {}, h("summary", {}, "Filter by counts"),
+      h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", paddingTop: "8px" } },
+        countFilter("minRows", "Minimum rows"), countFilter("maxRows", "Maximum rows"),
+        countFilter("minLabeled", "Minimum labeled rows"), countFilter("minUnlabeled", "Minimum rows without labels"),
+        countFilter("minQuestions", "Minimum saved questions"))),
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
       h("button", { class: "btn sm ghost", onclick: clear }, "Clear dataset filters"),
       h("button", { class: "btn sm", id: "dataset-catalog-download", disabled: !shown.length,
