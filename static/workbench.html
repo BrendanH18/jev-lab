@@ -36,6 +36,7 @@
     .ex p { font-size: 12.5px; color: var(--muted); }
     .ex .codenote { font-size: 12px; color: var(--faint); border-left: 2px solid var(--line-strong); padding-left: 8px; }
     .tests .item, .datasets .item { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); align-items: center; }
+    .tests .saved-test-item { grid-template-columns: auto minmax(0, 1fr) auto; }
     .datasets .item { grid-template-columns: minmax(0, 1fr); }
     .datasets .item > * { min-width: 0; }
     .check-item { grid-column: 1 / -1; display: grid; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); }
@@ -152,6 +153,10 @@
     .pol-seg.review, .pol-key.review { background: var(--line-strong); }
     .pol-key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
     @media (max-width: 700px) { .cal-gate { grid-template-columns: 1fr; } .pol-gate { grid-template-columns: minmax(0, 1fr) 44px; gap: 4px 12px; } .pol-check { grid-column: 1 / -1; } }
+    @media (max-width: 700px) {
+      .crit .cr:not(.score):not(.noul) { grid-template-columns: minmax(0, 1fr) auto; }
+      .crit .cr:not(.score):not(.noul) > :first-child { grid-column: 1 / -1; }
+    }
     @media (max-width: 1000px) { .wb-grid, .cmp-grid { grid-template-columns: 1fr; } .qcard .row { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>

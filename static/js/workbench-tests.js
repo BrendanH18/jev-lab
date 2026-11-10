@@ -1,53 +1,127 @@
 // Tests tab (saved items, run again live) and the Examples gallery, both of which load a request into Build.
-import { $, api, callStats, h, handleError, icon, inspect, ms, statusBadge, usd } from "./common.js";
+import { $, api, callStats, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
-import { matchesSaved } from "./saved-search.js";
+import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, testRunBody,
+  testRunSnapshot, pruneTestResults, mergeTestResults } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
+// Filters only change presentation. Selections and session answers survive filters and partial runs.
+const testView = { status: "all", type: "all", sort: "saved", selected: [], busy: false };
+
+function reconcileTests() {
+  testView.selected = selectedTestIds(W.items, testView.selected);
+  W.runResults = pruneTestResults(W.runResults, W.items);
+}
+
+function shownTests() {
+  return visibleTests(W.items, W.runResults, { ...testView, query: W.testSearch || "" });
+}
+
+function unsuccessfulTestIds() {
+  return (W.runResults?.runs || []).filter((run) => ["fail", "error"].includes(testResultStatus(run))).map((run) => run.id);
+}
+
+function testCountText() {
+  return `${shownTests().length} of ${W.items.length} tests shown · ${testView.selected.length} selected. Run all runs every saved test.`;
+}
+
+// Typing into search keeps focus and the cursor, and never changes selection.
+function refreshTestVisibility() {
+  const visible = new Set(shownTests().map((item) => item.id));
+  $("#saved-test-results")?.querySelectorAll(".saved-test-item").forEach((row) => {
+    row.style.display = visible.has(row.dataset.testId) ? "" : "none";
+  });
+  const count = $("#saved-test-count");
+  if (count) count.textContent = testCountText();
+  const empty = $("#saved-test-no-match");
+  if (empty) empty.hidden = visible.size > 0;
+  const selectVisible = $("#saved-test-select-visible");
+  if (selectVisible) selectVisible.disabled = testView.busy || !visible.size;
+}
+
 // ---------- Tests ----------
 export function renderTests() {
+  reconcileTests();
   const res = W.runResults;
+  const busy = testView.busy;
   const query = W.testSearch || "";
+  const shown = new Set(shownTests().map((item) => item.id));
+  const selected = new Set(testView.selected);
   const search = h("input", { class: "input", type: "search", value: query, placeholder: "Search tests by name or notes",
     "aria-label": "Search saved tests", oninput: (event) => {
       W.testSearch = event.target.value;
-      const matches = new Set(W.items.filter((item) => matchesSaved(item, W.testSearch)).map((item) => item.id));
-      $("#saved-test-results")?.querySelectorAll(".saved-test-item").forEach((row) => { row.style.display = matches.has(row.dataset.testId) ? "" : "none"; });
-      const count = $("#saved-test-count");
-      if (count) count.textContent = `${matches.size} of ${W.items.length} tests shown. Run all runs every saved test.`;
+      refreshTestVisibility();
     } });
-  const byId = Object.fromEntries((res?.runs || []).map((r) => [r.id, r]));
-  const runAll = h("button", { class: "btn primary", disabled: !W.items.length, onclick: () => runTests() }, icon("play"), `Run all ${W.items.length} tests`);
+  const filter = (label, field, options) => h("label", { class: "faint" }, label, " ",
+    h("select", { class: "input sm", "aria-label": label, onchange: (event) => {
+      testView[field] = event.target.value;
+      render();
+    } }, options.map(([value, text]) => h("option", { value, selected: testView[field] === value }, text))));
+  const byId = new Map((res?.runs || []).map((run) => [run.id, run]));
+  const failed = unsuccessfulTestIds();
+  const ordered = visibleTests(W.items, res, { sort: testView.sort });
   return h("div", { class: "grid", style: { gap: "16px" } },
-    h("div", { class: "panel tests" },
+    h("div", { class: "panel tests", "aria-busy": String(busy) },
       h("div", { class: "panel-head" }, h("h2", {}, "Saved tests · data/workbench/"), h("div", { class: "spacer" }),
         res ? h("div", { class: "stat-row" },
-          h("span", { class: `badge ${res.failed ? "critical" : "good"}` }, icon(res.failed ? "x" : "check"), `${res.passed} passed · ${res.failed} failed`),
-          h("span", { class: "stat" }, "wall", h("b", {}, ms(res.wall_ms))), h("span", { class: "stat" }, "cost", h("b", {}, usd(res.cost_usd)))) : null,
-        estimateLine(h, api, "items", () => (W.items.length ? {} : null)), runAll),
-      h("div", { class: "panel-body" }, search,
-        h("span", { class: "faint", id: "saved-test-count" }, `${W.items.filter((item) => matchesSaved(item, query)).length} of ${W.items.length} tests shown. Run all runs every saved test.`)),
-      W.items.length ? h("div", { id: "saved-test-results" }, W.items.map((it) => {
-        const r = byId[it.id];
-        return h("div", { class: "item saved-test-item", "data-test-id": it.id, style: { display: matchesSaved(it, query) ? "" : "none" } },
-          h("div", { class: "grid", style: { gap: "4px" } },
-            h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
-              r ? statusBadge(r.error ? "fail" : r.ok ? "pass" : "fail") : null, h("b", {}, it.name), h("code", { class: "faint" }, it.id),
-              h("span", { class: "faint", style: { fontSize: "12px" } }, `${Object.keys(it.questions).length} questions · ${Object.keys(it.expect || {}).length} expectations`
-                + (it.images ? ` · ${Object.keys(it.images).length} image${Object.keys(it.images).length > 1 ? "s" : ""}` : ""))),
-            it.notes ? h("div", { class: "muted", style: { fontSize: "12.5px" } }, it.notes) : null,
-            r?.error ? h("div", { class: "checks", style: { color: "var(--critical-text)" } }, r.error) : null,
-            r && !r.error ? h("div", { class: "checks" }, Object.entries(r.results).map(([qid, q]) =>
-              h("span", { style: { marginRight: "12px", color: q.ok === false ? "var(--critical-text)" : q.ok ? "var(--good-text)" : "var(--faint)" } },
-                `${qid}: ${q.checks.join(", ")}`))) : null,
-            r?.meta ? h("div", {}, callStats(r.meta, () => inspect(r.trace, `Test · ${it.name}`))) : null),
-          h("div", { style: { display: "flex", gap: "6px" } },
-            h("button", { class: "btn sm", onclick: () => openItem(it) }, "Open"),
-            h("button", { class: "btn sm ghost", onclick: () => runTests([it.id]) }, icon("play")),
-            h("button", { class: "btn sm ghost danger", onclick: () => deleteTest(it.id) }, icon("trash"))));
-      })) : h("div", { class: "empty" }, "No saved tests yet. Run something in Build, then “Save as test”. Files land in data/workbench/ so they can be committed alongside your code.")),
+          h("span", { class: `badge ${res.failed || res.errors ? "critical" : "good"}` },
+            `${res.passed} passed · ${res.failed} failed · ${res.errors} errors · ${res.unrun} not run`),
+          h("span", { class: "stat" }, "session wall total", h("b", {}, ms(res.wall_ms))),
+          h("span", { class: "stat" }, "session spend", h("b", {}, usd(res.cost_usd)))) : null),
+      h("div", { class: "panel-body grid", style: { gap: "10px" } },
+        h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+          h("button", { class: "btn primary", disabled: busy || !W.items.length, onclick: () => runTests() }, icon("play"), `Run all ${W.items.length} tests`),
+          estimateLine(h, api, "items", () => testRunBody(W.items)),
+          h("button", { class: "btn", disabled: busy || !failed.length, onclick: () => runTests(unsuccessfulTestIds()) }, `Rerun ${failed.length} failed / errors`),
+          h("button", { class: "btn ghost", disabled: busy || !res, onclick: () => { W.runResults = null; render(); } }, "Clear session results")),
+        busy ? h("p", { class: "faint", role: "status" }, "Checking spend or running saved tests…") : null,
+        res ? h("p", { class: "faint", style: { margin: 0, fontSize: "12px" } },
+          `Latest result per test from this page session. ${res.batches} paid batch${res.batches === 1 ? "" : "es"}; last batch: ${res.last_count} tests. Spend and wall time include every completed batch, including reruns.`) : null,
+        search,
+        h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+          filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
+          filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
+          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["questions", "Most questions"]])),
+        h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+          h("button", { class: "btn sm", id: "saved-test-select-visible", disabled: busy || !shown.size,
+            onclick: () => { testView.selected = selectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Select visible"),
+          h("button", { class: "btn sm ghost", disabled: busy || !selected.size,
+            onclick: () => { testView.selected = []; render(); } }, "Clear selection"),
+          h("button", { class: "btn sm primary", disabled: busy || !selected.size,
+            onclick: () => runTests(testView.selected, true) }, `Run selected (${selected.size})`),
+          estimateLine(h, api, "items", () => testRunBody(W.items, testView.selected))),
+        h("span", { class: "faint", id: "saved-test-count", "aria-live": "polite" }, testCountText())),
+      W.items.length ? h("div", { id: "saved-test-results" },
+        h("div", { class: "empty", id: "saved-test-no-match", hidden: shown.size > 0 }, "No saved tests match these filters. Your selection is kept."),
+        ordered.map((it) => {
+          const r = byId.get(it.id);
+          return h("div", { class: "item saved-test-item", "data-test-id": it.id, style: { display: shown.has(it.id) ? "" : "none" } },
+            h("input", { type: "checkbox", checked: selected.has(it.id), disabled: busy, "aria-label": `Select test ${it.name || it.id}`,
+              onchange: (event) => {
+                testView.selected = event.target.checked ? selectedTestIds(W.items, [...testView.selected, it.id]) : testView.selected.filter((id) => id !== it.id);
+                render();
+              } }),
+            h("div", { class: "grid", style: { gap: "4px", flex: "1" } },
+              h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
+                r ? (r.error ? h("span", { class: "badge critical" }, "error") : statusBadge(r.ok ? "pass" : "fail")) : null,
+                h("b", {}, it.name), h("code", { class: "faint" }, it.id),
+                h("span", { class: "faint", style: { fontSize: "12px" } }, `${Object.keys(it.questions).length} questions · ${Object.keys(it.expect || {}).length} expectations`
+                  + (it.images ? ` · ${Object.keys(it.images).length} image${Object.keys(it.images).length > 1 ? "s" : ""}` : ""))),
+              it.notes ? h("div", { class: "muted", style: { fontSize: "12.5px" } }, it.notes) : null,
+              r?.error ? h("div", { class: "checks", style: { color: "var(--critical-text)" } }, r.error) : null,
+              r && !r.error ? h("div", { class: "checks" }, Object.entries(r.results).map(([qid, q]) =>
+                h("span", { style: { marginRight: "12px", color: q.ok === false ? "var(--critical-text)" : q.ok ? "var(--good-text)" : "var(--faint)" } },
+                  `${qid}: ${q.checks.join(", ")}`))) : null,
+              r?.meta ? h("div", {}, callStats(r.meta, () => inspect(r.trace, `Test · ${it.name}`))) : null),
+            h("div", { style: { display: "flex", gap: "6px" } },
+              h("button", { class: "btn sm", onclick: () => openItem(it) }, "Open"),
+              h("button", { class: "btn sm ghost", disabled: busy, "aria-label": `Run test ${it.name || it.id}`,
+                onclick: () => runTests([it.id]) }, icon("play")),
+              h("button", { class: "btn sm ghost danger", disabled: busy, "aria-label": `Delete test ${it.name || it.id}`,
+                onclick: () => deleteTest(it.id) }, icon("trash"))));
+        })) : h("div", { class: "empty" }, "No saved tests yet. Run something in Build, then “Save as test”. Files land in data/workbench/ so they can be committed alongside your code.")),
     h("div", { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "Why tests for a model?")),
       h("div", { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
@@ -63,21 +137,41 @@ async function openItem(it) {
   } catch (e) { handleError(e); }
 }
 
-async function runTests(ids = null) {
-  if (!(await confirmSpend(api, "items", ids ? { ids } : {}))) return;
+async function runTests(ids = null, fromSelection = false) {
+  if (testView.busy) return;
+  reconcileTests();
+  const body = testRunBody(W.items, ids);
+  if (!body) return;
+  const snapshot = testRunSnapshot(W.items, body);
+  const requestedItems = JSON.parse(JSON.stringify(W.items.filter((item) => body.ids.includes(item.id))));
+  testView.busy = true;
+  render();
   try {
-    W.runResults = await api("/api/workbench/items/run", ids ? { ids } : {});
-    render();
+    if (!(await confirmSpend(api, "items", body))) return;
+    const now = testRunBody(W.items, fromSelection ? testView.selected : ids);
+    if (testRunSnapshot(W.items, now) !== snapshot) {
+      toast("The saved tests or selection changed during the spend preview. Run again to preview the current selection.", "error");
+      return;
+    }
+    const batch = await api("/api/workbench/items/run", body);
+    W.runResults = mergeTestResults(W.runResults, batch, W.items, requestedItems);
   } catch (e) { handleError(e); }
+  finally { testView.busy = false; render(); }
 }
 
 async function deleteTest(id) {
-  if (!confirm(`Delete test “${id}”?`)) return;
+  if (testView.busy || !confirm(`Delete test “${id}”?`)) return;
+  testView.busy = true;
+  render();
   try {
     await api("/api/workbench/items/delete", { id });
+    // Clean up immediately even if the subsequent list refresh fails.
+    W.items = W.items.filter((item) => item.id !== id);
+    reconcileTests();
     W.items = (await api("/api/workbench/items")).items;
-    render();
+    reconcileTests();
   } catch (e) { handleError(e); }
+  finally { testView.busy = false; render(); }
 }
 
 // ---------- Examples ----------

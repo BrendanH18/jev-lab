@@ -4,6 +4,7 @@
 // never answers; the list and previews show counts only, never label values. Nothing here calls the model.
 
 import { guidelineChangeText } from "./guidelines.js";
+import { matchesDeletedDataset } from "./dataset-catalog.js";
 
 export const revisionTime = (at) => (typeof at === "string" ? `${at.slice(0, 10)} ${at.slice(11, 19)} UTC` : "unknown time");
 
@@ -42,8 +43,8 @@ export function restoreMessage(report, entry) {
 export function createHistory(deps) {
   const ask = deps.confirm || ((text) => globalThis.confirm(text));
   const runs = {};
-  const gone = { open: false, busy: false, list: null };
-  const run = (id) => runs[id] || (runs[id] = { open: false, busy: false, list: null, preview: null });
+  const gone = { open: false, busy: false, list: null, query: "" };
+  const run = (id) => runs[id] || (runs[id] = { open: false, busy: false, list: null, preview: null, changedOnly: false });
 
   async function refresh(id) {
     const state = run(id);
@@ -117,6 +118,7 @@ export function createHistory(deps) {
     const state = run(id);
     if (!state.open) return null;
     const list = state.list?.id === id ? state.list.revisions : null;
+    const visible = list?.filter((entry) => !state.changedOnly || !entry.current);
     const shown = state.preview;
     return h("div", { class: "check-item", "aria-label": `History of ${id}` },
       h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
@@ -124,10 +126,19 @@ export function createHistory(deps) {
         h("span", { class: "faint", style: { fontSize: "12px" } },
           `The newest ${state.list?.keep || 20} replaced or deleted versions, kept under data/workbench/datasets/.history/${id}/ (not committed). Counts only, no label values.`),
         h("button", { class: "btn sm ghost", disabled: state.busy, onclick: () => refresh(id) }, "Refresh")),
+      list?.length ? h("label", { class: "muted", style: { fontSize: "12px" } },
+        h("input", { type: "checkbox", checked: state.changedOnly, disabled: state.busy,
+          onchange: (event) => {
+            state.changedOnly = event.target.checked;
+            if (state.changedOnly && state.preview?.entry.current) state.preview = null;
+            deps.render();
+          } }), " Hide revisions identical to the current file") : null,
+      list?.length ? h("span", { class: "faint", "aria-live": "polite" }, `${visible.length} of ${list.length} revisions shown`) : null,
+      list?.length && !visible.length ? h("p", { class: "faint" }, "Every kept revision matches the current file. Clear the filter to preview one.") : null,
       state.busy && !list ? h("p", { class: "faint" }, "Reading history…") : null,
       list && !list.length ? h("p", { class: "faint", style: { margin: 0 } }, "No earlier versions yet. Saving over this dataset keeps the file it replaces here.") : null,
-      list?.length ? h("ol", { class: "grid", style: { gap: "4px", paddingLeft: "20px", margin: 0 } },
-        list.map((r) => h("li", { style: { fontSize: "12.5px" } },
+      visible?.length ? h("ol", { class: "grid", style: { gap: "4px", paddingLeft: "20px", margin: 0 } },
+        visible.map((r) => h("li", { style: { fontSize: "12.5px" } },
           h("span", { class: r.error ? "faint" : "muted" }, revisionText(r)),
           r.current ? h("span", { class: "badge" }, "same as current") : null, " ",
           r.error ? null : h("button", { class: "btn sm", disabled: state.busy,
@@ -148,6 +159,16 @@ export function createHistory(deps) {
 
   function deleted() {
     const { h } = deps;
+    const shown = (gone.list || []).filter((entry) => matchesDeletedDataset(entry, gone.query));
+    const search = h("input", { class: "input", type: "search", value: gone.query,
+      "aria-label": "Search deleted datasets", placeholder: "Search deleted datasets by name or id", oninput: (event) => {
+        gone.query = event.target.value;
+        const matches = new Set((gone.list || []).filter((entry) => matchesDeletedDataset(entry, gone.query)).map((entry) => entry.id));
+        const section = event.target.closest("details");
+        section.querySelectorAll("[data-deleted-dataset]").forEach((row) => { row.style.display = matches.has(row.dataset.deletedDataset) ? "" : "none"; });
+        section.querySelector("[data-deleted-count]").textContent = `${matches.size} of ${gone.list?.length || 0} deleted datasets shown`;
+        section.querySelector("[data-deleted-empty]").hidden = !gone.list?.length || !!matches.size;
+      } });
     return h("details", { open: gone.open, ontoggle: (event) => {
       if (event.target.open === gone.open) return;
       gone.open = event.target.open;
@@ -155,9 +176,13 @@ export function createHistory(deps) {
     } },
     h("summary", { class: "faint", style: { fontSize: "12.5px" } }, "Deleted datasets with kept history"),
     h("button", { class: "btn sm ghost", disabled: gone.busy, onclick: refreshDeleted }, "Refresh"),
+    search,
+    h("span", { class: "faint", "data-deleted-count": "", "aria-live": "polite" }, `${shown.length} of ${gone.list?.length || 0} deleted datasets shown`),
+    h("p", { class: "faint", "data-deleted-empty": "", hidden: !gone.list?.length || !!shown.length }, "No deleted datasets match. Clear the search to show all kept histories."),
     gone.busy && !gone.list ? h("p", { class: "faint" }, "Reading history…") : null,
     gone.list && !gone.list.length ? h("p", { class: "faint", style: { fontSize: "12.5px" } }, "None. Deleting a dataset keeps its history here so the delete can be undone.") : null,
-    (gone.list || []).map((x) => h("div", { class: "item" },
+    (gone.list || []).map((x) => h("div", { class: "item", "data-deleted-dataset": x.id,
+      style: { display: matchesDeletedDataset(x, gone.query) ? "" : "none" } },
       h("div", { class: "grid", style: { gap: "2px" } },
         h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
           h("b", {}, x.name || x.id), h("code", { class: "faint" }, x.id), h("span", { class: "badge warning" }, "deleted")),

@@ -51,6 +51,19 @@ with this fictional support ticket and paste the questions into the JSON editor:
 JSON** to see the exact request and response. Adjust the questions or criteria and rerun to
 compare. The built-in examples provide thirteen starting patterns.
 
+Use **Duplicate** on a question to make an independent copy with a unique ID. Copies have no
+expectations yet. The arrow buttons move questions, Choice options, or Score levels; moving a
+Score level changes its numeric meaning. Expectations stay keyed to the question ID. **Undo
+remove** restores the last removed question and its expectations unless that ID has been reused.
+**Collapse** hides a question's controls while keeping its edits; **Expand** brings them back.
+
+**Format JSON** indents object/array state and leaves plain text unchanged. Valid JSON with
+duplicate keys is rejected before running, checking, exporting, or saving, so parsing cannot
+silently throw away inputs. The request summary shows counts by question type, UTF-8 state-text
+bytes, and pictures; these are input counts, not model usage or a token estimate. Unapplied
+Raw JSON edits remain visible as a warning after switching to the editor. Apply them or use
+**Discard Raw edits**, which asks before discarding them.
+
 ## Check your questions
 
 **Check questions**, beside **Export code**, reads the request for common mistakes before you pay for
@@ -162,6 +175,23 @@ the run. Missing answers and expectations for questions no longer in the saved r
 Saving rejects unknown expectation IDs; the editor drops expectations for questions you removed.
 Rerunning saved tests makes new API calls. Pin `TYPESAFE_DEFAULT_MODEL` to a specific
 version when you want to compare wording changes against the same model.
+
+In **Tests**, combine text search with status and question-type filters, then sort by name,
+question count, or saved order. Status reflects the latest result for the unchanged saved test
+in this page session: passed, failed expectations, error, or not run.
+
+Select individual tests or **Select visible** to add the current matches to your selection.
+Hidden selections stay selected, and **Clear selection** empties the selection. **Run selected**
+previews and runs exactly those IDs; an empty selection runs nothing. **Run all** still runs
+every saved test regardless of filters. **Rerun failed / errors** retries the current session's
+unsuccessful tests, including hidden ones. Each run makes fresh paid calls, with duplicate clicks
+blocked while its spend preview or run is pending. A changed selection or saved request during
+the preview requires another deliberate run.
+
+Partial runs retain the other tests' session results. The summary counts the latest result per
+test, while session spend and wall time add every completed batch, including reruns. Deleted
+or changed tests lose their stale results; deleting a test also removes it from the selection.
+**Clear session results** clears these temporary results and totals without deleting tests.
 
 Tests persist in `data/workbench/` as JSON containing state, questions, expectations, and notes.
 Sample drawings are saved by name. Uploaded pictures are saved beside the tests in
@@ -513,6 +543,24 @@ replaces the edited box with the rows that were run.
 choice under **Questions to run on every row** and selects it. Loading does not run anything: a
 dataset holds rows and labels only, never answers, so run it to get answers and scores.
 
+**Load as copy** opens rows, human labels, questions, and rules under an unused name, unlinked
+from the original dataset. It guards unsaved edits, clears stale results, and makes no write or
+model call; use **Save rows and labels** explicitly to create the copy. Saved checks and labeling
+guidelines stay with the original. For datasets with held-out rows or evaluation history, use
+**Download ZIP** and import under a new name instead, so the history travels with the copy.
+
+The catalog combines text search with filters for saved checks, labeling status, saved questions,
+held-out splits, and labeling guidelines. Sort by name, row count, labeled-row count, or saved
+order. The summary totals rows, rows with labels, held-out rows, and checks in the visible list.
+These counts do not establish complete or valid labeling. **Clear dataset filters** restores
+the full list; an empty search offers **Show all datasets**. Filters and sorting preserve open
+queues and their human edits.
+
+**Download shown catalog CSV** exports the visible list in its current order: IDs, names, counts,
+check presence, and saved timestamps. It excludes row inputs, label values, notes, model answers,
+and check configuration. Formula-like text is escaped for spreadsheet use. Downloading does not
+load dataset contents, write dataset files, or call the model.
+
 A dataset holds up to 200 rows, the most one Bulk run takes, and up to 2,000,000 characters as
 JSON. Each row is text, a JSON object, or a JSON array, with labels under `_expect` on an object
 row. The file is ordinary JSON with one row per line, so a changed label is a one-line diff:
@@ -575,6 +623,10 @@ reported). Test-split looks only accumulate: looks recorded after the revision a
 so a restore never hides how often held-out rows were scored. The file a restore replaces becomes a revision
 itself, so a restore can be undone the same way. Deleting a dataset keeps its history: open **Deleted
 datasets with kept history** under the dataset list to restore it, which recreates the file.
+
+**Hide revisions identical to the current file** narrows the history list and shows how many
+revisions remain. Hiding a matching revision also clears its restore preview. Search deleted
+datasets by name or ID to find a kept history; filtering does not discard an open restore preview.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
@@ -1726,7 +1778,8 @@ rows; keep the original filled-in CSV.
 
 Use dataset search by name, ID, or notes and filters for check/label availability. Saved tests
 have the same text search. These controls only hide items; their queues and human edits survive,
-and **Run all** continues to run every saved test.
+and **Run all** continues to run every saved test. **Run selected** uses the explicit selection,
+including selected tests hidden by a filter.
 
 **Compare by slice** groups successful paired tuning answers by a selected input field, retaining
 full normalized value identities even when display text is shortened. It shows accuracy intervals,
