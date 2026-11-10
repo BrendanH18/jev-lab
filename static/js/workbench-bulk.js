@@ -318,7 +318,12 @@ async function retryBulk() {
     const attempt = await api("/api/workbench/bulk", plan.body);
     const now = currentBulkRetryPlan();
     if (b.result !== previous || b.runRequest !== request || JSON.stringify(now.body) !== JSON.stringify(plan.body)) {
-      return toast("Retry finished for an earlier request. The current editor and results were kept; run the current inputs again.", "error");
+      // The calls were paid even when their answers are stale. Charge the original batch only.
+      previous.cost_usd += attempt.cost_usd;
+      previous.input_tokens += attempt.input_tokens;
+      previous.wall_ms += attempt.wall_ms;
+      if (b.result === previous) render();
+      return toast("Retry finished for an earlier request. Its spend was counted for that batch; the current editor and answers were kept. Run the current inputs again.", "error");
     }
     b.result = mergeBulkRetry(previous, attempt, plan.indices, plan.body.model);
     clearBulkRetryReports(b);

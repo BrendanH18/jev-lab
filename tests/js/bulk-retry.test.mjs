@@ -207,3 +207,46 @@ test("Retry completion cannot overwrite a replaced result or changed request whi
     assert.equal(harness.bulk.running, false);
   }
 });
+
+test("stale retry attempts still count spend before another retry after restoring inputs", async () => {
+  for (const field of ["rowsText", "model"]) {
+    const harness = retryHarness();
+    const old = harness.bulk.result;
+    const originalRows = old.results;
+    const pending = harness.run();
+    await new Promise((resolve) => setImmediate(resolve));
+    harness.change({ ...request(), [field]: "edited while waiting" });
+    harness.finish(attempt([answer(1), answer(2)]));
+    await pending;
+    assert.equal(harness.bulk.result, old);
+    assert.equal(old.results, originalRows);
+    assert.equal(old.completed, 1);
+    assert.equal(old.cost_usd, 0.03);
+    assert.equal(old.input_tokens, 30);
+    assert.equal(old.wall_ms, 300);
+    assert.deepEqual(harness.bulk.labels, { 1: { team: "billing" } });
+    harness.change(request());
+    const retry = harness.run();
+    await new Promise((resolve) => setImmediate(resolve));
+    harness.finish(attempt([answer(1), answer(2)]));
+    await retry;
+    assert.equal(harness.bulk.result.completed, 3);
+    assert.equal(harness.bulk.result.cost_usd, 0.05);
+    assert.equal(harness.bulk.result.input_tokens, 50);
+    assert.equal(harness.bulk.result.wall_ms, 500);
+  }
+});
+
+test("a stale retry never charges a replacement batch", async () => {
+  const harness = retryHarness();
+  const old = harness.bulk.result;
+  const pending = harness.run();
+  await new Promise((resolve) => setImmediate(resolve));
+  const replacement = result();
+  harness.bulk.result = replacement;
+  harness.finish(attempt([answer(1), answer(2)]));
+  await pending;
+  assert.equal(harness.bulk.result, replacement);
+  assert.equal(replacement.cost_usd, 0.01);
+  assert.equal(old.cost_usd, 0.03);
+});
