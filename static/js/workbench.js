@@ -14,6 +14,7 @@ import { datasetEditsUnsaved } from "./dataset-edits.js";
 import { agreementSessionsUnsaved } from "./workbench-datasets.js";
 import { preparedLabelsUnsaved } from "./workbench-labeling.js";
 import { reviewQueuesUnsaved, confirmReviewDiscard } from "./workbench-review.js";
+import { driftQueuesUnsaved } from "./workbench-drift.js";
 import { updateCal, syncAttachedSets } from "./workbench-calibrate.js";
 import { updatePolicy } from "./workbench-policy.js";
 import { renderCompare, updateCmpChart, updateCascade } from "./workbench-compare.js";
@@ -34,7 +35,7 @@ async function boot() {
   W.items = items.items;
   W.bulk.rowsText = W.bulk.savedText = rowsText(sample.rows);
   W.bulk.datasets = sets.datasets;
-  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved() || preparedLabelsUnsaved() || reviewQueuesUnsaved() || datasetEditsUnsaved() || buildUnsaved() || agreementSessionsUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if (bulkUnsaved() || preparedLabelsUnsaved() || reviewQueuesUnsaved() || driftQueuesUnsaved() || datasetEditsUnsaved() || buildUnsaved() || agreementSessionsUnsaved()) { e.preventDefault(); e.returnValue = ""; } });
   W.bulk.sampleQuestions = sample.questions;
   W.compare.terse = sample.terse_questions;
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);

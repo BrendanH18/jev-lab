@@ -640,6 +640,49 @@ class HttpTests(unittest.TestCase):
                                            json.dumps({"id": "refunds", "items": [item]}), self.post_headers())
             self.assertEqual(status, 400, body)
 
+    def test_traffic_draft_recovery_over_http_is_protected_and_makes_no_calls_or_writes(self):
+        questions = {"refund": {"type": "noul", "instructions": "Wants money back?"}}
+        fake = FakeClient(lambda state, qs: {"refund": 0.98})
+        with tempfile.TemporaryDirectory() as folder, patch.object(server.workbench, "WORKBENCH_DIR", Path(folder)):
+            server.workbench.save_dataset({"name": "Refunds", "rows": [
+                {"text": "refund me", "_expect": {"refund": True}}], "questions": questions})
+            server.checks.save_check("refunds", {"gates": {"refund": 0.5}, "model": "jev-1.14.0",
+                                                 "min_accuracy": 0.9, "min_coverage": 0.5})
+            with patch.object(server.client, "system_one", side_effect=fake.system_one):
+                status, _, body = self.request("POST", "/api/workbench/checks/drift", json.dumps({
+                    "id": "refunds", "rows": [{"text": "A new refund request", "_image": "torn-bag"}]}),
+                    self.post_headers())
+            self.assertEqual(status, 200, body)
+            queue = json.loads(body)["labeling"]
+            export_path = "/api/workbench/checks/drift/session/export"
+            import_path = "/api/workbench/checks/drift/session/import"
+            payload = {"id": "refunds", "context": queue["session_context"],
+                       "members": [{"line": i["line"], "row": i["row"]} for i in queue["items"]],
+                       "items": [{"line": queue["items"][0]["line"], "labels": {"refund": False}}]}
+            saved = server.workbench.load_dataset("refunds")
+            with patch.object(server.client, "system_one", side_effect=AssertionError("No model call")), \
+                    patch.object(server.workbench, "write_dataset", side_effect=AssertionError("No dataset write")):
+                for path in (export_path, import_path):
+                    status, _, _ = self.request("POST", path, "{}", {"Content-Type": "application/json"})
+                    self.assertEqual(status, 403, path)
+                status, _, body = self.request("POST", export_path, json.dumps(payload), self.post_headers())
+                self.assertEqual(status, 200, body)
+                draft = json.loads(body)
+                self.assertNotIn("answers", draft)
+                self.assertNotIn("check", draft)
+                status, _, body = self.request("POST", import_path,
+                    json.dumps({"id": "refunds", "session": draft}), self.post_headers())
+                self.assertEqual(status, 200, body)
+                restored = json.loads(body)
+                self.assertEqual(restored["labeling"]["items"][0]["labels"], {"refund": False})
+                self.assertEqual(restored["labeling"]["items"][0]["row"]["_image"], "torn-bag")
+                self.assertNotIn("estimate", restored)
+                self.assertEqual(saved, server.workbench.load_dataset("refunds"))
+                draft["items"][0]["labels"]["refund"] = "invalid"
+                status, _, _ = self.request("POST", import_path,
+                    json.dumps({"id": "refunds", "session": draft}), self.post_headers())
+                self.assertEqual(status, 400)
+
     def test_policy_over_http_is_pure_code(self):
         rows = [{"index": 0, "answers": {"u": {"type": "noul", "noul": 0.9}}, "labels": {"u": "yes"}},
                 {"index": 1, "answers": {"u": {"type": "noul", "noul": 0.6}}, "labels": {"u": "no"}}]

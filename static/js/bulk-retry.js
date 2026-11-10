@@ -10,10 +10,24 @@ export function unansweredBulkIndices(result) {
   return (result?.results || []).filter((row) => !row.answers).map((row) => row.index);
 }
 
-export function bulkRetryPlan(result, request, current) {
-  const indices = unansweredBulkIndices(result);
+export function bulkRetryRows(result, filter = "all") {
+  return (result?.results || []).filter((row) => !row.answers
+    && (filter === "all" || (filter === "failed" ? !!row.error : !row.error)));
+}
+
+export function bulkRetryPlan(result, request, current, selection = undefined) {
+  const pending = unansweredBulkIndices(result);
+  if (selection !== undefined && !Array.isArray(selection)) {
+    return { indices: [], reason: "Choose only unanswered rows from this batch.", body: null };
+  }
+  const selected = new Set(selection === undefined ? pending : selection);
+  const indices = pending.filter((index) => selected.has(index));
   const refuse = (reason) => ({ indices, reason, body: null });
-  if (!indices.length) return refuse("");
+  if (selection !== undefined && (selected.size !== selection.length || selected.size !== indices.length)) {
+    return refuse("Choose only unanswered rows from this batch.");
+  }
+  if (!pending.length) return refuse("");
+  if (!indices.length) return refuse("Select at least one unanswered row to retry.");
   if (!request || !request.model) return refuse("Run the full batch again to record its request and model.");
   if (current.error || bulkRetryContext(request) !== bulkRetryContext(current)) {
     return refuse("Rows, questions, or model configuration changed. Restore the original request or run the full batch again.");
@@ -33,7 +47,7 @@ export function bulkRetryPlan(result, request, current) {
 export function mergeBulkRetry(previous, attempt, indices, model) {
   const selected = new Set(indices);
   const pending = new Set(unansweredBulkIndices(previous));
-  if (selected.size !== indices.length || indices.some((index) => !pending.has(index))) {
+  if (!indices.length || selected.size !== indices.length || indices.some((index) => !pending.has(index))) {
     throw new Error("Retry no longer matches the unanswered rows. Run the full batch again.");
   }
   const updates = new Map();

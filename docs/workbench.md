@@ -182,6 +182,10 @@ calls may complete. Per-row errors remain visible in the results.
 ### Retry a partial run
 
 After a run with failed or skipped rows, **Retry unanswered rows** sends only those rows again.
+Expand the row chooser to select specific unanswered rows. Filter it to failed or skipped rows,
+then select or clear the shown rows, or change individual checkboxes. Filters only change what is
+shown: selections in other filters stay selected. Clear every selection to disable the retry;
+an empty selection never starts the whole batch.
 Its spend preview counts just the retry's calls and shows their cost upper bound. Successful answers
 stay in the current page session, along with labels you typed in the results table. Row numbers,
 duplicate copies, pictures, and held-out markers keep their original positions. Completion counts
@@ -1204,6 +1208,16 @@ full input and any referenced picture. Choice, Noul, and Score labels start blan
 prefill model predictions or shortlists. Label every gated question to make a row ready, and optionally
 label the other questions too. Box coordinates remain a Bulk labeling task.
 
+Download unfinished traffic labels to keep the queue inputs and your human edits across reloads.
+Restore the file from **Compare new rows** on the same saved check, review the preview, then accept
+it into the queue. The saved dataset and check must be unchanged. No paid comparison is needed to
+restore, and the file contains no model answers, predictions, shortlists, or measured drift results.
+It names pictures without including their bytes; keep those separately. Restoring changes the queue
+only: **Add labeled rows** remains explicit. Leaving the page or replacing a queue or its saved
+configuration warns when human labels remain unsaved.
+Adding rows changes that saved snapshot. Download before a partial Add if you need to keep a recovery
+copy; the page warns when other edited rows remain, and keeps those labels in the current page.
+
 **Add labeled rows** saves the inputs and your labels, never the model answers. It skips rows already in
 the dataset and repeated inputs, preserves the saved check and held-out test history, and adds only as
 many ready rows as fit under the 200-row dataset limit. Remaining labels stay in the queue. Text rows
@@ -1242,8 +1256,10 @@ for checks.
 | --- | --- | --- |
 | `POST /api/workbench/checks/drift` | `id`, `rows` (text, one row per line, or a list), optional `model` | `status` (`steady`, `shift`, or `error`), `reasons`, `reference` and `new` (rows, routed, automated, share with interval; `reference` also has the accuracy), `automation` (`p`, `p_adjusted`, `shifted`), `questions` (`mix`, `distance`, `mix_p_adjusted`, `mix_shifted`, and `signal` medians and test), `estimate` (`accuracy`, `low`, `high`, and how many rows borrowed at each level), `targets`, `thin` (up to 20 rows worth labeling), `check_status`, `check_reasons`, `notes`, `cost_usd`, `calls`, and `answered_by` |
 | `POST /api/workbench/checks/drift/add` | `id`, `items` (each with `row` and human `labels`), `questions` (the labeling queue's question snapshot) | `dataset` summary, `added`, `already`, `room`; no model calls or audit report |
+| `POST /api/workbench/checks/drift/session/export` | `id`, `context`, `members` (original `line` and `row`), `items` (`line` and human `labels`) | A human-only traffic labeling draft; no model calls or writes |
+| `POST /api/workbench/checks/drift/session/import` | `id`, `session` (the downloaded draft) | Reconstructed `labeling` queue and preview `counts`; no model calls or writes |
 
-The drift response also includes `labeling`: full eligible `items`, labelable `questions`, `gates`, `room`,
+The drift response also includes `labeling`: full eligible `items`, labelable `questions`, `gates`, `room`, `session_context`,
 and `counts` for queued, existing, repeated, and unsupported inputs. This queue is separate from the
 short `thin` preview. The append endpoint validates labels against the saved questions, rejects a stale
 question snapshot or held-out input, and rejects an over-capacity request without partially saving it.

@@ -117,7 +117,8 @@ conditions.
   A row can carry a picture, a sample or one of your own, so photo questions and Box questions run in
   bulk too, and Calibrate scores a Box answer by how much it overlaps its label.
 - **Retry unanswered rows:** after a partial Bulk run, retry only failed or skipped rows with a separate
-  spend preview. Successful answers and human labels stay in the current page session; totals include
+  spend preview. Choose specific unanswered rows, or select failed/skipped rows together; filtering the
+  chooser preserves your selection. The preview counts only selected rows. Successful answers and human labels stay in the current page session; totals include
   every attempt. Changed rows, questions, or model settings require a fresh run. Answers are never saved
   for recovery after a reload.
 - **Spend preview:** next to every paid run button (Bulk, Compare, saved tests, and a check's run, drift
@@ -250,6 +251,9 @@ conditions.
   the share automated, each question's answers and confidence, each with a significance test, and an
   estimated accuracy on the new rows from the labeled rows like them. It lists the new rows worth labeling.
   **Label new traffic** opens those rows with their full inputs and pictures, with blank label controls.
+  Download unfinished traffic labels and restore them after a reload against the unchanged dataset/check,
+  with a preview before accepting. Recovery needs no paid comparison and restores no model statistics;
+  pictures travel separately. Leaving or replacing unsaved traffic labels asks for confirmation.
   Add the human-labeled rows to the dataset, then explicitly rerun its check. These targeted rows help
   fill gaps in the dataset; they are not a random audit of traffic accuracy.
   `scripts/check.py <dataset> --drift new.jsonl` runs the comparison from a terminal.

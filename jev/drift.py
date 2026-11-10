@@ -30,7 +30,7 @@ from itertools import combinations
 from math import comb, erfc, exp, lgamma, pi, sqrt
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import calibrate, checks, decisions, policy, rules as rulebook, workbench
+from . import calibrate, checks, decisions, driftsession, policy, rules as rulebook, workbench
 from .client import JevClient
 from .workbench import WorkbenchError
 
@@ -455,13 +455,13 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
 def _labeling(dataset: dict, thin: List[dict], questions: Dict[str, dict], gates: dict) -> dict:
     """Full weak-support inputs with blank labels, without any model answers or suggested shortlists."""
     questions = {q: spec for q, spec in questions.items() if spec["type"] in decisions.LABEL_TYPES}
-    have = {decisions._key(row) for row in dataset["rows"]}
+    have = {driftsession.input_key(row) for row in dataset["rows"]}
     seen = set()
     items = []
     counts = {"eligible": len(thin), "in_dataset": 0, "repeated": 0, "unsupported": 0}
     for result in thin:
         row = workbench.without_marks(result["row"])
-        key = decisions._key(row)
+        key = driftsession.input_key(row)
         if key in have:
             counts["in_dataset"] += 1
             continue
@@ -479,6 +479,7 @@ def _labeling(dataset: dict, thin: List[dict], questions: Dict[str, dict], gates
                       "labels": {q: None for q in questions}, "open": list(gates)})
     counts["queued"] = len(items)
     return {"questions": questions, "gates": gates, "items": items, "counts": counts,
+            "session_context": driftsession.context(dataset, items),
             "room": max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"]))}
 
 
@@ -500,10 +501,10 @@ def append_labels(dataset_id: str, items: Any, questions: Any) -> dict:
         if missing:
             raise WorkbenchError("Item %d needs a label for every gated question: %s" % (n, ", ".join(missing)))
         checked.append(entry)
-    have = {decisions._key(row) for row in dataset["rows"]}
+    have = {driftsession.input_key(row) for row in dataset["rows"]}
     added, already = [], 0
     for item in checked:
-        key = decisions._key(item["row"])
+        key = driftsession.input_key(item["row"])
         if key in have:
             already += 1
             continue
@@ -584,8 +585,8 @@ def prepare(dataset_id: str, rows: Any, model: Optional[str] = None) -> tuple:
     The run sends the dataset's tuning rows, then these new rows, one call per row each."""
     dataset, check = checks.load(dataset_id)
     fresh = new_rows(rows)
-    held_keys = {decisions._key(row) for row in dataset["rows"] if workbench.row_test(row)}
-    available = [row for row in fresh if not workbench.row_test(row) and decisions._key(row) not in held_keys]
+    held_keys = {driftsession.input_key(row) for row in dataset["rows"] if workbench.row_test(row)}
+    available = [row for row in fresh if not workbench.row_test(row) and driftsession.input_key(row) not in held_keys]
     held_out = len(fresh) - len(available)
     fresh = available  # an unmarked copy of a saved test row must not reveal its answer either
     if not fresh:

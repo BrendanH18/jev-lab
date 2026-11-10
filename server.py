@@ -20,7 +20,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (agreement, agreementsession, answersets, bundles, calibrate, checks, claims, compare, compare_workflows, cost, csvimport, dataset_changes, dataset_edits, decisions, dispatch, drift, envfile, estimate, examples, find, gate, guidelines, health, hello,
+from jev import (agreement, agreementsession, answersets, bundles, calibrate, checks, claims, compare, compare_workflows, cost, csvimport, dataset_changes, dataset_edits, decisions, dispatch, drift, driftsession, envfile, estimate, examples, find, gate, guidelines, health, hello,
                  history, holdout, images, counter, lint, policy, preflight, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, reviewsession, rules, security, shield, slices, testsplit, upgrade, workbench)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
@@ -779,6 +779,15 @@ def api_wb_drift_add(body):
     return drift.append_labels(str(body.get("id", "")), body.get("items"), body.get("questions"))
 
 
+def api_wb_drift_session_export(body):
+    return driftsession.export_session(str(body.get("id", "")), body.get("context"), body.get("members"),
+                                      body.get("items"))
+
+
+def api_wb_drift_session_import(body):
+    return driftsession.import_session(str(body.get("id", "")), body.get("session"))
+
+
 def api_wb_test_lock(body):
     share = body.get("share", testsplit.DEFAULT_SHARE)
     return {"dataset": workbench.dataset_summary(testsplit.lock(str(body.get("id", "")), share))}
@@ -949,6 +958,8 @@ ROUTES = {
     ("POST", "/api/workbench/checks/run"): api_wb_check_run,
     ("POST", "/api/workbench/checks/drift"): api_wb_check_drift,
     ("POST", "/api/workbench/checks/drift/add"): api_wb_drift_add,
+    ("POST", "/api/workbench/checks/drift/session/export"): api_wb_drift_session_export,
+    ("POST", "/api/workbench/checks/drift/session/import"): api_wb_drift_session_import,
     ("POST", "/api/workbench/checks/upgrade"): api_wb_check_upgrade,
     ("POST", "/api/workbench/checks/decisions"): api_wb_decisions,
     ("POST", "/api/workbench/checks/decisions/add"): api_wb_decisions_add,

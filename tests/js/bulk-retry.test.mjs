@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { bulkRetryContext, unansweredBulkIndices, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "../../static/js/bulk-retry.js";
+import { bulkRetryContext, unansweredBulkIndices, bulkRetryRows, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "../../static/js/bulk-retry.js";
 import { W } from "../../static/js/workbench-state.js";
 
 const questions = { team: { type: "choice", instructions: "Which team?", criteria: { billing: "Refunds", shipping: "Parcels" } } };
@@ -24,6 +24,37 @@ test("retry selects only unanswered original positions and pins the successful v
   assert.equal(plan.body.questions, original.questions);
   assert.equal(plan.body.rows[1]._image, "torn-bag");
   assert.equal(plan.body.rows[2]._test, true);
+});
+
+test("retry selection preserves original row order, pictures and held-out markers without merging duplicate inputs", () => {
+  const original = request(), previous = result();
+  assert.deepEqual(bulkRetryRows(previous, "failed").map((row) => row.index), [1]);
+  assert.deepEqual(bulkRetryRows(previous, "skipped").map((row) => row.index), [2]);
+  const plan = bulkRetryPlan(previous, original, original, [2, 1]);
+  assert.deepEqual(plan.indices, [1, 2]);
+  const selected = bulkRetryPlan(previous, original, original, [2]);
+  assert.deepEqual(selected.body.indices, [2]);
+  assert.equal(selected.body.rows[2]._test, true);
+  assert.equal(selected.body.rows[1]._image, "torn-bag");
+  assert.equal(selected.body.model, "jev-1.14.0");
+});
+
+test("empty or invalid selections never become a full paid batch", () => {
+  const original = request(), previous = result();
+  for (const selection of [[], [0], [1, 1], [1, 8], ["1"], [true], null, "1"]) {
+    assert.equal(bulkRetryPlan(previous, original, original, selection).body, null);
+  }
+  assert.throws(() => mergeBulkRetry(previous, attempt([]), [], "jev-1.14.0"), /Retry/);
+});
+
+test("retrying one selected row keeps unselected failures and the successful calls intact", () => {
+  const previous = result();
+  const merged = mergeBulkRetry(previous, attempt([answer(2)]), [2], "jev-1.14.0");
+  assert.equal(merged.results[0], previous.results[0]);
+  assert.equal(merged.results[1], previous.results[1]);
+  assert.equal(merged.results[2].row._test, true);
+  assert.equal(merged.completed, 2);
+  assert.deepEqual(unansweredBulkIndices(merged), [1]);
 });
 
 test("changed rows, ordered Choice options, model, dataset, source and invalid questions block retries", () => {
@@ -125,6 +156,55 @@ const retryBody = source.match(/async function retryBulk\(\) \{[\s\S]*?\n\}/)[0]
 const snapshotBody = source.match(/function bulkRequestSnapshot\(\) \{[\s\S]*?\n\}/)[0];
 const runBody = source.match(/async function runBulk\(\) \{[\s\S]*?\n\}/)[0];
 
+function retryControlsHarness() {
+  const state = { bulk: { result: result(), runRequest: request(), running: false, source: "current" } };
+  const h = (tag, attrs = {}, ...children) => ({ tag, attrs, children: children.flat(Infinity).filter(Boolean) });
+  const selectionBody = source.match(/function bulkRetrySelection\(\) \{[\s\S]*?\n\}/)[0];
+  const planBody = source.match(/function currentBulkRetryPlan\(\) \{[\s\S]*?\n\}/)[0];
+  const controlsBody = source.match(/function bulkRetryControls\(\) \{[\s\S]*?\n\}/)[0];
+  const controls = new Function("W", "bulkRetryRows", "bulkRetryPlan", "bulkRequestSnapshot", "questionEditorError", "h",
+    "estimateLine", "api", "updateBulkRetry", "retryBulk", "isTest", "rowText", `const bulkRetrySelections = new WeakMap();
+      ${selectionBody}; ${planBody}; ${controlsBody}; return bulkRetryControls;`)(
+    state, bulkRetryRows, bulkRetryPlan, () => structuredClone(state.bulk.runRequest), () => null, h,
+    (_h, _api, _kind, getBody) => ({ tag: "estimate", attrs: { getBody }, children: [] }), null, () => {}, () => {},
+    (row) => row.row?._test === true, (row) => JSON.stringify(row));
+  const walk = (nodes) => nodes.flatMap((node) => typeof node === "object" ? [node, ...walk(node.children || [])] : []);
+  const find = (predicate) => walk(controls()).find(predicate);
+  return { state, find,
+    estimate: () => find((node) => node.tag === "estimate").attrs.getBody(),
+    filter: (value) => find((node) => node.attrs["aria-label"] === "Retry row filter").attrs.onchange({ target: { value } }),
+    button: (text) => find((node) => node.tag === "button" && node.children.includes(text)),
+  };
+}
+
+test("retry chooser filters preserve selection and explicit row controls drive estimates", () => {
+  const controls = retryControlsHarness();
+  assert.deepEqual(controls.estimate().indices, [1, 2]);
+  controls.filter("failed");
+  assert.deepEqual(controls.estimate().indices, [1, 2]);
+  controls.button("Clear shown").attrs.onclick();
+  assert.deepEqual(controls.estimate().indices, [2]);
+  controls.filter("skipped");
+  controls.button("Clear shown").attrs.onclick();
+  assert.equal(controls.estimate(), null);
+  assert.equal(controls.find((node) => node.attrs.id === "bulk-retry-run").attrs.disabled, true);
+  controls.filter("all");
+  controls.button("Select shown").attrs.onclick();
+  controls.find((node) => node.attrs["aria-label"] === "Retry row 3").attrs.onchange({ target: { checked: false } });
+  assert.deepEqual(controls.estimate().indices, [1]);
+});
+
+test("retry selection stays with its original run and drops successful positions after a merge", () => {
+  const controls = retryControlsHarness();
+  controls.find((node) => node.attrs["aria-label"] === "Retry row 3").attrs.onchange({ target: { checked: false } });
+  const bulk = controls.state.bulk;
+  bulk.result = mergeBulkRetry(bulk.result, attempt([answer(1)]), [1], "jev-1.14.0");
+  assert.equal(controls.estimate(), null); // the unselected skipped row stays unselected
+  bulk.result = result();
+  bulk.runRequest = request(); // a new complete run starts with all unanswered positions selected
+  assert.deepEqual(controls.estimate().indices, [1, 2]);
+});
+
 test("the actual request snapshot detaches nested rows and ordered questions from editor mutations", () => {
   const original = request();
   const state = { bulk: { rowsText: original.rowsText, source: original.source, dataset: { id: null } } };
@@ -160,9 +240,10 @@ test("an initial Bulk completion cannot replace current results after an editor 
   }
 });
 
-function retryHarness() {
+function retryHarness({ selection, confirm = async () => true } = {}) {
   const bulk = structuredClone(W.bulk);
   bulk.result = result(); bulk.runRequest = request();
+  bulk.running = false;
   bulk.labels = { 1: { team: "billing" } }; bulk.labelsDirty = true;
   bulk.policy.gates = { team: { on: true, t: 0.9 } };
   const state = { bulk }, calls = [], messages = [];
@@ -170,11 +251,48 @@ function retryHarness() {
   const api = (path, body) => { calls.push([path, body]); return new Promise((resolve) => { complete = resolve; }); };
   const run = new Function("W", "currentBulkRetryPlan", "toast", "updateBulkRetry", "$", "confirmSpend", "api", "mergeBulkRetry",
     "clearBulkRetryReports", "chooseCalQuestion", "resetPolicy", "recalibrate", "repolicy", "loadPictureUrls", "render", "handleError", `${retryBody}; return retryBulk;`)(
-    state, () => bulkRetryPlan(bulk.result, bulk.runRequest, current), (message) => messages.push(message), () => {}, () => null,
-    async () => true, api, mergeBulkRetry, clearBulkRetryReports, () => "team", () => assert.fail("existing gates must stay"),
+    state, () => bulkRetryPlan(bulk.result, bulk.runRequest, current, selection), (message) => messages.push(message), () => {}, () => null,
+    confirm, api, mergeBulkRetry, clearBulkRetryReports, () => "team", () => assert.fail("existing gates must stay"),
     async () => {}, async () => {}, async () => {}, () => {}, (e) => { throw e; });
   return { bulk, calls, messages, run, finish: (value) => complete(value), change: (value) => { current = value; } };
 }
+
+test("an empty retry selection makes no spend preview or live call", async () => {
+  const harness = retryHarness({ selection: [], confirm: () => assert.fail("empty selections must not estimate") });
+  await harness.run();
+  assert.deepEqual(harness.calls, []);
+  assert.equal(harness.bulk.result.completed, 1);
+  assert.equal(harness.bulk.running, false);
+});
+
+test("retry spend preview and paid request share the exact selected indices", async () => {
+  let preview;
+  const harness = retryHarness({ selection: [2], confirm: async (_api, kind, body) => {
+    assert.equal(kind, "bulk"); preview = structuredClone(body); return true;
+  } });
+  const pending = harness.run();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(preview.indices, [2]);
+  assert.deepEqual(harness.calls[0][1], preview);
+  harness.finish(attempt([answer(2)]));
+  await pending;
+  assert.equal(harness.bulk.result.results[1].error, "try again");
+  assert.equal(harness.bulk.result.completed, 2);
+});
+
+test("changing the selection while its spend preview is pending makes no paid call", async () => {
+  let approve;
+  const selection = [1, 2];
+  const harness = retryHarness({ selection, confirm: () => new Promise((resolve) => { approve = resolve; }) });
+  const pending = harness.run();
+  selection.splice(0, 1);
+  approve(true);
+  await pending;
+  assert.deepEqual(harness.calls, []);
+  assert.equal(harness.bulk.result.completed, 1);
+  assert.match(harness.messages[0], /batch changed/);
+  assert.equal(harness.bulk.running, false);
+});
 
 test("Retry handler keeps table human edits and existing gates while replacing only sparse outcomes", async () => {
   const harness = retryHarness();

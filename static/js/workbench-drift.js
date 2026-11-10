@@ -37,7 +37,109 @@ export function driftForm(x, run) {
         d.running ? [h("span", { class: "spin" }), " Comparing…"] : [icon("layers"), label]),
       estimateLine(h, api, "drift", () => (lineCount(d.text) ? { id: x.id, rows: rowsPayload(d.text), model: run.model.trim() || undefined } : null)),
       h("button", { class: "btn sm ghost", onclick: fromBox, title: "Copy the Bulk rows box into this box" }, "Use the rows box"),
-      h("span", { class: "faint", style: { fontSize: "12px" } }, "Up to 200 new rows. Comparing saves nothing.")));
+      h("span", { class: "faint", style: { fontSize: "12px" } }, "Up to 200 new rows. Comparing saves nothing.")),
+    driftSessionPanel(x.id, run));
+}
+
+export function driftQueuesUnsaved(id = null) {
+  return Object.entries(W.bulk.checkRuns || {}).some(([key, run]) => (id === null || key === id)
+    && run.drift?.report?.labeling?.items.some((item) => Object.values(item.labels)
+      .some((value) => value !== null && value !== undefined)));
+}
+
+export function confirmDriftDiscard(id) {
+  const d = W.bulk.checkRuns[id]?.drift;
+  if (d?.busy || d?.running) { toast("Wait for the traffic operation to finish before changing this dataset.", "error"); return false; }
+  return !driftQueuesUnsaved(id)
+    || window.confirm("This changes the saved dataset used by unfinished traffic labels. Download the traffic labeling draft first to keep a copy. Continue?");
+}
+
+const driftEditContext = (d) => JSON.stringify(d.report?.labeling || null);
+
+function driftSessionPanel(id, run) {
+  const d = run.drift;
+  const busy = d.busy || d.running || run.running || run.upgrade.running;
+  const file = h("input", { type: "file", accept: ".json,application/json", hidden: true, disabled: busy });
+  file.addEventListener("change", async () => {
+    const chosen = file.files[0];
+    if (!chosen) return;
+    try {
+      if (chosen.size > 2_000_000) throw new Error("Traffic labeling draft must be at most 2 MB.");
+      await previewDriftSession(id, JSON.parse(await chosen.text()));
+    } catch (e) { handleError(e); }
+  });
+  const preview = d.sessionPreview;
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
+      h("button", { class: "btn sm", disabled: busy || !d.report?.labeling?.session_context,
+        onclick: () => downloadDriftSession(id) }, "Download traffic labeling draft"),
+      h("button", { class: "btn sm", disabled: busy, onclick: () => file.click() }, "Restore traffic labeling draft"), file),
+    h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      "Drafts keep queued inputs, the question schema and your human labels. Keep the saved dataset/check unchanged and pictures separately. Restore needs no paid comparison. Add remains explicit."),
+    d.report?.labeling && !d.report.labeling.session_context ? h("p", { class: "faint", style: { fontSize: "12px" } },
+      "Adding rows changed this dataset. Remaining labels stay on this page, but cannot be downloaded. Download before adding rows when you need recovery.") : null,
+    preview ? h("div", { class: "grid", style: { gap: "6px" } },
+      h("b", {}, "Traffic labeling draft preview"),
+      h("p", { class: "faint", style: { margin: 0 } },
+        `${preview.result.counts.rows} queued rows · ${preview.result.counts.edited_rows} edited rows · ${preview.result.counts.labels} human labels. Nothing has been applied or saved.`),
+      h("div", {},
+        h("button", { class: "btn sm primary", disabled: busy, onclick: () => acceptDriftSession(id) }, "Accept restored traffic draft"),
+        h("button", { class: "btn sm ghost", disabled: busy, onclick: () => { d.sessionPreview = null; render(); } }, "Cancel restore"))) : null);
+}
+
+async function downloadDriftSession(id) {
+  const run = W.bulk.checkRuns[id], d = run?.drift, report = d?.report;
+  const rep = report?.labeling;
+  if (!rep?.session_context || d.busy || d.running || run.running || run.upgrade.running) return;
+  d.busy = true;
+  render();
+  try {
+    const session = await api("/api/workbench/checks/drift/session/export", {
+      id, context: rep.session_context, members: rep.items.map(({ line, row }) => ({ line, row })),
+      items: rep.items.map(({ line, labels }) => ({ line,
+        labels: Object.fromEntries(Object.entries(labels).filter(([, value]) => value !== null && value !== undefined)) })),
+    });
+    if (W.bulk.checkRuns[id] !== run || d.report !== report) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(session)], { type: "application/json" }));
+    h("a", { href: url, download: `${id}-traffic-labeling-draft.json` }).click();
+    URL.revokeObjectURL(url);
+    toast("Downloaded traffic labeling draft. Keep the saved dataset/check unchanged to restore it.");
+  } catch (e) { handleError(e); }
+  finally { d.busy = false; render(); }
+}
+
+async function previewDriftSession(id, session) {
+  const run = W.bulk.checkRuns[id], d = run?.drift;
+  if (!d || d.busy || d.running || run.running || run.upgrade.running) return;
+  const context = driftEditContext(d);
+  d.busy = true;
+  d.sessionPreview = null;
+  render();
+  try {
+    const result = await api("/api/workbench/checks/drift/session/import", { id, session });
+    if (W.bulk.checkRuns[id] === run && driftEditContext(d) === context) d.sessionPreview = { session, result, context };
+  } catch (e) { handleError(e); }
+  finally { d.busy = false; render(); }
+}
+
+async function acceptDriftSession(id) {
+  const run = W.bulk.checkRuns[id], d = run?.drift, preview = d?.sessionPreview;
+  if (!preview || d.busy || d.running || run.running || run.upgrade.running || driftEditContext(d) !== preview.context) return;
+  if (driftQueuesUnsaved(id) && !window.confirm("Replace this traffic queue and discard its current human labels? Download the current traffic labeling draft first to keep them.")) return;
+  d.busy = true;
+  render();
+  try {
+    // Revalidate the saved dataset/check at acceptance; preview is not permission to save.
+    const result = await api("/api/workbench/checks/drift/session/import", { id, session: preview.session });
+    if (W.bulk.checkRuns[id] !== run || d.sessionPreview !== preview || driftEditContext(d) !== preview.context) return;
+    d.report = { labeling: result.labeling, recovered: true };
+    d.labelsOpen = true;
+    d.saved = null;
+    d.sessionPreview = null;
+    await loadPictureUrls(result.labeling.items);
+    toast("Restored human traffic labels. Add labeled rows when you are ready to save them.");
+  } catch (e) { handleError(e); }
+  finally { d.busy = false; render(); }
 }
 
 async function runDrift(id) {
@@ -46,15 +148,21 @@ async function runDrift(id) {
   const d = run.drift;
   if (!lineCount(d.text)) return toast("Paste the new rows to compare, one per line", "error");
   if (d.report?.labeling?.items.some((i) => Object.values(i.labels).some((v) => v !== null && v !== undefined))
-      && !confirm("Compare again and discard the unsaved labels in this traffic queue?")) return;
-  if (!(await confirmSpend(api, "drift", { id, rows: rowsPayload(d.text), model: run.model.trim() || undefined }))) return;
+      && !confirm("Compare again and discard the unsaved labels in this traffic queue? Download the traffic labeling draft first to keep them.")) return;
+  const snapshot = JSON.stringify([driftEditContext(d), d.text, run.model]);
+  const body = { id, rows: rowsPayload(d.text), model: run.model.trim() || undefined };
+  if (!(await confirmSpend(api, "drift", body))) return;
+  if (W.bulk.checkRuns[id] !== run || snapshot !== JSON.stringify([driftEditContext(d), d.text, run.model])) {
+    return toast("Traffic inputs or labels changed. Compare again to preview the current request.", "error");
+  }
   d.running = true;
   d.report = null;
   d.labelsOpen = false;
   d.saved = null;
+  d.sessionPreview = null;
   render();
   try {
-    const report = await api("/api/workbench/checks/drift", { id, rows: rowsPayload(d.text), model: run.model.trim() || undefined });
+    const report = await api("/api/workbench/checks/drift", body);
     if (W.bulk.checkRuns[id] !== run) return;
     d.report = report;
     await loadPictureUrls(report.labeling?.items || []);
@@ -70,6 +178,9 @@ const pctOr = (p, digits = 0) => (p === null || p === undefined ? "—" : pct(p,
 export function driftReport(x, run) {
   const d = run.drift;
   const rep = d.report;
+  if (rep.recovered) return h("div", { class: "check-report grid", style: { gap: "8px" } },
+    h("p", { class: "faint" }, "Recovered human labeling queue. Comparison statistics require a new live comparison."),
+    driftLabels(x, run));
   const [tone, ic, label] = DRIFT_BADGE[rep.status];
   const [ctone, , clabel] = CHECK_BADGE[rep.check_status];
   const ref = rep.reference, nu = rep.new, e = rep.estimate, t = rep.targets;
@@ -135,7 +246,7 @@ function driftLabels(x, run) {
     W.bulk.pictures[item.row._image] ? h("div", { style: { maxWidth: "560px" } },
       photoView(W.bulk.pictures[item.row._image], [], { alt: `Picture for new row ${item.line}` })) : null,
     h("div", { class: "queue-labels" }, Object.entries(rep.questions).map(([qid, question]) => {
-      const select = queueSelect(item, qid, question, render);
+      const select = queueSelect(item, qid, question, () => { d.sessionPreview = null; render(); });
       select.disabled = busy;
       return h("label", { class: "queue-label" },
         h("span", { class: "mono" }, qid, qid in rep.gates ? h("span", { class: "faint" }, " · required") : null),
@@ -178,6 +289,9 @@ async function addDriftLabels(id) {
   if (!rep) return;
   const ready = rep.items.filter((i) => queueReady(i, rep.gates)).slice(0, rep.room);
   if (!ready.length) return;
+  const remaining = rep.items.some((item) => !ready.includes(item)
+    && Object.values(item.labels).some((value) => value !== null && value !== undefined));
+  if (rep.session_context && remaining && !window.confirm("Adding rows changes this dataset and prevents downloading the remaining traffic labels. Download the traffic labeling draft first if you need recovery. Add these ready rows anyway?")) return;
   d.busy = true;
   render();
   try {
@@ -186,6 +300,8 @@ async function addDriftLabels(id) {
     const out = await api("/api/workbench/checks/drift/add", { id, items, questions: rep.questions });
     if (b.checkRuns[id] !== run || d.report !== report) return;
     rep.items = rep.items.filter((i) => !ready.includes(i));
+    rep.session_context = null;
+    d.sessionPreview = null;
     rep.room = out.room;
     d.saved = { added: (d.saved?.added || 0) + out.added, already: (d.saved?.already || 0) + out.already };
     b.datasets = b.datasets.map((x) => x.id === id ? out.dataset : x);
