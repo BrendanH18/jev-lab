@@ -9,7 +9,7 @@ requests, apply labels, or save data. You can keep using the tabs and panels ind
 
 The latest editor and catalog controls are listed in three focused guides:
 [Build editing](build-improvements.md), [saved-test diagnostics](test-improvements.md),
-and [dataset browsing](catalog-improvements.md). Each describes ten controls and their
+and [dataset browsing](catalog-improvements.md). Each describes the successive batches of controls and their
 data and spending boundaries.
 
 ## Build a request

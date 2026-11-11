@@ -25,3 +25,25 @@ Validation: Node 22 runs of `test-selection.test.mjs`, `test-tools.test.mjs`, an
 request IDs, changed-preview cancellation, partial result retention, filter
 composition, measured-versus-missing sort order, selected totals, and compact
 result preservation.
+
+## Suite inspection and metadata handoff
+
+Ten more controls help inspect saved requests while keeping paid run scope explicit:
+
+1. **Question ID search** matches question IDs without searching model answers.
+2. **Expectation coverage** filters for full, partial, or absent question coverage. Expectations for removed questions do not count.
+3. **Question type mix** distinguishes mixed-type requests from requests with at most one type.
+4. **Fastest observed call** sorts the current session's latest calls by latency, with missing measurements last.
+5. **Cheapest observed call** sorts current measured spend ascending, including measured zero before missing values.
+6. **Select not run** adds tests without current results while preserving hidden selections.
+7. **Select passed** adds currently passing tests without removing other selections.
+8. **Download visible metadata JSON** exports only IDs, names, request counts, current status and observed latency/spend. It omits inputs, instructions, notes, pictures, expectations, answers, check text and error text.
+9. **Copy visible test IDs** copies the filtered IDs in the displayed order.
+10. **Visible request summary** counts tests, questions, expectations and pictures in the current filtered view. These are input counts, never spend estimates.
+
+New filters reset with Reset test filters. Filters and sorts change presentation;
+selection shortcuts never start calls. JSON downloads and clipboard actions use
+the current view and never save server files. Test results remain in this page's
+session only. Focused Node tests cover filter composition, empty requests,
+measured-versus-missing ordering, metadata exclusions, selection preservation,
+reset and the filtered clipboard/download scope.

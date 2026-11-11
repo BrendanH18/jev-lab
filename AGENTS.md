@@ -380,3 +380,10 @@ only authored instructions or criteria. Saved-test cost/latency sorts use curren
 only, with unknown values last; request-size summaries are counts, never spend estimates. Catalog
 date/label-share filters, workflow presets and pins are presentation-only; pins stay in the page
 session. Catalog JSON uses the same metadata-only boundary as CSV.
+
+Build presence filters preserve the full request; Duplicate shown creates independent questions
+with unique IDs and no copied expectations. Criterion insertion preserves Choice key/description
+pairs and warns that Score ordinals change. Saved-test metadata downloads contain counts, IDs,
+names and current session status/cost/latency only, never inputs, instructions, notes or answers.
+Catalog scoped search, exclusion and count bounds keep queues mounted; row-label progress is
+metadata and does not establish valid labels or evaluation readiness.

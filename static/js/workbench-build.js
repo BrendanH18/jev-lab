@@ -5,7 +5,7 @@ import {
   statusBadge, toast,
 } from "./common.js";
 import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
-import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption } from "./build-editing.js";
+import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption, insertEditorCriterion, duplicateShownQuestions } from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
@@ -256,6 +256,17 @@ function duplicateBuildQuestion(index) {
   render();
 }
 
+function moveBuildQuestionToPosition(index) {
+  const entered = window.prompt(`Move question to position (1–${W.questions.length}):`, String(index + 1));
+  if (entered === null) return;
+  const target = Number(entered) - 1;
+  if (!entered.trim() || !Number.isInteger(target) || target < 0 || target >= W.questions.length) {
+    return toast("Choose a whole-number position within the current question list.", "error");
+  }
+  W.questions = moveEditorEntryTo(W.questions, index, target);
+  markBuildEdited(); render();
+}
+
 function renameBuildQuestion(index) {
   const requested = window.prompt("New question id (human expectations move with it):", W.questions[index].id);
   if (requested === null) return;
@@ -272,6 +283,9 @@ function insertBuildQuestion(index, after) {
   W.questions.splice(index + Number(after), 0, blankRow(W.questions[index].type));
   buildQuestionView.query = "";
   buildQuestionView.type = "all";
+  delete buildQuestionView.instructions;
+  delete buildQuestionView.criteria;
+  delete buildQuestionView.expectations;
   markBuildEdited();
   render();
 }
@@ -311,7 +325,7 @@ function compactBuildStateText() {
 function visibleBuildQuestions() {
   // Keep an edited card visible until focus leaves it, so filtering never interrupts typing.
   const focusedIndex = Number($(".build-question-card:focus-within")?.dataset.questionIndex ?? -1);
-  return W.questions.filter((row, index) => index === focusedIndex || matchesEditorQuestion(row, buildQuestionView));
+  return W.questions.filter((row, index) => index === focusedIndex || matchesEditorQuestion(row, buildQuestionView, W.expect));
 }
 
 function refreshQuestionVisibility() {
@@ -321,6 +335,10 @@ function refreshQuestionVisibility() {
   });
   const count = $("#build-question-count");
   if (count) count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.`;
+  for (const id of ["build-copy-shown", "build-duplicate-shown"]) {
+    const button = $(`#${id}`);
+    if (button) button.disabled = !shown.size;
+  }
   const empty = $("#build-question-no-match");
   if (empty) empty.hidden = shown.size > 0;
 }
@@ -342,7 +360,17 @@ function renderQuestionTools() {
       h("select", { class: "input sm", "aria-label": "Filter Build question type", onchange: (event) => {
         buildQuestionView.type = event.target.value; refreshQuestionVisibility();
       } }, ["all", ...TYPES].map((type) => h("option", { value: type, selected: buildQuestionView.type === type }, type === "all" ? "All question types" : type))),
-      h("button", { class: "btn sm ghost", onclick: () => { buildQuestionView.query = ""; buildQuestionView.type = "all"; render(); } }, "Clear question filters"),
+      [["instructions", "Instructions"], ["criteria", "Defined criteria"], ["expectations", "Human expectations"]].map(([field, label]) =>
+        h("label", { class: "faint" }, label, " ", h("select", { class: "input sm", "aria-label": `Filter Build ${label.toLowerCase()}`,
+          onchange: (event) => { buildQuestionView[field] = event.target.value; refreshQuestionVisibility(); } },
+        [["all", "Any"], ["with", "With"], ["without", "Without"]].map(([value, text]) =>
+          h("option", { value, selected: (buildQuestionView[field] || "all") === value }, text))))),
+      h("button", { class: "btn sm ghost", id: "build-copy-shown", disabled: !shown, onclick: () => copyText(visibleBuildQuestions().map((row) => row.id).join("\n")) }, "Copy shown ids"),
+      h("button", { class: "btn sm ghost", id: "build-duplicate-shown", disabled: !shown, onclick: () => {
+        W.questions = duplicateShownQuestions(W.questions, visibleBuildQuestions());
+        markBuildEdited(); render();
+      } }, "Duplicate shown"),
+      h("button", { class: "btn sm ghost", onclick: () => { buildQuestionView.query = ""; buildQuestionView.type = "all"; delete buildQuestionView.instructions; delete buildQuestionView.criteria; delete buildQuestionView.expectations; render(); } }, "Clear question filters"),
       [true, false].map((collapse) => h("button", { class: "btn sm ghost", onclick: () => {
         for (const row of visibleBuildQuestions()) {
           if (collapse) buildEditState().collapsed.add(row); else buildEditState().collapsed.delete(row);
@@ -623,6 +651,8 @@ function renderQuestionCard(row, i) {
             class: "btn sm ghost", disabled: j === target, "aria-label": `Move option ${pair[0] || j + 1} ${label}`,
             onclick: () => { row.choice = moveEditorEntryTo(row.choice, j, target); markBuildEdited(); render(); },
           }, label)),
+          [false, true].map((after) => h("button", { class: "btn sm ghost", "aria-label": `Insert option ${after ? "after" : "before"} ${pair[0] || j + 1}`,
+            onclick: () => { row.choice = insertEditorCriterion(row.choice, j, after, "choice"); markBuildEdited(); render(); } }, after ? "Insert after" : "Insert before")),
           h("button", { class: "btn sm ghost", "aria-label": `Duplicate option ${pair[0] || j + 1}`,
             onclick: () => { row.choice = duplicateChoiceOption(row.choice, j); markBuildEdited(); render(); } }, "Duplicate"),
           h("button", { class: "btn sm ghost", title: "Remove option", "aria-label": `Remove option ${pair[0] || j + 1}`, onclick: () => { row.choice.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
@@ -641,6 +671,9 @@ function renderQuestionCard(row, i) {
             title: "Moving levels changes their numeric scores",
             onclick: () => { row.score = moveEditorEntryTo(row.score, j, target); markBuildEdited(); render(); },
           }, label)),
+          [false, true].map((after) => h("button", { class: "btn sm ghost", "aria-label": `Insert level ${after ? "after" : "before"} ${j}`,
+            title: "Inserting levels changes later numeric scores",
+            onclick: () => { row.score = insertEditorCriterion(row.score, j, after, "score"); markBuildEdited(); render(); } }, after ? "Insert after" : "Insert before")),
           h("button", { class: "btn sm ghost", "aria-label": `Duplicate level ${j}`, title: "Insert a copy after this level; later numeric scores move up",
             onclick: () => { row.score.splice(j + 1, 0, row.score[j]); markBuildEdited(); render(); } }, "Duplicate"),
           h("button", { class: "btn sm ghost", title: "Remove level", "aria-label": `Remove level ${j}`, onclick: () => { row.score.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
@@ -663,6 +696,7 @@ function renderQuestionCard(row, i) {
         class: "btn sm ghost", disabled: i === target, "aria-label": `Move question ${row.id || i + 1} ${label}`,
         onclick: () => { W.questions = moveEditorEntryTo(W.questions, i, target); markBuildEdited(); render(); },
       }, `Move ${label}`)),
+      h("button", { class: "btn sm ghost", onclick: () => moveBuildQuestionToPosition(i) }, "Move to position"),
       copyButton,
       h("button", { class: "btn sm ghost", onclick: () => renameBuildQuestion(i) }, "Rename safely"),
       [false, true].map((after) => h("button", { class: "btn sm ghost", onclick: () => insertBuildQuestion(i, after) }, after ? "Insert after" : "Insert before")),

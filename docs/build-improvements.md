@@ -16,3 +16,20 @@ These controls edit the current request or copy request content. They do not run
 The card toolbar wraps. Criteria controls occupy a wrapping row beneath their inputs so buttons remain reachable on narrow screens.
 
 Validation: `node --test tests/js/build-editing.test.mjs tests/js/build-controls.test.mjs` passed all 29 tests. The added tests exercise rename conflicts and expectation migration, insertion positions, independent option duplication, the actual Choice/Score endpoint and duplication controls, copy isolation, and summary counts. No built-in scenario or live-model question wording changed.
+
+## More authoring controls
+
+These ten additions operate on the current editor only. Filters preserve every question in Run and export; none of these controls runs the model or saves a file.
+
+1. **Instructions filter** finds questions with or without authored instructions.
+2. **Defined criteria filter** finds questions with or without named Choice options, defined Score levels or Noul outcomes. Box has no criteria.
+3. **Human expectations filter** finds questions with or without a saved human expectation.
+4. **Copy shown ids** copies only the visible authored question identifiers, one per line.
+5. **Duplicate shown** inserts independent copies after visible questions, with collision-free ids and no copied expectations.
+6. **Move to position** moves a question to an explicit one-based position, preserving its identity and expectations.
+7. **Insert Choice option before** adds a fresh blank key and description before the selected option.
+8. **Insert Choice option after** adds a fresh blank option after the selected option.
+9. **Insert Score level before** inserts an empty level before the selected ordinal.
+10. **Insert Score level after** inserts an empty level after the selected ordinal. Both Score controls warn that inserting levels changes later numeric scores.
+
+Edits invalidate prior answers and exports. Choice key/description pairs and Score order remain intact; duplicate questions have independent nested criteria. `tests/js/build-authoring.test.mjs` exercises the filters, actual controls, position validation, copy boundaries and expectation preservation.

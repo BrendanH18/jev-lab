@@ -27,3 +27,24 @@ pass evaluation. Date filters omit datasets without a saved timestamp.
 Validation: `node --test tests/js/dataset-catalog.test.mjs` (20 tests), including
 boundary dates, fractional and empty shares, stable metadata sorting, independent
 presets and pins, export allowlists, and preservation of mounted queue edits.
+
+
+## Additional catalog navigation and progress controls
+
+This batch adds ten metadata-only controls. They do not load a dataset, change an
+open queue, run the model, or save anything.
+
+1. **Search field:** scope the existing search to name, ID, or notes.
+2. **Exclude phrase:** omit matches from the selected search field.
+3. **Notes presence:** find datasets with or without authored notes.
+4. **Maximum saved questions:** narrow to smaller question sets, including zero.
+5. **Maximum rows without labels:** find datasets near the desired labeling count.
+6. **Minimum held-out rows:** find datasets with a sufficiently sized saved split.
+7. **Pinned first:** sort pinned datasets first without hiding the others.
+8. **Highest labeled share first:** find the most row-labeled datasets; empty datasets stay last.
+9. **Card labeling progress:** show rows without any label and the rounded row-label share.
+10. **Copy shown dataset IDs:** copy only IDs, in the current filtered and sorted order.
+
+Row-label progress does not establish label completeness, validity, or evaluation
+accuracy. Search scopes and exclusions do not change notes or exported metadata.
+Clearing filters also clears the new bounds and exclusions while preserving pins.

@@ -1,14 +1,14 @@
 // Tests tab (saved items, run again live) and the Examples gallery, both of which load a request into Build.
-import { $, api, callStats, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
+import { $, api, callStats, copyText, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, deselectVisibleTests, invertVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary } from "./test-selection.js";
+  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
-const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all" });
+const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all" });
 const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true };
 
 function reconcileTests() {
@@ -36,6 +36,13 @@ function refreshTestVisibility() {
   });
   const count = $("#saved-test-count");
   if (count) count.textContent = testCountText();
+  const summary = $("#saved-test-visible-summary");
+  const totals = selectedTestSummary(W.items, shownTests().map((item) => item.id));
+  if (summary) summary.textContent = `Visible requests: ${totals.tests} tests · ${totals.questions} questions · ${totals.expectations} expectations · ${totals.images} pictures. Input counts only.`;
+  for (const id of ["saved-test-copy-ids", "saved-test-export-metadata"]) {
+    const button = $(`#${id}`);
+    if (button) button.disabled = !visible.size;
+  }
   const empty = $("#saved-test-no-match");
   if (empty) empty.hidden = visible.size > 0;
   const selectVisible = $("#saved-test-select-visible");
@@ -68,6 +75,8 @@ export function renderTests() {
   const failed = unsuccessfulTestIds();
   const unrun = W.items.filter((item) => !byId.has(item.id)).map((item) => item.id);
   const summary = selectedTestSummary(W.items, testView.selected);
+  const visibleSummary = selectedTestSummary(W.items, [...shown]);
+  const passed = W.items.filter((item) => testResultStatus(byId.get(item.id)) === "pass").map((item) => item.id);
   const ordered = visibleTests(W.items, res, { sort: testView.sort });
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "panel tests", "aria-busy": String(busy) },
@@ -88,13 +97,19 @@ export function renderTests() {
         res ? h("p", { class: "faint", style: { margin: 0, fontSize: "12px" } },
           `Latest result per test from this page session. ${res.batches} paid batch${res.batches === 1 ? "" : "es"}; last batch: ${res.last_count} tests. Spend and wall time include every completed batch, including reruns.`) : null,
         search,
+        h("input", { class: "input", type: "search", value: testView.questionId,
+          placeholder: "Find a question ID", "aria-label": "Test question ID", oninput: (event) => {
+            testView.questionId = event.target.value; refreshTestVisibility();
+          } }),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
           filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
           filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
-          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"]]),
+          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
           filter("Test expectations", "expectations", [["all", "Any expectations"], ["with", "With expectations"], ["without", "Without expectations"]]),
           filter("Test pictures", "images", [["all", "Any pictures"], ["with", "With pictures"], ["without", "Without pictures"]]),
           filter("Test input shape", "stateType", [["all", "Any input shape"], ["text", "Plain text"], ["object", "JSON object"], ["array", "JSON array"]]),
+          filter("Test expectation coverage", "coverage", [["all", "Any coverage"], ["full", "Every question has expectations"], ["partial", "Some questions have expectations"], ["none", "No questions have expectations"]]),
+          filter("Test type mix", "typeMix", [["all", "Any type mix"], ["mixed", "Mixed question types"], ["single", "At most one question type"]]),
           filter("Test notes", "notes", [["all", "Any notes"], ["with", "With notes"], ["without", "Without notes"]]),
           [ ["Minimum test questions", "minQuestions"], ["Maximum test questions", "maxQuestions"] ].map(([label, field]) =>
             h("label", { class: "faint" }, label, " ", h("input", { class: "input sm", type: "number", min: 0, step: 1,
@@ -114,6 +129,10 @@ export function renderTests() {
             onclick: () => { testView.selected = invertVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Invert visible selection"),
           h("button", { class: "btn sm", disabled: busy || !failed.length,
             onclick: () => { testView.selected = selectedTestIds(W.items, [...testView.selected, ...unsuccessfulTestIds()]); render(); } }, "Select failed / errors"),
+          h("button", { class: "btn sm", disabled: busy || !unrun.length,
+            onclick: () => { testView.selected = selectedTestIds(W.items, [...testView.selected, ...unrun]); render(); } }, "Select not run"),
+          h("button", { class: "btn sm", disabled: busy || !passed.length,
+            onclick: () => { testView.selected = selectedTestIds(W.items, [...testView.selected, ...passed]); render(); } }, "Select passed"),
           h("button", { class: "btn sm ghost", disabled: busy || !selected.size,
             onclick: () => { testView.selected = []; render(); } }, "Clear selection"),
           h("button", { class: "btn sm primary", disabled: busy || !selected.size,
@@ -121,6 +140,17 @@ export function renderTests() {
           estimateLine(h, api, "items", () => testRunBody(W.items, testView.selected))),
         h("p", { class: "faint", style: { margin: 0 } },
           `Selected requests: ${summary.tests} tests · ${summary.questions} questions · ${summary.expectations} expectations · ${summary.images} pictures. Counts describe saved inputs, not spend.`),
+        h("p", { class: "faint", id: "saved-test-visible-summary", style: { margin: 0 } },
+          `Visible requests: ${visibleSummary.tests} tests · ${visibleSummary.questions} questions · ${visibleSummary.expectations} expectations · ${visibleSummary.images} pictures. Input counts only.`),
+        h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+          h("button", { class: "btn sm", id: "saved-test-copy-ids", disabled: !shown.size,
+            onclick: () => copyText(shownTests().map((item) => item.id).join("\n")) }, "Copy visible test IDs"),
+          h("button", { class: "btn sm", id: "saved-test-export-metadata", disabled: !shown.size,
+            onclick: () => {
+              const url = URL.createObjectURL(new Blob([testMetadataJson(shownTests(), W.runResults)], { type: "application/json" }));
+              h("a", { href: url, download: "jev-test-metadata.json" }).click();
+              URL.revokeObjectURL(url);
+            } }, "Download visible metadata JSON")),
         h("label", { class: "faint" }, h("input", { type: "checkbox", checked: testView.details,
           onchange: (event) => { testView.details = event.target.checked; render(); } }), " Show result checks and call details"),
         h("span", { class: "faint", id: "saved-test-count", "aria-live": "polite" }, testCountText())),
