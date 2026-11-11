@@ -399,6 +399,7 @@ function shareShownQuestions(format) {
   let text;
   if (format === "outline") text = editorQuestionOutline(rows);
   else {
+    if (rows.some((row) => !String(row.id || "").trim())) return toast("Give every shown question an id before sharing JSON.", "error");
     const error = questionEditorError(rows);
     if (error) return toast(error, "error");
     text = JSON.stringify(toQuestions(rows), null, 2) + "\n";

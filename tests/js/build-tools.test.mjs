@@ -73,6 +73,12 @@ test("shown JSON copying and downloads contain authored questions only and never
   assert.equal(downloads.length, 2, "empty filtered selection cannot export the complete request");
   shown = [question("same"), question("same")]; share("json");
   assert.equal(downloads.length, 2, "duplicate IDs are rejected before serialization");
+  for (const blank of ["", "   "]) {
+    shown = [question(), question(blank)]; share("json"); share("copy");
+    assert.equal(downloads.length, 2, "blank IDs cannot silently drop shown cards from downloads");
+    assert.equal(copied.length, 1, "blank IDs cannot silently drop shown cards from clipboard JSON");
+    assert.match(messages.at(-1), /id before sharing/);
+  }
   raw = "pending"; share("copy");
   assert.equal(copied.length, 1);
   assert.match(messages.at(-1), /Apply the Raw JSON/);
