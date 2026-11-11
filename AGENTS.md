@@ -387,3 +387,9 @@ pairs and warns that Score ordinals change. Saved-test metadata downloads contai
 names and current session status/cost/latency only, never inputs, instructions, notes or answers.
 Catalog scoped search, exclusion and count bounds keep queues mounted; row-label progress is
 metadata and does not establish valid labels or evaluation readiness.
+
+Build question sharing exports only the explicitly shown authored questions, with no state, pictures,
+expectations or answers; unapplied Raw JSON edits block sharing. Question outlines contain ids, types,
+positions and authored counts only. Choice sorting keeps key/description pairs together; reversing Score
+levels requires confirmation because numeric meanings change. Catalog guideline-count bounds and sorts
+use summary metadata; saved-test count bounds and selected-ID copying preserve hidden selections.

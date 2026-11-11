@@ -196,3 +196,79 @@ test("delete cleans selection and answers even if refreshing the saved list fail
   assert.equal(h.W.runResults.cost_usd, 0.02);
   assert.equal(h.testView.busy, false);
 });
+
+const managed = [
+  { id: "zebra", name: "First", notes: "invoice", state: "private input", questions: { q: { type: "noul" } }, expect: { q: [0, 1] }, images: { photo: "private.png" } },
+  { id: "alpha", name: "Invoice", notes: "sample", questions: { q: { type: "choice" } }, expect: {}, images: {} },
+  { id: "middle", name: "Last", notes: "invoice followup", questions: {}, expect: { q: {}, r: {} }, images: { a: "a.png", b: "b.png" } },
+];
+
+test("scoped test search and exclusion combine without changing selection or inputs", () => {
+  const before = JSON.stringify(managed);
+  assert.deepEqual(ids(visibleTests(managed, null, { query: "invoice", searchField: "name" })), ["alpha"]);
+  assert.deepEqual(ids(visibleTests(managed, null, { query: "invoice", searchField: "notes", exclude: "followup" })), ["zebra"]);
+  assert.deepEqual(ids(visibleTests(managed, null, { query: "ALP", searchField: "id" })), ["alpha"]);
+  assert.deepEqual(ids(visibleTests(managed, null, { exclude: "invoice", selected: ["zebra"], selection: "selected" })), []);
+  assert.deepEqual(selectedTestIds(managed, ["zebra"]), ["zebra"]);
+  assert.equal(JSON.stringify(managed), before);
+});
+
+test("expectation and picture bounds intersect and reject invalid numeric limits", () => {
+  assert.deepEqual(ids(visibleTests(managed, null, { minExpectations: "1", maxExpectations: "1" })), ["zebra"]);
+  assert.deepEqual(ids(visibleTests(managed, null, { minImages: "1", maxImages: "1" })), ["zebra"]);
+  assert.deepEqual(ids(visibleTests(managed, null, { maxExpectations: "0", maxImages: "0" })), ["alpha"]);
+  assert.deepEqual(ids(visibleTests(managed, null, { minExpectations: "2", minImages: "2" })), ["middle"]);
+  for (const field of ["minExpectations", "maxExpectations", "minImages", "maxImages"]) {
+    for (const value of ["-1", "1.5", "NaN"]) assert.deepEqual(visibleTests(managed, null, { [field]: value }), []);
+    assert.equal(visibleTests(managed, null, { [field]: " " }).length, 3);
+  }
+});
+
+test("ID, picture and expectation sorts leave requests and result state unchanged", () => {
+  const before = JSON.stringify(managed);
+  assert.deepEqual(ids(visibleTests(managed, result, { sort: "id" })), ["alpha", "middle", "zebra"]);
+  assert.deepEqual(ids(visibleTests(managed, result, { sort: "images" })), ["middle", "zebra", "alpha"]);
+  assert.deepEqual(ids(visibleTests(managed, result, { sort: "fewest-expectations" })), ["alpha", "zebra", "middle"]);
+  assert.deepEqual(ids(visibleTests([managed[0], { ...managed[0], id: "copy" }], null, { sort: "images" })), ["zebra", "copy"]);
+  assert.equal(JSON.stringify(managed), before);
+});
+
+test("selected ID copying retains hidden selected tests and drops deleted IDs", () => {
+  const selection = ["middle", "zebra", "gone", "zebra"];
+  assert.deepEqual(ids(visibleTests(managed, null, { query: "First" })), ["zebra"]);
+  assert.equal(selectedTestIds(managed, selection).join("\n"), "zebra\nmiddle");
+  assert.match(source, /copyText\(selectedTestIds\(W\.items, testView\.selected\)\.join\("\\n"\)\)/);
+});
+
+test("rendered test controls reset presentation filters and copy hidden selected IDs", async () => {
+  const { selectedTestSummary } = await import("../../static/js/test-selection.js");
+  const defaultsSource = source.match(/const testFilterDefaults = \(\) => \(\{[^]*?\}\);/)[0];
+  const testFilterDefaults = new Function(`${defaultsSource}; return testFilterDefaults;`)();
+  const testView = { ...testFilterDefaults(), selected: ["zebra", "middle"], details: false, busy: false,
+    searchField: "name", exclude: "Last", minImages: "1", minExpectations: "1" };
+  const W = { items: managed, runResults: null, testSearch: "First" };
+  let copied;
+  const h = (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity).filter(Boolean) });
+  const helpers = { W, testView, testFilterDefaults, h, selectedTestSummary, selectedTestIds, visibleTests, testResultStatus,
+    reconcileTests: () => {}, shownTests: () => visibleTests(W.items, null, { ...testView, query: W.testSearch }),
+    unsuccessfulTestIds: () => [], render: () => {}, testCountText: () => "counts",
+    estimateLine: () => null, api: () => {}, icon: () => null, copyText: (value) => { copied = value; } };
+  const renderTests = new Function(...Object.keys(helpers), `${body("renderTests").replace("export ", "")}; return renderTests;`)(...Object.values(helpers));
+  const tree = renderTests();
+  const nodes = [];
+  const walk = (node) => {
+    if (typeof node !== "object" || !node) return;
+    nodes.push(node); node.children?.forEach(walk);
+  };
+  walk(tree);
+  for (const label of ["Search test field", "Exclude saved tests", "Minimum test expectations", "Maximum test expectations", "Minimum test pictures", "Maximum test pictures"]) {
+    assert.ok(nodes.some((node) => node.props?.["aria-label"] === label), label);
+  }
+  const button = (label) => nodes.find((node) => node.tag === "button" && node.children.includes(label));
+  button("Copy selected test IDs").props.onclick();
+  assert.equal(copied, "zebra\nmiddle");
+  button("Reset test filters").props.onclick();
+  assert.equal(W.testSearch, "");
+  for (const [key, value] of Object.entries(testFilterDefaults())) assert.deepEqual(testView[key], value);
+  assert.deepEqual(testView.selected, ["zebra", "middle"]);
+});

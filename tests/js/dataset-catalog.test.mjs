@@ -192,6 +192,20 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   assert.equal(select("Dataset search field").value, "all");
   assert.ok(rows.every((row) => row.style.display === ""));
   assert.deepEqual(rows.map((row) => row.dataset.datasetId), items.map((item) => item.id));
+  const addedBounds = [["Maximum labeled rows", "2", ["orders", "reviews"]],
+    ["Maximum held-out rows", "0", ["orders", "reviews"]],
+    ["Minimum guideline questions", "1", ["tickets"]],
+    ["Maximum guideline questions", "0", ["orders", "reviews"]]];
+  for (const [label, value, expected] of addedBounds) {
+    select(label).attrs.oninput({ target: { value } });
+    assert.deepEqual(rows.filter((row) => row.style.display === "").map((row) => row.dataset.datasetId), expected);
+    nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
+    assert.equal(select(label).value, "");
+  }
+  filters.pinnedIds.push("tickets");
+  select("Filter pinned datasets").attrs.onchange({ target: { value: "without" } });
+  assert.equal(rows.find((row) => row.dataset.datasetId === "tickets").style.display, "none");
+  assert.ok(rows.every((row) => row.draft.label === "human edit"));
 });
 
 test("catalog count bounds combine and treat zero as an explicit bound", () => {
@@ -318,4 +332,45 @@ test("card progress and copy IDs use summary metadata without leaking notes or i
   assert.equal(catalogIds(items), "tickets\norders\nreviews");
   assert.equal(catalogIds([]), "");
   assert.doesNotMatch(catalogIds(items), /Email traffic|private configuration|Harbor support/);
+});
+
+test("unpinned-only view responds to session pin changes without changing items", () => {
+  const before = structuredClone(items);
+  const filters = { pinned: "without", pinnedIds: ["tickets"] };
+  const shown = () => items.filter((x) => matchesCatalog(x, filters)).map((x) => x.id);
+  assert.deepEqual(shown(), ["orders", "reviews"]);
+  filters.pinnedIds.push("orders");
+  assert.deepEqual(shown(), ["reviews"]);
+  assert.equal(matchesCatalog(items[0], { pinned: "without" }), true);
+  assert.deepEqual(items, before);
+});
+
+test("maximum labeled/held-out and guideline bounds combine with inclusive zero counts", () => {
+  const ids = (filters) => items.filter((x) => matchesCatalog(x, filters)).map((x) => x.id);
+  assert.deepEqual(ids({ maxLabeled: 2 }), ["orders", "reviews"]);
+  assert.deepEqual(ids({ maxHeldOut: 0 }), ["orders", "reviews"]);
+  assert.deepEqual(ids({ minGuidelines: 1 }), ["tickets"]);
+  assert.deepEqual(ids({ maxGuidelines: 0 }), ["orders", "reviews"]);
+  assert.deepEqual(ids({ maxLabeled: 3, minLabeled: 3, maxHeldOut: 2, minHeldOut: 2,
+    minGuidelines: 1, maxGuidelines: 1 }), ["tickets"]);
+  assert.deepEqual(ids({ minGuidelines: 2, maxGuidelines: 1 }), []);
+  for (const key of ["maxLabeled", "maxHeldOut", "minGuidelines", "maxGuidelines"]) {
+    for (const value of ["-1", "1.5", "NaN", "Infinity"]) assert.deepEqual(ids({ [key]: value }), []);
+    assert.deepEqual(ids({ [key]: "" }), items.map((x) => x.id));
+  }
+});
+
+test("ascending workload sorts and guideline count sort keep stable ties and source order", () => {
+  const before = structuredClone(items);
+  for (const [sort, ids] of [
+    ["labeled-asc", ["orders", "reviews", "tickets"]],
+    ["unlabeled-asc", ["reviews", "tickets", "orders"]],
+    ["questions-asc", ["orders", "reviews", "tickets"]],
+    ["held-out-asc", ["orders", "reviews", "tickets"]],
+    ["guidelines", ["tickets", "orders", "reviews"]],
+  ]) {
+    assert.deepEqual(sortedCatalog(items, sort).map((x) => x.id), ids);
+    assert.deepEqual(sortedCatalog([{ id: "a" }, { id: "b" }], sort).map((x) => x.id), ["a", "b"]);
+  }
+  assert.deepEqual(items, before);
 });

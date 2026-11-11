@@ -53,7 +53,7 @@ export function buildRequestSummary(stateText, rows, imageCount) {
 }
 
 // Filtering keeps the complete editor request intact, including hidden questions.
-export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all" } = {}, expect = {}) {
+export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all", searchField = "all", exclude = "", minCriteria = "", maxCriteria = "" } = {}, expect = {}) {
   const hasInstructions = !!String(row.instructions || "").trim();
   const hasCriteria = row.type === "choice" ? (row.choice || []).some(([key]) => key.trim())
     : row.type === "score" ? (row.score || []).some((level) => level.trim())
@@ -63,9 +63,20 @@ export function matchesEditorQuestion(row, { query = "", type = "all", instructi
     if ((filter === "with" && !present) || (filter === "without" && present)) return false;
   }
   if (type !== "all" && row.type !== type) return false;
-  const text = [row.id, row.instructions, ...(row.choice || []).flat(), ...(row.score || []), row.noulYes, row.noulNo]
+  const fields = { id: [row.id], instructions: [row.instructions],
+    criteria: row.type === "choice" ? (row.choice || []).flat() : row.type === "score" ? (row.score || [])
+      : row.type === "noul" ? [row.noulYes, row.noulNo] : [] };
+  const text = (fields[searchField] || Object.values(fields).flat())
     .filter((value) => value != null).join("\n").toLocaleLowerCase();
-  return text.includes(String(query).trim().toLocaleLowerCase());
+  if (!text.includes(String(query).trim().toLocaleLowerCase())) return false;
+  if (String(exclude).trim() && text.includes(String(exclude).trim().toLocaleLowerCase())) return false;
+  const count = editorCriterionCount(row);
+  for (const [value, maximum] of [[minCriteria, false], [maxCriteria, true]]) {
+    if (String(value).trim() === "") continue;
+    const limit = Number(value);
+    if (!Number.isInteger(limit) || limit < 0 || (maximum ? count > limit : count < limit)) return false;
+  }
+  return true;
 }
 
 export function moveEditorEntryTo(entries, index, target) {
@@ -128,4 +139,27 @@ export function duplicateShownQuestions(rows, shown) {
     }
   }
   return result;
+}
+
+// Counts describe authored criteria, never model answers or evaluation readiness.
+export function editorCriterionCount(row) {
+  if (row.type === "choice") return (row.choice || []).filter(([key]) => String(key).trim()).length;
+  if (row.type === "score") return (row.score || []).filter((level) => String(level).trim()).length;
+  if (row.type === "noul") return [row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length;
+  return 0;
+}
+
+export function editorQuestionOutline(rows) {
+  // JSON strings keep tabs/newlines in an id from becoming extra outline columns.
+  return ["position\tid\ttype\tcriteria\tinstruction_characters", ...rows.map((row, index) =>
+    [index + 1, JSON.stringify(String(row.id || "")), row.type, editorCriterionCount(row),
+      Array.from(String(row.instructions || "")).length].join("\t"))].join("\n") + "\n";
+}
+
+export function reorderEditorCriteria(row, action) {
+  if (row.type === "choice" && action === "sort") {
+    return { ...row, choice: row.choice.slice().sort((a, b) => a[0].trim().localeCompare(b[0].trim())) };
+  }
+  if (row.type === "score" && action === "reverse") return { ...row, score: row.score.slice().reverse() };
+  return row;
 }

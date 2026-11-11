@@ -1,7 +1,7 @@
 // Dataset-list metadata only. Filters never load rows, labels or model answers.
 import { matchesDataset, matchesSaved } from "./saved-search.js";
 
-export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [], searchField: "all", exclude: "", notes: "all", maxQuestions: "", maxUnlabeled: "", minHeldOut: "" });
+export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [], searchField: "all", exclude: "", notes: "all", maxQuestions: "", maxUnlabeled: "", minHeldOut: "", maxLabeled: "", maxHeldOut: "", minGuidelines: "", maxGuidelines: "" });
 
 export function matchesCatalog(item, filters = {}) {
   const searchField = filters.searchField || "all";
@@ -11,6 +11,7 @@ export function matchesCatalog(item, filters = {}) {
   const hasNotes = !!String(item.notes || "").trim();
   if (filters.notes === "with" && !hasNotes || filters.notes === "without" && hasNotes) return false;
   if (filters.pinned === "with" && !filters.pinnedIds?.includes(item.id)) return false;
+  if (filters.pinned === "without" && filters.pinnedIds?.includes(item.id)) return false;
   const saved = String(item.saved_at || "").slice(0, 10);
   for (const key of ["savedAfter", "savedBefore"]) {
     const value = filters[key];
@@ -33,7 +34,9 @@ export function matchesCatalog(item, filters = {}) {
     minUnlabeled: [Math.max(0, Number(item.rows || 0) - Number(item.labeled || 0)), false],
     minQuestions: [Number(item.questions || 0), false], maxQuestions: [Number(item.questions || 0), true],
     maxUnlabeled: [Math.max(0, Number(item.rows || 0) - Number(item.labeled || 0)), true],
-    minHeldOut: [Number(item.test?.rows || 0), false] };
+    minHeldOut: [Number(item.test?.rows || 0), false], maxHeldOut: [Number(item.test?.rows || 0), true],
+    maxLabeled: [Number(item.labeled || 0), true], minGuidelines: [Number(item.guidelines || 0), false],
+    maxGuidelines: [Number(item.guidelines || 0), true] };
   for (const [key, [count, maximum]] of Object.entries(counts)) {
     if (filters[key] === undefined || String(filters[key]).trim() === "") continue;
     const limit = Number(filters[key]);
@@ -63,6 +66,11 @@ export function sortedCatalog(items, sort = "saved", pinnedIds = []) {
   else if (sort === "name-desc") copy.sort((a, b) => String(b.name || b.id).localeCompare(String(a.name || a.id)));
   else if (sort === "rows-asc") copy.sort((a, b) => Number(a.rows || 0) - Number(b.rows || 0));
   else if (sort === "unlabeled") copy.sort((a, b) => Math.max(0, Number(b.rows || 0) - Number(b.labeled || 0)) - Math.max(0, Number(a.rows || 0) - Number(a.labeled || 0)));
+  else if (sort === "labeled-asc") copy.sort((a, b) => Number(a.labeled || 0) - Number(b.labeled || 0));
+  else if (sort === "unlabeled-asc") copy.sort((a, b) => Math.max(0, Number(a.rows || 0) - Number(a.labeled || 0)) - Math.max(0, Number(b.rows || 0) - Number(b.labeled || 0)));
+  else if (sort === "questions-asc") copy.sort((a, b) => Number(a.questions || 0) - Number(b.questions || 0));
+  else if (sort === "held-out-asc") copy.sort((a, b) => Number(a.test?.rows || 0) - Number(b.test?.rows || 0));
+  else if (sort === "guidelines") copy.sort((a, b) => Number(b.guidelines || 0) - Number(a.guidelines || 0));
   else if (sort === "questions") copy.sort((a, b) => Number(b.questions || 0) - Number(a.questions || 0));
   else if (sort === "held-out") copy.sort((a, b) => Number(b.test?.rows || 0) - Number(a.test?.rows || 0));
   else if (sort === "rows" || sort === "labeled") copy.sort((a, b) => Number(b[sort] || 0) - Number(a[sort] || 0));
