@@ -5,7 +5,7 @@ export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all" } = {}) {
+export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all" } = {}) {
   const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
   const selectedSet = new Set(selected);
   const presenceMatches = (value, mode) => mode === "all" || (mode === "with" ? value : !value);
@@ -20,6 +20,9 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     && presenceMatches(Object.keys(item.expect || {}).length > 0, expectations)
     && presenceMatches(Object.keys(item.images || {}).length > 0, images)
     && presenceMatches(!!String(item.notes || "").trim(), notes)
+    && (!String(questionId).trim() || Object.keys(item.questions || {}).some((id) => id.toLocaleLowerCase().includes(String(questionId).trim().toLocaleLowerCase())))
+    && (coverage === "all" || testExpectationCoverage(item) === coverage)
+    && (typeMix === "all" || (new Set(Object.values(item.questions || {}).map((q) => q.type)).size > 1 ? "mixed" : "single") === typeMix)
     && (stateType === "all" || (typeof item.state === "string" ? "text" : Array.isArray(item.state) ? "array" : "object") === stateType)
     && countMatches(Object.keys(item.questions || {}).length, minQuestions, true)
     && countMatches(Object.keys(item.questions || {}).length, maxQuestions, false)
@@ -30,13 +33,14 @@ export function visibleTests(items, results, { query = "", status = "all", type 
   if (sort === "name-desc") shown.sort((a, b) => (b.name || b.id).localeCompare(a.name || a.id));
   if (sort === "fewest-questions") shown.sort((a, b) => Object.keys(a.questions || {}).length - Object.keys(b.questions || {}).length);
   if (sort === "expectations") shown.sort((a, b) => Object.keys(b.expect || {}).length - Object.keys(a.expect || {}).length);
-  if (sort === "slowest" || sort === "costliest") {
-    const key = sort === "slowest" ? "latency_ms" : "cost_usd";
+  if (["slowest", "costliest", "fastest", "cheapest"].includes(sort)) {
+    const key = ["slowest", "fastest"].includes(sort) ? "latency_ms" : "cost_usd";
+    const ascending = ["fastest", "cheapest"].includes(sort);
     const observed = (item) => {
       const value = byId.get(item.id)?.meta?.[key];
-      return typeof value === "number" && Number.isFinite(value) ? value : -1;
+      return typeof value === "number" && Number.isFinite(value) ? value : (ascending ? Infinity : -Infinity);
     };
-    shown.sort((a, b) => observed(b) - observed(a));
+    shown.sort((a, b) => ascending ? observed(a) - observed(b) : observed(b) - observed(a));
   }
   if (sort === "problems") {
     const priority = { error: 0, fail: 1, "not-run": 2, pass: 3 };
@@ -116,4 +120,26 @@ export function selectedTestSummary(items, selected) {
     expectations: total.expectations + Object.keys(item.expect || {}).length,
     images: total.images + Object.keys(item.images || {}).length,
   }), { tests: 0, questions: 0, expectations: 0, images: 0 });
+}
+
+// Coverage counts only expectations for existing questions; an empty request has no coverage.
+export function testExpectationCoverage(item) {
+  const ids = Object.keys(item.questions || {});
+  const covered = ids.filter((id) => Object.hasOwn(item.expect || {}, id)).length;
+  return !covered ? "none" : covered === ids.length ? "full" : "partial";
+}
+
+// Metadata only: exclude authored instructions, inputs, notes, pictures and all answer/check/error text.
+export function testMetadataJson(items, results) {
+  const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
+  const observed = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+  return JSON.stringify(items.map((item) => {
+    const run = byId.get(item.id);
+    return { id: item.id, name: item.name || item.id,
+      questions: Object.keys(item.questions || {}).length,
+      expectations: Object.keys(item.expect || {}).length,
+      pictures: Object.keys(item.images || {}).length,
+      status: testResultStatus(run),
+      latency_ms: observed(run?.meta?.latency_ms), cost_usd: observed(run?.meta?.cost_usd) };
+  }), null, 2);
 }

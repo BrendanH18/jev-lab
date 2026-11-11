@@ -53,7 +53,15 @@ export function buildRequestSummary(stateText, rows, imageCount) {
 }
 
 // Filtering keeps the complete editor request intact, including hidden questions.
-export function matchesEditorQuestion(row, { query = "", type = "all" } = {}) {
+export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all" } = {}, expect = {}) {
+  const hasInstructions = !!String(row.instructions || "").trim();
+  const hasCriteria = row.type === "choice" ? (row.choice || []).some(([key]) => key.trim())
+    : row.type === "score" ? (row.score || []).some((level) => level.trim())
+    : row.type === "noul" ? [row.noulYes, row.noulNo].some((value) => String(value || "").trim()) : false;
+  const hasExpectation = Object.hasOwn(expect || {}, String(row.id || "").trim());
+  for (const [filter, present] of [[instructions, hasInstructions], [criteria, hasCriteria], [expectations, hasExpectation]]) {
+    if ((filter === "with" && !present) || (filter === "without" && present)) return false;
+  }
   if (type !== "all" && row.type !== type) return false;
   const text = [row.id, row.instructions, ...(row.choice || []).flat(), ...(row.score || []), row.noulYes, row.noulNo]
     .filter((value) => value != null).join("\n").toLocaleLowerCase();
@@ -97,5 +105,27 @@ export function duplicateChoiceOption(options, index) {
   for (let n = 2; used.has(copy); n++) copy = `${base}_${n}`;
   const result = options.slice();
   result.splice(index + 1, 0, [copy, description]);
+  return result;
+}
+
+// Insert fresh criteria rather than copying a neighboring label or changing its key.
+export function insertEditorCriterion(entries, index, after, type) {
+  if (!["choice", "score"].includes(type) || !Number.isInteger(index) || index < 0 || index >= entries.length) return entries;
+  const result = entries.slice();
+  result.splice(index + Number(after), 0, type === "choice" ? ["", ""] : "");
+  return result;
+}
+
+export function duplicateShownQuestions(rows, shown) {
+  const selected = new Set(shown), result = [];
+  const used = rows.slice();
+  for (const row of rows) {
+    result.push(row);
+    if (selected.has(row)) {
+      const copy = duplicateQuestionRow(row, used);
+      used.push(copy);
+      result.push(copy);
+    }
+  }
   return result;
 }

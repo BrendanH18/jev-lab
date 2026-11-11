@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { catalogDefaults, matchesCatalog, sortedCatalog, catalogTotals, catalogSummary, catalogCsv, datasetCopyName,
-  canCopyDataset, matchesDeletedDataset, catalogJson, catalogPreset } from "../../static/js/dataset-catalog.js";
+  canCopyDataset, matchesDeletedDataset, catalogJson, catalogPreset, catalogProgress, catalogIds } from "../../static/js/dataset-catalog.js";
 import { workbenchSource } from "./workbench-source.mjs";
 
 const items = [
@@ -159,8 +159,9 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   const h = (tag, attrs, ...children) => ({ tag, attrs, value: attrs.value, children: children.flat(Infinity).filter(Boolean), focus() { this.focused = true; } });
   const nodes = (node) => typeof node !== "object" ? [] : [node, ...node.children.flatMap(nodes)];
   const filters = catalogDefaults();
+  const copied = [];
   const tree = make("datasetSearchControls", { W, $: (id) => dom[id], h, catalogDefaults, matchesCatalog, sortedCatalog,
-    catalogSummary, catalogCsv, catalogJson, catalogPreset })(filters);
+    catalogSummary, catalogCsv, catalogJson, catalogPreset, catalogProgress, catalogIds, copyText: (text) => copied.push(text) })(filters);
   const select = (label) => nodes(tree).find((node) => node.attrs["aria-label"] === label);
   select("Filter datasets by held-out split").attrs.onchange({ target: { value: "with" } });
   assert.equal(rows[0].style.display, "");
@@ -169,6 +170,8 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   select("Sort datasets").attrs.onchange({ target: { value: "name" } });
   assert.deepEqual(rows.map((row) => row.dataset.datasetId), ["reviews", "tickets", "orders"]);
   assert.ok(rows.every((row) => row.draft.label === "human edit"));
+  nodes(tree).find((node) => node.attrs.id === "dataset-catalog-copy-ids").attrs.onclick();
+  assert.deepEqual(copied, ["tickets"], "copy reflects current filtered order without loading datasets");
   select("Minimum rows without labels").attrs.oninput({ target: { value: "4" } });
   assert.ok(rows.every((row) => row.style.display === "none"), "count bounds combine with the held-out filter");
   select("Filter datasets by held-out split").attrs.onchange({ target: { value: "all" } });
@@ -177,11 +180,16 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   select("Sort datasets").attrs.onchange({ target: { value: "unlabeled" } });
   assert.deepEqual(rows.map((row) => row.dataset.datasetId), ["orders", "tickets", "reviews"]);
   assert.ok(rows.every((row) => row.draft.label === "human edit"));
+  select("Dataset search field").attrs.onchange({ target: { value: "notes" } });
+  select("Exclude dataset phrase").attrs.oninput({ target: { value: "email" } });
+  assert.equal(rows.find((row) => row.dataset.datasetId === "tickets").style.display, "none");
   select("Search datasets").attrs.oninput({ target: { value: "missing" } });
   assert.equal(dom["#dataset-search-empty"].hidden, false);
   nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
   assert.deepEqual(filters, catalogDefaults());
   assert.equal(select("Minimum rows without labels").value, "");
+  assert.equal(select("Exclude dataset phrase").value, "");
+  assert.equal(select("Dataset search field").value, "all");
   assert.ok(rows.every((row) => row.style.display === ""));
   assert.deepEqual(rows.map((row) => row.dataset.datasetId), items.map((item) => item.id));
 });
@@ -267,4 +275,47 @@ test("JSON catalog uses only allowlisted metadata and preserves names verbatim",
   assert.equal(item.labeled_rows, 3);
   assert.doesNotMatch(output, /private configuration|Email traffic|forbidden/);
   assert.deepEqual(Object.keys(item), ["id", "name", "rows", "labeled_rows", "questions", "held_out_rows", "saved_check", "guideline_questions", "saved_at"]);
+});
+
+
+test("scoped catalog search and exclusions use only the selected authored metadata", () => {
+  assert.equal(matchesCatalog(items[0], { query: "support", searchField: "name" }), true);
+  assert.equal(matchesCatalog(items[0], { query: "email", searchField: "name" }), false);
+  assert.equal(matchesCatalog(items[0], { query: "tickets", searchField: "id" }), true);
+  assert.equal(matchesCatalog(items[0], { query: "email", searchField: "notes" }), true);
+  assert.equal(matchesCatalog(items[0], { query: "harbor", exclude: "email" }), false);
+  assert.equal(matchesCatalog(items[0], { searchField: "name", exclude: "email" }), true);
+  assert.equal(matchesCatalog(items[1], { searchField: "notes", query: "traffic" }), false);
+  assert.equal(matchesCatalog(items[0], { exclude: "   " }), true);
+});
+
+test("notes and additional numeric filters combine and retain explicit zero bounds", () => {
+  assert.equal(matchesCatalog(items[0], { notes: "with", maxQuestions: 2, minHeldOut: 2, maxUnlabeled: 2 }), true);
+  assert.equal(matchesCatalog(items[0], { notes: "without" }), false);
+  assert.equal(matchesCatalog({ notes: "  " }, { notes: "without" }), true);
+  assert.equal(matchesCatalog(items[1], { maxQuestions: "0" }), true);
+  assert.equal(matchesCatalog(items[0], { maxQuestions: "1" }), false);
+  assert.equal(matchesCatalog(items[0], { maxUnlabeled: "1" }), false);
+  assert.equal(matchesCatalog(items[1], { minHeldOut: "1" }), false);
+  for (const value of ["-1", "1.5", "NaN", "Infinity"]) {
+    for (const key of ["maxQuestions", "maxUnlabeled", "minHeldOut"]) {
+      assert.equal(matchesCatalog(items[0], { [key]: value }), false);
+    }
+  }
+});
+
+test("pinned and descending label-share sorts preserve source and unknown ordering", () => {
+  assert.deepEqual(sortedCatalog(items, "pinned", ["reviews"]).map((x) => x.id), ["reviews", "tickets", "orders"]);
+  assert.deepEqual(sortedCatalog(items, "pinned").map((x) => x.id), ["tickets", "orders", "reviews"]);
+  assert.deepEqual(sortedCatalog([...items, { id: "empty", rows: 0 }], "label-share-desc").map((x) => x.id),
+    ["reviews", "tickets", "orders", "empty"]);
+  assert.deepEqual(items.map((x) => x.id), ["tickets", "orders", "reviews"]);
+});
+
+test("card progress and copy IDs use summary metadata without leaking notes or inputs", () => {
+  assert.equal(catalogProgress(items[0]), "2 rows without labels · 60% of rows have a label");
+  assert.equal(catalogProgress({ rows: 0 }), "0 rows without labels · label share unavailable");
+  assert.equal(catalogIds(items), "tickets\norders\nreviews");
+  assert.equal(catalogIds([]), "");
+  assert.doesNotMatch(catalogIds(items), /Email traffic|private configuration|Harbor support/);
 });

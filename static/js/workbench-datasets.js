@@ -1,9 +1,9 @@
 // Saved datasets: save, load, delete, revision history and portable bundles, plus label agreement
 // (jev/agreement.py) and held-out test rows (jev/testsplit.py).
-import { $, api, h, handleError, icon, pct, stat, toast } from "./common.js";
+import { $, api, copyText, h, handleError, icon, pct, stat, toast } from "./common.js";
 import { secondItems, settleKey, settledItems, sessionItems, sessionSettlements, changeSecondLabel, agreementEditsUnsaved,
   restoreAgreementEdits, restoredChoices, unshownSettlements } from "./agreement.js";
-import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, catalogJson, catalogPreset, datasetCopyName, canCopyDataset } from "./dataset-catalog.js";
+import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, catalogJson, catalogPreset, datasetCopyName, canCopyDataset, catalogProgress, catalogIds } from "./dataset-catalog.js";
 import { createHistory } from "./history.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
@@ -243,12 +243,13 @@ export function renderDatasets() {
       bundleImportForm(),
       b.datasets.some((x) => x.check) ? h("datalist", { id: "cmp-models" }, (W.compare.models || []).map((n) => h("option", { value: n }))) : null,
       datasetSearchControls(filters),
-      b.datasets.length ? h("div", { id: "dataset-search-results" }, sortedCatalog(b.datasets, filters.sort).map((x) => h("div", { class: "item dataset-search-item", "data-dataset-id": x.id,
+      b.datasets.length ? h("div", { id: "dataset-search-results" }, sortedCatalog(b.datasets, filters.sort, filters.pinnedIds).map((x) => h("div", { class: "item dataset-search-item", "data-dataset-id": x.id,
         style: { display: matchesCatalog(x, filters) ? "" : "none" } },
         h("div", { class: "grid", style: { gap: "2px" } },
           h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
             h("b", {}, x.name || x.id), h("code", { class: "faint" }, x.id), x.id === d.id ? h("span", { class: "badge" }, "loaded") : null),
           h("span", { class: "faint", style: { fontSize: "12px" } }, labeledText(x) + (x.saved_at ? ` · saved ${x.saved_at.slice(0, 10)}` : "")),
+          h("span", { class: "faint", style: { fontSize: "12px" } }, catalogProgress(x)),
           x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
         h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
           h("button", { class: "btn sm", "aria-label": `Pin dataset ${x.id}`, "aria-pressed": String(filters.pinnedIds.includes(x.id)),
@@ -279,13 +280,13 @@ export function renderDatasets() {
 
 // Filtering keeps every queue mounted, so hidden human edits remain intact.
 function datasetSearchControls(filters) {
-  const visible = () => sortedCatalog(W.bulk.datasets, filters.sort).filter((item) => matchesCatalog(item, filters));
+  const visible = () => sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds).filter((item) => matchesCatalog(item, filters));
   const update = () => {
     const shown = visible();
     const matches = new Set(shown.map((item) => item.id));
     const list = $("#dataset-search-results");
     const nodes = new Map([...(list?.querySelectorAll(".dataset-search-item") || [])].map((row) => [row.dataset.datasetId, row]));
-    sortedCatalog(W.bulk.datasets, filters.sort).forEach((item) => {
+    sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds).forEach((item) => {
       const row = nodes.get(item.id);
       if (row) { row.style.display = matches.has(item.id) ? "" : "none"; list.append(row); }
     });
@@ -297,6 +298,8 @@ function datasetSearchControls(filters) {
     if (empty) empty.hidden = !W.bulk.datasets.length || !!shown.length;
     const download = $("#dataset-catalog-download");
     if (download) download.disabled = !shown.length;
+    const idsCopy = $("#dataset-catalog-copy-ids");
+    if (idsCopy) idsCopy.disabled = !shown.length;
     const jsonDownload = $("#dataset-catalog-json");
     if (jsonDownload) jsonDownload.disabled = !shown.length;
   };
@@ -324,6 +327,10 @@ function datasetSearchControls(filters) {
   const shown = visible();
   return h("div", { class: "grid", style: { gap: "6px" } }, search,
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
+      select("searchField", "Dataset search field", [["all", "Name, ID and notes"], ["name", "Name only"], ["id", "ID only"], ["notes", "Notes only"]]),
+      controls.exclude = h("input", { class: "input", type: "search", value: filters.exclude, placeholder: "Exclude matching phrase", "aria-label": "Exclude dataset phrase",
+        oninput: (event) => { filters.exclude = event.target.value; update(); } }),
+      select("notes", "Filter datasets by notes", [["all", "Any notes"], ["with", "With notes"], ["without", "Without notes"]]),
       h("label", { class: "faint" }, "Quick view ", h("select", { class: "input", "aria-label": "Dataset workflow preset",
         onchange: (event) => { applyFilters(catalogPreset(event.target.value)); event.target.value = ""; } },
         h("option", { value: "" }, "Choose a workflow…"), h("option", { value: "label" }, "Continue partial labeling"),
@@ -335,14 +342,15 @@ function datasetSearchControls(filters) {
       select("questions", "Filter datasets by saved questions", [["all", "All question states"], ["with", "With saved questions"], ["without", "Without saved questions"]]),
       select("test", "Filter datasets by held-out split", [["all", "All test splits"], ["with", "With held-out rows"], ["without", "Without held-out rows"]]),
       select("guidelines", "Filter datasets by labeling guidelines", [["all", "All guideline states"], ["with", "With guidelines"], ["without", "Without guidelines"]]),
-      select("sort", "Sort datasets", [["saved", "Saved order"], ["newest", "Newest saved first"], ["oldest", "Oldest saved first"], ["label-share", "Lowest labeled share first"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"],
+      select("sort", "Sort datasets", [["saved", "Saved order"], ["pinned", "Pinned first"], ["label-share-desc", "Highest labeled share first"], ["newest", "Newest saved first"], ["oldest", "Oldest saved first"], ["label-share", "Lowest labeled share first"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"],
         ["rows", "Most rows first"], ["rows-asc", "Fewest rows first"], ["labeled", "Most labeled rows first"],
         ["unlabeled", "Most rows without labels"], ["questions", "Most questions first"], ["held-out", "Most held-out rows first"]])),
     h("details", {}, h("summary", {}, "Filter by counts"),
       h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", paddingTop: "8px" } },
         countFilter("minRows", "Minimum rows"), countFilter("maxRows", "Maximum rows"),
         countFilter("minLabeled", "Minimum labeled rows"), countFilter("minUnlabeled", "Minimum rows without labels"),
-        countFilter("minQuestions", "Minimum saved questions"),
+        countFilter("minQuestions", "Minimum saved questions"), countFilter("maxQuestions", "Maximum saved questions"),
+        countFilter("maxUnlabeled", "Maximum rows without labels"), countFilter("minHeldOut", "Minimum held-out rows"),
         ...[["minLabelShare", "Minimum labeled share (%)"], ["maxLabelShare", "Maximum labeled share (%)"]].map(([key, label]) =>
           h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input sm", type: "number", min: 0, max: 100, step: "any",
             value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => { filters[key] = event.target.value; update(); } }))))),
@@ -352,6 +360,8 @@ function datasetSearchControls(filters) {
           "aria-label": label, oninput: (event) => { filters[key] = event.target.value; update(); } })))),
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
       h("button", { class: "btn sm ghost", onclick: clear }, "Clear dataset filters"),
+      h("button", { class: "btn sm", id: "dataset-catalog-copy-ids", disabled: !shown.length,
+        onclick: () => { const items = visible(); if (items.length) copyText(catalogIds(items)); } }, "Copy shown dataset IDs"),
       h("button", { class: "btn sm", id: "dataset-catalog-download", disabled: !shown.length,
         title: "Names and counts for the shown datasets, without inputs, label values or check configuration", onclick: () => {
           const items = visible();

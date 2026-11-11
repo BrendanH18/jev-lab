@@ -1,10 +1,15 @@
 // Dataset-list metadata only. Filters never load rows, labels or model answers.
-import { matchesDataset } from "./saved-search.js";
+import { matchesDataset, matchesSaved } from "./saved-search.js";
 
-export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [] });
+export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [], searchField: "all", exclude: "", notes: "all", maxQuestions: "", maxUnlabeled: "", minHeldOut: "" });
 
 export function matchesCatalog(item, filters = {}) {
-  if (!matchesDataset(item, filters)) return false;
+  const searchField = filters.searchField || "all";
+  const scoped = searchField === "all" ? item : { [searchField]: item[searchField] };
+  if (!matchesDataset(item, { ...filters, query: "" }) || !matchesSaved(scoped, filters.query)) return false;
+  if (String(filters.exclude || "").trim() && matchesSaved(scoped, filters.exclude)) return false;
+  const hasNotes = !!String(item.notes || "").trim();
+  if (filters.notes === "with" && !hasNotes || filters.notes === "without" && hasNotes) return false;
   if (filters.pinned === "with" && !filters.pinnedIds?.includes(item.id)) return false;
   const saved = String(item.saved_at || "").slice(0, 10);
   for (const key of ["savedAfter", "savedBefore"]) {
@@ -26,7 +31,9 @@ export function matchesCatalog(item, filters = {}) {
   const counts = { minRows: [Number(item.rows || 0), false], maxRows: [Number(item.rows || 0), true],
     minLabeled: [Number(item.labeled || 0), false],
     minUnlabeled: [Math.max(0, Number(item.rows || 0) - Number(item.labeled || 0)), false],
-    minQuestions: [Number(item.questions || 0), false] };
+    minQuestions: [Number(item.questions || 0), false], maxQuestions: [Number(item.questions || 0), true],
+    maxUnlabeled: [Math.max(0, Number(item.rows || 0) - Number(item.labeled || 0)), true],
+    minHeldOut: [Number(item.test?.rows || 0), false] };
   for (const [key, [count, maximum]] of Object.entries(counts)) {
     if (filters[key] === undefined || String(filters[key]).trim() === "") continue;
     const limit = Number(filters[key]);
@@ -35,9 +42,14 @@ export function matchesCatalog(item, filters = {}) {
   return true;
 }
 
-export function sortedCatalog(items, sort = "saved") {
+export function sortedCatalog(items, sort = "saved", pinnedIds = []) {
   const copy = [...items];
-  if (sort === "newest" || sort === "oldest") copy.sort((a, b) => {
+  if (sort === "pinned") copy.sort((a, b) => Number(pinnedIds.includes(b.id)) - Number(pinnedIds.includes(a.id)));
+  else if (sort === "label-share-desc") copy.sort((a, b) => {
+    const share = (item) => Number(item.rows || 0) > 0 ? Number(item.labeled || 0) / Number(item.rows) : -Infinity;
+    return share(b) - share(a);
+  });
+  else if (sort === "newest" || sort === "oldest") copy.sort((a, b) => {
     // Unknown timestamps always follow dated datasets.
     const left = String(a.saved_at || ""), right = String(b.saved_at || "");
     if (!left || !right) return Number(!left) - Number(!right);
@@ -116,4 +128,14 @@ export function catalogPreset(name) {
   if (name === "unlabeled") return { ...defaults, labels: "none", sort: "rows" };
   if (name === "check") return { ...defaults, questions: "with", labels: "every", check: "without" };
   return defaults;
+}
+
+// Counts are metadata only: any saved label counts, regardless of validity or completeness.
+export function catalogProgress(item) {
+  const rows = Number(item.rows || 0), labeled = Number(item.labeled || 0);
+  return `${Math.max(0, rows - labeled)} rows without labels · ${rows ? `${Math.round(100 * labeled / rows)}% of rows have a label` : "label share unavailable"}`;
+}
+
+export function catalogIds(items) {
+  return items.map((item) => String(item.id)).join("\n");
 }
