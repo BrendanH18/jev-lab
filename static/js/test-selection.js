@@ -5,7 +5,7 @@ export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all" } = {}) {
+export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "" } = {}) {
   const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
   const selectedSet = new Set(selected);
   const presenceMatches = (value, mode) => mode === "all" || (mode === "with" ? value : !value);
@@ -14,7 +14,13 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     const bound = Number(value);
     return Number.isInteger(bound) && bound >= 0 && (minimum ? count >= bound : count <= bound);
   };
-  const shown = items.filter((item) => matchesSaved(item, query)
+  const searchItem = (item) => searchField === "all" ? item : { [searchField]: item[searchField] };
+  const shown = items.filter((item) => matchesSaved(searchItem(item), query)
+    && (!String(exclude).trim() || !matchesSaved(searchItem(item), exclude))
+    && countMatches(Object.keys(item.expect || {}).length, minExpectations, true)
+    && countMatches(Object.keys(item.expect || {}).length, maxExpectations, false)
+    && countMatches(Object.keys(item.images || {}).length, minImages, true)
+    && countMatches(Object.keys(item.images || {}).length, maxImages, false)
     && (status === "all" || testResultStatus(byId.get(item.id)) === status)
     && (type === "all" || Object.values(item.questions || {}).some((question) => question.type === type))
     && presenceMatches(Object.keys(item.expect || {}).length > 0, expectations)
@@ -28,6 +34,9 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     && countMatches(Object.keys(item.questions || {}).length, maxQuestions, false)
     && (selection === "all" || selectedSet.has(item.id) === (selection === "selected")));
   // Array#sort is stable; ties retain the saved list's order.
+  if (sort === "id") shown.sort((a, b) => a.id.localeCompare(b.id));
+  if (sort === "images") shown.sort((a, b) => Object.keys(b.images || {}).length - Object.keys(a.images || {}).length);
+  if (sort === "fewest-expectations") shown.sort((a, b) => Object.keys(a.expect || {}).length - Object.keys(b.expect || {}).length);
   if (sort === "name") shown.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
   if (sort === "questions") shown.sort((a, b) => Object.keys(b.questions || {}).length - Object.keys(a.questions || {}).length);
   if (sort === "name-desc") shown.sort((a, b) => (b.name || b.id).localeCompare(a.name || a.id));

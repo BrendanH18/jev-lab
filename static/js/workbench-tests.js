@@ -8,7 +8,7 @@ import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
-const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all" });
+const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "", minExpectations: "", maxExpectations: "", minImages: "", maxImages: "" });
 const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true };
 
 function reconcileTests() {
@@ -61,7 +61,7 @@ export function renderTests() {
   const query = W.testSearch || "";
   const shown = new Set(shownTests().map((item) => item.id));
   const selected = new Set(testView.selected);
-  const search = h("input", { class: "input", type: "search", value: query, placeholder: "Search tests by name or notes",
+  const search = h("input", { class: "input", type: "search", value: query, placeholder: "Search saved tests",
     "aria-label": "Search saved tests", oninput: (event) => {
       W.testSearch = event.target.value;
       refreshTestVisibility();
@@ -97,21 +97,26 @@ export function renderTests() {
         res ? h("p", { class: "faint", style: { margin: 0, fontSize: "12px" } },
           `Latest result per test from this page session. ${res.batches} paid batch${res.batches === 1 ? "" : "es"}; last batch: ${res.last_count} tests. Spend and wall time include every completed batch, including reruns.`) : null,
         search,
+        h("input", { class: "input", type: "search", value: testView.exclude,
+          placeholder: "Exclude matching tests", "aria-label": "Exclude saved tests", oninput: (event) => {
+            testView.exclude = event.target.value; refreshTestVisibility();
+          } }),
         h("input", { class: "input", type: "search", value: testView.questionId,
           placeholder: "Find a question ID", "aria-label": "Test question ID", oninput: (event) => {
             testView.questionId = event.target.value; refreshTestVisibility();
           } }),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+          filter("Search test field", "searchField", [["all", "Name, ID and notes"], ["name", "Name only"], ["id", "ID only"], ["notes", "Notes only"]]),
           filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
           filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
-          filter("Sort tests", "sort", [["saved", "Saved order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
+          filter("Sort tests", "sort", [["saved", "Saved order"], ["id", "ID A–Z"], ["images", "Most pictures"], ["fewest-expectations", "Fewest expectations"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
           filter("Test expectations", "expectations", [["all", "Any expectations"], ["with", "With expectations"], ["without", "Without expectations"]]),
           filter("Test pictures", "images", [["all", "Any pictures"], ["with", "With pictures"], ["without", "Without pictures"]]),
           filter("Test input shape", "stateType", [["all", "Any input shape"], ["text", "Plain text"], ["object", "JSON object"], ["array", "JSON array"]]),
           filter("Test expectation coverage", "coverage", [["all", "Any coverage"], ["full", "Every question has expectations"], ["partial", "Some questions have expectations"], ["none", "No questions have expectations"]]),
           filter("Test type mix", "typeMix", [["all", "Any type mix"], ["mixed", "Mixed question types"], ["single", "At most one question type"]]),
           filter("Test notes", "notes", [["all", "Any notes"], ["with", "With notes"], ["without", "Without notes"]]),
-          [ ["Minimum test questions", "minQuestions"], ["Maximum test questions", "maxQuestions"] ].map(([label, field]) =>
+          [ ["Minimum test questions", "minQuestions"], ["Maximum test questions", "maxQuestions"], ["Minimum test expectations", "minExpectations"], ["Maximum test expectations", "maxExpectations"], ["Minimum test pictures", "minImages"], ["Maximum test pictures", "maxImages"] ].map(([label, field]) =>
             h("label", { class: "faint" }, label, " ", h("input", { class: "input sm", type: "number", min: 0, step: 1,
               value: testView[field], "aria-label": label, style: { width: "90px" }, oninput: (event) => {
                 testView[field] = event.target.value; refreshTestVisibility();
@@ -151,6 +156,8 @@ export function renderTests() {
               h("a", { href: url, download: "jev-test-metadata.json" }).click();
               URL.revokeObjectURL(url);
             } }, "Download visible metadata JSON")),
+        h("button", { class: "btn sm", disabled: !selected.size,
+          onclick: () => copyText(selectedTestIds(W.items, testView.selected).join("\n")) }, "Copy selected test IDs"),
         h("label", { class: "faint" }, h("input", { type: "checkbox", checked: testView.details,
           onchange: (event) => { testView.details = event.target.checked; render(); } }), " Show result checks and call details"),
         h("span", { class: "faint", id: "saved-test-count", "aria-live": "polite" }, testCountText())),

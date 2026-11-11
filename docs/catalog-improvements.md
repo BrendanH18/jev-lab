@@ -48,3 +48,31 @@ open queue, run the model, or save anything.
 Row-label progress does not establish label completeness, validity, or evaluation
 accuracy. Search scopes and exclusions do not change notes or exported metadata.
 Clearing filters also clears the new bounds and exclusions while preserving pins.
+
+
+## Catalog bounds and ordering
+
+These controls use saved summary metadata only. They never load rows, call the
+model, change datasets, or unmount open queues. Label counts describe rows with
+any label, not label completeness or validity. Pins remain session-only.
+
+1. Show only unpinned datasets, making it easier to find datasets still to triage.
+2. Cap labeled-row counts to find smaller labeling jobs.
+3. Cap held-out-row counts, including an explicit zero bound.
+4. Require a minimum number of questions with labeling guidelines.
+5. Cap questions with labeling guidelines to find datasets needing documentation.
+6. Sort by fewest labeled rows.
+7. Sort by fewest rows without labels.
+8. Sort by fewest saved questions.
+9. Sort by fewest held-out rows.
+10. Sort by most questions with labeling guidelines.
+
+Count limits combine inclusively with existing filters; invalid negative,
+fractional or non-finite count limits match nothing. Sorting preserves source
+order and stable ties. Clearing filters resets all new controls while preserving
+pins. Downloads retain their existing metadata-only allowlist.
+
+Validation: `tests/js/dataset-catalog.test.mjs` checks bounds, zero values,
+invalid limits, combined filters, stable sorting, source immutability, and control
+updates that preserve mounted queue drafts. Run with
+`node --test tests/js/dataset-catalog.test.mjs`.

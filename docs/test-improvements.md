@@ -47,3 +47,28 @@ the current view and never save server files. Test results remain in this page's
 session only. Focused Node tests cover filter composition, empty requests,
 measured-versus-missing ordering, metadata exclusions, selection preservation,
 reset and the filtered clipboard/download scope.
+
+## Saved-test management improvements
+
+The Tests tab adds ten controls for finding and organizing saved requests:
+
+1. Scope search to the name, ID, or notes field, or search all three.
+2. Exclude tests matching a second query within the selected search field.
+3. Filter by minimum expectation count.
+4. Filter by maximum expectation count.
+5. Filter by minimum picture count.
+6. Filter by maximum picture count.
+7. Sort by test ID A–Z.
+8. Sort by most pictures.
+9. Sort by fewest expectations.
+10. Copy selected test IDs, including selections hidden by filters.
+
+These are page-session presentation and clipboard controls. Filters never change
+selection, saved requests, paid-run scope, or current answers. Numeric bounds
+accept nonnegative integers; invalid bounds match no tests. Sort ties retain saved
+order. Reset test filters resets the new filters without clearing selections.
+
+Validation: `node --test tests/js/test-selection.test.mjs tests/js/workbench-modules.test.mjs`
+passed all 20 tests. Coverage includes rendered controls and filter reset, selected-ID
+clipboard behavior with hidden selections, combined search/exclusion, invalid bounds,
+stable sorts, hidden selections, run/preview ID consistency, and module loading.

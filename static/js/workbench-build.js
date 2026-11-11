@@ -5,7 +5,7 @@ import {
   statusBadge, toast,
 } from "./common.js";
 import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
-import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption, insertEditorCriterion, duplicateShownQuestions } from "./build-editing.js";
+import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption, insertEditorCriterion, duplicateShownQuestions, editorQuestionOutline, reorderEditorCriteria } from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
@@ -73,6 +73,8 @@ function markBuildEdited() {
   if (summary) summary.textContent = buildRequestSummary(W.stateText, W.questions, W.images.length);
   if ($(".qlist")) refreshQuestionVisibility();
   W.questions.forEach((row, index) => {
+    const characters = $(`#build-instruction-count-${index}`);
+    if (characters) characters.textContent = `${Array.from(String(row.instructions || "")).length} instruction characters`;
     const count = $(`#build-criteria-count-${index}`);
     if (count) count.textContent = row.type === "choice" ? `${row.choice.filter(([key]) => key.trim()).length} named options`
       : row.type === "score" ? `${row.score.filter((level) => level.trim()).length} defined levels`
@@ -281,11 +283,8 @@ function renameBuildQuestion(index) {
 
 function insertBuildQuestion(index, after) {
   W.questions.splice(index + Number(after), 0, blankRow(W.questions[index].type));
-  buildQuestionView.query = "";
-  buildQuestionView.type = "all";
-  delete buildQuestionView.instructions;
-  delete buildQuestionView.criteria;
-  delete buildQuestionView.expectations;
+  for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key];
+  Object.assign(buildQuestionView, { query: "", type: "all" });
   markBuildEdited();
   render();
 }
@@ -335,7 +334,7 @@ function refreshQuestionVisibility() {
   });
   const count = $("#build-question-count");
   if (count) count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.`;
-  for (const id of ["build-copy-shown", "build-duplicate-shown"]) {
+  for (const id of ["build-copy-shown", "build-duplicate-shown", "build-copy-shown-json", "build-download-shown-json", "build-download-outline"]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !shown.size;
   }
@@ -357,6 +356,15 @@ function renderQuestionTools() {
         buildQuestionView.query = event.target.value; refreshQuestionVisibility();
       } }),
     h("div", { class: "chips" },
+      h("select", { class: "input sm", "aria-label": "Search Build question field", onchange: (event) => {
+        buildQuestionView.searchField = event.target.value; refreshQuestionVisibility();
+      } }, [["all", "All question fields"], ["id", "Ids only"], ["instructions", "Instructions only"], ["criteria", "Criteria only"]].map(([value, label]) =>
+        h("option", { value, selected: (buildQuestionView.searchField || "all") === value }, label))),
+      h("input", { class: "input sm", type: "search", "aria-label": "Exclude Build question text", placeholder: "Exclude text in search field",
+        value: buildQuestionView.exclude || "", oninput: (event) => { buildQuestionView.exclude = event.target.value; refreshQuestionVisibility(); } }),
+      [["minCriteria", "Minimum defined criteria"], ["maxCriteria", "Maximum defined criteria"]].map(([key, label]) =>
+        h("input", { class: "input sm", type: "number", min: "0", step: "1", "aria-label": label, placeholder: label,
+          value: buildQuestionView[key] || "", oninput: (event) => { buildQuestionView[key] = event.target.value; refreshQuestionVisibility(); } })),
       h("select", { class: "input sm", "aria-label": "Filter Build question type", onchange: (event) => {
         buildQuestionView.type = event.target.value; refreshQuestionVisibility();
       } }, ["all", ...TYPES].map((type) => h("option", { value: type, selected: buildQuestionView.type === type }, type === "all" ? "All question types" : type))),
@@ -366,11 +374,14 @@ function renderQuestionTools() {
         [["all", "Any"], ["with", "With"], ["without", "Without"]].map(([value, text]) =>
           h("option", { value, selected: (buildQuestionView[field] || "all") === value }, text))))),
       h("button", { class: "btn sm ghost", id: "build-copy-shown", disabled: !shown, onclick: () => copyText(visibleBuildQuestions().map((row) => row.id).join("\n")) }, "Copy shown ids"),
+      h("button", { class: "btn sm ghost", id: "build-copy-shown-json", disabled: !shown, onclick: () => shareShownQuestions("copy") }, "Copy shown questions JSON"),
+      h("button", { class: "btn sm ghost", id: "build-download-shown-json", disabled: !shown, onclick: () => shareShownQuestions("json") }, "Download shown questions JSON"),
+      h("button", { class: "btn sm ghost", id: "build-download-outline", disabled: !shown, onclick: () => shareShownQuestions("outline") }, "Download shown outline"),
       h("button", { class: "btn sm ghost", id: "build-duplicate-shown", disabled: !shown, onclick: () => {
         W.questions = duplicateShownQuestions(W.questions, visibleBuildQuestions());
         markBuildEdited(); render();
       } }, "Duplicate shown"),
-      h("button", { class: "btn sm ghost", onclick: () => { buildQuestionView.query = ""; buildQuestionView.type = "all"; delete buildQuestionView.instructions; delete buildQuestionView.criteria; delete buildQuestionView.expectations; render(); } }, "Clear question filters"),
+      h("button", { class: "btn sm ghost", onclick: () => { for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key]; Object.assign(buildQuestionView, { query: "", type: "all" }); render(); } }, "Clear question filters"),
       [true, false].map((collapse) => h("button", { class: "btn sm ghost", onclick: () => {
         for (const row of visibleBuildQuestions()) {
           if (collapse) buildEditState().collapsed.add(row); else buildEditState().collapsed.delete(row);
@@ -379,6 +390,30 @@ function renderQuestionTools() {
       } }, collapse ? "Collapse shown" : "Expand shown"))),
     h("span", { class: "faint", id: "build-question-count", "aria-live": "polite" }, `${shown} of ${W.questions.length} questions shown. Run and export include every question.`),
     h("p", { class: "faint", id: "build-question-no-match", hidden: shown > 0 }, "No questions match. Clear filters to show every question."));
+}
+
+function shareShownQuestions(format) {
+  if (buildRawText !== null) return toast("Apply the Raw JSON edits before sharing editor questions.", "error");
+  const rows = visibleBuildQuestions();
+  if (!rows.length) return toast("No questions are shown.", "error");
+  let text;
+  if (format === "outline") text = editorQuestionOutline(rows);
+  else {
+    const error = questionEditorError(rows);
+    if (error) return toast(error, "error");
+    text = JSON.stringify(toQuestions(rows), null, 2) + "\n";
+  }
+  if (format === "copy") return copyText(text);
+  const url = URL.createObjectURL(new Blob([text], { type: format === "outline" ? "text/plain;charset=utf-8" : "application/json" }));
+  h("a", { href: url, download: format === "outline" ? "jev-question-outline.txt" : "jev-questions.json" }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function reorderBuildCriteria(index, action) {
+  const row = W.questions[index];
+  if (row.type === "score" && !window.confirm("Reverse Score levels? This changes the numeric meaning of every level. Existing human expectations stay unchanged; review them before running.")) return;
+  W.questions[index] = reorderEditorCriteria(row, action);
+  markBuildEdited(); render();
 }
 
 function discardBuildRaw() {
@@ -640,6 +675,7 @@ function renderQuestionCard(row, i) {
   } else if (row.type === "choice") {
     crit = h("div", { class: "crit" },
       h("div", { class: "section-label", style: { margin: 0 } }, "Options (key → description, description optional)"),
+      h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "sort") }, "Sort options by key"),
       row.choice.map((pair, j) => {
         const k = h("input", { class: "input mono", value: pair[0], placeholder: "option_key" });
         const d = h("input", { class: "input", value: pair[1], placeholder: "what this option means" });
@@ -661,6 +697,7 @@ function renderQuestionCard(row, i) {
   } else if (row.type === "score") {
     crit = h("div", { class: "crit" },
       h("div", { class: "section-label", style: { margin: 0 } }, "Levels, in order from 0 (moving a level changes its numeric score)"),
+      h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "reverse") }, "Reverse levels…"),
       row.score.map((lvl, j) => {
         const d = h("input", { class: "input", value: lvl, placeholder: `level ${j}` });
         d.addEventListener("input", () => { row.score[j] = d.value; markBuildEdited(); });
@@ -714,6 +751,7 @@ function renderQuestionCard(row, i) {
       row.type === "choice" ? `${row.choice.filter(([key]) => key.trim()).length} named options`
         : row.type === "score" ? `${row.score.filter((level) => level.trim()).length} defined levels`
         : row.type === "noul" ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes` : "Coordinates only · no criteria"),
+    h("span", { class: "faint", id: `build-instruction-count-${i}`, "aria-live": "polite" }, `${Array.from(String(row.instructions || "")).length} instruction characters`),
     collapsed ? h("p", { class: "faint", style: { margin: 0, overflowWrap: "anywhere" } },
       row.instructions ? `${row.instructions.slice(0, 160)}${row.instructions.length > 160 ? "…" : ""}` : "No instructions yet") : [instr, crit]);
 }

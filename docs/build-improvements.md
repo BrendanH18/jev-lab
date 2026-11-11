@@ -33,3 +33,22 @@ These ten additions operate on the current editor only. Filters preserve every q
 10. **Insert Score level after** inserts an empty level after the selected ordinal. Both Score controls warn that inserting levels changes later numeric scores.
 
 Edits invalidate prior answers and exports. Choice key/description pairs and Score order remain intact; duplicate questions have independent nested criteria. `tests/js/build-authoring.test.mjs` exercises the filters, actual controls, position validation, copy boundaries and expectation preservation.
+
+## Further Build editor improvements
+
+These ten improvements help inspect and share large question sets without changing the request's scope.
+
+1. Search a specific question field: id, instructions, or active criteria.
+2. Exclude matching text within that search field.
+3. Filter by a minimum number of defined criteria.
+4. Filter by a maximum number of defined criteria, including zero.
+5. See a live Unicode character count for each question's instructions.
+6. Copy the shown questions as API-shaped JSON.
+7. Download the shown questions as `jev-questions.json`.
+8. Download a question outline containing positions, ids, types and authored counts, without instruction or criterion text.
+9. Sort Choice options by key, keeping descriptions attached to their keys.
+10. Reverse Score levels after confirming that their numeric meaning changes; existing human expectations remain available for review.
+
+Filters change presentation only; Run and code export still include all questions. Sharing questions includes authored request content only, and rejects duplicate ids or unapplied Raw JSON edits. Empty selections never fall back to sharing all questions. Reordering criteria marks existing answers, lint and code exports as outdated through the existing edit path.
+
+Validation: `node --test tests/js/build-tools.test.mjs tests/js/build-editing.test.mjs` (28 tests). Coverage includes insertion visibility after filter reset, field/exclusion combinations, active criteria counts, invalid bounds, Unicode updates, download contents, empty/duplicate/raw guards, independent Choice ordering, Score cancellation and stale-result invalidation.
