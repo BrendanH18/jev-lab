@@ -53,7 +53,14 @@ export function buildRequestSummary(stateText, rows, imageCount) {
 }
 
 // Filtering keeps the complete editor request intact, including hidden questions.
-export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all", searchField = "all", exclude = "", minCriteria = "", maxCriteria = "" } = {}, expect = {}) {
+export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all", searchField = "all", exclude = "", minCriteria = "", maxCriteria = "", idPrefix = "", minInstructions = "", maxInstructions = "" } = {}, expect = {}) {
+  if (!String(row.id || "").trim().toLocaleLowerCase().startsWith(String(idPrefix).trim().toLocaleLowerCase())) return false;
+  const instructionCharacters = Array.from(String(row.instructions || "")).length;
+  for (const [value, maximum] of [[minInstructions, false], [maxInstructions, true]]) {
+    if (String(value).trim() === "") continue;
+    const limit = Number(value);
+    if (!Number.isInteger(limit) || limit < 0 || (maximum ? instructionCharacters > limit : instructionCharacters < limit)) return false;
+  }
   const hasInstructions = !!String(row.instructions || "").trim();
   const hasCriteria = row.type === "choice" ? (row.choice || []).some(([key]) => key.trim())
     : row.type === "score" ? (row.score || []).some((level) => level.trim())
@@ -157,9 +164,49 @@ export function editorQuestionOutline(rows) {
 }
 
 export function reorderEditorCriteria(row, action) {
-  if (row.type === "choice" && action === "sort") {
-    return { ...row, choice: row.choice.slice().sort((a, b) => a[0].trim().localeCompare(b[0].trim())) };
+  if (row.type === "choice" && ["sort", "sort-desc"].includes(action)) {
+    const direction = action === "sort-desc" ? -1 : 1;
+    return { ...row, choice: row.choice.slice().sort((a, b) => direction * a[0].trim().localeCompare(b[0].trim())) };
   }
+  if (row.type === "choice" && action === "reverse") return { ...row, choice: row.choice.slice().reverse() };
   if (row.type === "score" && action === "reverse") return { ...row, score: row.score.slice().reverse() };
   return row;
+}
+
+// Move the visible subset as a stable block; hidden rows are never dropped or reordered.
+export function moveShownQuestionsToEdge(rows, shown, last = false) {
+  const selected = new Set(shown);
+  const visible = rows.filter((row) => selected.has(row));
+  const hidden = rows.filter((row) => !selected.has(row));
+  return last ? [...hidden, ...visible] : [...visible, ...hidden];
+}
+
+// Remove only completely empty editor placeholders; keep unnamed descriptions for repair.
+export function removeBlankEditorCriteria(row) {
+  if (row.type === "choice") return { ...row, choice: row.choice.filter(([key, description]) =>
+    String(key).trim() || String(description).trim()) };
+  if (row.type === "score") return { ...row, score: row.score.filter((level) => String(level).trim()) };
+  return row;
+}
+
+export function shownEditorInstructions(rows) {
+  return rows.map((row) => String(row.instructions || "")).join("\n\n");
+}
+
+// Markdown is an authored-question handoff, never a full request or answer export.
+export function editorQuestionsMarkdown(rows) {
+  const literal = (value) => {
+    const text = String(value || "");
+    const ticks = Math.max(3, ...[...text.matchAll(/`+/g)].map(([run]) => run.length + 1));
+    const fence = "`".repeat(ticks);
+    return `${fence}\n${text}\n${fence}`;
+  };
+  return "# Authored questions\n\n" + rows.map((row, index) => {
+    const lines = [`## Question ${index + 1}`, "", "ID", literal(row.id), "", `Type: ${row.type}`, "", "Instructions", literal(row.instructions)];
+    const criteria = row.type === "choice" ? row.choice.filter(([key]) => key.trim()).map(([key, description]) => ({ key, description }))
+      : row.type === "score" ? row.score.filter((level) => level.trim())
+      : row.type === "noul" ? { yes: row.noulYes || "", no: row.noulNo || "" } : null;
+    if (criteria !== null) lines.push("", "Criteria", literal(JSON.stringify(criteria, null, 2)));
+    return lines.join("\n");
+  }).join("\n\n") + "\n";
 }

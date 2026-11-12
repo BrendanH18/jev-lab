@@ -5,7 +5,7 @@ export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "" } = {}) {
+export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "", idPrefix = "", excludeType = "all", minStateBytes = "", maxStateBytes = "" } = {}) {
   const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
   const selectedSet = new Set(selected);
   const presenceMatches = (value, mode) => mode === "all" || (mode === "with" ? value : !value);
@@ -14,9 +14,18 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     const bound = Number(value);
     return Number.isInteger(bound) && bound >= 0 && (minimum ? count >= bound : count <= bound);
   };
+  const inputSizes = new Map();
+  const inputBytes = (item) => {
+    if (!inputSizes.has(item)) inputSizes.set(item, testInputBytes(item));
+    return inputSizes.get(item);
+  };
   const searchItem = (item) => searchField === "all" ? item : { [searchField]: item[searchField] };
   const shown = items.filter((item) => matchesSaved(searchItem(item), query)
     && (!String(exclude).trim() || !matchesSaved(searchItem(item), exclude))
+    && String(item.id).toLocaleLowerCase().startsWith(String(idPrefix).trim().toLocaleLowerCase())
+    && (excludeType === "all" || !Object.values(item.questions || {}).some((question) => question.type === excludeType))
+    && (String(minStateBytes).trim() === "" || countMatches(inputBytes(item), minStateBytes, true))
+    && (String(maxStateBytes).trim() === "" || countMatches(inputBytes(item), maxStateBytes, false))
     && countMatches(Object.keys(item.expect || {}).length, minExpectations, true)
     && countMatches(Object.keys(item.expect || {}).length, maxExpectations, false)
     && countMatches(Object.keys(item.images || {}).length, minImages, true)
@@ -34,6 +43,8 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     && countMatches(Object.keys(item.questions || {}).length, maxQuestions, false)
     && (selection === "all" || selectedSet.has(item.id) === (selection === "selected")));
   // Array#sort is stable; ties retain the saved list's order.
+  if (sort === "input-smallest") shown.sort((a, b) => inputBytes(a) - inputBytes(b));
+  if (sort === "input-largest") shown.sort((a, b) => inputBytes(b) - inputBytes(a));
   if (sort === "id") shown.sort((a, b) => a.id.localeCompare(b.id));
   if (sort === "images") shown.sort((a, b) => Object.keys(b.images || {}).length - Object.keys(a.images || {}).length);
   if (sort === "fewest-expectations") shown.sort((a, b) => Object.keys(a.expect || {}).length - Object.keys(b.expect || {}).length);
@@ -151,4 +162,28 @@ export function testMetadataJson(items, results) {
       status: testResultStatus(run),
       latency_ms: observed(run?.meta?.latency_ms), cost_usd: observed(run?.meta?.cost_usd) };
   }), null, 2);
+}
+
+// Serialized state bytes describe authored inputs; picture bytes are not included.
+export function testInputBytes(item) {
+  return new TextEncoder().encode(typeof item.state === "string" ? item.state : JSON.stringify(item.state ?? null)).length;
+}
+
+// This shares the JSON export's allowlist; spreadsheet cells are always escaped.
+export function testMetadataCsv(items, results) {
+  const fields = ["id", "name", "questions", "expectations", "pictures", "status", "latency_ms", "cost_usd"];
+  const cell = (value) => {
+    let text = String(value ?? "");
+    if (/^\s*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = `'${text}`;
+    return `"${text.replaceAll('"', '""')}"`;
+  };
+  return [fields, ...JSON.parse(testMetadataJson(items, results)).map((row) => fields.map((field) => row[field]))]
+    .map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
+}
+
+export function testStatusSummary(items, results) {
+  const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
+  const counts = { pass: 0, fail: 0, error: 0, "not-run": 0 };
+  for (const item of items) counts[testResultStatus(byId.get(item.id))]++;
+  return `${counts.pass} passed · ${counts.fail} failed · ${counts.error} errors · ${counts["not-run"]} not run among shown tests`;
 }

@@ -2,13 +2,13 @@
 import { $, api, callStats, copyText, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, deselectVisibleTests, invertVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson } from "./test-selection.js";
+  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson, testMetadataCsv, testStatusSummary } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
-const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "", minExpectations: "", maxExpectations: "", minImages: "", maxImages: "" });
+const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "", minExpectations: "", maxExpectations: "", minImages: "", maxImages: "", idPrefix: "", excludeType: "all", minStateBytes: "", maxStateBytes: "" });
 const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true };
 
 function reconcileTests() {
@@ -24,25 +24,28 @@ function unsuccessfulTestIds() {
   return (W.runResults?.runs || []).filter((run) => ["fail", "error"].includes(testResultStatus(run))).map((run) => run.id);
 }
 
-function testCountText() {
-  return `${shownTests().length} of ${W.items.length} tests shown · ${testView.selected.length} selected. Run all runs every saved test.`;
+function testCountText(shown = shownTests()) {
+  return `${shown.length} of ${W.items.length} tests shown · ${testView.selected.length} selected. Run all runs every saved test.`;
 }
 
 // Typing into search keeps focus and the cursor, and never changes selection.
 function refreshTestVisibility() {
-  const visible = new Set(shownTests().map((item) => item.id));
+  const shown = shownTests();
+  const visible = new Set(shown.map((item) => item.id));
   $("#saved-test-results")?.querySelectorAll(".saved-test-item").forEach((row) => {
     row.style.display = visible.has(row.dataset.testId) ? "" : "none";
   });
   const count = $("#saved-test-count");
-  if (count) count.textContent = testCountText();
+  if (count) count.textContent = testCountText(shown);
   const summary = $("#saved-test-visible-summary");
-  const totals = selectedTestSummary(W.items, shownTests().map((item) => item.id));
+  const totals = selectedTestSummary(W.items, shown.map((item) => item.id));
   if (summary) summary.textContent = `Visible requests: ${totals.tests} tests · ${totals.questions} questions · ${totals.expectations} expectations · ${totals.images} pictures. Input counts only.`;
-  for (const id of ["saved-test-copy-ids", "saved-test-export-metadata"]) {
+  for (const id of ["saved-test-copy-ids", "saved-test-export-metadata", "saved-test-export-csv"]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !visible.size;
   }
+  const statuses = $("#saved-test-visible-statuses");
+  if (statuses) statuses.textContent = testStatusSummary(shown, W.runResults);
   const empty = $("#saved-test-no-match");
   if (empty) empty.hidden = visible.size > 0;
   const selectVisible = $("#saved-test-select-visible");
@@ -101,6 +104,10 @@ export function renderTests() {
           placeholder: "Exclude matching tests", "aria-label": "Exclude saved tests", oninput: (event) => {
             testView.exclude = event.target.value; refreshTestVisibility();
           } }),
+        h("input", { class: "input", type: "search", value: testView.idPrefix,
+          placeholder: "Test ID starts with", "aria-label": "Test ID prefix", oninput: (event) => {
+            testView.idPrefix = event.target.value; refreshTestVisibility();
+          } }),
         h("input", { class: "input", type: "search", value: testView.questionId,
           placeholder: "Find a question ID", "aria-label": "Test question ID", oninput: (event) => {
             testView.questionId = event.target.value; refreshTestVisibility();
@@ -109,14 +116,15 @@ export function renderTests() {
           filter("Search test field", "searchField", [["all", "Name, ID and notes"], ["name", "Name only"], ["id", "ID only"], ["notes", "Notes only"]]),
           filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
           filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
-          filter("Sort tests", "sort", [["saved", "Saved order"], ["id", "ID A–Z"], ["images", "Most pictures"], ["fewest-expectations", "Fewest expectations"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
+          filter("Sort tests", "sort", [["saved", "Saved order"], ["input-smallest", "Smallest state inputs"], ["input-largest", "Largest state inputs"], ["id", "ID A–Z"], ["images", "Most pictures"], ["fewest-expectations", "Fewest expectations"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
+          filter("Exclude question type", "excludeType", [["all", "No type exclusion"], ["noul", "Exclude yes / no"], ["choice", "Exclude Choice"], ["score", "Exclude Score"], ["box", "Exclude Box"]]),
           filter("Test expectations", "expectations", [["all", "Any expectations"], ["with", "With expectations"], ["without", "Without expectations"]]),
           filter("Test pictures", "images", [["all", "Any pictures"], ["with", "With pictures"], ["without", "Without pictures"]]),
           filter("Test input shape", "stateType", [["all", "Any input shape"], ["text", "Plain text"], ["object", "JSON object"], ["array", "JSON array"]]),
           filter("Test expectation coverage", "coverage", [["all", "Any coverage"], ["full", "Every question has expectations"], ["partial", "Some questions have expectations"], ["none", "No questions have expectations"]]),
           filter("Test type mix", "typeMix", [["all", "Any type mix"], ["mixed", "Mixed question types"], ["single", "At most one question type"]]),
           filter("Test notes", "notes", [["all", "Any notes"], ["with", "With notes"], ["without", "Without notes"]]),
-          [ ["Minimum test questions", "minQuestions"], ["Maximum test questions", "maxQuestions"], ["Minimum test expectations", "minExpectations"], ["Maximum test expectations", "maxExpectations"], ["Minimum test pictures", "minImages"], ["Maximum test pictures", "maxImages"] ].map(([label, field]) =>
+          [ ["Minimum state bytes", "minStateBytes"], ["Maximum state bytes", "maxStateBytes"], ["Minimum test questions", "minQuestions"], ["Maximum test questions", "maxQuestions"], ["Minimum test expectations", "minExpectations"], ["Maximum test expectations", "maxExpectations"], ["Minimum test pictures", "minImages"], ["Maximum test pictures", "maxImages"] ].map(([label, field]) =>
             h("label", { class: "faint" }, label, " ", h("input", { class: "input sm", type: "number", min: 0, step: 1,
               value: testView[field], "aria-label": label, style: { width: "90px" }, oninput: (event) => {
                 testView[field] = event.target.value; refreshTestVisibility();
@@ -147,6 +155,9 @@ export function renderTests() {
           `Selected requests: ${summary.tests} tests · ${summary.questions} questions · ${summary.expectations} expectations · ${summary.images} pictures. Counts describe saved inputs, not spend.`),
         h("p", { class: "faint", id: "saved-test-visible-summary", style: { margin: 0 } },
           `Visible requests: ${visibleSummary.tests} tests · ${visibleSummary.questions} questions · ${visibleSummary.expectations} expectations · ${visibleSummary.images} pictures. Input counts only.`),
+        h("p", { class: "faint", id: "saved-test-visible-statuses", "aria-live": "polite", style: { margin: 0 } },
+          testStatusSummary(shownTests(), W.runResults)),
+        h("p", { class: "faint", style: { margin: 0 } }, "State sizes count UTF-8 bytes of text or serialized JSON, excluding pictures. They are not token or spend estimates."),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
           h("button", { class: "btn sm", id: "saved-test-copy-ids", disabled: !shown.size,
             onclick: () => copyText(shownTests().map((item) => item.id).join("\n")) }, "Copy visible test IDs"),
@@ -155,7 +166,13 @@ export function renderTests() {
               const url = URL.createObjectURL(new Blob([testMetadataJson(shownTests(), W.runResults)], { type: "application/json" }));
               h("a", { href: url, download: "jev-test-metadata.json" }).click();
               URL.revokeObjectURL(url);
-            } }, "Download visible metadata JSON")),
+            } }, "Download visible metadata JSON"),
+          h("button", { class: "btn sm", id: "saved-test-export-csv", disabled: !shown.size,
+            onclick: () => downloadTestMetadata(shownTests(), "csv") }, "Download visible metadata CSV"),
+          h("button", { class: "btn sm", disabled: !selected.size,
+            onclick: () => downloadTestMetadata(W.items.filter((item) => testView.selected.includes(item.id)), "json") }, "Download selected metadata JSON"),
+          h("button", { class: "btn sm", disabled: !selected.size,
+            onclick: () => downloadTestMetadata(W.items.filter((item) => testView.selected.includes(item.id)), "csv") }, "Download selected metadata CSV")),
         h("button", { class: "btn sm", disabled: !selected.size,
           onclick: () => copyText(selectedTestIds(W.items, testView.selected).join("\n")) }, "Copy selected test IDs"),
         h("label", { class: "faint" }, h("input", { type: "checkbox", checked: testView.details,
@@ -196,6 +213,13 @@ export function renderTests() {
         h("p", { class: "muted" }, "Question wording is code. When you reword an instruction, add an option, or move to a new model version (aliases like jev-latest move), run the suite and see what changed."),
         h("p", { class: "muted" }, "Expectations are ranges on probabilities, not exact numbers, because calibrated models are allowed to be a little different run to run."),
         h("p", { class: "muted" }, "Each test is one JSON file with the request and the expectations, so you can also load them in CI with the Python SDK."))));
+}
+
+function downloadTestMetadata(items, format) {
+  const content = format === "csv" ? testMetadataCsv(items, W.runResults) : testMetadataJson(items, W.runResults);
+  const url = URL.createObjectURL(new Blob([content], { type: format === "csv" ? "text/csv;charset=utf-8" : "application/json" }));
+  h("a", { href: url, download: `jev-test-metadata.${format}` }).click();
+  URL.revokeObjectURL(url);
 }
 
 async function openItem(it) {

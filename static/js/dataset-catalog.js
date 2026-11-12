@@ -1,7 +1,7 @@
 // Dataset-list metadata only. Filters never load rows, labels or model answers.
 import { matchesDataset, matchesSaved } from "./saved-search.js";
 
-export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [], searchField: "all", exclude: "", notes: "all", maxQuestions: "", maxUnlabeled: "", minHeldOut: "", maxLabeled: "", maxHeldOut: "", minGuidelines: "", maxGuidelines: "" });
+export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [], searchField: "all", exclude: "", notes: "all", maxQuestions: "", maxUnlabeled: "", minHeldOut: "", maxLabeled: "", maxHeldOut: "", minGuidelines: "", maxGuidelines: "", minTuning: "", maxTuning: "", minLooks: "", maxLooks: "", timestamp: "all" });
 
 export function matchesCatalog(item, filters = {}) {
   const searchField = filters.searchField || "all";
@@ -13,6 +13,7 @@ export function matchesCatalog(item, filters = {}) {
   if (filters.pinned === "with" && !filters.pinnedIds?.includes(item.id)) return false;
   if (filters.pinned === "without" && filters.pinnedIds?.includes(item.id)) return false;
   const saved = String(item.saved_at || "").slice(0, 10);
+  if (filters.timestamp === "with" && !saved || filters.timestamp === "without" && saved) return false;
   for (const key of ["savedAfter", "savedBefore"]) {
     const value = filters[key];
     if (!value) continue;
@@ -36,7 +37,10 @@ export function matchesCatalog(item, filters = {}) {
     maxUnlabeled: [Math.max(0, Number(item.rows || 0) - Number(item.labeled || 0)), true],
     minHeldOut: [Number(item.test?.rows || 0), false], maxHeldOut: [Number(item.test?.rows || 0), true],
     maxLabeled: [Number(item.labeled || 0), true], minGuidelines: [Number(item.guidelines || 0), false],
-    maxGuidelines: [Number(item.guidelines || 0), true] };
+    maxGuidelines: [Number(item.guidelines || 0), true],
+    minTuning: [Math.max(0, Number(item.rows || 0) - Number(item.test?.rows || 0)), false],
+    maxTuning: [Math.max(0, Number(item.rows || 0) - Number(item.test?.rows || 0)), true],
+    minLooks: [Number(item.test?.looks || 0), false], maxLooks: [Number(item.test?.looks || 0), true] };
   for (const [key, [count, maximum]] of Object.entries(counts)) {
     if (filters[key] === undefined || String(filters[key]).trim() === "") continue;
     const limit = Number(filters[key]);
@@ -70,6 +74,11 @@ export function sortedCatalog(items, sort = "saved", pinnedIds = []) {
   else if (sort === "unlabeled-asc") copy.sort((a, b) => Math.max(0, Number(a.rows || 0) - Number(a.labeled || 0)) - Math.max(0, Number(b.rows || 0) - Number(b.labeled || 0)));
   else if (sort === "questions-asc") copy.sort((a, b) => Number(a.questions || 0) - Number(b.questions || 0));
   else if (sort === "held-out-asc") copy.sort((a, b) => Number(a.test?.rows || 0) - Number(b.test?.rows || 0));
+  else if (sort === "guidelines-asc") copy.sort((a, b) => Number(a.guidelines || 0) - Number(b.guidelines || 0));
+  else if (sort === "tuning" || sort === "tuning-asc") copy.sort((a, b) => {
+    const count = (item) => Math.max(0, Number(item.rows || 0) - Number(item.test?.rows || 0));
+    return sort === "tuning" ? count(b) - count(a) : count(a) - count(b);
+  });
   else if (sort === "guidelines") copy.sort((a, b) => Number(b.guidelines || 0) - Number(a.guidelines || 0));
   else if (sort === "questions") copy.sort((a, b) => Number(b.questions || 0) - Number(a.questions || 0));
   else if (sort === "held-out") copy.sort((a, b) => Number(b.test?.rows || 0) - Number(a.test?.rows || 0));
@@ -132,6 +141,8 @@ export function catalogJson(items) {
 
 export function catalogPreset(name) {
   const defaults = catalogDefaults();
+  if (name === "unscored") return { ...defaults, test: "with", maxLooks: "0" };
+  if (name === "evaluated") return { ...defaults, test: "with", minLooks: "1" };
   if (name === "label") return { ...defaults, labels: "some", sort: "label-share" };
   if (name === "unlabeled") return { ...defaults, labels: "none", sort: "rows" };
   if (name === "check") return { ...defaults, questions: "with", labels: "every", check: "without" };

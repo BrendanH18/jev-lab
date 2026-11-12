@@ -393,3 +393,11 @@ expectations or answers; unapplied Raw JSON edits block sharing. Question outlin
 positions and authored counts only. Choice sorting keeps key/description pairs together; reversing Score
 levels requires confirmation because numeric meanings change. Catalog guideline-count bounds and sorts
 use summary metadata; saved-test count bounds and selected-ID copying preserve hidden selections.
+
+Build subset moves keep shown and hidden question order stable within each group and preserve
+expectations. Authored Markdown and instruction handoffs include shown questions only, never
+state, pictures, expectations or answers; unapplied Raw JSON blocks handoffs. Blank-criterion
+cleanup removes only empty placeholders. Saved-test state-byte controls count UTF-8 authored
+state only; selected metadata downloads include hidden selections and keep the existing allowlist
+and spreadsheet escaping. Catalog tuning-row counts exclude held-out rows; evaluation-count
+filters describe recorded test looks, never evaluation quality or label validity.

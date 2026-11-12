@@ -195,13 +195,29 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   const addedBounds = [["Maximum labeled rows", "2", ["orders", "reviews"]],
     ["Maximum held-out rows", "0", ["orders", "reviews"]],
     ["Minimum guideline questions", "1", ["tickets"]],
-    ["Maximum guideline questions", "0", ["orders", "reviews"]]];
+    ["Maximum guideline questions", "0", ["orders", "reviews"]],
+    ["Minimum tuning rows", "4", ["orders"]], ["Maximum tuning rows", "2", ["reviews"]],
+    ["Minimum test evaluations", "1", []], ["Maximum test evaluations", "0", ["tickets", "orders", "reviews"]]];
   for (const [label, value, expected] of addedBounds) {
     select(label).attrs.oninput({ target: { value } });
     assert.deepEqual(rows.filter((row) => row.style.display === "").map((row) => row.dataset.datasetId), expected);
     nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
     assert.equal(select(label).value, "");
   }
+  select("Filter datasets by saved timestamp").attrs.onchange({ target: { value: "with" } });
+  assert.ok(rows.every((row) => row.style.display === "none"));
+  select("Filter datasets by saved timestamp").attrs.onchange({ target: { value: "all" } });
+  for (const [sort, expected] of [["tuning", ["orders", "tickets", "reviews"]],
+    ["tuning-asc", ["reviews", "tickets", "orders"]], ["guidelines-asc", ["orders", "reviews", "tickets"]]]) {
+    select("Sort datasets").attrs.onchange({ target: { value: sort } });
+    assert.deepEqual(rows.map((row) => row.dataset.datasetId), expected);
+    assert.ok(rows.every((row) => row.draft.label === "human edit"));
+  }
+  select("Dataset workflow preset").attrs.onchange({ target: { value: "unscored" } });
+  assert.deepEqual(rows.filter((row) => row.style.display === "").map((row) => row.dataset.datasetId), ["tickets"]);
+  select("Dataset workflow preset").attrs.onchange({ target: { value: "evaluated" } });
+  assert.ok(rows.every((row) => row.style.display === "none"));
+  nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
   filters.pinnedIds.push("tickets");
   select("Filter pinned datasets").attrs.onchange({ target: { value: "without" } });
   assert.equal(rows.find((row) => row.dataset.datasetId === "tickets").style.display, "none");
@@ -370,6 +386,52 @@ test("ascending workload sorts and guideline count sort keep stable ties and sou
     ["guidelines", ["tickets", "orders", "reviews"]],
   ]) {
     assert.deepEqual(sortedCatalog(items, sort).map((x) => x.id), ids);
+    assert.deepEqual(sortedCatalog([{ id: "a" }, { id: "b" }], sort).map((x) => x.id), ["a", "b"]);
+  }
+  assert.deepEqual(items, before);
+});
+
+test("tuning-row bounds exclude held-out rows and combine with other bounds", () => {
+  const ids = (filters) => items.filter((x) => matchesCatalog(x, filters)).map((x) => x.id);
+  assert.deepEqual(ids({ minTuning: "4" }), ["orders"]);
+  assert.deepEqual(ids({ maxTuning: "2" }), ["reviews"]);
+  assert.deepEqual(ids({ minTuning: "3", maxTuning: "3", test: "with" }), ["tickets"]);
+  assert.equal(matchesCatalog({ rows: 2, test: { rows: 2 } }, { maxTuning: "0" }), true);
+  for (const key of ["minTuning", "maxTuning", "minLooks", "maxLooks"]) {
+    for (const value of ["-1", "1.5", "Infinity", "NaN"]) assert.deepEqual(ids({ [key]: value }), []);
+    assert.deepEqual(ids({ [key]: "" }), items.map((x) => x.id));
+  }
+});
+
+test("test-evaluation bounds count saved looks without inferring model performance", () => {
+  const never = { id: "never", test: { rows: 4, looks: 0 } };
+  const looked = { id: "looked", test: { rows: 4, looks: 2 } };
+  assert.equal(matchesCatalog(never, { maxLooks: "0" }), true);
+  assert.equal(matchesCatalog(looked, { maxLooks: "0" }), false);
+  assert.equal(matchesCatalog(looked, { minLooks: "2", maxLooks: "2" }), true);
+  assert.equal(matchesCatalog(looked, { minLooks: "3" }), false);
+  assert.equal(matchesCatalog({}, { maxLooks: "0" }), true);
+  const datasets = [never, looked, {}];
+  assert.deepEqual(datasets.filter((x) => matchesCatalog(x, catalogPreset("unscored"))), [never]);
+  assert.deepEqual(datasets.filter((x) => matchesCatalog(x, catalogPreset("evaluated"))), [looked]);
+  assert.notEqual(catalogPreset("unscored").pinnedIds, catalogPreset("unscored").pinnedIds);
+});
+
+test("saved timestamp presence can find legacy undated datasets", () => {
+  const dated = { ...items[0], saved_at: "2026-11-11T12:00:00Z" };
+  assert.equal(matchesCatalog(dated, { timestamp: "with" }), true);
+  assert.equal(matchesCatalog(dated, { timestamp: "without" }), false);
+  assert.equal(matchesCatalog(items[0], { timestamp: "without" }), true);
+  assert.equal(matchesCatalog(items[0], { timestamp: "with" }), false);
+  assert.equal(matchesCatalog(items[0], { timestamp: "without", savedAfter: "2026-01-01" }), false);
+});
+
+test("tuning workload and ascending guideline sorts preserve saved items and stable ties", () => {
+  const before = structuredClone(items);
+  assert.deepEqual(sortedCatalog(items, "tuning").map((x) => x.id), ["orders", "tickets", "reviews"]);
+  assert.deepEqual(sortedCatalog(items, "tuning-asc").map((x) => x.id), ["reviews", "tickets", "orders"]);
+  assert.deepEqual(sortedCatalog(items, "guidelines-asc").map((x) => x.id), ["orders", "reviews", "tickets"]);
+  for (const sort of ["tuning", "tuning-asc", "guidelines-asc"]) {
     assert.deepEqual(sortedCatalog([{ id: "a" }, { id: "b" }], sort).map((x) => x.id), ["a", "b"]);
   }
   assert.deepEqual(items, before);
