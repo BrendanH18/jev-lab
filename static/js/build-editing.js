@@ -1,5 +1,6 @@
 // Pure editor operations. These never fetch, persist, or carry model answers.
 import { matchesAdvancedEditorQuestion } from "./build-authoring.js";
+import { matchesBuildRefinements } from "./build-refinements.js";
 
 export function uniqueQuestionId(rows, preferred = "question") {
   const used = new Set(rows.map((row) => String(row.id || "").trim()));
@@ -56,6 +57,7 @@ export function buildRequestSummary(stateText, rows, imageCount) {
 // Filtering keeps the complete editor request intact, including hidden questions.
 export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all", searchField = "all", exclude = "", minCriteria = "", maxCriteria = "", idPrefix = "", minInstructions = "", maxInstructions = "", ...advanced } = {}, expect = {}) {
   if (!matchesAdvancedEditorQuestion(row, advanced, advanced.allRows || [])) return false;
+  if (!matchesBuildRefinements(row, advanced)) return false;
   if (!String(row.id || "").trim().toLocaleLowerCase().startsWith(String(idPrefix).trim().toLocaleLowerCase())) return false;
   const instructionCharacters = Array.from(String(row.instructions || "")).length;
   for (const [value, maximum] of [[minInstructions, false], [maxInstructions, true]]) {

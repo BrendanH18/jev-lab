@@ -421,3 +421,22 @@ Catalog split counts use summary metadata only; shares include unlabeled inputs 
 no label validity. Undefined shares sort last and cannot satisfy numeric share filters. Pin shown
 and Unpin shown preserve hidden pins; pinned handoffs include hidden pins with the metadata-only
 allowlist and spreadsheet escaping. Filters and pin actions keep existing queue nodes mounted.
+
+Build content cleanup is an explicit preview/Apply/Undo workflow bound to the full ordered
+questions and human expectations. Trim only selected active fields, preserve criteria order and
+expectations, reject ID/key collisions, and block pending Raw JSON. Diagnostics export identifiers,
+types, counts and flags only. Undo must refuse to overwrite newer question/expectation edits.
+
+Saved-suite question inventories are separately named schema handoffs containing question IDs,
+types and occurrence/expectation-presence counts only, never authored text, inputs, label values or
+answers. Pasted-ID selection previews use exact case-sensitive IDs and invalidate when edited or
+matched saved IDs change. Selection actions remain local and preserve existing paid-run guards.
+
+Catalog missing-label and split-label shares use summary counts of rows with any human label,
+never label validity. Empty-split shares stay unavailable. Active filter chips and one-step filter
+Undo change presentation only, preserve current pins and keep human queues mounted.
+
+Example search inspects authored descriptions, never state/expectations/answers. Pins are session
+state and hidden pins survive shown-only actions and filter reset. Metadata exports retain their
+allowlist; separately labeled request handoffs contain only authored state, ordered questions and
+picture references. Gallery size counts are UTF-8 authored input sizes, never spend estimates.

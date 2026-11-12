@@ -1862,3 +1862,8 @@ labeling panel or its CSV/draft handoff uses the full eligible snapshot rather t
 
 The [100-improvement inventory](workbench-improvements-100.md) covers the latest local authoring,
 suite-triage, catalog and example-discovery controls, including their export boundaries.
+
+The latest [100 local workflow improvements](workbench-improvements-next-100.md) add content
+cleanup with preview and Undo, saved-suite schema planning and pasted-ID selection, dataset split
+progress filters with filter Undo, and pinned example discovery with authored-request handoffs.
+Their controls make no model calls; editing, saving and paid runs remain separate explicit actions.
