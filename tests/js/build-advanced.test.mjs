@@ -158,3 +158,21 @@ test("single-question sharing and navigation controls use the current card and g
   assert.deepEqual(moves, [[0], [1, true]]); assert.match(messages[0], /No next/);
   raw = "pending"; click("Copy id"); assert.equal(copies.length, 1); assert.match(messages.at(-1), /Raw JSON/);
 });
+
+test("duplicate diagnostics skip inactive scans and reuse one frequency map per visibility pass", () => {
+  const row = question(" route ");
+  const unscannable = { filter() { throw new Error("Repeated full-list scan"); } };
+  assert.equal(matchesAdvancedEditorQuestion(row, {}, unscannable), true);
+  assert.equal(matchesAdvancedEditorQuestion(row, { duplicateIds: "all" }, unscannable), true);
+  assert.equal(matchesAdvancedEditorQuestion(row, { duplicateIds: "with", idCounts: new Map([["route", 2]]) }, unscannable), true);
+  assert.equal(matchesAdvancedEditorQuestion(row, { duplicateIds: "without", idCounts: new Map([["route", 1]]) }, unscannable), true);
+  const W = { questions: [row, question("route"), question("ROUTE"), question("")], expect: {} };
+  const view = { duplicateIds: "with" }, seen = [];
+  const visible = new Function("W", "$", "buildQuestionView", "matchesEditorQuestion", `${body("visibleBuildQuestions")}; return visibleBuildQuestions;`)(W, () => null, view,
+    (question, filters, expect) => { seen.push(filters.idCounts); return matchesEditorQuestion(question, filters, expect); });
+  assert.deepEqual(visible(), W.questions.slice(0, 2));
+  assert.equal(new Set(seen).size, 1);
+  assert.equal(seen[0].get("route"), 2);
+  view.duplicateIds = "without";
+  assert.deepEqual(visible(), W.questions.slice(2));
+});

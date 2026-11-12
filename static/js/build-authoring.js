@@ -32,7 +32,11 @@ export function matchesAdvancedEditorQuestion(row, filters = {}, rows = []) {
   }
   if (filters.instructionFormat === "structured" && !facts.structured) return false;
   if (filters.instructionFormat === "text" && facts.structured) return false;
-  const duplicateIds = !!String(row.id || "").trim() && rows.filter((other) => String(other.id || "").trim() === String(row.id || "").trim()).length > 1;
+  const duplicateFilter = ["with", "without"].includes(filters.duplicateIds);
+  const trimmedId = String(row.id || "").trim();
+  const duplicateIds = duplicateFilter && !!trimmedId && (filters.idCounts
+    ? (filters.idCounts.get(trimmedId) || 0) > 1
+    : rows.filter((other) => String(other.id || "").trim() === trimmedId).length > 1);
   for (const [field, present] of [["placeholders", facts.placeholders], ["unnamedChoice", facts.unnamedChoice],
     ["duplicateKeys", facts.duplicateKeys], ["duplicateIds", duplicateIds], ["references", facts.references]]) {
     if (filters[field] === "with" && !present || filters[field] === "without" && present) return false;

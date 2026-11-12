@@ -325,7 +325,14 @@ function compactBuildStateText() {
 function visibleBuildQuestions() {
   // Keep an edited card visible until focus leaves it, so filtering never interrupts typing.
   const focusedIndex = Number($(".build-question-card:focus-within")?.dataset.questionIndex ?? -1);
-  return W.questions.filter((row, index) => index === focusedIndex || matchesEditorQuestion(row, { ...buildQuestionView, allRows: W.questions }, W.expect));
+  const idCounts = new Map();
+  if (["with", "without"].includes(buildQuestionView.duplicateIds)) {
+    for (const row of W.questions) {
+      const id = String(row.id || "").trim();
+      idCounts.set(id, (idCounts.get(id) || 0) + 1);
+    }
+  }
+  return W.questions.filter((row, index) => index === focusedIndex || matchesEditorQuestion(row, { ...buildQuestionView, idCounts }, W.expect));
 }
 
 function refreshQuestionVisibility() {
