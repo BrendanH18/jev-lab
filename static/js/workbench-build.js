@@ -515,17 +515,22 @@ function reorderBuildCriteria(index, action) {
 
 function cleanupBuildQuestions(action) {
   if (buildRawText !== null) return toast("Apply the Raw JSON edits before using content cleanup or diagnostics.", "error");
+  const replaceRows = (rows) => {
+    const collapsed = buildEditState().collapsed;
+    rows.forEach((row, index) => { if (collapsed.has(W.questions[index])) collapsed.add(row); });
+    W.questions = rows;
+  };
   try {
     if (action === "preview") {
       buildCleanupPreview = prepareBuildCleanup(W.questions, W.expect, visibleBuildQuestions(), buildQuestionView.cleanupAction || "ids");
     } else if (action === "apply") {
       const result = applyBuildCleanup(W.questions, W.expect, buildCleanupPreview);
-      W.questions = result.rows;
+      replaceRows(result.rows);
       buildCleanupUndo = result.undo;
       buildCleanupPreview = null;
       markBuildEdited();
     } else if (action === "undo") {
-      W.questions = undoBuildCleanup(W.questions, W.expect, buildCleanupUndo);
+      replaceRows(undoBuildCleanup(W.questions, W.expect, buildCleanupUndo));
       buildCleanupUndo = null;
       buildCleanupPreview = null;
       markBuildEdited();

@@ -139,19 +139,28 @@ test("diagnostic controls update only presentation; preview, apply, undo and dow
 });
 
 test("real cleanup coordinator guards Raw JSON, invalidates request products, and restores without changing expectations", async () => {
-  const W = { questions: [row(" route ")], expect: { route: { choice: "one" } } }, messages = [], downloads = [];
+  const W = { questions: [row(" route "), row(" expanded "), row("hidden")], expect: { route: { choice: "one" } } }, messages = [], downloads = [];
+  const hidden = W.questions[2], collapsed = new WeakSet([W.questions[0], hidden]);
   let raw = null, edits = 0, renders = 0;
-  const coordinator = new Function("W", "getRaw", "toast", "visibleBuildQuestions", "buildQuestionView", "prepareBuildCleanup", "applyBuildCleanup", "undoBuildCleanup", "buildDiagnosticsMetadata", "markBuildEdited", "render", "URL", "Blob", "h", "setTimeout",
+  const coordinator = new Function("W", "getRaw", "toast", "visibleBuildQuestions", "buildQuestionView", "prepareBuildCleanup", "applyBuildCleanup", "undoBuildCleanup", "buildDiagnosticsMetadata", "markBuildEdited", "render", "URL", "Blob", "h", "setTimeout", "buildEditState",
     `let buildCleanupPreview = null, buildCleanupUndo = null; ${body("cleanupBuildQuestions").replace("if (buildRawText !== null)", "if (getRaw() !== null)")}; return { run: cleanupBuildQuestions, preview: () => buildCleanupPreview };`)(
-    W, () => raw, (message) => messages.push(message), () => W.questions, { cleanupAction: "ids" }, prepareBuildCleanup, applyBuildCleanup, undoBuildCleanup, buildDiagnosticsMetadata,
+    W, () => raw, (message) => messages.push(message), () => W.questions.slice(0, 2), { cleanupAction: "ids" }, prepareBuildCleanup, applyBuildCleanup, undoBuildCleanup, buildDiagnosticsMetadata,
     () => edits++, () => renders++, { createObjectURL: (blob) => { downloads.push({ blob }); return "blob:test"; }, revokeObjectURL() {} }, Blob,
-    (tag, attrs) => ({ click: () => Object.assign(downloads.at(-1), attrs) }), (fn) => fn());
+    (tag, attrs) => ({ click: () => Object.assign(downloads.at(-1), attrs) }), (fn) => fn(), () => ({ collapsed }));
   raw = "pending"; for (const action of ["preview", "apply", "undo", "download"]) coordinator.run(action);
   assert.equal(edits, 0); assert.equal(renders, 0); assert.equal(downloads.length, 0); assert.equal(messages.length, 4);
   raw = null; coordinator.run("preview"); assert.ok(coordinator.preview()); assert.equal(W.questions[0].id, " route ");
   coordinator.run("apply"); assert.equal(W.questions[0].id, "route"); assert.equal(edits, 1);
+  assert.equal(collapsed.has(W.questions[0]), true, "changed collapsed question stays collapsed after Apply");
+  assert.equal(collapsed.has(W.questions[1]), false, "expanded question stays expanded after Apply");
+  assert.equal(W.questions[2], hidden); assert.equal(collapsed.has(hidden), true);
   coordinator.run("download"); assert.equal(downloads[0].download, "jev-question-diagnostics.json");
-  assert.deepEqual(JSON.parse(await downloads[0].blob.text()), buildDiagnosticsMetadata(W.questions));
+  assert.deepEqual(JSON.parse(await downloads[0].blob.text()), buildDiagnosticsMetadata(W.questions.slice(0, 2)));
+  // Collapse changes are presentation only; Undo preserves the current view preferences.
+  collapsed.delete(W.questions[0]); collapsed.add(W.questions[1]);
   coordinator.run("undo"); assert.equal(W.questions[0].id, " route "); assert.equal(edits, 2); assert.equal(renders, 3);
   assert.deepEqual(W.expect, { route: { choice: "one" } });
+  assert.equal(collapsed.has(W.questions[0]), false, "Undo preserves an explicitly expanded question");
+  assert.equal(collapsed.has(W.questions[1]), true, "Undo preserves a collapsed question across replacement");
+  assert.equal(W.questions[2], hidden); assert.equal(collapsed.has(hidden), true);
 });
