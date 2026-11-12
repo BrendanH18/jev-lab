@@ -5,7 +5,7 @@ export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "", idPrefix = "", excludeType = "all", minStateBytes = "", maxStateBytes = "" } = {}) {
+export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "", idPrefix = "", excludeType = "all", minStateBytes = "", maxStateBytes = "", namePrefix = "", idSuffix = "", questionMatch = "contains", minUncovered = "", maxUncovered = "", minOptions = "", maxOptions = "", minInstructions = "", maxInstructions = "", minLatency = "", maxLatency = "", minCost = "", maxCost = "", latency = "all", cost = "all" } = {}) {
   const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
   const selectedSet = new Set(selected);
   const presenceMatches = (value, mode) => mode === "all" || (mode === "with" ? value : !value);
@@ -19,10 +19,35 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     if (!inputSizes.has(item)) inputSizes.set(item, testInputBytes(item));
     return inputSizes.get(item);
   };
+  const authoredCounts = new Map();
+  const authored = (item) => {
+    if (!authoredCounts.has(item)) authoredCounts.set(item, testAuthoredCounts(item));
+    return authoredCounts.get(item);
+  };
   const searchItem = (item) => searchField === "all" ? item : { [searchField]: item[searchField] };
+  const numberMatches = (number, value, minimum) => String(value).trim() === "" ||
+    (Number.isFinite(number) && Number.isFinite(Number(value)) && Number(value) >= 0 && (minimum ? number >= Number(value) : number <= Number(value)));
+  const measured = (item, key) => {
+    const value = byId.get(item.id)?.meta?.[key];
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  };
   const shown = items.filter((item) => matchesSaved(searchItem(item), query)
     && (!String(exclude).trim() || !matchesSaved(searchItem(item), exclude))
     && String(item.id).toLocaleLowerCase().startsWith(String(idPrefix).trim().toLocaleLowerCase())
+    && String(item.name || item.id).toLocaleLowerCase().startsWith(String(namePrefix).trim().toLocaleLowerCase())
+    && String(item.id).toLocaleLowerCase().endsWith(String(idSuffix).trim().toLocaleLowerCase())
+    && countMatches(authored(item).uncovered, minUncovered, true)
+    && countMatches(authored(item).uncovered, maxUncovered, false)
+    && countMatches(authored(item).options, minOptions, true)
+    && countMatches(authored(item).options, maxOptions, false)
+    && countMatches(authored(item).instructions, minInstructions, true)
+    && countMatches(authored(item).instructions, maxInstructions, false)
+    && presenceMatches(measured(item, "latency_ms") !== null, latency)
+    && presenceMatches(measured(item, "cost_usd") !== null, cost)
+    && numberMatches(measured(item, "latency_ms"), minLatency, true)
+    && numberMatches(measured(item, "latency_ms"), maxLatency, false)
+    && numberMatches(measured(item, "cost_usd"), minCost, true)
+    && numberMatches(measured(item, "cost_usd"), maxCost, false)
     && (excludeType === "all" || !Object.values(item.questions || {}).some((question) => question.type === excludeType))
     && (String(minStateBytes).trim() === "" || countMatches(inputBytes(item), minStateBytes, true))
     && (String(maxStateBytes).trim() === "" || countMatches(inputBytes(item), maxStateBytes, false))
@@ -35,7 +60,9 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     && presenceMatches(Object.keys(item.expect || {}).length > 0, expectations)
     && presenceMatches(Object.keys(item.images || {}).length > 0, images)
     && presenceMatches(!!String(item.notes || "").trim(), notes)
-    && (!String(questionId).trim() || Object.keys(item.questions || {}).some((id) => id.toLocaleLowerCase().includes(String(questionId).trim().toLocaleLowerCase())))
+    && (!String(questionId).trim() || Object.keys(item.questions || {}).some((id) => questionMatch === "exact"
+      ? id.toLocaleLowerCase() === String(questionId).trim().toLocaleLowerCase()
+      : id.toLocaleLowerCase().includes(String(questionId).trim().toLocaleLowerCase())))
     && (coverage === "all" || testExpectationCoverage(item) === coverage)
     && (typeMix === "all" || (new Set(Object.values(item.questions || {}).map((q) => q.type)).size > 1 ? "mixed" : "single") === typeMix)
     && (stateType === "all" || (typeof item.state === "string" ? "text" : Array.isArray(item.state) ? "array" : "object") === stateType)
@@ -46,6 +73,11 @@ export function visibleTests(items, results, { query = "", status = "all", type 
   if (sort === "input-smallest") shown.sort((a, b) => inputBytes(a) - inputBytes(b));
   if (sort === "input-largest") shown.sort((a, b) => inputBytes(b) - inputBytes(a));
   if (sort === "id") shown.sort((a, b) => a.id.localeCompare(b.id));
+  if (sort === "id-desc") shown.sort((a, b) => b.id.localeCompare(a.id));
+  if (sort === "fewest-images") shown.sort((a, b) => Object.keys(a.images || {}).length - Object.keys(b.images || {}).length);
+  for (const [key, descending, ascending] of [["uncovered", "most-uncovered", "fewest-uncovered"], ["options", "most-options", "fewest-options"], ["instructions", "longest-instructions", "shortest-instructions"]]) {
+    if ([descending, ascending].includes(sort)) shown.sort((a, b) => (sort === descending ? -1 : 1) * (authored(a)[key] - authored(b)[key]));
+  }
   if (sort === "images") shown.sort((a, b) => Object.keys(b.images || {}).length - Object.keys(a.images || {}).length);
   if (sort === "fewest-expectations") shown.sort((a, b) => Object.keys(a.expect || {}).length - Object.keys(b.expect || {}).length);
   if (sort === "name") shown.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
@@ -67,6 +99,30 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     shown.sort((a, b) => priority[testResultStatus(byId.get(a.id))] - priority[testResultStatus(byId.get(b.id))]);
   }
   return shown;
+}
+
+// Authored counts, never question wording or labels in reports/downloads.
+export function testAuthoredCounts(item) {
+  const questions = Object.entries(item.questions || {});
+  return {
+    uncovered: questions.filter(([id]) => !Object.hasOwn(item.expect || {}, id)).length,
+    options: questions.reduce((sum, [, q]) => sum + (q.type === "choice" ? Object.keys(q.criteria || {}).length : 0), 0),
+    instructions: questions.reduce((sum, [, q]) => sum + Array.from(typeof q.instructions === "string" ? q.instructions : (q.instructions == null ? "" : JSON.stringify(q.instructions))).length, 0),
+  };
+}
+
+// Latest current results only. These totals intentionally exclude previous rerun attempts.
+export function testObservedSummary(items, results) {
+  const ids = new Set(items.map((item) => item.id));
+  const summary = { tests: ids.size, latencyCount: 0, latencyTotal: 0, costCount: 0, costTotal: 0 };
+  for (const run of results?.runs || []) {
+    if (!ids.has(run.id)) continue;
+    for (const [field, count, total] of [["latency_ms", "latencyCount", "latencyTotal"], ["cost_usd", "costCount", "costTotal"]]) {
+      const value = run.meta?.[field];
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) { summary[count]++; summary[total] += value; }
+    }
+  }
+  return summary;
 }
 
 export function selectedTestIds(items, selected) {

@@ -1859,3 +1859,6 @@ labeling panel or its CSV/draft handoff uses the full eligible snapshot rather t
 | `POST /api/workbench/datasets/agreement/session/import` | `id`, `session` | Blind sample, validated human edits and preview counts |
 | `POST /api/workbench/compare/slices` | Answer `rows` with original inputs, optional `field`, `signal`, `first`, `bound` | Successful-pair scores by input value |
 | `POST /api/workbench/compare/labeling` | Original `rows`, A's `questions`, disagreement `indices`, `qid` | Blank prelabel queue at original row positions |
+
+The [100-improvement inventory](workbench-improvements-100.md) covers the latest local authoring,
+suite-triage, catalog and example-discovery controls, including their export boundaries.

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults, testStatusSummary,
+  testRunSnapshot, pruneTestResults, mergeTestResults, testStatusSummary, testObservedSummary,
 } from "../../static/js/test-selection.js";
 
 const items = [
@@ -250,10 +250,10 @@ test("rendered test controls reset presentation filters and copy hidden selected
   let copied;
   const downloads = [];
   const h = (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity).filter(Boolean) });
-  const helpers = { W, testView, testFilterDefaults, h, selectedTestSummary, testStatusSummary, selectedTestIds, visibleTests, testResultStatus,
+  const helpers = { W, testView, testFilterDefaults, h, selectedTestSummary, testStatusSummary, testObservedSummary, selectedTestIds, visibleTests, testResultStatus,
     reconcileTests: () => {}, shownTests: () => visibleTests(W.items, null, { ...testView, query: W.testSearch }),
     unsuccessfulTestIds: () => [], render: () => {}, testCountText: () => "counts",
-    estimateLine: () => null, api: () => {}, icon: () => null, downloadTestMetadata: (rows, format) => downloads.push([rows.map((row) => row.id), format]), copyText: (value) => { copied = value; } };
+    ms: String, usd: String, estimateLine: () => null, api: () => {}, icon: () => null, downloadTestMetadata: (rows, format) => downloads.push([rows.map((row) => row.id), format]), copyText: (value) => { copied = value; } };
   const renderTests = new Function(...Object.keys(helpers), `${body("renderTests").replace("export ", "")}; return renderTests;`)(...Object.values(helpers));
   const tree = renderTests();
   const nodes = [];

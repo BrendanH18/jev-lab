@@ -3,7 +3,8 @@
 import { $, api, copyText, h, handleError, icon, pct, stat, toast } from "./common.js";
 import { secondItems, settleKey, settledItems, sessionItems, sessionSettlements, changeSecondLabel, agreementEditsUnsaved,
   restoreAgreementEdits, restoredChoices, unshownSettlements } from "./agreement.js";
-import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, catalogJson, catalogPreset, datasetCopyName, canCopyDataset, catalogProgress, catalogIds } from "./dataset-catalog.js";
+import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, catalogJson, catalogPreset, datasetCopyName, canCopyDataset, catalogProgress, catalogIds,
+  updateCatalogPins, pinnedCatalog, catalogDetailsSummary } from "./dataset-catalog.js";
 import { createHistory } from "./history.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
@@ -252,7 +253,7 @@ export function renderDatasets() {
           h("span", { class: "faint", style: { fontSize: "12px" } }, catalogProgress(x)),
           x.notes ? h("span", { class: "muted", style: { fontSize: "12px" } }, x.notes) : null),
         h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
-          h("button", { class: "btn sm", "aria-label": `Pin dataset ${x.id}`, "aria-pressed": String(filters.pinnedIds.includes(x.id)),
+          h("button", { class: "btn sm", "data-catalog-pin": "", "aria-label": `Pin dataset ${x.id}`, "aria-pressed": String(filters.pinnedIds.includes(x.id)),
             onclick: (event) => {
               const index = filters.pinnedIds.indexOf(x.id);
               if (index < 0) filters.pinnedIds.push(x.id); else filters.pinnedIds.splice(index, 1);
@@ -294,6 +295,26 @@ function datasetSearchControls(filters) {
     if (count) count.textContent = `${matches.size} of ${W.bulk.datasets.length} datasets shown`;
     const summary = $("#dataset-search-summary");
     if (summary) summary.textContent = catalogSummary(shown);
+    const details = $("#dataset-search-details-summary");
+    if (details) details.textContent = catalogDetailsSummary(shown);
+    const pinned = pinnedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds);
+    for (const id of ["dataset-catalog-copy-pinned", "dataset-catalog-pinned-csv", "dataset-catalog-pinned-json"]) {
+      const button = $(`#${id}`);
+      if (button) button.disabled = !pinned.length;
+    }
+    for (const id of ["dataset-catalog-pin-shown", "dataset-catalog-unpin-shown", "dataset-catalog-copy-summary"]) {
+      const button = $(`#${id}`);
+      if (button) button.disabled = !shown.length;
+    }
+    const pinnedCount = $("#dataset-catalog-pinned-count");
+    if (pinnedCount) pinnedCount.textContent = `${pinned.length} datasets pinned in this page session`;
+    for (const row of nodes.values()) {
+      const button = row.querySelector?.("[data-catalog-pin]");
+      if (!button) continue;
+      const pinned = filters.pinnedIds.includes(row.dataset.datasetId);
+      button.setAttribute("aria-pressed", String(pinned));
+      button.textContent = pinned ? "Unpin" : "Pin";
+    }
     const empty = $("#dataset-search-empty");
     if (empty) empty.hidden = !W.bulk.datasets.length || !!shown.length;
     const download = $("#dataset-catalog-download");
@@ -324,10 +345,22 @@ function datasetSearchControls(filters) {
     applyFilters(catalogDefaults());
     search.focus();
   };
+  const download = (items, format, name) => {
+    if (!items.length) return;
+    const url = URL.createObjectURL(new Blob([format === "csv" ? catalogCsv(items) : catalogJson(items)],
+      { type: format === "csv" ? "text/csv;charset=utf-8" : "application/json" }));
+    h("a", { href: url, download: `${name}.${format}` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const setPins = (pin) => {
+    filters.pinnedIds = updateCatalogPins(W.bulk.datasets, filters.pinnedIds, visible().map((item) => item.id), pin);
+    update();
+  };
   const shown = visible();
   return h("div", { class: "grid", style: { gap: "6px" } }, search,
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
       select("searchField", "Dataset search field", [["all", "Name, ID and notes"], ["name", "Name only"], ["id", "ID only"], ["notes", "Notes only"]]),
+      select("searchMode", "Dataset search matching", [["phrase", "Match phrase"], ["all-words", "Match every word"], ["any-word", "Match any word"]]),
       controls.exclude = h("input", { class: "input", type: "search", value: filters.exclude, placeholder: "Exclude matching phrase", "aria-label": "Exclude dataset phrase",
         oninput: (event) => { filters.exclude = event.target.value; update(); } }),
       select("notes", "Filter datasets by notes", [["all", "Any notes"], ["with", "With notes"], ["without", "Without notes"]]),
@@ -349,7 +382,11 @@ function datasetSearchControls(filters) {
         ["unlabeled", "Most rows without labels"], ["questions", "Most questions first"], ["held-out", "Most held-out rows first"], ["labeled-asc", "Fewest labeled rows first"],
         ["unlabeled-asc", "Fewest rows without labels"], ["questions-asc", "Fewest questions first"],
         ["held-out-asc", "Fewest held-out rows first"], ["guidelines", "Most guideline questions first"], ["guidelines-asc", "Fewest guideline questions first"],
-        ["tuning", "Most tuning rows first"], ["tuning-asc", "Fewest tuning rows first"]])),
+        ["tuning", "Most tuning rows first"], ["tuning-asc", "Fewest tuning rows first"],
+        ["looks", "Most test evaluations first"], ["looks-asc", "Fewest test evaluations first"],
+        ["tuning-labeled", "Most labeled tuning rows first"], ["tuning-labeled-asc", "Fewest labeled tuning rows first"],
+        ["held-out-share", "Highest held-out row share first"], ["held-out-share-asc", "Lowest held-out row share first"],
+        ["guideline-share", "Highest guideline share first"], ["guideline-share-asc", "Lowest guideline share first"]])),
     h("details", {}, h("summary", {}, "Filter by counts"),
       h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", paddingTop: "8px" } },
         countFilter("minRows", "Minimum rows"), countFilter("maxRows", "Maximum rows"),
@@ -363,6 +400,23 @@ function datasetSearchControls(filters) {
         ...[["minLabelShare", "Minimum labeled share (%)"], ["maxLabelShare", "Maximum labeled share (%)"]].map(([key, label]) =>
           h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input sm", type: "number", min: 0, max: 100, step: "any",
             value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => { filters[key] = event.target.value; update(); } }))))),
+    h("details", {}, h("summary", {}, "Split labeling and guideline coverage"),
+      h("div", { class: "grid", style: { gap: "8px", paddingTop: "8px" } },
+        controls.idPrefix = h("input", { class: "input", type: "search", value: filters.idPrefix, placeholder: "Dataset ID starts with",
+          "aria-label": "Dataset ID prefix", oninput: (event) => { filters.idPrefix = event.target.value; update(); } }),
+        select("tuningLabels", "Filter datasets by tuning row labels", [["all", "Any tuning label progress"], ["none", "No tuning rows labeled"],
+          ["some", "Some tuning rows labeled"], ["every", "Every tuning row has a label"]]),
+        select("heldOutLabels", "Filter datasets by held-out row labels", [["all", "Any held-out label progress"], ["none", "No held-out rows labeled"],
+          ["some", "Some held-out rows labeled"], ["every", "Every held-out row has a label"]]),
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px" } },
+          countFilter("minTuningLabeled", "Minimum labeled tuning rows"), countFilter("maxTuningLabeled", "Maximum labeled tuning rows"),
+          countFilter("minHeldOutLabeled", "Minimum labeled held-out rows"), countFilter("maxHeldOutLabeled", "Maximum labeled held-out rows"),
+          countFilter("minUnguided", "Minimum questions without guidelines"), countFilter("maxUnguided", "Maximum questions without guidelines"),
+          ...[["minHeldOutShare", "Minimum held-out row share (%)"], ["maxHeldOutShare", "Maximum held-out row share (%)"],
+            ["minGuidelineShare", "Minimum guideline share (%)"], ["maxGuidelineShare", "Maximum guideline share (%)"]].map(([key, label]) =>
+            h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input sm", type: "number", min: 0, max: 100, step: "any",
+              value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => { filters[key] = event.target.value; update(); } })))),
+        h("p", { class: "faint", style: { margin: 0 } }, "Split shares count rows, including unlabeled rows. Guideline share counts saved questions with human guidance. Shares with no rows or questions are unavailable. Label progress does not establish validity."))),
     h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
       ...[["savedAfter", "Saved on or after"], ["savedBefore", "Saved on or before"]].map(([key, label]) =>
         h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input", type: "date", value: filters[key],
@@ -388,6 +442,22 @@ function datasetSearchControls(filters) {
       } }, "Download shown catalog JSON")),
     h("span", { class: "faint", id: "dataset-search-count", "aria-live": "polite" }, `${shown.length} of ${W.bulk.datasets.length} datasets shown`),
     h("span", { class: "faint", id: "dataset-search-summary" }, catalogSummary(shown)),
+    h("details", {}, h("summary", {}, "Catalog summary and pinned datasets"),
+      h("div", { class: "grid", style: { gap: "8px", paddingTop: "8px" } },
+        h("span", { class: "faint", id: "dataset-search-details-summary", "aria-live": "polite" }, catalogDetailsSummary(shown)),
+        h("span", { class: "faint", id: "dataset-catalog-pinned-count" }, `${pinnedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds).length} datasets pinned in this page session`),
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px" } },
+          h("button", { class: "btn sm", id: "dataset-catalog-pin-shown", disabled: !shown.length, onclick: () => setPins(true) }, "Pin shown datasets"),
+          h("button", { class: "btn sm", id: "dataset-catalog-unpin-shown", disabled: !shown.length, onclick: () => setPins(false) }, "Unpin shown datasets"),
+          h("button", { class: "btn sm", id: "dataset-catalog-copy-summary", disabled: !shown.length,
+            onclick: () => { const items = visible(); if (items.length) copyText(`${catalogSummary(items)}\n${catalogDetailsSummary(items)}`); } }, "Copy shown catalog summary"),
+          h("button", { class: "btn sm", id: "dataset-catalog-copy-pinned", disabled: !filters.pinnedIds.length,
+            onclick: () => { const items = pinnedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds); if (items.length) copyText(catalogIds(items)); } }, "Copy all pinned dataset IDs"),
+          h("button", { class: "btn sm", id: "dataset-catalog-pinned-csv", disabled: !filters.pinnedIds.length,
+            onclick: () => download(pinnedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds), "csv", "jev-pinned-datasets") }, "Download all pinned catalog CSV"),
+          h("button", { class: "btn sm", id: "dataset-catalog-pinned-json", disabled: !filters.pinnedIds.length,
+            onclick: () => download(pinnedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds), "json", "jev-pinned-datasets") }, "Download all pinned catalog JSON")),
+        h("p", { class: "faint", style: { margin: 0 } }, "Pinned handoffs include hidden pins in the current sort order. Counts describe human work and recorded evaluation looks, never evaluation quality. Downloads contain the existing names, IDs, counts and timestamps only."))),
     h("div", { class: "empty", id: "dataset-search-empty", hidden: !W.bulk.datasets.length || !!shown.length },
       "No datasets match these filters. ", h("button", { class: "btn sm", onclick: clear }, "Show all datasets")),
     h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } }, "A labeled row has at least one saved label; this does not establish complete or valid labels. Filters only change the list shown. Pins last for this page session; clearing filters keeps them."));
@@ -748,7 +818,7 @@ async function saveSettled(id) {
 function testControl(x) {
   if (x.test) {
     const looks = x.test.looks;
-    return [h("span", { class: "badge", title: "Rows held out of every tuning panel and Compare. Score a gate on them from Policy." },
+    return [h("span", { class: "badge", style: { whiteSpace: "normal", maxWidth: "100%", overflowWrap: "anywhere" }, title: "Rows held out of every tuning panel and Compare. Score a gate on them from Policy." },
       `test: ${x.test.rows} rows · ${x.test.labeled} labeled (${pct(x.test.share, 1)} of labeled rows) · ${looks} look${looks === 1 ? "" : "s"}`),
     h("button", { class: "btn sm ghost", onclick: () => removeTest(x.id) }, "Remove test split")];
   }
