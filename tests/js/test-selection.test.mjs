@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults,
+  testRunSnapshot, pruneTestResults, mergeTestResults, testStatusSummary,
 } from "../../static/js/test-selection.js";
 
 const items = [
@@ -248,11 +248,12 @@ test("rendered test controls reset presentation filters and copy hidden selected
     searchField: "name", exclude: "Last", minImages: "1", minExpectations: "1" };
   const W = { items: managed, runResults: null, testSearch: "First" };
   let copied;
+  const downloads = [];
   const h = (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity).filter(Boolean) });
-  const helpers = { W, testView, testFilterDefaults, h, selectedTestSummary, selectedTestIds, visibleTests, testResultStatus,
+  const helpers = { W, testView, testFilterDefaults, h, selectedTestSummary, testStatusSummary, selectedTestIds, visibleTests, testResultStatus,
     reconcileTests: () => {}, shownTests: () => visibleTests(W.items, null, { ...testView, query: W.testSearch }),
     unsuccessfulTestIds: () => [], render: () => {}, testCountText: () => "counts",
-    estimateLine: () => null, api: () => {}, icon: () => null, copyText: (value) => { copied = value; } };
+    estimateLine: () => null, api: () => {}, icon: () => null, downloadTestMetadata: (rows, format) => downloads.push([rows.map((row) => row.id), format]), copyText: (value) => { copied = value; } };
   const renderTests = new Function(...Object.keys(helpers), `${body("renderTests").replace("export ", "")}; return renderTests;`)(...Object.values(helpers));
   const tree = renderTests();
   const nodes = [];
@@ -267,6 +268,16 @@ test("rendered test controls reset presentation filters and copy hidden selected
   const button = (label) => nodes.find((node) => node.tag === "button" && node.children.includes(label));
   button("Copy selected test IDs").props.onclick();
   assert.equal(copied, "zebra\nmiddle");
+  button("Download visible metadata CSV").props.onclick();
+  button("Download selected metadata JSON").props.onclick();
+  button("Download selected metadata CSV").props.onclick();
+  assert.deepEqual(downloads, [[["zebra"], "csv"], [["zebra", "middle"], "json"], [["zebra", "middle"], "csv"]]);
+  for (const label of ["Test ID prefix", "Exclude question type", "Minimum state bytes", "Maximum state bytes"]) {
+    assert.ok(nodes.some((node) => node.props?.["aria-label"] === label), label);
+  }
+  const excludedType = nodes.find((node) => node.props?.["aria-label"] === "Exclude question type");
+  excludedType.props.onchange({ target: { value: "box" } });
+  assert.equal(testView.excludeType, "box");
   button("Reset test filters").props.onclick();
   assert.equal(W.testSearch, "");
   for (const [key, value] of Object.entries(testFilterDefaults())) assert.deepEqual(testView[key], value);

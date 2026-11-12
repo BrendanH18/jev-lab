@@ -5,7 +5,7 @@ import {
   statusBadge, toast,
 } from "./common.js";
 import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
-import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption, insertEditorCriterion, duplicateShownQuestions, editorQuestionOutline, reorderEditorCriteria } from "./build-editing.js";
+import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption, insertEditorCriterion, duplicateShownQuestions, editorQuestionOutline, reorderEditorCriteria, moveShownQuestionsToEdge, removeBlankEditorCriteria, shownEditorInstructions, editorQuestionsMarkdown } from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
@@ -334,7 +334,7 @@ function refreshQuestionVisibility() {
   });
   const count = $("#build-question-count");
   if (count) count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.`;
-  for (const id of ["build-copy-shown", "build-duplicate-shown", "build-copy-shown-json", "build-download-shown-json", "build-download-outline"]) {
+  for (const id of ["build-copy-shown", "build-duplicate-shown", "build-copy-shown-json", "build-download-shown-json", "build-download-outline", "build-copy-shown-instructions", "build-download-shown-markdown", "build-move-shown-first", "build-move-shown-last"]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !shown.size;
   }
@@ -362,7 +362,9 @@ function renderQuestionTools() {
         h("option", { value, selected: (buildQuestionView.searchField || "all") === value }, label))),
       h("input", { class: "input sm", type: "search", "aria-label": "Exclude Build question text", placeholder: "Exclude text in search field",
         value: buildQuestionView.exclude || "", oninput: (event) => { buildQuestionView.exclude = event.target.value; refreshQuestionVisibility(); } }),
-      [["minCriteria", "Minimum defined criteria"], ["maxCriteria", "Maximum defined criteria"]].map(([key, label]) =>
+      h("input", { class: "input sm", type: "search", "aria-label": "Build question id prefix", placeholder: "Id starts with",
+        value: buildQuestionView.idPrefix || "", oninput: (event) => { buildQuestionView.idPrefix = event.target.value; refreshQuestionVisibility(); } }),
+      [["minCriteria", "Minimum defined criteria"], ["maxCriteria", "Maximum defined criteria"], ["minInstructions", "Minimum instruction characters"], ["maxInstructions", "Maximum instruction characters"]].map(([key, label]) =>
         h("input", { class: "input sm", type: "number", min: "0", step: "1", "aria-label": label, placeholder: label,
           value: buildQuestionView[key] || "", oninput: (event) => { buildQuestionView[key] = event.target.value; refreshQuestionVisibility(); } })),
       h("select", { class: "input sm", "aria-label": "Filter Build question type", onchange: (event) => {
@@ -377,6 +379,11 @@ function renderQuestionTools() {
       h("button", { class: "btn sm ghost", id: "build-copy-shown-json", disabled: !shown, onclick: () => shareShownQuestions("copy") }, "Copy shown questions JSON"),
       h("button", { class: "btn sm ghost", id: "build-download-shown-json", disabled: !shown, onclick: () => shareShownQuestions("json") }, "Download shown questions JSON"),
       h("button", { class: "btn sm ghost", id: "build-download-outline", disabled: !shown, onclick: () => shareShownQuestions("outline") }, "Download shown outline"),
+      h("button", { class: "btn sm ghost", id: "build-copy-shown-instructions", disabled: !shown, onclick: () => shareShownQuestions("instructions") }, "Copy shown instructions"),
+      h("button", { class: "btn sm ghost", id: "build-download-shown-markdown", disabled: !shown, onclick: () => shareShownQuestions("markdown") }, "Download shown Markdown"),
+      [false, true].map((last) => h("button", { class: "btn sm ghost", id: `build-move-shown-${last ? "last" : "first"}`, disabled: !shown,
+        onclick: () => { W.questions = moveShownQuestionsToEdge(W.questions, visibleBuildQuestions(), last); markBuildEdited(); render(); },
+      }, last ? "Move shown last" : "Move shown first")),
       h("button", { class: "btn sm ghost", id: "build-duplicate-shown", disabled: !shown, onclick: () => {
         W.questions = duplicateShownQuestions(W.questions, visibleBuildQuestions());
         markBuildEdited(); render();
@@ -396,8 +403,10 @@ function shareShownQuestions(format) {
   if (buildRawText !== null) return toast("Apply the Raw JSON edits before sharing editor questions.", "error");
   const rows = visibleBuildQuestions();
   if (!rows.length) return toast("No questions are shown.", "error");
+  if (format === "instructions") return copyText(shownEditorInstructions(rows));
   let text;
-  if (format === "outline") text = editorQuestionOutline(rows);
+  if (format === "markdown") text = editorQuestionsMarkdown(rows);
+  else if (format === "outline") text = editorQuestionOutline(rows);
   else {
     if (rows.some((row) => !String(row.id || "").trim())) return toast("Give every shown question an id before sharing JSON.", "error");
     const error = questionEditorError(rows);
@@ -405,8 +414,8 @@ function shareShownQuestions(format) {
     text = JSON.stringify(toQuestions(rows), null, 2) + "\n";
   }
   if (format === "copy") return copyText(text);
-  const url = URL.createObjectURL(new Blob([text], { type: format === "outline" ? "text/plain;charset=utf-8" : "application/json" }));
-  h("a", { href: url, download: format === "outline" ? "jev-question-outline.txt" : "jev-questions.json" }).click();
+  const url = URL.createObjectURL(new Blob([text], { type: format === "markdown" ? "text/markdown;charset=utf-8" : format === "outline" ? "text/plain;charset=utf-8" : "application/json" }));
+  h("a", { href: url, download: format === "markdown" ? "jev-questions.md" : format === "outline" ? "jev-question-outline.txt" : "jev-questions.json" }).click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -677,6 +686,8 @@ function renderQuestionCard(row, i) {
     crit = h("div", { class: "crit" },
       h("div", { class: "section-label", style: { margin: 0 } }, "Options (key → description, description optional)"),
       h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "sort") }, "Sort options by key"),
+      h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "sort-desc") }, "Sort options descending"),
+      h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "reverse") }, "Reverse options"),
       row.choice.map((pair, j) => {
         const k = h("input", { class: "input mono", value: pair[0], placeholder: "option_key" });
         const d = h("input", { class: "input", value: pair[1], placeholder: "what this option means" });
@@ -753,6 +764,9 @@ function renderQuestionCard(row, i) {
         : row.type === "score" ? `${row.score.filter((level) => level.trim()).length} defined levels`
         : row.type === "noul" ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes` : "Coordinates only · no criteria"),
     h("span", { class: "faint", id: `build-instruction-count-${i}`, "aria-live": "polite" }, `${Array.from(String(row.instructions || "")).length} instruction characters`),
+    ["choice", "score"].includes(row.type) ? h("button", { class: "btn sm ghost", onclick: () => {
+      W.questions[i] = removeBlankEditorCriteria(row); markBuildEdited(); render();
+    }, title: "Remove empty placeholders only; keep unnamed descriptions and every defined criterion" }, "Remove blank criterion rows") : null,
     collapsed ? h("p", { class: "faint", style: { margin: 0, overflowWrap: "anywhere" } },
       row.instructions ? `${row.instructions.slice(0, 160)}${row.instructions.length > 160 ? "…" : ""}` : "No instructions yet") : [instr, crit]);
 }
