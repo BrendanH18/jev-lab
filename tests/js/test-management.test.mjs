@@ -70,5 +70,26 @@ test("new test controls use current visible scope or full selected scope", () =>
   for (const label of ["Test ID prefix", "Exclude question type", "Minimum state bytes", "Maximum state bytes", "Smallest state inputs", "Largest state inputs", "Download visible metadata CSV", "Download selected metadata JSON", "Download selected metadata CSV"]) {
     assert.ok(source.includes(label), label);
   }
-  assert.match(source, /statuses\.textContent = testStatusSummary\(shownTests\(\), W\.runResults\)/);
+  assert.match(source, /statuses\.textContent = testStatusSummary\(shown, W\.runResults\)/);
+});
+
+
+test("state encoding is skipped when unused and reused across bounds and sorting", () => {
+  let encodings = 0;
+  const Encoder = globalThis.TextEncoder;
+  globalThis.TextEncoder = class extends Encoder {
+    encode(value) { encodings++; return super.encode(value); }
+  };
+  try {
+    visibleTests(items, null);
+    assert.equal(encodings, 0);
+    visibleTests(items, null, { minStateBytes: "0", maxStateBytes: "1000", sort: "input-largest" });
+    assert.equal(encodings, items.length);
+    items[0].state = "changed input";
+    visibleTests(items, null, { sort: "input-smallest" });
+    assert.equal(encodings, items.length * 2, "cache must not outlive the current request");
+  } finally {
+    items[0].state = "é☕";
+    globalThis.TextEncoder = Encoder;
+  }
 });

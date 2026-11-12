@@ -24,27 +24,28 @@ function unsuccessfulTestIds() {
   return (W.runResults?.runs || []).filter((run) => ["fail", "error"].includes(testResultStatus(run))).map((run) => run.id);
 }
 
-function testCountText() {
-  return `${shownTests().length} of ${W.items.length} tests shown · ${testView.selected.length} selected. Run all runs every saved test.`;
+function testCountText(shown = shownTests()) {
+  return `${shown.length} of ${W.items.length} tests shown · ${testView.selected.length} selected. Run all runs every saved test.`;
 }
 
 // Typing into search keeps focus and the cursor, and never changes selection.
 function refreshTestVisibility() {
-  const visible = new Set(shownTests().map((item) => item.id));
+  const shown = shownTests();
+  const visible = new Set(shown.map((item) => item.id));
   $("#saved-test-results")?.querySelectorAll(".saved-test-item").forEach((row) => {
     row.style.display = visible.has(row.dataset.testId) ? "" : "none";
   });
   const count = $("#saved-test-count");
-  if (count) count.textContent = testCountText();
+  if (count) count.textContent = testCountText(shown);
   const summary = $("#saved-test-visible-summary");
-  const totals = selectedTestSummary(W.items, shownTests().map((item) => item.id));
+  const totals = selectedTestSummary(W.items, shown.map((item) => item.id));
   if (summary) summary.textContent = `Visible requests: ${totals.tests} tests · ${totals.questions} questions · ${totals.expectations} expectations · ${totals.images} pictures. Input counts only.`;
   for (const id of ["saved-test-copy-ids", "saved-test-export-metadata", "saved-test-export-csv"]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !visible.size;
   }
   const statuses = $("#saved-test-visible-statuses");
-  if (statuses) statuses.textContent = testStatusSummary(shownTests(), W.runResults);
+  if (statuses) statuses.textContent = testStatusSummary(shown, W.runResults);
   const empty = $("#saved-test-no-match");
   if (empty) empty.hidden = visible.size > 0;
   const selectVisible = $("#saved-test-select-visible");

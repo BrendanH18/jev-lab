@@ -14,13 +14,18 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     const bound = Number(value);
     return Number.isInteger(bound) && bound >= 0 && (minimum ? count >= bound : count <= bound);
   };
+  const inputSizes = new Map();
+  const inputBytes = (item) => {
+    if (!inputSizes.has(item)) inputSizes.set(item, testInputBytes(item));
+    return inputSizes.get(item);
+  };
   const searchItem = (item) => searchField === "all" ? item : { [searchField]: item[searchField] };
   const shown = items.filter((item) => matchesSaved(searchItem(item), query)
     && (!String(exclude).trim() || !matchesSaved(searchItem(item), exclude))
     && String(item.id).toLocaleLowerCase().startsWith(String(idPrefix).trim().toLocaleLowerCase())
     && (excludeType === "all" || !Object.values(item.questions || {}).some((question) => question.type === excludeType))
-    && countMatches(testInputBytes(item), minStateBytes, true)
-    && countMatches(testInputBytes(item), maxStateBytes, false)
+    && (String(minStateBytes).trim() === "" || countMatches(inputBytes(item), minStateBytes, true))
+    && (String(maxStateBytes).trim() === "" || countMatches(inputBytes(item), maxStateBytes, false))
     && countMatches(Object.keys(item.expect || {}).length, minExpectations, true)
     && countMatches(Object.keys(item.expect || {}).length, maxExpectations, false)
     && countMatches(Object.keys(item.images || {}).length, minImages, true)
@@ -38,8 +43,8 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     && countMatches(Object.keys(item.questions || {}).length, maxQuestions, false)
     && (selection === "all" || selectedSet.has(item.id) === (selection === "selected")));
   // Array#sort is stable; ties retain the saved list's order.
-  if (sort === "input-smallest") shown.sort((a, b) => testInputBytes(a) - testInputBytes(b));
-  if (sort === "input-largest") shown.sort((a, b) => testInputBytes(b) - testInputBytes(a));
+  if (sort === "input-smallest") shown.sort((a, b) => inputBytes(a) - inputBytes(b));
+  if (sort === "input-largest") shown.sort((a, b) => inputBytes(b) - inputBytes(a));
   if (sort === "id") shown.sort((a, b) => a.id.localeCompare(b.id));
   if (sort === "images") shown.sort((a, b) => Object.keys(b.images || {}).length - Object.keys(a.images || {}).length);
   if (sort === "fewest-expectations") shown.sort((a, b) => Object.keys(a.expect || {}).length - Object.keys(b.expect || {}).length);
