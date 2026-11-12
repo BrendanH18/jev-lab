@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  suiteInventoryText, suiteQuestionInventory, previewSuiteIds, applySuiteIds, firstVisibleSuiteIds,
   testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, testRunBody,
   testRunSnapshot, pruneTestResults, mergeTestResults, testStatusSummary, testObservedSummary,
 } from "../../static/js/test-selection.js";
@@ -250,7 +251,7 @@ test("rendered test controls reset presentation filters and copy hidden selected
   let copied;
   const downloads = [];
   const h = (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity).filter(Boolean) });
-  const helpers = { W, testView, testFilterDefaults, h, selectedTestSummary, testStatusSummary, testObservedSummary, selectedTestIds, visibleTests, testResultStatus,
+  const helpers = { suiteInventoryText, suiteQuestionInventory, previewSuiteIds, applySuiteIds, firstVisibleSuiteIds, W, testView, testFilterDefaults, h, selectedTestSummary, testStatusSummary, testObservedSummary, selectedTestIds, visibleTests, testResultStatus,
     reconcileTests: () => {}, shownTests: () => visibleTests(W.items, null, { ...testView, query: W.testSearch }),
     unsuccessfulTestIds: () => [], render: () => {}, testCountText: () => "counts",
     ms: String, usd: String, estimateLine: () => null, api: () => {}, icon: () => null, downloadTestMetadata: (rows, format) => downloads.push([rows.map((row) => row.id), format]), copyText: (value) => { copied = value; } };

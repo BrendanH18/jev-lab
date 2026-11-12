@@ -8,6 +8,7 @@ import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, 
 import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption, insertEditorCriterion, duplicateShownQuestions, editorQuestionOutline, reorderEditorCriteria, moveShownQuestionsToEdge, removeBlankEditorCriteria, shownEditorInstructions, editorQuestionsMarkdown } from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { editorAuthoringSummary, editorOutlineCsv, shownQuestionIndex } from "./build-authoring.js";
+import { prepareBuildCleanup, applyBuildCleanup, undoBuildCleanup, buildDiagnosticsMetadata, renderBuildRefinements } from "./build-refinements.js";
 import { render } from "./workbench.js";
 
 const TYPES = ["noul", "choice", "score", "box"];
@@ -18,6 +19,8 @@ let buildRunSequence = 0;
 let buildRunning = false;
 let buildRawText = null;
 let buildDraftBusy = false;
+let buildCleanupPreview = null;
+let buildCleanupUndo = null;
 const buildQuestionView = { query: "", type: "all" };
 
 // ---------- data helpers ----------
@@ -217,6 +220,8 @@ export function loadInto(state, questions, { expect = {}, name = "", notes = "",
   W.tab = "build";
   buildRunContext = null;
   buildDraftPreview = null;
+  buildCleanupPreview = null;
+  buildCleanupUndo = null;
   buildBaseline = buildContext();
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -508,6 +513,47 @@ function reorderBuildCriteria(index, action) {
   markBuildEdited(); render();
 }
 
+function cleanupBuildQuestions(action) {
+  if (buildRawText !== null) return toast("Apply the Raw JSON edits before using content cleanup or diagnostics.", "error");
+  const replaceRows = (rows) => {
+    const collapsed = buildEditState().collapsed;
+    rows.forEach((row, index) => { if (collapsed.has(W.questions[index])) collapsed.add(row); });
+    W.questions = rows;
+  };
+  try {
+    if (action === "preview") {
+      buildCleanupPreview = prepareBuildCleanup(W.questions, W.expect, visibleBuildQuestions(), buildQuestionView.cleanupAction || "ids");
+    } else if (action === "apply") {
+      const result = applyBuildCleanup(W.questions, W.expect, buildCleanupPreview);
+      replaceRows(result.rows);
+      buildCleanupUndo = result.undo;
+      buildCleanupPreview = null;
+      markBuildEdited();
+    } else if (action === "undo") {
+      replaceRows(undoBuildCleanup(W.questions, W.expect, buildCleanupUndo));
+      buildCleanupUndo = null;
+      buildCleanupPreview = null;
+      markBuildEdited();
+    } else if (action === "download") {
+      const shown = visibleBuildQuestions();
+      if (!shown.length) return toast("No questions are shown.", "error");
+      const url = URL.createObjectURL(new Blob([JSON.stringify(buildDiagnosticsMetadata(shown), null, 2) + "\n"], { type: "application/json" }));
+      h("a", { href: url, download: "jev-question-diagnostics.json" }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+    render();
+  } catch (e) { toast(e.message, "error"); }
+}
+
+function renderBuildContentTools() {
+  return renderBuildRefinements(h, { view: buildQuestionView, refresh: refreshQuestionVisibility,
+    preview: buildCleanupPreview, undo: buildCleanupUndo,
+    onPreview: () => cleanupBuildQuestions("preview"), onApply: () => cleanupBuildQuestions("apply"),
+    onUndo: () => cleanupBuildQuestions("undo"), onDownload: () => cleanupBuildQuestions("download"),
+    onCancel: () => { buildCleanupPreview = null; render(); } });
+}
+
 function discardBuildRaw() {
   if (buildRawText === null || !window.confirm("Discard the unapplied Raw JSON edits? The question editor will keep its current questions.")) return;
   buildRawText = null;
@@ -563,6 +609,7 @@ export function renderBuild() {
           h("button", { class: "btn sm ghost", onclick: discardBuildRaw }, "Discard Raw edits")) : null,
         !W.raw ? renderQuestionTools() : null,
         !W.raw ? renderBuildAuthoringTools() : null,
+        !W.raw ? renderBuildContentTools() : null,
         W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) =>
           h("div", { class: "build-question-card", "data-question-index": String(i), hidden: !visibleBuildQuestions().includes(row),
             onfocusout: questionFocusOut }, renderQuestionCard(row, i)))),

@@ -4,7 +4,7 @@ import { $, api, copyText, h, handleError, icon, pct, stat, toast } from "./comm
 import { secondItems, settleKey, settledItems, sessionItems, sessionSettlements, changeSecondLabel, agreementEditsUnsaved,
   restoreAgreementEdits, restoredChoices, unshownSettlements } from "./agreement.js";
 import { catalogDefaults, matchesCatalog, sortedCatalog, catalogSummary, catalogCsv, catalogJson, catalogPreset, datasetCopyName, canCopyDataset, catalogProgress, catalogIds,
-  updateCatalogPins, pinnedCatalog, catalogDetailsSummary } from "./dataset-catalog.js";
+  updateCatalogPins, pinnedCatalog, catalogDetailsSummary, invertCatalogPins, catalogActiveFilters, catalogFilterSummary } from "./dataset-catalog.js";
 import { createHistory } from "./history.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
@@ -281,6 +281,14 @@ export function renderDatasets() {
 
 // Filtering keeps every queue mounted, so hidden human edits remain intact.
 function datasetSearchControls(filters) {
+  let previousFilters = null;
+  const snapshot = () => Object.fromEntries(Object.keys(catalogDefaults()).filter((key) => key !== "pinnedIds")
+    .map((key) => [key, filters[key]]));
+  const remember = () => { previousFilters = snapshot(); };
+  const activeChips = () => catalogActiveFilters(filters).map(({ key, label, value }) => h("button", {
+    class: "btn sm ghost", "aria-label": `Remove dataset filter ${label}`,
+    onclick: () => setFilter(key, catalogDefaults()[key]),
+  }, `${label}: ${value} ×`));
   const visible = () => sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds).filter((item) => matchesCatalog(item, filters));
   const update = () => {
     const shown = visible();
@@ -302,7 +310,7 @@ function datasetSearchControls(filters) {
       const button = $(`#${id}`);
       if (button) button.disabled = !pinned.length;
     }
-    for (const id of ["dataset-catalog-pin-shown", "dataset-catalog-unpin-shown", "dataset-catalog-copy-summary"]) {
+    for (const id of ["dataset-catalog-pin-shown", "dataset-catalog-unpin-shown", "dataset-catalog-invert-shown", "dataset-catalog-copy-summary"]) {
       const button = $(`#${id}`);
       if (button) button.disabled = !shown.length;
     }
@@ -323,18 +331,34 @@ function datasetSearchControls(filters) {
     if (idsCopy) idsCopy.disabled = !shown.length;
     const jsonDownload = $("#dataset-catalog-json");
     if (jsonDownload) jsonDownload.disabled = !shown.length;
+    const active = catalogActiveFilters(filters);
+    const activeCount = $("#dataset-catalog-active-count");
+    if (activeCount) activeCount.textContent = `${active.length} active dataset filter${active.length === 1 ? "" : "s"}`;
+    const filterSummary = $("#dataset-catalog-filter-summary");
+    if (filterSummary) filterSummary.textContent = catalogFilterSummary(filters);
+    $("#dataset-catalog-filter-chips")?.replaceChildren?.(...activeChips());
+    const undo = $("#dataset-catalog-filter-undo");
+    if (undo) undo.disabled = !previousFilters;
+  };
+  const setFilter = (key, value) => {
+    if (filters[key] !== value) remember();
+    filters[key] = value;
+    if (key === "query") search.value = value;
+    else if (controls[key]) controls[key].value = value;
+    update();
   };
   const controls = {};
   const search = h("input", { class: "input", type: "search", value: filters.query, placeholder: "Search datasets by name or notes",
-    "aria-label": "Search datasets", oninput: (event) => { filters.query = event.target.value; update(); } });
+    "aria-label": "Search datasets", oninput: (event) => setFilter("query", event.target.value) });
   const select = (key, label, options) => controls[key] = h("select", { class: "input", id: key === "pinned" ? "dataset-catalog-pin-filter" : undefined, "aria-label": label,
-    onchange: (event) => { filters[key] = event.target.value; update(); } },
+    onchange: (event) => setFilter(key, event.target.value) },
   options.map(([value, text]) => h("option", { value, selected: filters[key] === value }, text)));
   const countFilter = (key, label) => h("label", { class: "faint" }, label, " ",
     controls[key] = h("input", { class: "input sm", type: "number", min: 0, step: 1,
       value: filters[key], "aria-label": label, style: { width: "90px" },
-      oninput: (event) => { filters[key] = event.target.value; update(); } }));
-  const applyFilters = (next) => {
+      oninput: (event) => setFilter(key, event.target.value) }));
+  const applyFilters = (next, saveUndo = true) => {
+    if (saveUndo) remember();
     const pins = filters.pinnedIds;
     Object.assign(filters, next, { pinnedIds: pins });
     search.value = filters.query;
@@ -360,9 +384,9 @@ function datasetSearchControls(filters) {
   return h("div", { class: "grid", style: { gap: "6px" } }, search,
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
       select("searchField", "Dataset search field", [["all", "Name, ID and notes"], ["name", "Name only"], ["id", "ID only"], ["notes", "Notes only"]]),
-      select("searchMode", "Dataset search matching", [["phrase", "Match phrase"], ["all-words", "Match every word"], ["any-word", "Match any word"]]),
+      select("searchMode", "Dataset search matching", [["phrase", "Match phrase"], ["all-words", "Match every word"], ["any-word", "Match any word"], ["exact-field", "Match a whole metadata field"]]),
       controls.exclude = h("input", { class: "input", type: "search", value: filters.exclude, placeholder: "Exclude matching phrase", "aria-label": "Exclude dataset phrase",
-        oninput: (event) => { filters.exclude = event.target.value; update(); } }),
+        oninput: (event) => setFilter("exclude", event.target.value) }),
       select("notes", "Filter datasets by notes", [["all", "Any notes"], ["with", "With notes"], ["without", "Without notes"]]),
       h("label", { class: "faint" }, "Quick view ", h("select", { class: "input", "aria-label": "Dataset workflow preset",
         onchange: (event) => { applyFilters(catalogPreset(event.target.value)); event.target.value = ""; } },
@@ -386,7 +410,11 @@ function datasetSearchControls(filters) {
         ["looks", "Most test evaluations first"], ["looks-asc", "Fewest test evaluations first"],
         ["tuning-labeled", "Most labeled tuning rows first"], ["tuning-labeled-asc", "Fewest labeled tuning rows first"],
         ["held-out-share", "Highest held-out row share first"], ["held-out-share-asc", "Lowest held-out row share first"],
-        ["guideline-share", "Highest guideline share first"], ["guideline-share-asc", "Lowest guideline share first"]])),
+        ["guideline-share", "Highest guideline share first"], ["guideline-share-asc", "Lowest guideline share first"],
+        ["tuning-unlabeled", "Most tuning rows without labels"], ["tuning-unlabeled-asc", "Fewest tuning rows without labels"],
+        ["held-out-unlabeled", "Most held-out rows without labels"], ["held-out-unlabeled-asc", "Fewest held-out rows without labels"],
+        ["tuning-label-share", "Highest tuning labeled share first"], ["tuning-label-share-asc", "Lowest tuning labeled share first"],
+        ["held-out-label-share", "Highest held-out labeled share first"], ["held-out-label-share-asc", "Lowest held-out labeled share first"]])),
     h("details", {}, h("summary", {}, "Filter by counts"),
       h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", paddingTop: "8px" } },
         countFilter("minRows", "Minimum rows"), countFilter("maxRows", "Maximum rows"),
@@ -399,11 +427,14 @@ function datasetSearchControls(filters) {
         countFilter("minLooks", "Minimum test evaluations"), countFilter("maxLooks", "Maximum test evaluations"),
         ...[["minLabelShare", "Minimum labeled share (%)"], ["maxLabelShare", "Maximum labeled share (%)"]].map(([key, label]) =>
           h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input sm", type: "number", min: 0, max: 100, step: "any",
-            value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => { filters[key] = event.target.value; update(); } }))))),
+            value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => setFilter(key, event.target.value) }))))),
     h("details", {}, h("summary", {}, "Split labeling and guideline coverage"),
       h("div", { class: "grid", style: { gap: "8px", paddingTop: "8px" } },
         controls.idPrefix = h("input", { class: "input", type: "search", value: filters.idPrefix, placeholder: "Dataset ID starts with",
-          "aria-label": "Dataset ID prefix", oninput: (event) => { filters.idPrefix = event.target.value; update(); } }),
+          "aria-label": "Dataset ID prefix", oninput: (event) => setFilter("idPrefix", event.target.value) }),
+        ...[["idSuffix", "Dataset ID suffix"], ["namePrefix", "Dataset name prefix"], ["nameSuffix", "Dataset name suffix"]].map(([key, label]) =>
+          controls[key] = h("input", { class: "input", type: "search", value: filters[key], placeholder: label,
+            "aria-label": label, oninput: (event) => setFilter(key, event.target.value) })),
         select("tuningLabels", "Filter datasets by tuning row labels", [["all", "Any tuning label progress"], ["none", "No tuning rows labeled"],
           ["some", "Some tuning rows labeled"], ["every", "Every tuning row has a label"]]),
         select("heldOutLabels", "Filter datasets by held-out row labels", [["all", "Any held-out label progress"], ["none", "No held-out rows labeled"],
@@ -412,17 +443,27 @@ function datasetSearchControls(filters) {
           countFilter("minTuningLabeled", "Minimum labeled tuning rows"), countFilter("maxTuningLabeled", "Maximum labeled tuning rows"),
           countFilter("minHeldOutLabeled", "Minimum labeled held-out rows"), countFilter("maxHeldOutLabeled", "Maximum labeled held-out rows"),
           countFilter("minUnguided", "Minimum questions without guidelines"), countFilter("maxUnguided", "Maximum questions without guidelines"),
+          countFilter("minTuningUnlabeled", "Minimum tuning rows without labels"), countFilter("maxTuningUnlabeled", "Maximum tuning rows without labels"),
+          countFilter("minHeldOutUnlabeled", "Minimum held-out rows without labels"), countFilter("maxHeldOutUnlabeled", "Maximum held-out rows without labels"),
           ...[["minHeldOutShare", "Minimum held-out row share (%)"], ["maxHeldOutShare", "Maximum held-out row share (%)"],
-            ["minGuidelineShare", "Minimum guideline share (%)"], ["maxGuidelineShare", "Maximum guideline share (%)"]].map(([key, label]) =>
+            ["minGuidelineShare", "Minimum guideline share (%)"], ["maxGuidelineShare", "Maximum guideline share (%)"],
+            ["minTuningLabelShare", "Minimum tuning labeled share (%)"], ["maxTuningLabelShare", "Maximum tuning labeled share (%)"],
+            ["minHeldOutLabelShare", "Minimum held-out labeled share (%)"], ["maxHeldOutLabelShare", "Maximum held-out labeled share (%)"]].map(([key, label]) =>
             h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input sm", type: "number", min: 0, max: 100, step: "any",
-              value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => { filters[key] = event.target.value; update(); } })))),
+              value: filters[key], "aria-label": label, style: { width: "90px" }, oninput: (event) => setFilter(key, event.target.value) })))),
         h("p", { class: "faint", style: { margin: 0 } }, "Split shares count rows, including unlabeled rows. Guideline share counts saved questions with human guidance. Shares with no rows or questions are unavailable. Label progress does not establish validity."))),
     h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
       ...[["savedAfter", "Saved on or after"], ["savedBefore", "Saved on or before"]].map(([key, label]) =>
         h("label", { class: "faint" }, label, " ", controls[key] = h("input", { class: "input", type: "date", value: filters[key],
-          "aria-label": label, oninput: (event) => { filters[key] = event.target.value; update(); } })))),
+          "aria-label": label, oninput: (event) => setFilter(key, event.target.value) })))),
     h("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } },
       h("button", { class: "btn sm ghost", onclick: clear }, "Clear dataset filters"),
+      h("button", { class: "btn sm", id: "dataset-catalog-filter-undo", disabled: true, onclick: () => {
+        if (!previousFilters) return;
+        const restore = previousFilters;
+        previousFilters = null;
+        applyFilters(restore, false);
+      } }, "Undo dataset filter change"),
       h("button", { class: "btn sm", id: "dataset-catalog-copy-ids", disabled: !shown.length,
         onclick: () => { const items = visible(); if (items.length) copyText(catalogIds(items)); } }, "Copy shown dataset IDs"),
       h("button", { class: "btn sm", id: "dataset-catalog-download", disabled: !shown.length,
@@ -441,6 +482,11 @@ function datasetSearchControls(filters) {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } }, "Download shown catalog JSON")),
     h("span", { class: "faint", id: "dataset-search-count", "aria-live": "polite" }, `${shown.length} of ${W.bulk.datasets.length} datasets shown`),
+    h("span", { class: "faint", id: "dataset-catalog-active-count", "aria-live": "polite" },
+      `${catalogActiveFilters(filters).length} active dataset filter${catalogActiveFilters(filters).length === 1 ? "" : "s"}`),
+    h("details", {}, h("summary", {}, "Active dataset filters"),
+      h("p", { class: "faint", id: "dataset-catalog-filter-summary" }, catalogFilterSummary(filters)),
+      h("div", { id: "dataset-catalog-filter-chips", style: { display: "flex", flexWrap: "wrap", gap: "6px" } }, activeChips())),
     h("span", { class: "faint", id: "dataset-search-summary" }, catalogSummary(shown)),
     h("details", {}, h("summary", {}, "Catalog summary and pinned datasets"),
       h("div", { class: "grid", style: { gap: "8px", paddingTop: "8px" } },
@@ -449,6 +495,10 @@ function datasetSearchControls(filters) {
         h("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px" } },
           h("button", { class: "btn sm", id: "dataset-catalog-pin-shown", disabled: !shown.length, onclick: () => setPins(true) }, "Pin shown datasets"),
           h("button", { class: "btn sm", id: "dataset-catalog-unpin-shown", disabled: !shown.length, onclick: () => setPins(false) }, "Unpin shown datasets"),
+          h("button", { class: "btn sm", id: "dataset-catalog-invert-shown", disabled: !shown.length, onclick: () => {
+            filters.pinnedIds = invertCatalogPins(W.bulk.datasets, filters.pinnedIds, visible().map((item) => item.id));
+            update();
+          } }, "Invert shown dataset pins"),
           h("button", { class: "btn sm", id: "dataset-catalog-copy-summary", disabled: !shown.length,
             onclick: () => { const items = visible(); if (items.length) copyText(`${catalogSummary(items)}\n${catalogDetailsSummary(items)}`); } }, "Copy shown catalog summary"),
           h("button", { class: "btn sm", id: "dataset-catalog-copy-pinned", disabled: !filters.pinnedIds.length,

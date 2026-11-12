@@ -1,11 +1,13 @@
 // Current-page saved-test selection and results. No persistence or model calls.
 import { matchesSaved } from "./saved-search.js";
+import { refineSuite } from "./suite-refinements.js";
+export { suiteAuthoredMetrics, suiteQuestionInventory, suiteInventoryText, previewSuiteIds, applySuiteIds, firstVisibleSuiteIds } from "./suite-refinements.js";
 
 export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "", idPrefix = "", excludeType = "all", minStateBytes = "", maxStateBytes = "", namePrefix = "", idSuffix = "", questionMatch = "contains", minUncovered = "", maxUncovered = "", minOptions = "", maxOptions = "", minInstructions = "", maxInstructions = "", minLatency = "", maxLatency = "", minCost = "", maxCost = "", latency = "all", cost = "all" } = {}) {
+export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "", idPrefix = "", excludeType = "all", minStateBytes = "", maxStateBytes = "", namePrefix = "", idSuffix = "", questionMatch = "contains", minUncovered = "", maxUncovered = "", minOptions = "", maxOptions = "", minInstructions = "", maxInstructions = "", minLatency = "", maxLatency = "", minCost = "", maxCost = "", latency = "all", cost = "all", ...refinements } = {}) {
   const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
   const selectedSet = new Set(selected);
   const presenceMatches = (value, mode) => mode === "all" || (mode === "with" ? value : !value);
@@ -98,7 +100,7 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     const priority = { error: 0, fail: 1, "not-run": 2, pass: 3 };
     shown.sort((a, b) => priority[testResultStatus(byId.get(a.id))] - priority[testResultStatus(byId.get(b.id))]);
   }
-  return shown;
+  return refineSuite(shown, { ...refinements, sort });
 }
 
 // Authored counts, never question wording or labels in reports/downloads.

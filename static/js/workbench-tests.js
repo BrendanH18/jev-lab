@@ -2,14 +2,14 @@
 import { $, api, callStats, copyText, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, deselectVisibleTests, invertVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson, testMetadataCsv, testStatusSummary, testObservedSummary } from "./test-selection.js";
+  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson, testMetadataCsv, testStatusSummary, testObservedSummary, suiteInventoryText, suiteQuestionInventory, previewSuiteIds, applySuiteIds, firstVisibleSuiteIds } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
-const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "", minExpectations: "", maxExpectations: "", minImages: "", maxImages: "", idPrefix: "", excludeType: "all", minStateBytes: "", maxStateBytes: "", namePrefix: "", idSuffix: "", questionMatch: "contains", minUncovered: "", maxUncovered: "", minOptions: "", maxOptions: "", minInstructions: "", maxInstructions: "", minLatency: "", maxLatency: "", minCost: "", maxCost: "", latency: "all", cost: "all" });
-const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true, advanced: false, previousSelection: null };
+const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "", minExpectations: "", maxExpectations: "", minImages: "", maxImages: "", idPrefix: "", excludeType: "all", minStateBytes: "", maxStateBytes: "", namePrefix: "", idSuffix: "", questionMatch: "contains", minUncovered: "", maxUncovered: "", minOptions: "", maxOptions: "", minInstructions: "", maxInstructions: "", minLatency: "", maxLatency: "", minCost: "", maxCost: "", latency: "all", cost: "all", minCriteria: "", maxCriteria: "", minCriteriaCharacters: "", maxCriteriaCharacters: "", minScoreLevels: "", maxScoreLevels: "", minOrphanExpectations: "", maxOrphanExpectations: "", orphanExpectations: "all" });
+const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true, advanced: false, previousSelection: null, planning: false, pastedIds: "", pastedPreview: null, firstCount: "5" };
 
 function reconcileTests() {
   testView.selected = selectedTestIds(W.items, testView.selected);
@@ -53,6 +53,12 @@ function refreshTestVisibility() {
   }
   const statuses = $("#saved-test-visible-statuses");
   if (statuses) statuses.textContent = testStatusSummary(shown, W.runResults);
+  const inventory = $("#saved-test-visible-inventory");
+  if (inventory) inventory.textContent = `Visible schema: ${suiteInventoryText(shown)}`;
+  const inventoryDownload = $("#saved-test-visible-inventory-download");
+  if (inventoryDownload) inventoryDownload.disabled = !shown.length;
+  const firstButton = $("#saved-test-first-visible");
+  if (firstButton) firstButton.disabled = testView.busy || !shown.length || !firstVisibleSuiteIds(W.items, testView.selected, shown, testView.firstCount);
   const empty = $("#saved-test-no-match");
   if (empty) empty.hidden = visible.size > 0;
   const selectVisible = $("#saved-test-select-visible");
@@ -124,7 +130,7 @@ export function renderTests() {
           filter("Search test field", "searchField", [["all", "Name, ID and notes"], ["name", "Name only"], ["id", "ID only"], ["notes", "Notes only"]]),
           filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
           filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
-          filter("Sort tests", "sort", [["saved", "Saved order"], ["id-desc", "ID Z–A"], ["fewest-images", "Fewest pictures"], ["most-uncovered", "Most uncovered questions"], ["fewest-uncovered", "Fewest uncovered questions"], ["most-options", "Most Choice options"], ["fewest-options", "Fewest Choice options"], ["longest-instructions", "Longest authored instructions"], ["shortest-instructions", "Shortest authored instructions"], ["input-smallest", "Smallest state inputs"], ["input-largest", "Largest state inputs"], ["id", "ID A–Z"], ["images", "Most pictures"], ["fewest-expectations", "Fewest expectations"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
+          filter("Sort tests", "sort", [["fewest-criteria", "Fewest criteria"], ["most-criteria", "Most criteria"], ["shortest-criteria", "Shortest authored criteria"], ["longest-criteria", "Longest authored criteria"], ["fewest-score-levels", "Fewest Score levels"], ["most-score-levels", "Most Score levels"], ["fewest-orphans", "Fewest orphan expectations"], ["most-orphans", "Most orphan expectations"], ["saved", "Saved order"], ["id-desc", "ID Z–A"], ["fewest-images", "Fewest pictures"], ["most-uncovered", "Most uncovered questions"], ["fewest-uncovered", "Fewest uncovered questions"], ["most-options", "Most Choice options"], ["fewest-options", "Fewest Choice options"], ["longest-instructions", "Longest authored instructions"], ["shortest-instructions", "Shortest authored instructions"], ["input-smallest", "Smallest state inputs"], ["input-largest", "Largest state inputs"], ["id", "ID A–Z"], ["images", "Most pictures"], ["fewest-expectations", "Fewest expectations"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
           filter("Exclude question type", "excludeType", [["all", "No type exclusion"], ["noul", "Exclude yes / no"], ["choice", "Exclude Choice"], ["score", "Exclude Score"], ["box", "Exclude Box"]]),
           filter("Test expectations", "expectations", [["all", "Any expectations"], ["with", "With expectations"], ["without", "Without expectations"]]),
           filter("Test pictures", "images", [["all", "Any pictures"], ["with", "With pictures"], ["without", "Without pictures"]]),
@@ -173,6 +179,68 @@ export function renderTests() {
               } }, "Undo selection change"),
               h("button", { class: "btn sm", disabled: !selected.size,
                 onclick: () => copyText(testMetadataJson(W.items.filter((item) => testView.selected.includes(item.id)), W.runResults)) }, "Copy selected metadata JSON")))),
+        h("details", { open: testView.planning, ontoggle: (event) => { testView.planning = event.target.open; } },
+          h("summary", {}, "Suite planning and schema inventory"),
+          h("div", { class: "grid", style: { gap: "10px", marginTop: "10px" } },
+            h("p", { class: "faint" }, "Authored criteria count entries across question types; text sizes count Unicode characters in descriptions. Orphan expectations reference removed questions. These diagnostics make no model calls or saved changes."),
+            filter("Orphan expectations", "orphanExpectations", [["all", "Any orphan count"], ["with", "With orphan expectations"], ["without", "Without orphan expectations"]]),
+            [["Minimum criteria", "minCriteria"], ["Maximum criteria", "maxCriteria"],
+              ["Minimum criterion characters", "minCriteriaCharacters"], ["Maximum criterion characters", "maxCriteriaCharacters"],
+              ["Minimum Score levels", "minScoreLevels"], ["Maximum Score levels", "maxScoreLevels"],
+              ["Minimum orphan expectations", "minOrphanExpectations"], ["Maximum orphan expectations", "maxOrphanExpectations"]].map(([label, field]) =>
+              h("label", { class: "faint" }, label, " ", h("input", { class: "input sm", type: "number", min: 0, step: 1,
+                "aria-label": label, value: testView[field], oninput: (event) => {
+                  testView[field] = event.target.value; refreshTestVisibility();
+                } }))),
+            h("p", { class: "faint", id: "saved-test-visible-inventory", "aria-live": "polite" }, `Visible schema: ${suiteInventoryText(shownTests())}`),
+            h("p", { class: "faint" }, `Selected schema: ${suiteInventoryText(W.items.filter((item) => selected.has(item.id)))}`),
+            h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+              [["visible", "Download visible question inventory"], ["selected", "Download selected question inventory"]].map(([scope, label]) =>
+                h("button", { class: "btn sm", id: `saved-test-${scope}-inventory-download`, disabled: scope === "visible" ? !shown.size : !selected.size,
+                  onclick: () => {
+                    const items = scope === "visible" ? shownTests() : W.items.filter((item) => testView.selected.includes(item.id));
+                    const content = JSON.stringify(suiteQuestionInventory(items), null, 2);
+                    const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+                    h("a", { href: url, download: `jev-${scope}-question-inventory.json` }).click(); URL.revokeObjectURL(url);
+                  } }, label))),
+            h("p", { class: "faint" }, "Question inventories contain IDs, types and occurrence/expectation counts only. No instructions, labels, state, answers or measurement data."),
+            h("label", { class: "faint" }, "Saved test IDs, one per line", h("textarea", { class: "input", rows: 4, value: testView.pastedIds,
+              "aria-label": "Saved test IDs to select", oninput: (event) => {
+                testView.pastedIds = event.target.value; testView.pastedPreview = null;
+                for (const id of ["saved-test-paste-add", "saved-test-paste-remove"]) {
+                  const button = $(`#${id}`); if (button) button.disabled = true;
+                }
+                const status = $("#saved-test-paste-preview"); if (status) status.textContent = "IDs changed. Preview again before changing selection.";
+              } })),
+            h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+              h("button", { class: "btn sm", disabled: busy, onclick: () => {
+                testView.pastedPreview = previewSuiteIds(W.items, testView.pastedIds); render();
+              } }, "Preview pasted IDs"),
+              [["add", "Add pasted IDs to selection"], ["remove", "Remove pasted IDs from selection"]].map(([mode, label]) =>
+                h("button", { class: "btn sm", id: `saved-test-paste-${mode}`, disabled: busy || !testView.pastedPreview?.matched.length,
+                  onclick: () => {
+                    if (testView.busy) return;
+                    const current = previewSuiteIds(W.items, testView.pastedIds);
+                    if (JSON.stringify(current) !== JSON.stringify(testView.pastedPreview)) {
+                      testView.pastedPreview = null; render(); return;
+                    }
+                    testView.previousSelection = [...testView.selected];
+                    testView.selected = applySuiteIds(W.items, testView.selected, current, mode); render();
+                  } }, label))),
+            h("p", { class: "faint", id: "saved-test-paste-preview", "aria-live": "polite" }, testView.pastedPreview
+              ? `${testView.pastedPreview.matched.length} saved IDs matched; ${testView.pastedPreview.unknown.length} unknown IDs ignored. Add or Remove changes selection only.`
+              : "Preview IDs before changing selection. Matching is exact and case-sensitive; duplicates are ignored."),
+            h("label", { class: "faint" }, "Visible selection limit", " ", h("input", { class: "input sm", type: "number", min: 1, step: 1,
+              "aria-label": "Visible selection limit", value: testView.firstCount, oninput: (event) => {
+                testView.firstCount = event.target.value; refreshTestVisibility();
+              } })),
+            h("button", { class: "btn sm", id: "saved-test-first-visible", disabled: busy || !shown.size || !firstVisibleSuiteIds(W.items, testView.selected, shownTests(), testView.firstCount),
+              onclick: () => {
+                if (testView.busy) return;
+                const next = firstVisibleSuiteIds(W.items, testView.selected, shownTests(), testView.firstCount);
+                if (!next) return;
+                testView.previousSelection = [...testView.selected]; testView.selected = next; render();
+              } }, "Add first N visible to selection"))),
         h("p", { class: "faint", "aria-live": "polite" },
           `Selected latest calls: ${selectedObserved.costCount}/${selectedObserved.tests} with measured spend (sum ${usd(selectedObserved.costTotal)}); ${selectedObserved.latencyCount}/${selectedObserved.tests} with measured latency (sum ${ms(selectedObserved.latencyTotal)}). Excludes previous rerun attempts; not wall time or a spend estimate.`),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },

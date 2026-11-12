@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { catalogDefaults, matchesCatalog, sortedCatalog, catalogTotals, catalogSummary, catalogCsv, datasetCopyName,
   canCopyDataset, matchesDeletedDataset, catalogJson, catalogPreset, catalogProgress, catalogIds,
-  updateCatalogPins, pinnedCatalog, catalogDetailsSummary } from "../../static/js/dataset-catalog.js";
+  updateCatalogPins, pinnedCatalog, catalogDetailsSummary, invertCatalogPins, catalogActiveFilters, catalogFilterSummary } from "../../static/js/dataset-catalog.js";
 import { workbenchSource } from "./workbench-source.mjs";
 
 const items = [
@@ -163,7 +163,8 @@ test("filtering and sorting move existing dataset nodes without discarding queue
   const copied = [];
   const tree = make("datasetSearchControls", { W, $: (id) => dom[id], h, catalogDefaults, matchesCatalog, sortedCatalog,
     catalogSummary, catalogCsv, catalogJson, catalogPreset, catalogProgress, catalogIds,
-    updateCatalogPins, pinnedCatalog, catalogDetailsSummary, copyText: (text) => copied.push(text) })(filters);
+    updateCatalogPins, pinnedCatalog, catalogDetailsSummary, invertCatalogPins, catalogActiveFilters, catalogFilterSummary,
+    copyText: (text) => copied.push(text) })(filters);
   const select = (label) => nodes(tree).find((node) => node.attrs["aria-label"] === label);
   select("Filter datasets by held-out split").attrs.onchange({ target: { value: "with" } });
   assert.equal(rows[0].style.display, "");
