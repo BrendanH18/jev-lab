@@ -1,4 +1,5 @@
 // Pure editor operations. These never fetch, persist, or carry model answers.
+import { matchesAdvancedEditorQuestion } from "./build-authoring.js";
 
 export function uniqueQuestionId(rows, preferred = "question") {
   const used = new Set(rows.map((row) => String(row.id || "").trim()));
@@ -53,7 +54,8 @@ export function buildRequestSummary(stateText, rows, imageCount) {
 }
 
 // Filtering keeps the complete editor request intact, including hidden questions.
-export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all", searchField = "all", exclude = "", minCriteria = "", maxCriteria = "", idPrefix = "", minInstructions = "", maxInstructions = "" } = {}, expect = {}) {
+export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all", searchField = "all", exclude = "", minCriteria = "", maxCriteria = "", idPrefix = "", minInstructions = "", maxInstructions = "", ...advanced } = {}, expect = {}) {
+  if (!matchesAdvancedEditorQuestion(row, advanced, advanced.allRows || [])) return false;
   if (!String(row.id || "").trim().toLocaleLowerCase().startsWith(String(idPrefix).trim().toLocaleLowerCase())) return false;
   const instructionCharacters = Array.from(String(row.instructions || "")).length;
   for (const [value, maximum] of [[minInstructions, false], [maxInstructions, true]]) {
@@ -73,7 +75,10 @@ export function matchesEditorQuestion(row, { query = "", type = "all", instructi
   const fields = { id: [row.id], instructions: [row.instructions],
     criteria: row.type === "choice" ? (row.choice || []).flat() : row.type === "score" ? (row.score || [])
       : row.type === "noul" ? [row.noulYes, row.noulNo] : [] };
-  const text = (fields[searchField] || Object.values(fields).flat())
+  const scoped = searchField === "choiceKeys" ? row.type === "choice" ? (row.choice || []).map(([key]) => key) : []
+    : searchField === "descriptions" ? row.type === "choice" ? (row.choice || []).map(([, description]) => description)
+      : row.type === "score" ? row.score || [] : row.type === "noul" ? [row.noulYes, row.noulNo] : [] : fields[searchField] || Object.values(fields).flat();
+  const text = scoped
     .filter((value) => value != null).join("\n").toLocaleLowerCase();
   if (!text.includes(String(query).trim().toLocaleLowerCase())) return false;
   if (String(exclude).trim() && text.includes(String(exclude).trim().toLocaleLowerCase())) return false;
@@ -164,6 +169,10 @@ export function editorQuestionOutline(rows) {
 }
 
 export function reorderEditorCriteria(row, action) {
+  if (row.type === "choice" && ["description", "description-desc"].includes(action)) {
+    const direction = action === "description-desc" ? -1 : 1;
+    return { ...row, choice: row.choice.slice().sort((a, b) => direction * a[1].trim().localeCompare(b[1].trim())) };
+  }
   if (row.type === "choice" && ["sort", "sort-desc"].includes(action)) {
     const direction = action === "sort-desc" ? -1 : 1;
     return { ...row, choice: row.choice.slice().sort((a, b) => direction * a[0].trim().localeCompare(b[0].trim())) };

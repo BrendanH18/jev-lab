@@ -49,7 +49,7 @@ const body = (name) => source.match(new RegExp(`(?:export )?(?:async )?function 
 function harness() {
   const W = { items, runResults: null, testSearch: "alpha" };
   const h = (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity).filter(Boolean) });
-  const helpers = { ...tools, W, h, render: () => {}, estimateLine: () => null, api: () => {}, icon: () => null };
+  const helpers = { ...tools, W, h, render: () => {}, ms: String, usd: String, estimateLine: () => null, api: () => {}, icon: () => null };
   return new Function(...Object.keys(helpers), `
     ${source.match(/const testFilterDefaults[^\n]*/)[0]}
     ${source.match(/const testView[^\n]*/)[0]}

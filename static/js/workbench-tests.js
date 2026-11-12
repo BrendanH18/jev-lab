@@ -1,15 +1,15 @@
-// Tests tab (saved items, run again live) and the Examples gallery, both of which load a request into Build.
+// Tests tab: saved requests, current-page selection, and results from user-triggered live runs.
 import { $, api, callStats, copyText, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, deselectVisibleTests, invertVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson, testMetadataCsv, testStatusSummary } from "./test-selection.js";
+  testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson, testMetadataCsv, testStatusSummary, testObservedSummary } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
 import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
-const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "", minExpectations: "", maxExpectations: "", minImages: "", maxImages: "", idPrefix: "", excludeType: "all", minStateBytes: "", maxStateBytes: "" });
-const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true };
+const testFilterDefaults = () => ({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved", minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "", minExpectations: "", maxExpectations: "", minImages: "", maxImages: "", idPrefix: "", excludeType: "all", minStateBytes: "", maxStateBytes: "", namePrefix: "", idSuffix: "", questionMatch: "contains", minUncovered: "", maxUncovered: "", minOptions: "", maxOptions: "", minInstructions: "", maxInstructions: "", minLatency: "", maxLatency: "", minCost: "", maxCost: "", latency: "all", cost: "all" });
+const testView = { ...testFilterDefaults(), selected: [], busy: false, details: true, advanced: false, previousSelection: null };
 
 function reconcileTests() {
   testView.selected = selectedTestIds(W.items, testView.selected);
@@ -43,6 +43,13 @@ function refreshTestVisibility() {
   for (const id of ["saved-test-copy-ids", "saved-test-export-metadata", "saved-test-export-csv"]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !visible.size;
+  }
+  const replaceSelection = $("#saved-test-replace-visible");
+  if (replaceSelection) replaceSelection.disabled = testView.busy || !visible.size;
+  const byId = new Map((W.runResults?.runs || []).map((run) => [run.id, run]));
+  for (const status of ["error", "fail", "not-run"]) {
+    const button = $(`#saved-test-select-visible-${status}`);
+    if (button) button.disabled = testView.busy || !shown.some((item) => testResultStatus(byId.get(item.id)) === status);
   }
   const statuses = $("#saved-test-visible-statuses");
   if (statuses) statuses.textContent = testStatusSummary(shown, W.runResults);
@@ -80,6 +87,7 @@ export function renderTests() {
   const summary = selectedTestSummary(W.items, testView.selected);
   const visibleSummary = selectedTestSummary(W.items, [...shown]);
   const passed = W.items.filter((item) => testResultStatus(byId.get(item.id)) === "pass").map((item) => item.id);
+  const selectedObserved = testObservedSummary(W.items.filter((item) => selected.has(item.id)), res);
   const ordered = visibleTests(W.items, res, { sort: testView.sort });
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "panel tests", "aria-busy": String(busy) },
@@ -116,7 +124,7 @@ export function renderTests() {
           filter("Search test field", "searchField", [["all", "Name, ID and notes"], ["name", "Name only"], ["id", "ID only"], ["notes", "Notes only"]]),
           filter("Test status", "status", [["all", "All statuses"], ["pass", "Passed"], ["fail", "Failed expectations"], ["error", "Errors"], ["not-run", "Not run"]]),
           filter("Test question type", "type", [["all", "All types"], ["noul", "Yes / no"], ["choice", "Choice"], ["score", "Score"], ["box", "Box"]]),
-          filter("Sort tests", "sort", [["saved", "Saved order"], ["input-smallest", "Smallest state inputs"], ["input-largest", "Largest state inputs"], ["id", "ID A–Z"], ["images", "Most pictures"], ["fewest-expectations", "Fewest expectations"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
+          filter("Sort tests", "sort", [["saved", "Saved order"], ["id-desc", "ID Z–A"], ["fewest-images", "Fewest pictures"], ["most-uncovered", "Most uncovered questions"], ["fewest-uncovered", "Fewest uncovered questions"], ["most-options", "Most Choice options"], ["fewest-options", "Fewest Choice options"], ["longest-instructions", "Longest authored instructions"], ["shortest-instructions", "Shortest authored instructions"], ["input-smallest", "Smallest state inputs"], ["input-largest", "Largest state inputs"], ["id", "ID A–Z"], ["images", "Most pictures"], ["fewest-expectations", "Fewest expectations"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["questions", "Most questions"], ["fewest-questions", "Fewest questions"], ["expectations", "Most expectations"], ["problems", "Problems first"], ["slowest", "Slowest observed call"], ["costliest", "Costliest observed call"], ["fastest", "Fastest observed call"], ["cheapest", "Cheapest observed call"]]),
           filter("Exclude question type", "excludeType", [["all", "No type exclusion"], ["noul", "Exclude yes / no"], ["choice", "Exclude Choice"], ["score", "Exclude Score"], ["box", "Exclude Box"]]),
           filter("Test expectations", "expectations", [["all", "Any expectations"], ["with", "With expectations"], ["without", "Without expectations"]]),
           filter("Test pictures", "images", [["all", "Any pictures"], ["with", "With pictures"], ["without", "Without pictures"]]),
@@ -133,21 +141,55 @@ export function renderTests() {
           h("button", { class: "btn sm ghost", onclick: () => {
             Object.assign(testView, testFilterDefaults()); W.testSearch = ""; render();
           } }, "Reset test filters")),
+        h("details", { open: testView.advanced, ontoggle: (event) => { testView.advanced = event.target.open; } },
+          h("summary", {}, "Advanced suite triage"),
+          h("div", { class: "grid", style: { gap: "10px", marginTop: "10px" } },
+            h("p", { class: "faint" }, "Authored counts describe the saved requests. Measurement filters use the latest current session call only; unknown values never satisfy a numeric bound."),
+            [["Test name starts with", "namePrefix"], ["Test ID ends with", "idSuffix"]].map(([label, field]) =>
+              h("input", { class: "input", type: "search", "aria-label": label, placeholder: label, value: testView[field],
+                oninput: (event) => { testView[field] = event.target.value; refreshTestVisibility(); } })),
+            filter("Question ID matching", "questionMatch", [["contains", "Contains text"], ["exact", "Exact ID"]]),
+            filter("Latency measurement", "latency", [["all", "Any latency"], ["with", "Measured latency"], ["without", "Unknown latency"]]),
+            filter("Spend measurement", "cost", [["all", "Any spend"], ["with", "Measured spend"], ["without", "Unknown spend"]]),
+            [["Minimum uncovered questions", "minUncovered"], ["Maximum uncovered questions", "maxUncovered"],
+              ["Minimum Choice options", "minOptions"], ["Maximum Choice options", "maxOptions"],
+              ["Minimum instruction characters", "minInstructions"], ["Maximum instruction characters", "maxInstructions"],
+              ["Minimum observed latency ms", "minLatency"], ["Maximum observed latency ms", "maxLatency"],
+              ["Minimum observed spend USD", "minCost"], ["Maximum observed spend USD", "maxCost"]].map(([label, field]) =>
+              h("label", { class: "faint" }, label, " ", h("input", { class: "input sm", type: "number", min: 0,
+                step: /Cost|Latency/.test(field) ? "any" : 1, "aria-label": label, value: testView[field],
+                oninput: (event) => { testView[field] = event.target.value; refreshTestVisibility(); } }))),
+            h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+              h("button", { class: "btn sm", id: "saved-test-replace-visible", disabled: busy || !shown.size, onclick: () => {
+                testView.previousSelection = [...testView.selected]; testView.selected = shownTests().map((item) => item.id); render();
+              } }, "Replace selection with visible"),
+              [["error", "Select visible errors"], ["fail", "Select visible failed expectations"], ["not-run", "Select visible not run"]].map(([status, label]) =>
+                h("button", { class: "btn sm", id: `saved-test-select-visible-${status}`, disabled: busy || !shownTests().some((item) => testResultStatus(byId.get(item.id)) === status), onclick: () => {
+                  testView.previousSelection = [...testView.selected];
+                  testView.selected = selectVisibleTests(W.items, testView.selected, shownTests().filter((item) => testResultStatus(byId.get(item.id)) === status)); render();
+                } }, label)),
+              h("button", { class: "btn sm", disabled: busy || testView.previousSelection === null, onclick: () => {
+                testView.selected = selectedTestIds(W.items, testView.previousSelection || []); testView.previousSelection = null; render();
+              } }, "Undo selection change"),
+              h("button", { class: "btn sm", disabled: !selected.size,
+                onclick: () => copyText(testMetadataJson(W.items.filter((item) => testView.selected.includes(item.id)), W.runResults)) }, "Copy selected metadata JSON")))),
+        h("p", { class: "faint", "aria-live": "polite" },
+          `Selected latest calls: ${selectedObserved.costCount}/${selectedObserved.tests} with measured spend (sum ${usd(selectedObserved.costTotal)}); ${selectedObserved.latencyCount}/${selectedObserved.tests} with measured latency (sum ${ms(selectedObserved.latencyTotal)}). Excludes previous rerun attempts; not wall time or a spend estimate.`),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
           h("button", { class: "btn sm", id: "saved-test-select-visible", disabled: busy || !shown.size,
-            onclick: () => { testView.selected = selectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Select visible"),
+            onclick: () => { testView.previousSelection = [...testView.selected]; testView.selected = selectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Select visible"),
           h("button", { class: "btn sm", id: "saved-test-deselect-visible", disabled: busy || !shown.size,
-            onclick: () => { testView.selected = deselectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Deselect visible"),
+            onclick: () => { testView.previousSelection = [...testView.selected]; testView.selected = deselectVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Deselect visible"),
           h("button", { class: "btn sm", id: "saved-test-invert-visible", disabled: busy || !shown.size,
-            onclick: () => { testView.selected = invertVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Invert visible selection"),
+            onclick: () => { testView.previousSelection = [...testView.selected]; testView.selected = invertVisibleTests(W.items, testView.selected, shownTests()); render(); } }, "Invert visible selection"),
           h("button", { class: "btn sm", disabled: busy || !failed.length,
-            onclick: () => { testView.selected = selectedTestIds(W.items, [...testView.selected, ...unsuccessfulTestIds()]); render(); } }, "Select failed / errors"),
+            onclick: () => { testView.previousSelection = [...testView.selected]; testView.selected = selectedTestIds(W.items, [...testView.selected, ...unsuccessfulTestIds()]); render(); } }, "Select failed / errors"),
           h("button", { class: "btn sm", disabled: busy || !unrun.length,
-            onclick: () => { testView.selected = selectedTestIds(W.items, [...testView.selected, ...unrun]); render(); } }, "Select not run"),
+            onclick: () => { testView.previousSelection = [...testView.selected]; testView.selected = selectedTestIds(W.items, [...testView.selected, ...unrun]); render(); } }, "Select not run"),
           h("button", { class: "btn sm", disabled: busy || !passed.length,
-            onclick: () => { testView.selected = selectedTestIds(W.items, [...testView.selected, ...passed]); render(); } }, "Select passed"),
+            onclick: () => { testView.previousSelection = [...testView.selected]; testView.selected = selectedTestIds(W.items, [...testView.selected, ...passed]); render(); } }, "Select passed"),
           h("button", { class: "btn sm ghost", disabled: busy || !selected.size,
-            onclick: () => { testView.selected = []; render(); } }, "Clear selection"),
+            onclick: () => { testView.previousSelection = [...testView.selected]; testView.selected = []; render(); } }, "Clear selection"),
           h("button", { class: "btn sm primary", disabled: busy || !selected.size,
             onclick: () => runTests(testView.selected, true) }, `Run selected (${selected.size})`),
           estimateLine(h, api, "items", () => testRunBody(W.items, testView.selected))),
@@ -185,6 +227,7 @@ export function renderTests() {
           return h("div", { class: "item saved-test-item", "data-test-id": it.id, style: { display: shown.has(it.id) ? "" : "none" } },
             h("input", { type: "checkbox", checked: selected.has(it.id), disabled: busy, "aria-label": `Select test ${it.name || it.id}`,
               onchange: (event) => {
+                testView.previousSelection = [...testView.selected];
                 testView.selected = event.target.checked ? selectedTestIds(W.items, [...testView.selected, it.id]) : testView.selected.filter((id) => id !== it.id);
                 render();
               } }),
@@ -264,16 +307,4 @@ async function deleteTest(id) {
     reconcileTests();
   } catch (e) { handleError(e); }
   finally { testView.busy = false; render(); }
-}
-
-// ---------- Examples ----------
-export function renderExamples() {
-  return h("div", { class: "grid", style: { gap: "16px" } },
-    h("p", { class: "muted", style: { maxWidth: "760px" } }, `${W.examples.length} starting points, one per pattern. Open any of them in Build to see the exact state and questions, run it, then change the wording and watch the probabilities move.`),
-    h("div", { class: "gallery" }, W.examples.map((ex) => h("div", { class: "panel ex" },
-      h("div", { class: "pat" }, ex.pattern), h("h3", {}, ex.title), h("p", {}, ex.blurb),
-      h("div", { class: "codenote" }, h("b", { style: { color: "var(--muted)" } }, "In code: "), ex.code),
-      h("div", { style: { display: "flex", gap: "8px", alignItems: "center", marginTop: "4px" } },
-        h("button", { class: "btn sm primary", onclick: () => loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id, images: ex.images }) }, "Open in Build"),
-        h("span", { class: "faint", style: { fontSize: "12px" } }, `${ex.question_count} questions${ex.images ? " · 1 image" : ""}`))))));
 }

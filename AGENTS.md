@@ -401,3 +401,23 @@ cleanup removes only empty placeholders. Saved-test state-byte controls count UT
 state only; selected metadata downloads include hidden selections and keep the existing allowlist
 and spreadsheet escaping. Catalog tuning-row counts exclude held-out rows; evaluation-count
 filters describe recorded test looks, never evaluation quality or label validity.
+
+Example discovery filters/sorts and compact cards are session-only presentation. Request previews
+show authored state, ordered questions and picture names only, never expectations or model answers.
+Example metadata downloads contain IDs, titles, counts, types and input shapes only. Opening an
+example in Build stays explicit; gallery browsing never runs a model or changes editor data.
+
+Build authoring diagnostics inspect active authored fields only. Duplicate-ID/Choice-key filters
+use outbound validation's trimmed, case-sensitive identity. Outline CSV contains positions, IDs,
+types and counts with spreadsheet escaping. Single-question handoffs block pending Raw JSON;
+Choice description sorting preserves key pairs and never sorts Score levels.
+
+Saved-test authored counts describe uncovered question IDs and Choice keys, not expectation
+validity. Observation filters and summaries use latest current session measurements with unknowns
+explicit; summed latency is not wall time. One-step selection Undo is session-only, drops deleted
+IDs and preserves hidden selections except when Replace selection with visible is explicit.
+
+Catalog split counts use summary metadata only; shares include unlabeled inputs and establish
+no label validity. Undefined shares sort last and cannot satisfy numeric share filters. Pin shown
+and Unpin shown preserve hidden pins; pinned handoffs include hidden pins with the metadata-only
+allowlist and spreadsheet escaping. Filters and pin actions keep existing queue nodes mounted.

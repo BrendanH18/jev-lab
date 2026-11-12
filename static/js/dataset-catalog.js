@@ -1,13 +1,42 @@
 // Dataset-list metadata only. Filters never load rows, labels or model answers.
 import { matchesDataset, matchesSaved } from "./saved-search.js";
 
-export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [], searchField: "all", exclude: "", notes: "all", maxQuestions: "", maxUnlabeled: "", minHeldOut: "", maxLabeled: "", maxHeldOut: "", minGuidelines: "", maxGuidelines: "", minTuning: "", maxTuning: "", minLooks: "", maxLooks: "", timestamp: "all" });
+export const catalogDefaults = () => ({ query: "", check: "all", labels: "all", questions: "all", test: "all", guidelines: "all", sort: "saved", minRows: "", maxRows: "", minLabeled: "", minUnlabeled: "", minQuestions: "", savedAfter: "", savedBefore: "", minLabelShare: "", maxLabelShare: "", pinned: "all", pinnedIds: [], searchField: "all", exclude: "", notes: "all", maxQuestions: "", maxUnlabeled: "", minHeldOut: "", maxLabeled: "", maxHeldOut: "", minGuidelines: "", maxGuidelines: "", minTuning: "", maxTuning: "", minLooks: "", maxLooks: "", timestamp: "all",
+  idPrefix: "", searchMode: "phrase", minHeldOutShare: "", maxHeldOutShare: "", minGuidelineShare: "", maxGuidelineShare: "",
+  minTuningLabeled: "", maxTuningLabeled: "", minHeldOutLabeled: "", maxHeldOutLabeled: "", minUnguided: "", maxUnguided: "",
+  tuningLabels: "all", heldOutLabels: "all" });
+
+// Counts describe saved human labeling progress, never label validity or model performance.
+export function catalogMetrics(item) {
+  const rows = Number(item.rows || 0), heldOut = Number(item.test?.rows || 0), questions = Number(item.questions || 0);
+  const heldOutLabeled = Number(item.test?.labeled || 0), tuning = Math.max(0, rows - heldOut);
+  return { tuning, heldOutLabeled, tuningLabeled: Math.max(0, Number(item.labeled || 0) - heldOutLabeled),
+    heldOutShare: rows > 0 ? 100 * heldOut / rows : null,
+    guidelineShare: questions > 0 ? 100 * Number(item.guidelines || 0) / questions : null,
+    unguided: Math.max(0, questions - Number(item.guidelines || 0)) };
+}
+
+function matchesCatalogQuery(item, query, mode) {
+  const words = String(query || "").trim().split(/\s+/).filter(Boolean);
+  if (mode === "all-words") return words.every((word) => matchesSaved(item, word));
+  if (mode === "any-word") return !words.length || words.some((word) => matchesSaved(item, word));
+  return matchesSaved(item, query);
+}
+
+function matchesLabelProgress(mode, labeled, rows) {
+  return mode === "none" ? rows > 0 && labeled === 0 : mode === "some" ? labeled > 0 && labeled < rows
+    : mode === "every" ? rows > 0 && labeled === rows : true;
+}
 
 export function matchesCatalog(item, filters = {}) {
   const searchField = filters.searchField || "all";
   const scoped = searchField === "all" ? item : { [searchField]: item[searchField] };
-  if (!matchesDataset(item, { ...filters, query: "" }) || !matchesSaved(scoped, filters.query)) return false;
+  if (!matchesDataset(item, { ...filters, query: "" }) || !matchesCatalogQuery(scoped, filters.query, filters.searchMode)) return false;
   if (String(filters.exclude || "").trim() && matchesSaved(scoped, filters.exclude)) return false;
+  if (!String(item.id || "").toLocaleLowerCase().startsWith(String(filters.idPrefix || "").trim().toLocaleLowerCase())) return false;
+  const metrics = catalogMetrics(item);
+  if (!matchesLabelProgress(filters.tuningLabels, metrics.tuningLabeled, metrics.tuning)
+    || !matchesLabelProgress(filters.heldOutLabels, metrics.heldOutLabeled, Number(item.test?.rows || 0))) return false;
   const hasNotes = !!String(item.notes || "").trim();
   if (filters.notes === "with" && !hasNotes || filters.notes === "without" && hasNotes) return false;
   if (filters.pinned === "with" && !filters.pinnedIds?.includes(item.id)) return false;
@@ -26,6 +55,12 @@ export function matchesCatalog(item, filters = {}) {
     if (!Number.isFinite(value) || value < 0 || value > 100 || share === null
       || (key === "minLabelShare" ? share < value : share > value)) return false;
   }
+  for (const [key, share, maximum] of [["minHeldOutShare", metrics.heldOutShare, false], ["maxHeldOutShare", metrics.heldOutShare, true],
+    ["minGuidelineShare", metrics.guidelineShare, false], ["maxGuidelineShare", metrics.guidelineShare, true]]) {
+    if (filters[key] === undefined || String(filters[key]).trim() === "") continue;
+    const limit = Number(filters[key]);
+    if (!Number.isFinite(limit) || limit < 0 || limit > 100 || share === null || (maximum ? share > limit : share < limit)) return false;
+  }
   for (const [key, present] of [["questions", Number(item.questions || 0) > 0], ["test", !!item.test],
     ["guidelines", Number(item.guidelines || 0) > 0]]) {
     if (filters[key] === "with" && !present || filters[key] === "without" && present) return false;
@@ -40,7 +75,10 @@ export function matchesCatalog(item, filters = {}) {
     maxGuidelines: [Number(item.guidelines || 0), true],
     minTuning: [Math.max(0, Number(item.rows || 0) - Number(item.test?.rows || 0)), false],
     maxTuning: [Math.max(0, Number(item.rows || 0) - Number(item.test?.rows || 0)), true],
-    minLooks: [Number(item.test?.looks || 0), false], maxLooks: [Number(item.test?.looks || 0), true] };
+    minLooks: [Number(item.test?.looks || 0), false], maxLooks: [Number(item.test?.looks || 0), true],
+    minTuningLabeled: [metrics.tuningLabeled, false], maxTuningLabeled: [metrics.tuningLabeled, true],
+    minHeldOutLabeled: [metrics.heldOutLabeled, false], maxHeldOutLabeled: [metrics.heldOutLabeled, true],
+    minUnguided: [metrics.unguided, false], maxUnguided: [metrics.unguided, true] };
   for (const [key, [count, maximum]] of Object.entries(counts)) {
     if (filters[key] === undefined || String(filters[key]).trim() === "") continue;
     const limit = Number(filters[key]);
@@ -51,7 +89,19 @@ export function matchesCatalog(item, filters = {}) {
 
 export function sortedCatalog(items, sort = "saved", pinnedIds = []) {
   const copy = [...items];
-  if (sort === "pinned") copy.sort((a, b) => Number(pinnedIds.includes(b.id)) - Number(pinnedIds.includes(a.id)));
+  const metricSorts = { looks: [(item) => Number(item.test?.looks || 0), true], "looks-asc": [(item) => Number(item.test?.looks || 0), false],
+    "tuning-labeled": [(item) => catalogMetrics(item).tuningLabeled, true], "tuning-labeled-asc": [(item) => catalogMetrics(item).tuningLabeled, false],
+    "held-out-share": [(item) => catalogMetrics(item).heldOutShare, true], "held-out-share-asc": [(item) => catalogMetrics(item).heldOutShare, false],
+    "guideline-share": [(item) => catalogMetrics(item).guidelineShare, true], "guideline-share-asc": [(item) => catalogMetrics(item).guidelineShare, false] };
+  if (metricSorts[sort]) {
+    const [value, descending] = metricSorts[sort];
+    copy.sort((a, b) => {
+      const left = value(a), right = value(b);
+      if (left === null || right === null) return Number(left === null) - Number(right === null);
+      return descending ? right - left : left - right;
+    });
+  }
+  else if (sort === "pinned") copy.sort((a, b) => Number(pinnedIds.includes(b.id)) - Number(pinnedIds.includes(a.id)));
   else if (sort === "label-share-desc") copy.sort((a, b) => {
     const share = (item) => Number(item.rows || 0) > 0 ? Number(item.labeled || 0) / Number(item.rows) : -Infinity;
     return share(b) - share(a);
@@ -157,4 +207,30 @@ export function catalogProgress(item) {
 
 export function catalogIds(items) {
   return items.map((item) => String(item.id)).join("\n");
+}
+
+// Pin actions are session-only and operate on the explicitly shown set, retaining hidden pins.
+export function updateCatalogPins(items, pinnedIds, shownIds, pin = true) {
+  const current = new Set(pinnedIds), shown = new Set(shownIds);
+  for (const item of items) if (shown.has(item.id)) {
+    if (pin) current.add(item.id); else current.delete(item.id);
+  }
+  const saved = new Set(items.map((item) => item.id));
+  return [...current].filter((id) => saved.has(id));
+}
+
+export function pinnedCatalog(items, sort, pinnedIds) {
+  return sortedCatalog(items, sort, pinnedIds).filter((item) => pinnedIds.includes(item.id));
+}
+
+export function catalogDetailsSummary(items) {
+  const total = items.reduce((sum, item) => {
+    const metrics = catalogMetrics(item);
+    return { tuning: sum.tuning + metrics.tuning, tuningLabeled: sum.tuningLabeled + metrics.tuningLabeled,
+      heldOutLabeled: sum.heldOutLabeled + metrics.heldOutLabeled, questions: sum.questions + Number(item.questions || 0),
+      guidelines: sum.guidelines + Number(item.guidelines || 0), unguided: sum.unguided + metrics.unguided,
+      looks: sum.looks + Number(item.test?.looks || 0) };
+  }, { tuning: 0, tuningLabeled: 0, heldOutLabeled: 0, questions: 0, guidelines: 0, unguided: 0, looks: 0 });
+  return `${total.tuning} tuning rows (${total.tuningLabeled} with labels) · ${total.heldOutLabeled} held-out rows with labels · `
+    + `${total.questions} questions (${total.guidelines} with guidelines, ${total.unguided} without) · ${total.looks} recorded test evaluations`;
 }

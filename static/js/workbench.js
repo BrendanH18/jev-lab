@@ -5,9 +5,10 @@ import { $, api, debounce, h, handleError, initChrome, mount, toast } from "./co
 import { readHandoff } from "./handoff.js";
 import { renderWorkbenchGuide } from "./workbench-guide.js";
 import { createGuidelines } from "./guidelines.js";
+import { renderExamplesBrowser } from "./examples-browser.js";
 import { W } from "./workbench-state.js";
 import { buildUnsaved, loadInto, renderBuild } from "./workbench-build.js";
-import { renderTests, renderExamples } from "./workbench-tests.js";
+import { renderTests } from "./workbench-tests.js";
 import { rowsText, bulkUnsaved, countRows, bulkQuestions, renderBulk } from "./workbench-bulk.js";
 import { healthContext } from "./workbench-import.js";
 import { datasetEditsUnsaved } from "./dataset-edits.js";
@@ -77,7 +78,7 @@ export function render() {
     case "tests": view = renderTests(); break;
     case "bulk": view = renderBulk(); break;
     case "compare": view = renderCompare(); break;
-    case "examples": view = renderExamples(); break;
+    case "examples": view = renderExamplesBrowser(h, W.examples, (ex) => loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id, images: ex.images })); break;
     default:
       W.tab = "build";
       view = renderBuild();
