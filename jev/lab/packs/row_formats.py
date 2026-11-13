@@ -6,7 +6,7 @@ JSON array) hold rows exactly. The tabular ones (CSV, TSV, semicolon CSV, pipe-s
 HTML tables) give each input field a column, then `_image`, one `_expect.<question id>` column per labeled question
 (the column name Import CSV reads as a label) and `_test`. Their cells are text: an object or array value travels as
 JSON, a number or true/false input value comes back as text, a label of true/false or a whole number comes back as a
-Noul or Score label, and a row whose only column is `text` comes back as a text row. Plain text lines hold one text row
+Noul or Score label, a JSON object label comes back as an object (a Box label), and a row whose only column is `text` comes back as a text row. Plain text lines hold one text row
 per line. The spreadsheet formats (CSV, TSV, semicolon CSV, Excel CSV) put an apostrophe before a cell a spreadsheet
 would run as a formula, and their parsers take it off again. Every parser drops a leading byte-order mark.
 
@@ -107,6 +107,13 @@ def _input_value(cell: str) -> Any:
 
 def _label_value(cell: str) -> Any:
     text = cell.strip()
+    if text[:1] == "{":  # a Box label ({"box": {edges}, "iou_min": ..}) travels as a JSON object
+        try:
+            value = json.loads(text)
+        except ValueError:
+            return text
+        if isinstance(value, dict):
+            return value
     if text in ("true", "false"):
         return text == "true"
     if _INTEGER.match(text):

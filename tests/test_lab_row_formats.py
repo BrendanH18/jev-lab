@@ -79,6 +79,15 @@ class RowFormatsTests(pack_tests(row_formats.PACK, CASES)):
         # Markdown trims cells; these rows have no surrounding spaces, so they come back whole.
         self.assertEqual(FORMATS["markdown"]["parse"](FORMATS["markdown"]["render"](ROWS)), ROWS)
 
+    def test_box_labels_round_trip_through_every_format(self):
+        # A Box label is an object; its cell is JSON text, which must come back as the same object, not a string.
+        box = {"box": {"left": 0.1, "top": 0.25, "right": 0.5, "bottom": 0.75}, "iou_min": 0.5}
+        rows = [{"text": "Where is the tear?", "_image": "torn-bag", "_expect": {"tear": box, "department": "{not json"}}]
+        for name in ("jsonl", "json", "csv", "tsv", "semicolon", "pipe", "excel", "html", "markdown"):
+            back = FORMATS[name]["parse"](FORMATS[name]["render"](rows))
+            self.assertEqual(back, rows, name)
+            self.assertIsInstance(back[0]["_expect"]["tear"], dict, name)
+
     def test_apostrophes_round_trip_through_spreadsheet_formats(self):
         rows = ["'=already", "''=twice", "'plain", "-5", "@mention"]
         for name in ("csv", "tsv", "semicolon", "excel"):

@@ -105,11 +105,11 @@ function refineBlock(s) {
     };
     // The list itself changed: let the surface re-render, then refresh this block's dependent parts.
     function listChanged(rebuild = false) {
-      view.findings = null;
       s.ctx.refresh?.();
-      if (rebuild) return s.redraw();
-      fillChips(); fillCount(); fillSummary();
+      if (rebuild) { view.findings = null; return s.redraw(); }
+      s.listChanged();
     }
+    s.onList.set("refine", () => { fillChips(); fillCount(); fillSummary(); });
     const addFilter = () => {
       const fact = byKey.get(view.draft.key);
       if (!fact) return s.env.toast?.("Choose a fact first.", "error");
@@ -203,6 +203,7 @@ function checksBlock(s) {
       view.findings = { list, checked: shown.length };
       fill();
     });
+    s.onList.set("checks", fill);
     fill();
     return [h("p", { class: "faint" }, `${plural(checks.length, "advisory check")} run by plain code on the shown items. Findings are hints, not verdicts.`),
       h("div", { class: "chips lab-row" }, h("button", { class: "btn sm", onclick: run }, "Run checks on shown items")), box];
@@ -278,8 +279,8 @@ function transformBlock(s) {
         s.ctx.actions.replaceItems(result.items, { label: state.preview.label });
         state.undo = result.undo;
         state.preview = null;
-        s.view.findings = null;
         s.ctx.refresh?.();
+        s.listChanged();
         fillStatus();
       } catch (error) { fail(error); }
     }
@@ -289,8 +290,8 @@ function transformBlock(s) {
         const before = undoTransform(state.undo, itemsOf(s));
         s.ctx.actions.replaceItems(before, { label: `Undo ${state.undo.label}` });
         state.undo = null;
-        s.view.findings = null;
         s.ctx.refresh?.();
+        s.listChanged();
         fillStatus();
       } catch (error) { fail(error); }
     }
@@ -310,13 +311,20 @@ function metricsBlock(s) {
   const metrics = s.lab.entries(s.id, "metric");
   if (!metrics.length) return null;
   return block(s, "metrics", "Metrics", metrics.length, () => {
-    const { h } = s.env;
-    const rows = runMetrics(metrics.map(([key, metric]) => [key, metric]), s.ctx);
+    const { h, mount } = s.env;
+    let rows = [];
+    const tbody = h("tbody", {});
+    // Recomputed whenever the list or its filters change, so the values and Copy always describe what is shown.
+    const fill = () => {
+      rows = runMetrics(metrics.map(([key, metric]) => [key, metric]), s.ctx);
+      mount(tbody, rows.map((row) => h("tr", { "data-lab-metric": row.key }, h("td", {}, row.label), h("td", { class: "num" }, row.text),
+        h("td", { class: "faint" }, [row.detail, row.help].filter(Boolean).join(" · ")))));
+    };
+    s.onList.set("metrics", fill);
+    fill();
     return [h("p", { class: "faint" }, "Computed here from what this page already holds. Nothing is fetched and no model is called."),
       h("div", { class: "scroll" }, h("table", { class: "table lab-table" },
-        h("thead", {}, h("tr", {}, h("th", {}, "Metric"), h("th", { class: "num" }, "Value"), h("th", {}, "Notes"))),
-        h("tbody", {}, rows.map((row) => h("tr", { "data-lab-metric": row.key }, h("td", {}, row.label), h("td", { class: "num" }, row.text),
-          h("td", { class: "faint" }, [row.detail, row.help].filter(Boolean).join(" · "))))))),
+        h("thead", {}, h("tr", {}, h("th", {}, "Metric"), h("th", { class: "num" }, "Value"), h("th", {}, "Notes"))), tbody)),
       h("button", { class: "btn sm ghost", onclick: () => attempt(s, () => s.env.copy?.(rows.map((row) => `${row.label}\t${row.text}`).join("\n"))) }, "Copy metrics")];
   });
 }
@@ -489,9 +497,15 @@ export function renderSection(env, lab, id, ctx, options = {}) {
   if (!surface) return null;
   const view = lab.view(id);
   const body = env.h("div", { class: "lab-body" });
-  const s = { env, lab, id, ctx, view, surface, options, redraw: () => {} };
-  s.redraw = () => env.mount(body, [refineBlock(s), checksBlock(s), transformBlock(s), metricsBlock(s), exportBlock(s), importBlock(s), commandBlock(s), toolsBlock(s),
-    panelBlocks(s)].flat().filter(Boolean));
+  // onList: refreshers the open blocks register for the parts that depend on the shown list. listChanged() runs them
+  // after a filter, sort or edit changes that list, without rebuilding the control being used.
+  const s = { env, lab, id, ctx, view, surface, options, redraw: () => {}, onList: new Map() };
+  s.listChanged = () => {
+    view.findings = null;
+    for (const refresh of [...s.onList.values()]) refresh();
+  };
+  s.redraw = () => (s.onList.clear(), env.mount(body, [refineBlock(s), checksBlock(s), transformBlock(s), metricsBlock(s), exportBlock(s), importBlock(s), commandBlock(s), toolsBlock(s),
+    panelBlocks(s)].flat().filter(Boolean)));
   s.redraw();
   if (options.flat) return env.h("div", { class: "lab flat", "data-lab-surface": id }, body);
   const open = !!view.open.section;

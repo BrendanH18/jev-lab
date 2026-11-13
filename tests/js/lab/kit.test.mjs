@@ -422,6 +422,34 @@ test("Checks run on the shown items only and name items by their place in the fu
   assert.deepEqual(view.findings.list.map((finding) => [finding.where, finding.message]), [["List", "Every tagged item has the same tag."]]);
 });
 
+test("Open Metrics and Checks follow filter changes and edits without a rebuild", () => {
+  const { tree, ctx, view, env } = openSection();
+  const refine = blockOf(tree, "refine"), metrics = blockOf(tree, "metrics"), checks = blockOf(tree, "checks"), edits = blockOf(tree, "transforms");
+  // One of the four fixture items is urgent: 25%. Filtered to the urgent one: 100%. Without it: 0 of 3.
+  assert.ok(textOf(metrics).includes("Share of urgent items25.0%"));
+  fire(button(checks, "Run checks on shown items"), "click");
+  assert.ok(textOf(checks).includes("1 finding in 4 shown items"));
+  fire(control(refine, "Fact to filter by"), "change", { target: { value: key("urgent") } });
+  fire(button(refine, "Add filter"), "click");
+  assert.ok(textOf(metrics).includes("Share of urgent items100.0%"), "the open metrics describe the filtered list");
+  assert.ok(textOf(checks).includes("Not run yet."), "findings for the old list are cleared from view");
+  fire(button(metrics, "Copy metrics"), "click");
+  assert.equal(env.copied.at(-1), "Share of urgent items\t100.0%");
+  fire(find(find(refine, (node) => node.attrs["data-lab"] === "filters"), (node) => node.attrs.class === "chip"), "click");
+  assert.ok(textOf(metrics).includes("Share of urgent items25.0%"), "removing the filter refreshes them again");
+  fire(control(refine, "Comparison"), "change", { target: { value: "without" } });
+  fire(button(refine, "Add filter"), "click");
+  assert.ok(textOf(metrics).includes("Share of urgent items0.0%"));
+  view.filters = [];
+  fire(control(edits, "Edit to preview"), "change", { target: { value: key("keep_first") } });
+  fire(find(edits, (node) => node.tag === "input" && node.attrs.type === "number"), "input", { target: { value: "1" } });
+  fire(button(edits, "Preview edit"), "click");
+  fire(button(edits, "Apply previewed edit"), "click");
+  assert.equal(ctx.items().length, 1);
+  const first = fixtureItems()[0].urgent ? "100.0%" : "0.0%";
+  assert.ok(textOf(metrics).includes(`Share of urgent items${first}`), "an applied edit refreshes them too");
+});
+
 test("Edits: choose, preview, apply through the surface, undo, and surface errors stay visible", () => {
   const { tree, ctx, view } = openSection();
   const edits = blockOf(tree, "transforms");
