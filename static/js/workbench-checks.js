@@ -5,11 +5,12 @@ import { confirmSpend, estimateLine } from "./estimate.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
 import { bulkUnsaved } from "./workbench-bulk.js";
-import { driftForm, pval, driftReport } from "./workbench-drift.js";
-import { newQueue, queueForm, queueView, auditReport, confirmReviewDiscard } from "./workbench-review.js";
+import { driftForm, pval, driftReport, driftQueueLab } from "./workbench-drift.js";
+import { newQueue, queueForm, queueView, auditReport, confirmReviewDiscard, reviewQueueLab } from "./workbench-review.js";
 import { withCI, attachedSetsPayload, attachedSetsText } from "./workbench-calibrate.js";
 import { activeGates, policyRules } from "./workbench-policy.js";
 import { loadModels } from "./workbench-compare.js";
+import { catalogDefaults, matchesCatalog, sortedCatalog } from "./dataset-catalog.js";
 
 // ---------- Checks ----------
 // A check (jev/checks.py) keeps Policy's gate with a saved dataset: the gated questions and thresholds, the model, and
@@ -32,9 +33,17 @@ export function checkItem(x) {
   model.addEventListener("focus", loadModels);
   model.addEventListener("input", () => { run.model = model.value; });
   const n = Math.min(x.rows - (x.test?.rows || 0), 200);  // a check reruns the rows its gate was tuned on, not the test rows
-  return h("div", { class: "check-item" },
+  // Lab (contract: static/js/lab/surfaces/workbench-checks.js) is reached only through W. Without it, or with no Lab
+  // filter or sort active, the check renders exactly as before.
+  const lab = checksListLab();
+  const labActive = lab ? W.lab?.active?.("workbench.checks.list") || 0 : 0;
+  const labHidden = labActive ? !lab.page.matches(x.id) : false;
+  const rank = labActive ? lab.page.rank(x.id) : null;
+  const node = h("div", { class: "check-item", id: `check-item-${x.id}`, tabindex: "-1", style: { display: labHidden ? "none" : "" } },
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
       h("span", { class: "badge info" }, icon("check"), "Check"),
+      lab ? h("span", { class: "badge", id: `check-rank-${x.id}`, hidden: !rank, title: "Position among the checks Lab's filters and sort leave" },
+        rank ? `Lab order ${rank.position} of ${rank.of}` : "") : null,
       h("span", { class: "mono" }, Object.entries(c.gates).map(([q, t]) => `${q} ≥ ${t.toFixed(2)}`).join(" · ")),
       h("span", { class: "muted" }, `${checkTargetsText(c)} · asks ${c.model}${c.tuned_on && c.tuned_on !== c.model ? ` · tuned on ${c.tuned_on}` : ""}`)),
     (c.slice_targets || []).map((t) => h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } },
@@ -61,10 +70,85 @@ export function checkItem(x) {
     run.upgrade.open ? upgradeForm(x, run) : null,
     run.upgrade.report ? upgradeReport(x, run.upgrade.report) : null,
     run.drift.open ? driftForm(x, run) : null,
-    run.drift.report ? driftReport(x, run) : null,
+    run.drift.report ? driftReport(x, run, driftQueueLab(x)) : null,
     run.queue.open ? queueForm(x, run.queue) : null,
-    run.queue.open && run.queue.report ? queueView(x, run.queue) : null,
+    run.queue.open && run.queue.report ? queueView(x, run.queue, reviewQueueLab(x)) : null,
     run.queue.audit_report ? auditReport(run.queue.audit_report) : null);
+  if (!lab) return node;
+  // The Lab section sits above the first check the catalog shows; a check Lab hides stays mounted with its queues.
+  const host = lab.page.host() === x.id;
+  return [host ? W.lab.section(W.labEnv, "workbench.checks.list", lab, { title: "Lab tools for saved checks" }) : null,
+    host ? h("div", { id: "checks-lab-note" }, checksLabNote(lab)) : null,
+    h("p", { class: "faint", id: `check-hidden-${x.id}`, hidden: !labHidden, style: { fontSize: "12.5px", margin: 0 } },
+      `The check saved with “${x.name || x.id}” is hidden by Lab filters on saved checks. Its queues and labels are kept.`),
+    node];
+}
+
+// ---------- Lab surface "workbench.checks.list" (contract: static/js/lab/surfaces/workbench-checks.js) ----------
+// Built once from W.lab.builders and kept on W.checkLabs. Every field reads W at call time; the catalog's own filters
+// and order come from the Datasets panel's search (dataset-catalog.js).
+const checksCatalogFilters = () => ({ ...catalogDefaults(), ...W.bulk.datasetSearch });
+
+function checksListLab() {
+  const build = W.lab?.builders?.checksListCtx;
+  if (typeof build !== "function") return null;
+  const labs = W.checkLabs ||= { list: null, review: {}, drift: {} };
+  return labs.list ||= build({
+    datasets: () => {
+      const filters = checksCatalogFilters();
+      return sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds);
+    },
+    catalogShown: (dataset) => matchesCatalog(dataset, checksCatalogFilters()),
+    runs: () => W.bulk.checkRuns,
+    loadedId: () => W.bulk.dataset.id,
+    matches: (item, ctx) => W.lab.matches("workbench.checks.list", item, ctx),
+    arrange: (items, ctx) => W.lab.arrange("workbench.checks.list", items, ctx),
+    open: (id, panel, open) => {
+      const run = W.bulk.checkRuns[id];
+      if (!run?.[panel]) throw new Error("Open the Bulk tab's Datasets panel to show this check first.");
+      run[panel].open = open;
+      render();
+    },
+    exportGate: (id) => exportGate({ dataset: id }, `the check saved with “${W.bulk.datasets.find((d) => d.id === id)?.name || id}”`),
+    goTo: (id) => {
+      const node = document.getElementById(`check-item-${id}`);
+      if (!node) throw new Error("Open the Bulk tab's Datasets panel to go to this check.");
+      node.scrollIntoView({ behavior: "smooth", block: "start" });
+      node.focus({ preventScroll: true });
+    },
+    refresh: () => checksLabRefresh(),
+  });
+}
+
+// Above the checks while a Lab filter or sort is active: how many checks it leaves, and a reset.
+function checksLabNote(lab) {
+  const active = W.lab?.active?.("workbench.checks.list") || 0;
+  if (!active) return null;
+  return h("p", { class: "faint", role: "status", style: { fontSize: "12px", margin: 0, display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+    `${active} Lab setting${active === 1 ? "" : "s"} active: ${lab.shown().length} of ${lab.items().length} saved checks shown. Hidden checks keep their queues and labels; the catalog's order is unchanged.`,
+    h("button", { class: "btn sm ghost", onclick: () => { W.lab.reset("workbench.checks.list"); render(); } }, "Clear Lab filters and sort"));
+}
+
+// Lab filters and sorts show or hide the check blocks and renumber their Lab order in place, so the Lab section keeps
+// its controls. Anything missing from the page falls back to a full render.
+function checksLabRefresh() {
+  const lab = W.checkLabs?.list;
+  if (!lab) return render();
+  const active = W.lab?.active?.("workbench.checks.list") || 0;
+  for (const item of lab.items()) {
+    const node = document.getElementById(`check-item-${item.id}`);
+    const stub = document.getElementById(`check-hidden-${item.id}`);
+    const badge = document.getElementById(`check-rank-${item.id}`);
+    if (!node || !stub || !badge) return render();
+    const hidden = active > 0 && !lab.page.matches(item.id);
+    const rank = active ? lab.page.rank(item.id) : null;
+    node.style.display = hidden ? "none" : "";
+    stub.hidden = !hidden;
+    badge.hidden = !rank;
+    badge.textContent = rank ? `Lab order ${rank.position} of ${rank.of}` : "";
+  }
+  const note = document.getElementById("checks-lab-note");
+  if (note) mount(note, checksLabNote(lab));
 }
 
 // ---------- Gate export ----------

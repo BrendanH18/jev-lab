@@ -1,7 +1,8 @@
 // Lab surfaces of the Overview page (static/index.html, static/js/index.js): the four-question playground and the
 // app cards. Pure code: it imports only the kit, touches no DOM, storage or network, and is tested in Node
 // (tests/js/lab/surface-demo-index.test.mjs). Fixtures for pack tests: tests/js/lab/fixtures/index.mjs
-// (samplePlaygroundCtx, sampleAppsCtx). This header is the CONTRACT for packs on these two surfaces.
+// (sampleIndexPlaygroundCtx, sampleIndexAppsCtx; starter packs: static/js/lab/packs/index/). This header is the
+// CONTRACT for packs on these two surfaces.
 //
 // Both ctx objects are { items(), shown(), data, actions, refresh(), itemName(item, index) } and are built once per
 // page load. items() and shown() are evaluated at call time and return the SAME item objects (compare by identity),
@@ -9,6 +10,9 @@
 // write to them. Every data field is a live getter: read it when you need it, do not keep a copy across renders.
 // Neither surface has replaceItems or importItems, so Edits (transform) and Paste to import (importer) do not render
 // here: the answers are model output and the cards are page copy, and neither may be rewritten by a pack.
+// Kinds both surfaces host: fact, diagnostic, metric, exporter, command, tool, panel (and behavior).
+// No action on either surface calls the model, and no pack may cause a model call: the playground asks only when the
+// user edits its text or presses an example chip, exactly as before Lab.
 //
 // ---------------------------------------------------------------------------------------------------------------
 // SURFACE "index.playground"  —  builder indexPlaygroundCtx(source)  —  "Try it · 4 questions, 1 call"
@@ -50,13 +54,15 @@
 //                               4,000 characters by the server. null while items() is [].
 //   draft       string          what the playground textarea holds right now, untrimmed. "" when empty.
 //   stale       boolean         true when answers are shown and the textarea no longer holds the text they were made
-//                               for (the user is typing, or the next call is on its way). false with no answers.
+//                               for (the user is typing, a pack drafted text, or the next call is on its way).
+//                               false with no answers.
 //   pending     boolean         a call for the current text is in flight
 //   error       string | null   the message of the latest call when it failed; null after a success, while a call is
 //                               in flight, and before any call
 //   configured  boolean         whether an API key is connected, as the status pill shows
 //   examples    [{ label, text }]   the example chips above the answers, in page order; [] when they did not load.
-//                               These are inputs only. They carry no answers and must never be shown as answered.
+//                               These are inputs only. They carry no answers and must never be shown as answered
+//                               (an example whose text equals data.text is answered only through items()).
 //   questions   object | null   the questions of the shown call exactly as sent: { id: { type, instructions,
 //                               criteria? } }. null while items() is [].
 //   request     object | null   the exact request of the shown call: { state: { text }, model, questions }
@@ -72,18 +78,15 @@
 //                               first. The last entry is the shown call unless items() is [] (key removed).
 //
 // actions (each throws an Error with a message for the user when its guard refuses; packs call them only from a
-// command or a control the user just pressed, one call per press, never from a fact, metric, check or render):
-//   ask()             runs the page's own request for the text in the textarea: ONE LIVE MODEL CALL, exactly what
-//                     the page does after every typing pause. Guard: refuses blank text. Returns the page's promise;
-//                     the answer arrives through the page (history grows, the section re-renders). The server's
-//                     budget and rate limit apply as for every call; a failure is reported by the page.
-//   setText(text)     puts text in the textarea and asks, exactly what an example chip does: ONE LIVE MODEL CALL.
-//                     Guard: text must be a nonblank string.
-//   useExample(index) the same for data.examples[index] (0-based). Guard: the example must exist.
+// command or a control the user just pressed, one call per press, never from a fact, metric, check or render).
+// NONE of them calls the model:
+//   draftText(text)   puts text in the playground textarea and focuses it WITHOUT asking: the shown answers stay,
+//                     data.stale turns true, and the page asks only after the user's next edit, as it always does.
+//                     Guard: text must be a nonblank string. Returns the text it placed.
 //   inspect()         opens the page's Inspect JSON drawer on the shown call. Guard: refuses while items() is [].
 //   focusText()       moves the keyboard focus to the textarea. No guard.
 //   openSettings()    opens the page's API key and spend settings dialog. No guard.
-// There is no action that edits, clears or replays answers, and none may be added by a pack.
+// There is no action that asks the model, edits, clears or replays answers, and none may be added by a pack.
 //
 // refresh() re-renders the answer cards from shown(). The page re-renders the Lab section itself when a new answer
 // arrives or a call fails, not when a call starts or the user types.
@@ -101,6 +104,7 @@
 //   - A rule a pack applies to probabilities (a threshold, "close call", "would escalate") is plain local code:
 //     advisory, labeled as such, and never worded as the model's answer.
 //   - No pack changes the questions, the example texts or the request. Nothing here holds the API key.
+//   - CSV exports go through the kit's csvText/csvCell (spreadsheet formula escaping) on both surfaces.
 //
 // ---------------------------------------------------------------------------------------------------------------
 // SURFACE "index.apps"  —  builder indexAppsCtx(source)  —  "Eight apps, one fictional business"
@@ -227,7 +231,7 @@ function answerRow(id, answer, question, position) {
     probabilities, top: top ? { ...top } : null, confidence: type === "noul" ? null : finite(answer.confidence), box, answer: clone(answer) };
 }
 
-// What one raw /api/hello result ({ answers, meta, trace }) gives the surface. Kept per result object, so the item
+// What one raw playground result ({ answers, meta, trace }) gives the surface. Kept per result object, so the item
 // objects stay the same until a new answer arrives.
 const VIEWS = new WeakMap();
 function viewOf(result) {
@@ -266,7 +270,8 @@ function historyEntry(raw) {
 //   draft: () => the textarea's text,     pending: () => boolean,     error: () => string | null,
 //   configured: () => boolean,     examples: () => [{ label, text }],
 //   matches: (item, ctx) => boolean   (LAB.matches),     arrange: (items, ctx) => items   (LAB.arrange),
-//   ask(), setText(text), inspect(), focusText(), openSettings(), refresh()   the page's own operations
+//   draftText(text), inspect(), focusText(), openSettings(), refresh()   the page's own operations; draftText must
+//          place the text without asking (no input event, no call)
 // }
 // Every field may also be a plain value. A missing callback makes its action throw.
 export function indexPlaygroundCtx(source = {}) {
@@ -320,18 +325,10 @@ export function indexPlaygroundCtx(source = {}) {
       },
     },
     actions: {
-      ask() {
-        if (!draft().trim()) throw new Error("Type some text in the playground first.");
-        return call(source, "ask");
-      },
-      setText(text) {
-        if (typeof text !== "string" || !text.trim()) throw new Error("The playground needs some text to ask about.");
-        return call(source, "setText", text);
-      },
-      useExample(index) {
-        const example = Number.isInteger(index) ? examples()[index] : undefined;
-        if (!example || !example.text.trim()) throw new Error(`There is no playground example ${Number.isInteger(index) ? index + 1 : String(index)}.`);
-        return call(source, "setText", example.text);
+      draftText(text) {
+        if (typeof text !== "string" || !text.trim()) throw new Error("There is no text to put in the playground.");
+        call(source, "draftText", text);
+        return text;
       },
       inspect() {
         if (!result()) throw new Error("Run the playground first: there is no request to inspect yet.");

@@ -175,12 +175,13 @@ const DRIFT_BADGE = { steady: ["good", "check", "Looks like the dataset"], shift
 export const pval = (p) => (p === null || p === undefined ? "—" : p < 0.001 ? "< 0.001" : p.toFixed(3));
 const pctOr = (p, digits = 0) => (p === null || p === undefined ? "—" : pct(p, digits));
 
-export function driftReport(x, run) {
+// lab: the "workbench.drift.queue" ctx (driftQueueLab), or null; only the traffic queue below uses it.
+export function driftReport(x, run, lab = null) {
   const d = run.drift;
   const rep = d.report;
   if (rep.recovered) return h("div", { class: "check-report grid", style: { gap: "8px" } },
     h("p", { class: "faint" }, "Recovered human labeling queue. Comparison statistics require a new live comparison."),
-    driftLabels(x, run));
+    driftLabels(x, run, lab));
   const [tone, ic, label] = DRIFT_BADGE[rep.status];
   const [ctone, , clabel] = CHECK_BADGE[rep.check_status];
   const ref = rep.reference, nu = rep.new, e = rep.estimate, t = rep.targets;
@@ -229,18 +230,21 @@ export function driftReport(x, run) {
       `Each p-value is adjusted for the ${rep.tests} tests in this report (Holm); a shift is an adjusted p below ${rep.alpha}. `,
       "The estimate gives each new automated row the accuracy of the labeled, automated dataset rows with the same gated answers, and the same confidence band when enough share it. ",
       "It assumes rows with the same answers are as often right in both sets, so label a sample of the new rows before relying on it."),
-    rep.labeling ? driftLabels(x, run) : null);
+    rep.labeling ? driftLabels(x, run, lab) : null);
 }
 
 // Label actual inputs selected by the comparison. These targeted rows never produce an audit score.
-function driftLabels(x, run) {
+// lab: the "workbench.drift.queue" ctx, or null. Without it, or with no Lab filter or sort active, every queued row shows.
+function driftLabels(x, run, lab = null) {
   const d = run.drift;
   const rep = d.report.labeling;
+  const labActive = lab && d.labelsOpen ? W.lab?.active?.("workbench.drift.queue") || 0 : 0;
+  const shownItems = labActive ? lab.page.visible() : rep.items;
   const ready = rep.items.filter((i) => queueReady(i, rep.gates));
   const adding = Math.min(ready.length, rep.room);
   const busy = d.busy || d.running || run.running || run.upgrade.running;
   const counts = rep.counts;
-  const card = (item) => h("div", { class: `queue-item${queueReady(item, rep.gates) ? " done" : ""}` },
+  const card = (item) => h("div", { class: `queue-item${queueReady(item, rep.gates) ? " done" : ""}`, id: `drift-${x.id}-${item.line}`, tabindex: "-1" },
     h("span", { class: "faint mono", style: { fontSize: "11.5px" } }, `new row ${item.line}`),
     h("div", { class: "row-text", style: { whiteSpace: "pre-wrap" } }, rowText(item.row)),
     W.bulk.pictures[item.row._image] ? h("div", { style: { maxWidth: "560px" } },
@@ -266,8 +270,14 @@ function driftLabels(x, run) {
       h("p", { class: "muted", style: { fontSize: "12.5px", margin: 0 } },
         "These automated rows have little support in the labeled dataset. Choose labels from their text and pictures. This is a targeted sample, not a random audit; it does not measure accuracy on all new traffic. Labeling and saving make no model calls."),
       agreeQuestions(rep.questions),
-      rep.items.length ? h("div", { class: "queue-list" }, rep.items.map(card))
-        : h("div", { class: "empty" }, "All queued rows have been added."),
+      lab && W.lab?.section ? W.lab.section(W.labEnv, "workbench.drift.queue", lab, { title: "Lab tools for new traffic" }) : null,
+      h("div", { class: "grid", id: `drift-rows-${x.id}`, style: { gap: "6px" } },
+        labActive ? h("p", { class: "faint", role: "status", style: { fontSize: "12px", margin: 0, display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+          `Showing ${shownItems.length} of ${rep.items.length} queued rows · ${labActive} Lab setting${labActive === 1 ? "" : "s"} active. Labels on hidden rows stay, and Add still takes every ready row.`,
+          h("button", { class: "btn sm ghost", onclick: () => { W.lab.reset("workbench.drift.queue"); render(); } }, "Clear Lab filters and sort")) : null,
+        !rep.items.length ? h("div", { class: "empty" }, "All queued rows have been added.")
+          : shownItems.length ? h("div", { class: "queue-list" }, shownItems.map(card))
+            : h("div", { class: "empty" }, "No queued row matches the Lab filters. Clear them to see the queue.")),
       rep.items.length ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
         h("button", { class: "btn sm primary", disabled: busy || !adding, onclick: () => addDriftLabels(x.id) },
           d.busy ? h("span", { class: "spin" }) : icon("save"), `Add ${adding} labeled row${adding === 1 ? "" : "s"} to “${x.name || x.id}”`),
@@ -326,4 +336,63 @@ async function addDriftLabels(id) {
     toast(`Added ${out.added} labeled row${out.added === 1 ? "" : "s"}. Rerun the check when you want fresh answers.`);
   } catch (e) { handleError(e); }
   finally { d.busy = false; render(); }
+}
+
+// ---------- Lab surface "workbench.drift.queue" (contract: static/js/lab/surfaces/workbench-checks.js) ----------
+// One ctx per check, built from W.lab.builders on first use and kept on W.checkLabs; driftLabels reaches it only
+// through its lab argument. Every field reads W at call time: a new comparison or a restored draft replaces the queue.
+export function driftQueueLab(x) {
+  const build = W.lab?.builders?.driftQueueCtx;
+  if (typeof build !== "function") return null;
+  const labs = W.checkLabs ||= { list: null, review: {}, drift: {} };
+  const id = x.id;
+  return labs.drift[id] ||= build({
+    dataset: () => W.bulk.datasets.find((d) => d.id === id) || { id, name: id },
+    drift: () => W.bulk.checkRuns[id]?.drift,
+    busy: () => {
+      const run = W.bulk.checkRuns[id];
+      return !run || !!(run.drift?.busy || run.drift?.running || run.running || run.upgrade?.running);
+    },
+    pictures: () => W.bulk.pictures,
+    matches: (item, ctx) => W.lab.matches("workbench.drift.queue", item, ctx),
+    arrange: (items, ctx) => W.lab.arrange("workbench.drift.queue", items, ctx),
+    writeLabels: (changes, label) => driftLabWrite(id, changes, label),
+    goTo: (line) => driftLabGoTo(id, line),
+    openLabels: (open) => { W.bulk.checkRuns[id].drift.labelsOpen = open; render(); },
+    refresh: () => driftLabRefresh(id),
+  });
+}
+
+// A Lab edit of the traffic labels takes the path a row's select takes: the label changes and a pending draft restore
+// preview is dropped. Nothing is saved until Add.
+function driftLabWrite(id, changes, label) {
+  const d = W.bulk.checkRuns[id]?.drift;
+  const rep = d?.report?.labeling;
+  if (!rep || d.busy || d.running) throw new Error("Wait for the traffic operation to finish.");
+  for (const [line, labels] of changes) {
+    const item = rep.items.find((entry) => entry.line === line);
+    if (item) Object.assign(item.labels, labels);
+  }
+  d.sessionPreview = null;
+  render();
+  toast(`${label}: labels changed on ${changes.length} new row${changes.length === 1 ? "" : "s"}. Add labeled rows to save them to the dataset.`);
+}
+
+function driftLabGoTo(id, line) {
+  render();
+  const card = document.getElementById(`drift-${id}-${line}`);
+  if (!card) throw new Error("Open Label new traffic to go to a row.");
+  card.scrollIntoView({ block: "center", behavior: "smooth" });
+  (card.querySelector("select:not(:disabled)") || card).focus({ preventScroll: true });
+}
+
+// Lab filters and sorts redraw the queued cards only, so the Lab section keeps its controls.
+function driftLabRefresh(id) {
+  const run = W.bulk.checkRuns[id];
+  const x = W.bulk.datasets.find((d) => d.id === id);
+  const live = document.getElementById(`drift-rows-${id}`);
+  if (!run?.drift?.report?.labeling || !x || !live) return render();
+  const next = h("div", {}, driftLabels(x, run, W.checkLabs?.drift?.[id] || null)).querySelector(`#drift-rows-${id}`);
+  if (!next) return render();
+  live.replaceWith(next);
 }

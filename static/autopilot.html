@@ -72,7 +72,10 @@
 
     <div class="grid main-grid">
       <section class="flow">
+        <div id="records-lab" class="hidden"></div>
+        <div id="inbox-lab" class="hidden"></div>
         <div class="flow-head"><span>Incoming email</span><span>One Jev call → Shield</span><span>Autopilot (integrated)</span><span>Dispatch alone</span></div>
+        <div id="rows-note" class="hidden"></div>
         <div class="flow" id="rows"></div>
       </section>
       <aside class="grid" style="gap:16px">
@@ -82,6 +85,7 @@
             <p class="muted" style="font-size:12.5px">Run the same Shield and Dispatch questions on the vendor-fraud email three ways: two calls one after the other, two calls at the same time, and one merged call.</p>
             <button class="btn" id="bench-btn">Run benchmark (5 live calls)</button>
           </div>
+          <div class="panel-body hidden" id="bench-lab" style="padding-top:0"></div>
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Where the money went</h2></div>

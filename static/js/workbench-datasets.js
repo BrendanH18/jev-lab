@@ -130,7 +130,8 @@ async function deleteDataset(id) {
 }
 
 // Dataset revisions (static/js/history.js): after a restore, drop reports about the replaced file and reload it.
-const datasetHistory = createHistory({ h, api, toast, handleError, render: () => render(), beforeRestore: confirmReviewDiscard, afterRestore: async (id) => {
+const datasetHistory = createHistory({ h, api, toast, handleError, render: () => render(), beforeRestore: confirmReviewDiscard,
+  lab: (id, control) => (W.lab?.builders?.datasetsHistoryCtx ? datasetsHistoryLab(id, control) : null), afterRestore: async (id) => {
   const b = W.bulk;
   delete b.checkRuns[id];
   delete b.agreeRuns[id];
@@ -233,6 +234,9 @@ export function renderDatasets() {
   withQ.addEventListener("change", () => { d.withQuestions = withQ.checked; });
   const labeledText = (x) => `${x.rows} row${x.rows === 1 ? "" : "s"} · ${x.labeled} labeled`
     + (x.questions ? ` · ${x.questions} question${x.questions === 1 ? "" : "s"}` : "");
+  // Lab (contract: static/js/lab/surfaces/workbench-datasets.js) filters like any catalog filter and sorts after the page.
+  const catalogLab = W.lab?.builders?.datasetsCatalogCtx ? datasetsCatalogLab() : null;
+  const catalogOrder = sortedCatalog(b.datasets, filters.sort, filters.pinnedIds);
   return h("div", { class: "panel datasets", id: "datasets" },
     h("div", { class: "panel-head" }, h("h2", {}, "Datasets · data/workbench/datasets/"), h("div", { class: "spacer" }),
       h("span", { class: "badge warning", id: "ds-unsaved", style: { display: bulkUnsaved() ? "" : "none" }, title: "A reload would lose these rows or labels" }, "Unsaved rows or labels")),
@@ -244,8 +248,9 @@ export function renderDatasets() {
       bundleImportForm(),
       b.datasets.some((x) => x.check) ? h("datalist", { id: "cmp-models" }, (W.compare.models || []).map((n) => h("option", { value: n }))) : null,
       datasetSearchControls(filters),
-      b.datasets.length ? h("div", { id: "dataset-search-results" }, sortedCatalog(b.datasets, filters.sort, filters.pinnedIds).map((x) => h("div", { class: "item dataset-search-item", "data-dataset-id": x.id,
-        style: { display: matchesCatalog(x, filters) ? "" : "none" } },
+      catalogLab ? W.lab.section(W.labEnv, "workbench.datasets.catalog", catalogLab, { title: "Lab tools for the dataset catalog" }) : null,
+      b.datasets.length ? h("div", { id: "dataset-search-results" }, (catalogLab ? catalogLab.page.arrange(catalogOrder) : catalogOrder).map((x) => h("div", { class: "item dataset-search-item", "data-dataset-id": x.id,
+        style: { display: matchesCatalog(x, filters) && (!catalogLab || catalogLab.page.matches(x)) ? "" : "none" } },
         h("div", { class: "grid", style: { gap: "2px" } },
           h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
             h("b", {}, x.name || x.id), h("code", { class: "faint" }, x.id), x.id === d.id ? h("span", { class: "badge" }, "loaded") : null),
@@ -289,13 +294,19 @@ function datasetSearchControls(filters) {
     class: "btn sm ghost", "aria-label": `Remove dataset filter ${label}`,
     onclick: () => setFilter(key, catalogDefaults()[key]),
   }, `${label}: ${value} ×`));
-  const visible = () => sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds).filter((item) => matchesCatalog(item, filters));
+  // Lab's filters count like every catalog filter (and so scope every "shown" action); Lab's sort applies last.
+  const lab = W.lab?.builders?.datasetsCatalogCtx ? datasetsCatalogLab().page : null;
+  const ordered = () => {
+    const list = sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds);
+    return lab ? lab.arrange(list) : list;
+  };
+  const visible = () => ordered().filter((item) => matchesCatalog(item, filters) && (!lab || lab.matches(item)));
   const update = () => {
     const shown = visible();
     const matches = new Set(shown.map((item) => item.id));
     const list = $("#dataset-search-results");
     const nodes = new Map([...(list?.querySelectorAll(".dataset-search-item") || [])].map((row) => [row.dataset.datasetId, row]));
-    sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds).forEach((item) => {
+    ordered().forEach((item) => {
       const row = nodes.get(item.id);
       if (row) { row.style.display = matches.has(item.id) ? "" : "none"; list.append(row); }
     });
@@ -333,7 +344,7 @@ function datasetSearchControls(filters) {
     if (jsonDownload) jsonDownload.disabled = !shown.length;
     const active = catalogActiveFilters(filters);
     const activeCount = $("#dataset-catalog-active-count");
-    if (activeCount) activeCount.textContent = `${active.length} active dataset filter${active.length === 1 ? "" : "s"}`;
+    if (activeCount) activeCount.textContent = `${active.length} active dataset filter${active.length === 1 ? "" : "s"}${labText()}`;
     const filterSummary = $("#dataset-catalog-filter-summary");
     if (filterSummary) filterSummary.textContent = catalogFilterSummary(filters);
     $("#dataset-catalog-filter-chips")?.replaceChildren?.(...activeChips());
@@ -366,9 +377,22 @@ function datasetSearchControls(filters) {
     update();
   };
   const clear = () => {
+    if (W.lab) {
+      W.lab.reset("workbench.datasets.catalog");
+      const section = $('[data-lab-surface="workbench.datasets.catalog"]');
+      if (section && lab) section.replaceWith(W.lab.section(W.labEnv, "workbench.datasets.catalog", datasetsCatalogLab(), { title: "Lab tools for the dataset catalog" }) || "");
+    }
     applyFilters(catalogDefaults());
     search.focus();
   };
+  const labText = () => {
+    const count = W.lab?.active("workbench.datasets.catalog") || 0;
+    return count ? ` · ${count} Lab setting${count === 1 ? "" : "s"} active` : "";
+  };
+  if (lab) {
+    W.datasetsCatalogRefresh = update;
+    W.datasetsCatalogClear = clear;
+  }
   const download = (items, format, name) => {
     if (!items.length) return;
     const url = URL.createObjectURL(new Blob([format === "csv" ? catalogCsv(items) : catalogJson(items)],
@@ -483,7 +507,7 @@ function datasetSearchControls(filters) {
       } }, "Download shown catalog JSON")),
     h("span", { class: "faint", id: "dataset-search-count", "aria-live": "polite" }, `${shown.length} of ${W.bulk.datasets.length} datasets shown`),
     h("span", { class: "faint", id: "dataset-catalog-active-count", "aria-live": "polite" },
-      `${catalogActiveFilters(filters).length} active dataset filter${catalogActiveFilters(filters).length === 1 ? "" : "s"}`),
+      `${catalogActiveFilters(filters).length} active dataset filter${catalogActiveFilters(filters).length === 1 ? "" : "s"}${labText()}`),
     h("details", {}, h("summary", {}, "Active dataset filters"),
       h("p", { class: "faint", id: "dataset-catalog-filter-summary" }, catalogFilterSummary(filters)),
       h("div", { id: "dataset-catalog-filter-chips", style: { display: "flex", flexWrap: "wrap", gap: "6px" } }, activeChips())),
@@ -666,6 +690,11 @@ async function drawAgreeSample(id) {
 function agreeSampleView(x, a) {
   const s = a.sample;
   const given = secondItems(s.items, a.labels).length;
+  // Lab (contract: static/js/lab/surfaces/workbench-datasets.js) hides cards and sorts them; every label stays in a.labels
+  // and Compare still sends every labeled row.
+  const lab = W.lab?.builders?.datasetsAgreementCtx ? datasetsAgreementLab(x) : null;
+  const cards = lab ? lab.page.arrange(s.items.filter((item) => lab.page.matches(item))) : s.items;
+  const labActive = lab ? W.lab.active("workbench.datasets.agreement") : 0;
   const card = (item) => {
     const labels = a.labels[item.row_id] || (a.labels[item.row_id] = Object.create(null));  // a question id may be __proto__
     const done = item.questions.every((q) => labels[q] !== null && labels[q] !== undefined);
@@ -706,7 +735,11 @@ function agreeSampleView(x, a) {
       `${s.items.length} of ${s.eligible} labeled rows, drawn at random. Each row asks only the questions its saved labels cover, since only those are compared. `,
       "The saved labels stay hidden until you compare; the rows box shows them if this dataset is loaded there, so label from this list."),
     agreeQuestions(s.questions),
-    h("div", { class: "queue-list" }, s.items.map(card)),
+    lab ? W.lab.section(W.labEnv, "workbench.datasets.agreement", lab, { title: "Lab tools for the agreement sample" }) : null,
+    labActive ? h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } },
+      `Showing ${cards.length} of ${s.items.length} sampled rows · ${labActive} Lab setting${labActive === 1 ? "" : "s"} active. Labels on hidden rows stay, and Compare sends every labeled row. `,
+      h("button", { class: "btn sm ghost", onclick: () => { W.lab.reset("workbench.datasets.agreement"); render(); } }, "Clear Lab filters and sort")) : null,
+    h("div", { class: "queue-list" }, cards.map(card)),
     h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm primary", disabled: a.busy || !given, onclick: () => compareAgreement(x.id) },
         a.busy ? [h("span", { class: "spin" }), " Comparing…"] : [icon("check"), `Compare ${given} labeled row${given === 1 ? "" : "s"}`]),
@@ -995,4 +1028,93 @@ function testReport(s, rep) {
       `${s.unlabeled + s.invalid.length + s.skipped} test rows lack a usable label or answer for a gated question and are not scored.`) : null,
     s.look > 1 ? h("p", { class: "faint", style: { fontSize: "12.5px", margin: 0 } }, icon("eye"),
       ` This is look ${s.look} at these rows. A gate or wording changed after an earlier look was chosen partly on them, so this number is optimistic too. For an unbiased one, label new rows and hold them out.`) : null);
+}
+
+// ---------- Lab surfaces (contract: static/js/lab/surfaces/workbench-datasets.js) ----------
+// Each ctx is built on first use from the page's own state and handlers, and reached only behind a W.lab check, so the
+// tests that rebuild page functions from source (without W.lab) never touch them.
+
+// "workbench.datasets.catalog": one ctx for the page session. refresh() and resetFilters() go through the catalog's own
+// update and clear, which only hide and reorder the mounted cards, so open human queues stay mounted.
+function datasetsCatalogLab() {
+  const id = "workbench.datasets.catalog";
+  if (!W.datasetsCatalogLab) W.datasetsCatalogLab = W.lab.builders.datasetsCatalogCtx({
+    datasets: () => W.bulk.datasets,
+    filters: () => W.bulk.datasetSearch,
+    loadedId: () => W.bulk.dataset.id,
+    unsaved: () => bulkUnsaved(),
+    saveBusy: () => !!W.bulk.datasetSaveBusy,
+    copyBusy: () => !!W.bulk.datasetCopyBusy,
+    agreementOpen: (datasetId) => !!W.bulk.agreeRuns[datasetId]?.open,
+    matches: (item, ctx) => W.lab.matches(id, item, ctx),
+    arrange: (list, ctx) => W.lab.arrange(id, list, ctx),
+    load: (datasetId) => loadDataset(datasetId),
+    loadCopy: (datasetId) => loadDatasetCopy(datasetId),
+    downloadBundle: (datasetId) => exportBundle(datasetId),
+    setPins: (ids) => {
+      W.bulk.datasetSearch.pinnedIds = ids;
+      if (W.datasetsCatalogRefresh) W.datasetsCatalogRefresh(); else render();
+    },
+    openAgreement: (datasetId) => { agreeRun(datasetId).open = true; render(); },
+    resetFilters: () => {
+      if (W.datasetsCatalogClear) return W.datasetsCatalogClear();
+      Object.assign(W.bulk.datasetSearch, catalogDefaults(), { pinnedIds: W.bulk.datasetSearch.pinnedIds });
+      W.lab.reset(id);
+      return render();
+    },
+    refresh: () => (W.datasetsCatalogRefresh ? W.datasetsCatalogRefresh() : render()),
+    now: () => Date.now(),
+  });
+  return W.datasetsCatalogLab;
+}
+
+// "workbench.datasets.history": one ctx per dataset whose History panel is open (history.js passes its control).
+function datasetsHistoryLab(datasetId, control) {
+  const id = "workbench.datasets.history";
+  const labs = W.datasetsHistoryLabs || (W.datasetsHistoryLabs = {});
+  if (!labs[datasetId] || labs[datasetId].control !== control) {
+    const ctx = W.lab.builders.datasetsHistoryCtx({
+      datasetId,
+      state: () => control.state(),
+      deleted: () => control.deleted(),
+      matches: (item, c) => W.lab.matches(id, item, c),
+      arrange: (list, c) => W.lab.arrange(id, list, c),
+      reload: () => control.reload(),
+      preview: (entry) => control.preview(entry),
+      cancelPreview: () => control.cancelPreview(),
+      restore: () => control.restore(),
+      setChangedOnly: (on) => control.setChangedOnly(on),
+      refresh: () => render(),
+      now: () => Date.now(),
+    });
+    labs[datasetId] = { control, ctx };
+  }
+  const ctx = labs[datasetId].ctx;
+  return { matches: ctx.page.matches, arrange: ctx.page.arrange, active: () => W.lab.active(id), reset: () => W.lab.reset(id),
+    section: () => W.lab.section(W.labEnv, id, ctx, { title: "Lab tools for revisions" }) };
+}
+
+// "workbench.datasets.agreement": one ctx per dataset with an agreement sample on screen.
+function datasetsAgreementLab(dataset) {
+  const id = "workbench.datasets.agreement";
+  const labs = W.datasetsAgreementLabs || (W.datasetsAgreementLabs = {});
+  const datasetId = dataset.id;
+  if (!labs[datasetId]) labs[datasetId] = W.lab.builders.datasetsAgreementCtx({
+    datasetId,
+    datasetName: () => W.bulk.datasets.find((entry) => entry.id === datasetId)?.name || datasetId,
+    run: () => W.bulk.agreeRuns[datasetId] || null,
+    matches: (item, ctx) => W.lab.matches(id, item, ctx),
+    arrange: (list, ctx) => W.lab.arrange(id, list, ctx),
+    setLabel: (rowId, question, value) => { changeSecondLabel(agreeRun(datasetId), rowId, question, value); render(); },
+    compare: () => compareAgreement(datasetId),
+    settle: (rowId, question, value) => {
+      const a = agreeRun(datasetId);
+      a.choices[settleKey(rowId, question)] = value;
+      a.sessionPreview = null;
+      render();
+    },
+    refresh: () => render(),
+    now: () => Date.now(),
+  });
+  return labs[datasetId];
 }

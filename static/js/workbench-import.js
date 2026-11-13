@@ -151,7 +151,8 @@ function renderImportResult() {
 // A health report describes the current rows and selected questions, never a prior Bulk run's answers.
 export const healthContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty, W.bulk.health.field]);
 
-async function checkHealth() {
+// The "Check dataset health" button; also Lab's workbench.bulk.rows checkHealth action.
+export async function checkHealth() {
   if (W.bulk.health.busy) return;
   if (!settleLabels("Check the rows box")) return;
   const state = W.bulk.health;
@@ -203,7 +204,11 @@ export function healthBody() {
         h("ul", {}, report.invalid_labels.map((x) => h("li", {}, `Row ${x.row}: ${x.question}`)))) : null,
       !report.duplicate_groups.length && !report.conflicts.length && !report.overlap.length && !report.invalid_labels.length
         && report.questions.every((q) => !q.missing && !q.invalid.length)
-        ? h("p", { class: "muted" }, "No issues found by these checks. This does not establish model accuracy or representative data.") : null) : null);
+        ? h("p", { class: "muted" }, "No issues found by these checks. This does not establish model accuracy or representative data.") : null,
+      // Extra advisory findings from Lab packs (jev/lab/packs, kind health_check): titles, row numbers and messages only.
+      report.lab?.length ? h("div", { "data-lab": "health-findings" }, h("b", {}, "Additional findings"),
+        h("p", { class: "muted" }, "Advisory checks from Lab packs, made by plain code. Row numbers only; label values stay hidden."),
+        h("ul", {}, report.lab.map((x) => h("li", {}, `${x.title}${x.rows?.length ? ` · rows ${numbers(x.rows)}` : ""}${x.message && x.message !== x.title ? `: ${x.message}` : ""}`)))) : null) : null);
 }
 
 // Counts describe label availability, never model quality or the hidden label values.

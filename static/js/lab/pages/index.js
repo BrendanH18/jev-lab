@@ -3,6 +3,13 @@
 // ctx builders of its surfaces, which page code reaches as LAB.builders.
 import { createLab } from "../host.js";
 import * as s0 from "../surfaces/index.js";
+import p0 from "../packs/index/index-apps-explorer.js";
+import p1 from "../packs/index/index-apps-more.js";
+import p2 from "../packs/index/index-playground-insights.js";
+import p3 from "../packs/index/index-playground-more.js";
+import p4 from "../packs/chrome/chrome-essentials.js";
+import p5 from "../packs/chrome/chrome-navigation.js";
+import p6 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [];
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6];
 export const LAB = createLab(PACKS, { ...s0 });

@@ -13,14 +13,17 @@ export function exampleMetadata(example) {
     state_type: Array.isArray(example.state) ? "array" : example.state !== null && typeof example.state === "object" ? "object" : "text" };
 }
 
-export function visibleExamples(examples, view = {}) {
+// lab: optional Lab hooks { matches(example) -> boolean, arrange(examples) -> examples } (static/js/lab/surfaces/
+// workbench-shell.js). Lab's filter is one more test of "is this example shown"; Lab's sort applies after the page's.
+export function visibleExamples(examples, view = {}, lab = null) {
   const shown = examples.filter((example) => {
     const meta = exampleMetadata(example);
     if (!matchesExampleRefinements(example, view)) return false;
     if (view.type && view.type !== "all" && !meta.types.includes(view.type)) return false;
     if (view.images === "with" && !meta.image_count || view.images === "without" && meta.image_count) return false;
     if (view.expectations === "with" && !meta.expectation_count || view.expectations === "without" && meta.expectation_count) return false;
-    return !view.stateType || view.stateType === "all" || meta.state_type === view.stateType;
+    if (view.stateType && view.stateType !== "all" && meta.state_type !== view.stateType) return false;
+    return !lab?.matches || lab.matches(example) !== false;
   });
   const byCount = (example) => exampleMetadata(example).question_count;
   if (view.sort === "title") shown.sort((a, b) => a.title.localeCompare(b.title));
@@ -31,17 +34,33 @@ export function visibleExamples(examples, view = {}) {
     const direction = ["state-largest", "criteria-most"].includes(view.sort) ? -1 : 1;
     shown.sort((a, b) => direction * (exampleCounts(a)[field] - exampleCounts(b)[field]));
   }
-  return shown;
+  return lab?.arrange ? lab.arrange(shown) : shown;
 }
 
 export function exampleMetadataJson(examples) {
   return JSON.stringify(examples.map(exampleMetadata), null, 2);
 }
 
-export function renderExamplesBrowser(h, examples, onOpen) {
+// The Lab surface of the gallery (contract: static/js/lab/surfaces/workbench-shell.js, shellExamplesCtx).
+const EXAMPLES_LAB = "workbench.examples.gallery";
+
+// lab: optional { host, env, loaded } — the page's Lab host (W.lab), its env (W.labEnv) and () => the example last
+// opened into Build. Without it, or before the host has the gallery's builder, the gallery works exactly as before.
+export function renderExamplesBrowser(h, examples, onOpen, lab = null) {
   const view = exampleBrowserView;
   // Update just the cards/count so typing and filter changes keep native focus.
   let cards, count, download, expand, collapse, root, tools, typeSummary, feedback;
+  const host = lab?.host || null;
+  const resetView = () => { Object.assign(view, exampleBrowserDefaults()); host?.reset?.(EXAMPLES_LAB); root.replaceWith(renderExamplesBrowser(h, examples, onOpen, lab)); };
+  const labCtx = typeof host?.builders?.shellExamplesCtx === "function" ? host.builders.shellExamplesCtx({
+    examples: () => examples, visible: (hooks) => visibleExamples(examples, view, hooks), view: () => view, pins: () => view.pins,
+    expanded: () => view.expanded, loaded: () => lab.loaded?.() ?? null,
+    matches: (item, ctx) => host.matches(EXAMPLES_LAB, item, ctx), arrange: (items, ctx) => host.arrange(EXAMPLES_LAB, items, ctx),
+    open: (example) => onOpen(example),
+    pin: (id) => { view.pins.add(id); refresh(); }, unpin: (id) => { view.pins.delete(id); refresh(); },
+    expand: (id) => { view.expanded.add(id); refresh(); }, collapse: (id) => { view.expanded.delete(id); refresh(); },
+    resetView, refresh: () => refresh(),
+  }) : null;
   const transfer = async (text) => {
     try { await navigator.clipboard.writeText(text); feedback.textContent = "Copied."; }
     catch { feedback.textContent = "Clipboard unavailable. Use the download action instead."; }
@@ -53,11 +72,13 @@ export function renderExamplesBrowser(h, examples, onOpen) {
   };
   // Pinned handoffs intentionally include hidden pins in the selected sort order.
   const pinned = () => visibleExamples(examples, { sort: view.sort }).filter((ex) => view.pins.has(ex.id));
-  const shown = () => visibleExamples(examples, view);
+  // Lab's items are positions in this gallery, so its shown list maps back to the authored examples.
+  const shown = () => (labCtx ? labCtx.shown().map((item) => examples[item.position - 1]) : visibleExamples(examples, view));
   const refresh = () => {
     const visible = shown();
     const totals = visible.reduce((sum, ex) => sum + exampleMetadata(ex).question_count, 0);
-    count.textContent = `${visible.length} of ${examples.length} examples · ${totals} authored questions`;
+    const active = labCtx ? host.active?.(EXAMPLES_LAB) || 0 : 0;
+    count.textContent = `${visible.length} of ${examples.length} examples · ${totals} authored questions${active ? ` · ${active} Lab setting${active === 1 ? "" : "s"} active` : ""}`;
     cards.replaceChildren(...(visible.length ? visible.map(card) : [h("p", { class: "muted", role: "status" }, "No examples match. Reset the filters to see every starting point.")]));
     download.disabled = expand.disabled = collapse.disabled = !visible.length;
     if (typeSummary) typeSummary.textContent = exampleTypeSummary(visible);
@@ -82,7 +103,7 @@ export function renderExamplesBrowser(h, examples, onOpen) {
       select("Example input shape", "stateType", [["all", "Any input shape"], ["text", "Plain text"], ["object", "JSON object"], ["array", "JSON array"]]),
       select("Sort examples", "sort", [["saved", "Gallery order"], ["title", "Title A–Z"], ["fewest", "Fewest questions"], ["most", "Most questions"], ["state-smallest", "Smallest authored state"], ["state-largest", "Largest authored state"], ["criteria-fewest", "Fewest authored criteria"], ["criteria-most", "Most authored criteria"]]),
       h("label", { class: "faint" }, h("input", { type: "checkbox", checked: view.compact, onchange: (event) => { view.compact = event.target.checked; refresh(); } }), " Compact example cards"),
-      h("button", { class: "btn sm ghost", onclick: () => { Object.assign(view, exampleBrowserDefaults()); root.replaceWith(renderExamplesBrowser(h, examples, onOpen)); } }, "Reset example view")));
+      h("button", { class: "btn sm ghost", onclick: resetView }, "Reset example view")));
   const bound = (label, key) => h("label", { class: "faint" }, label, " ",
     h("input", { class: "input sm", type: "number", min: "0", step: "1", value: view[key], "aria-label": label,
       oninput: (event) => { view[key] = event.target.value; refresh(); } }));
@@ -132,9 +153,10 @@ export function renderExamplesBrowser(h, examples, onOpen) {
   typeSummary = h("p", { class: "faint", "aria-live": "polite" });
   feedback = h("p", { class: "faint", role: "status" });
   refresh();
+  const labSection = labCtx ? host.section(lab.env, EXAMPLES_LAB, labCtx) : null;
   root = h("div", { class: "grid", id: "examples-browser", style: { gap: "16px" } },
     h("p", { class: "muted" }, "Starting points for ordinary software. Browse the authored requests, then open one in Build to edit and run it. Browsing makes no model calls."),
-    controls, advanced, count, typeSummary, tools, feedback,
+    controls, advanced, labSection, count, typeSummary, tools, feedback,
     h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, expand, collapse, download), cards);
   return root;
 }

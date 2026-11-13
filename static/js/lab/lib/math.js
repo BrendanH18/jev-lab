@@ -183,7 +183,9 @@ function erfSmall(y) {
 }
 
 // erfc(y) for y > 0.46875. exp(-y * y) is taken in two factors so the rounding of y * y does not reach the result.
+// Beyond y = 27.3 the result is below the smallest double; returning 0 there also keeps y * 16 finite.
 function erfcLarge(y) {
+  if (y >= 28) return 0;
   let ratio;
   if (y <= 4) ratio = horner(ERFC_MIDDLE_TOP, y) / horner(ERFC_MIDDLE_BOTTOM, y);
   else {
@@ -215,7 +217,9 @@ export function erfc(x) {
 // The standard normal density exp(-z^2 / 2) / sqrt(2 pi) (0 beyond |z| = 38.6); null for a non-finite z.
 export function normalPdf(z) {
   if (!isNum(z)) return null;
-  const y = Math.abs(z), head = Math.floor(y * 16) / 16;
+  const y = Math.abs(z);
+  if (y >= 40) return 0;   // already 0 beyond 38.6; this also keeps y * 16 finite
+  const head = Math.floor(y * 16) / 16;
   return Math.exp(-0.5 * head * head) * Math.exp(-0.5 * (y - head) * (y + head)) * (INV_SQRT_PI * Math.SQRT1_2);
 }
 
@@ -290,31 +294,28 @@ function betaPrefix(x, y, a, b) {
   return Math.exp(a * logX + b * logY - logBeta(a, b));
 }
 
-// The continued fraction of the incomplete beta function (modified Lentz), which converges quickly for
-// x < (a + 1) / (a + b + 2); null when it does not settle within MAX_STEPS.
-function betaFraction(x, a, b) {
-  const total = a + b;
-  let c = 1, d = 1 - total * x / (a + 1);
-  if (Math.abs(d) < TINY) d = TINY;
-  d = 1 / d;
-  let h = d;
+// The even part of the continued fraction of the incomplete beta function (DLMF 8.17.22 with its terms taken in
+// pairs, the form Boost uses), by modified Lentz: I_x(a, b) = x^a y^b / (B(a, b) * fraction). It reads y = 1 - x
+// as given, so the quantity a y - b x + 1 that steers convergence keeps its digits when x is close to 1 (a large a
+// with x rounded to 1 used to give probabilities above 1). It converges quickly for x < (a + 1) / (a + b + 2), where
+// that quantity is at least 2x; null when it does not settle within MAX_STEPS.
+function betaFraction(x, y, a, b) {
+  const lead = a * y - b * x + 1;
+  let f = a / (a + 1) * lead;
+  if (Math.abs(f) < TINY) f = TINY;
+  let c = f, d = 0;
   for (let m = 1; m <= MAX_STEPS; m++) {
-    const even = (m / (a - 1 + 2 * m)) * ((b - m) / (a + 2 * m)) * x;
-    d = 1 + even * d;
+    const shift = a + 2 * m - 1;   // each product is formed so that nothing overflows for shapes up to the double limit
+    const numerator = ((a + m - 1) / shift) * ((a + b + m - 1) * x) * (m * ((b - m) * x / shift));
+    const denominator = m + m * ((b - m) * x / shift) + ((a + m) / (a + 2 * m + 1)) * (lead + m * (1 + y));
+    d = denominator + numerator * d;
     if (Math.abs(d) < TINY) d = TINY;
-    c = 1 + even / c;
+    c = denominator + numerator / c;
     if (Math.abs(c) < TINY) c = TINY;
     d = 1 / d;
-    h *= d * c;
-    const odd = -((a + m) / (a + 2 * m)) * ((total + m) / (a + 1 + 2 * m)) * x;
-    d = 1 + odd * d;
-    if (Math.abs(d) < TINY) d = TINY;
-    c = 1 + odd / c;
-    if (Math.abs(c) < TINY) c = TINY;
-    d = 1 / d;
-    const factor = d * c;
-    h *= factor;
-    if (Math.abs(factor - 1) <= EPSILON) return h;
+    const factor = c * d;
+    f *= factor;
+    if (Math.abs(factor - 1) <= EPSILON) return f;
   }
   return null;
 }
@@ -324,16 +325,19 @@ function betaFraction(x, a, b) {
 function betaCore(x, y, a, b) {
   if (x <= 0) return [0, 1, 0];
   if (y <= 0) return [1, 0, 0];
+  if (!(a + b < Infinity)) return null;   // shapes whose sum overflows are far beyond the continued fraction anyway
   const prefix = betaPrefix(x, y, a, b);
-  if (x * (a + b + 2) <= a + 1) {
-    const fraction = prefix > 0 ? betaFraction(x, a, b) : 0;
+  // x < (a + 1) / (a + b + 2), tested on the smaller of x and y so that a rounded x near 1 cannot decide it
+  const lowerTail = x <= 0.5 ? x * (a + b + 2) <= a + 1 : y * (a + b + 2) >= b + 1;
+  if (lowerTail) {
+    const fraction = prefix > 0 ? betaFraction(x, y, a, b) : Infinity;
     if (fraction === null) return null;
-    const lower = Math.min(1, prefix * fraction / a);
+    const lower = Math.min(1, prefix / fraction);
     return [lower, 1 - lower, prefix];
   }
-  const fraction = prefix > 0 ? betaFraction(y, b, a) : 0;
+  const fraction = prefix > 0 ? betaFraction(y, x, b, a) : Infinity;
   if (fraction === null) return null;
-  const upper = Math.min(1, prefix * fraction / b);
+  const upper = Math.min(1, prefix / fraction);
   return [1 - upper, upper, prefix];
 }
 
@@ -394,7 +398,13 @@ function betaRoot(target, a, b, mirrored) {
   else if (mirrored) guess = (Math.log((1 - target) * b) + logBeta(a, b)) / b;
   else guess = (Math.log(target * a) + logBeta(a, b)) / a;
   const w = solveMonotone(evaluate, LOG_MIN, LOG_HALF, guess, !mirrored, false);
-  return w === null ? null : Math.exp(w);
+  if (w === null) return null;
+  const v = Math.exp(w);
+  if (v <= Number.MIN_VALUE) {   // the root may lie below the smallest double, and then it rounds to 0
+    const v0 = Number.MIN_VALUE, core = mirrored ? betaCore(1 - v0, v0, a, b) : betaCore(v0, 1 - v0, a, b);
+    if (core !== null && (mirrored ? core[0] < target : core[0] > target)) return 0;
+  }
+  return v;
 }
 
 // [x, 1 - x] with I_x(a, b) = p for 0 <= p <= 1, each computed directly so neither loses digits; null on failure.
@@ -432,20 +442,25 @@ function gammaPrefix(a, x) {
 // (modified Lentz) above it; null when either does not settle within MAX_STEPS.
 function gammaCore(a, x) {
   if (x <= 0) return [0, 1, 0];
+  if (a === 0) return [1, 0, 0];   // a half degree of freedom that underflowed: the limit puts all mass at 0
   const prefix = gammaPrefix(a, x);
-  if (!(prefix > 0)) return x < a + 1 ? [0, 1, 0] : [1, 0, 0];
   if (x < a + 1) {
-    let term = 1 / a, total = term;
+    // P = x^a e^-x / gamma(a + 1) * (1 + x / (a + 1) + x^2 / ((a + 1)(a + 2)) + ...). The factor in front is formed
+    // directly, not as prefix / a, so a tiny shape (prefix underflows while P is close to 1) keeps its value.
+    const front = a < 10 ? Math.exp(a * Math.log(x) - x - logGamma(a + 1)) : prefix / a;
+    if (!(front > 0)) return [0, 1, prefix];
+    let term = 1, total = 1;
     for (let n = 1; n <= MAX_STEPS; n++) {
       term *= x / (a + n);
       total += term;
       if (term <= total * EPSILON) {
-        const lower = Math.min(1, prefix * total);
+        const lower = Math.min(1, front * total);
         return [lower, 1 - lower, prefix];
       }
     }
     return null;
   }
+  if (!(prefix > 0)) return [1, 0, 0];
   let b = x + 1 - a, c = 1 / TINY, d = 1 / b, h = d;
   for (let n = 1; n <= MAX_STEPS; n++) {
     const numerator = -n * (n - a);
@@ -496,7 +511,13 @@ function gammaQuantile(p, a) {
     };
     const start = guess > 0 ? Math.log(guess) : (Math.log(p) + logGamma(a + 1)) / a;
     const w = solveMonotone(evaluate, LOG_MIN, Math.log(a), start, true, false);
-    return w === null ? null : Math.exp(w);
+    if (w === null) return null;
+    const x = Math.exp(w);
+    if (x <= Number.MIN_VALUE) {   // the root may lie below the smallest double, and then it rounds to 0
+      const core = gammaCore(a, Number.MIN_VALUE);
+      if (core !== null && core[0] > p) return 0;
+    }
+    return x;
   }
   const q = 1 - p;
   let high = 2 * Math.max(a, 1);
@@ -532,17 +553,25 @@ export function chiSquareSf(x, df) {
 // infinite).
 export function chiSquareQuantile(p, df) {
   if (!isNum(p) || !isNum(df) || p < 0 || p >= 1 || df <= 0) return null;
-  if (p === 0) return 0;
+  if (p === 0 || 0.5 * df === 0) return 0;   // df / 2 underflows only for the smallest double: all mass at 0
   const x = gammaQuantile(p, 0.5 * df);
   return x === null ? null : finite(2 * x);
 }
 
 // [P[T >= |t|], P[0 <= T <= |t|]] for Student's t with df degrees of freedom; null when the beta function fails.
 function studentHalves(t, df) {
+  if (0.5 * df === 0) return [0.5, 0];   // df / 2 underflows only for the smallest double: the limit puts no mass near 0
   const square = t * t;
   let x, y;   // x = df / (df + t^2) and y = 1 - x, each formed without cancellation
   if (square > df) {
     const r = df / square;
+    if (!(r >= 1e-300)) {
+      // x underflows (or t^2 overflowed) while the tail may still be a double: the first term of I_x(df/2, 1/2),
+      // x^a / (a B(a, 1/2)) with ln x = ln df - 2 ln |t|, is the whole of it to double precision.
+      const a = 0.5 * df;
+      const tail = 0.5 * Math.exp(a * (Math.log(df) - 2 * Math.log(Math.abs(t))) - Math.log(a) - logBeta(a, 0.5));
+      return [tail, 0.5 - tail];
+    }
     x = r / (1 + r);
     y = 1 / (1 + r);
   } else {
@@ -574,6 +603,7 @@ export function studentTSf(t, df) {
 export function studentTQuantile(p, df) {
   if (!isNum(p) || !isNum(df) || p <= 0 || p >= 1 || df <= 0) return null;
   if (p === 0.5) return 0;
+  if (0.5 * df === 0) return null;   // df / 2 underflows only for the smallest double: every other quantile is infinite
   const pair = betaQuantilePair(2 * (p < 0.5 ? p : 1 - p), 0.5 * df, 0.5);
   if (pair === null) return null;
   const t = Math.sqrt(df) * Math.sqrt(pair[1] / pair[0]);

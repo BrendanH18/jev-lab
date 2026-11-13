@@ -174,6 +174,13 @@ export function createGuidelines({ h, api, handleError = () => {}, toast = () =>
     return guidelineView(h, qid, data.guidelines[qid], question || data.questions?.[qid], opts);
   }
 
+  // The loaded guidelines of a dataset, or null while they are not loaded. Unlike hint(), it never starts a request,
+  // so a read-only view (the labeling queue's Lab ctx) can ask at any time.
+  function peek(id) {
+    const entry = id ? cache.get(id) : null;
+    return entry?.status === "ready" ? entry.data : null;
+  }
+
   function invalidate(id = null) {
     if (id === null) cache.clear(); else cache.delete(id);
   }
@@ -280,5 +287,5 @@ export function createGuidelines({ h, api, handleError = () => {}, toast = () =>
       ] : h("p", { class: "faint" }, "This dataset has no saved questions. Save it with its questions to write guidelines."));
   }
 
-  return { hint, toggle, panel, invalidate, changeText: guidelineChangeText };
+  return { hint, peek, toggle, panel, invalidate, changeText: guidelineChangeText };
 }

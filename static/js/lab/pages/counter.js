@@ -2,6 +2,14 @@
 // script again instead. The Lab packs the counter page loads (its own, then the page-wide "chrome" packs) and the
 // ctx builders of its surfaces, which page code reaches as LAB.builders.
 import { createLab } from "../host.js";
+import * as s0 from "../surfaces/counter.js";
+import p0 from "../packs/counter/counter-example-guide.js";
+import p1 from "../packs/counter/counter-examples-more.js";
+import p2 from "../packs/counter/counter-turn-insights.js";
+import p3 from "../packs/counter/counter-turns-more.js";
+import p4 from "../packs/chrome/chrome-essentials.js";
+import p5 from "../packs/chrome/chrome-navigation.js";
+import p6 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [];
-export const LAB = createLab(PACKS, {  });
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6];
+export const LAB = createLab(PACKS, { ...s0 });

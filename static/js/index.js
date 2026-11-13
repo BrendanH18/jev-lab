@@ -42,7 +42,7 @@ function bootLab() {
     draft: () => $("#play-text").value, pending: () => play.pending, error: () => play.error,
     configured: () => !!currentStatus().configured, examples: () => examples,
     matches: (item, ctx) => LAB.matches(PLAY, item, ctx), arrange: (list, ctx) => LAB.arrange(PLAY, list, ctx),
-    ask, setText, focusText: () => $("#play-text").focus(), openSettings: () => openSettings(),
+    draftText, focusText: () => $("#play-text").focus(), openSettings: () => openSettings(),
     inspect: () => inspect(play.result.trace, "Playground · one Jev request"),
     refresh: renderAnswers,
   });
@@ -94,6 +94,14 @@ function setText(text) {
   return ask();
 }
 
+// What a Lab command may do: put text in the playground WITHOUT asking. Setting the value fires no input event, so
+// the page asks only after the user's next edit, as it does for typed text.
+function draftText(text) {
+  const input = $("#play-text");
+  input.value = text;
+  input.focus();
+}
+
 async function ask() {
   const text = $("#play-text").value.trim();
   if (!text) return;
@@ -111,11 +119,11 @@ async function ask() {
       play.result = null;  // the answers are no longer on the page, so the Lab surface holds none
       mount("#play-answers", h("div", { class: "empty", style: { gridColumn: "1 / -1" } }, "Connect an API key to run the playground. Every answer here comes from a live Jev call."));
     } else handleError(e);
-    if (mine === seq) renderPlayLab();
   } finally {
     if (mine === seq) {
       play.pending = false;
       mount("#play-status");
+      renderPlayLab();  // after pending is cleared, so the section reads the settled state
     }
   }
 }
@@ -128,13 +136,12 @@ function render(res) {
   if (play.history.length > HISTORY_LIMIT) play.history.shift();
   renderAnswers();
   mount("#play-stats", callStats(res.meta, () => inspect(res.trace, "Playground · one Jev request")));
-  renderPlayLab();
 }
 
 // The answer cards of the latest call: every answer, unless Lab filters hide some or a Lab sort reorders them.
 function renderAnswers() {
   const res = play.result;
-  if (!res) return;
+  if (!res || !playCtx) return;
   const q = res.trace.request.questions;
   const total = playCtx.items().length;
   const shown = playCtx.shown();
@@ -162,12 +169,14 @@ function renderApps() {
 
 // The Lab tools under the playground. Rendered again when an answer arrives, so its metrics read the new call.
 function renderPlayLab() {
+  if (!playCtx) return;
   const section = LAB.section(labEnv, PLAY, playCtx);
   $("#play-lab").classList.toggle("hidden", !section);
   mount("#play-lab", section);
 }
 
 function renderAppsLab() {
+  if (!appsCtx) return;
   const section = LAB.section(labEnv, APPS, appsCtx);
   $("#apps-lab").classList.toggle("hidden", !section);
   mount("#apps-lab", section);

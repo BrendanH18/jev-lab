@@ -2,6 +2,17 @@
 // script again instead. The Lab packs the dispatch page loads (its own, then the page-wide "chrome" packs) and the
 // ctx builders of its surfaces, which page code reaches as LAB.builders.
 import { createLab } from "../host.js";
+import * as s0 from "../surfaces/dispatch.js";
+import p0 from "../packs/dispatch/dispatch-activity-log.js";
+import p1 from "../packs/dispatch/dispatch-invoice-desk.js";
+import p2 from "../packs/dispatch/dispatch-order-desk.js";
+import p3 from "../packs/dispatch/dispatch-plan-more.js";
+import p4 from "../packs/dispatch/dispatch-plan-review.js";
+import p5 from "../packs/dispatch/dispatch-week-planner.js";
+import p6 from "../packs/dispatch/dispatch-world-facts.js";
+import p7 from "../packs/chrome/chrome-essentials.js";
+import p8 from "../packs/chrome/chrome-navigation.js";
+import p9 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [];
-export const LAB = createLab(PACKS, {  });
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9];
+export const LAB = createLab(PACKS, { ...s0 });

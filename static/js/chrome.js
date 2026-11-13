@@ -1,7 +1,8 @@
-// The pure core of the shared page chrome (static/js/common.js): the nav links, the theme preference, the status
-// snapshot Lab packs may read, local-path and official-link checks, the stack of open layers that Escape closes one
-// at a time, and the Tab wrap for dialogs. No DOM, no network and no storage of its own: storage, the <html>
-// element and the focusable elements are passed in, so tests/js/chrome.test.mjs runs all of it under Node.
+// The pure core of the shared page chrome (static/js/common.js, static/js/lab/env.js): the nav links, the theme
+// preference, the status snapshot Lab packs may read, local-path, page-link and official-link checks, the keyboard
+// help rows, the stack of open layers that Escape closes one at a time, and the Tab wrap for dialogs. No DOM, no
+// network and no storage of its own: storage, the <html> element, the Lab host and the focusable elements are passed
+// in, so tests/js/chrome.test.mjs runs all of it under Node.
 
 export const NAV_LINKS = Object.freeze([["/", "Overview"], ["/shield", "Shield"], ["/dispatch", "Dispatch"], ["/autopilot", "Autopilot"],
   ["/claims", "Claims"], ["/reviews", "Reviews"], ["/find", "Find"], ["/play", "Play"], ["/counter", "Counter"], ["/workbench", "Workbench"]]
@@ -81,6 +82,60 @@ export function externalUrl(url) {
   return parsed.href;
 }
 
+// The address of the page being shown, for "copy the current page link": an http(s) URL with any user name and
+// password removed (the hash is kept, since the Workbench names its tab there). null for anything else.
+export function pageUrl(href) {
+  let parsed = null;
+  try { parsed = new URL(String(href ?? "")); } catch { return null; }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  parsed.username = "";
+  parsed.password = "";
+  return parsed.href;
+}
+
+// ---------- keyboard help ----------
+
+// The shortcuts the chrome itself handles, in the order the keyboard help lists them.
+export const BUILT_IN_SHORTCUTS = Object.freeze([
+  Object.freeze({ keys: "Mod+K", title: "Open or close the command palette", group: "Every page" }),
+  Object.freeze({ keys: "Escape", title: "Close the newest dialog, drawer or palette and return focus", group: "Every page" }),
+  Object.freeze({ keys: "Tab", title: "Move through a dialog; focus wraps at its last and first control", group: "Every page" }),
+  Object.freeze({ keys: "Tab", title: "From the top of a page, the first Tab reaches Skip to content", group: "Every page" }),
+]);
+
+// The commands of the mounted Lab surfaces as [{ key, title, keys, group, surface }], in palette order (each
+// surface in mount order, then its packs' order). keys is null for a command without a shortcut; a key mounted on
+// two surfaces is listed once. `lab` is what createLab() returns.
+export function commandRows(lab) {
+  const out = [];
+  const seen = new Set();
+  for (const id of lab?.mountedIds?.() || []) {
+    for (const [key, command] of lab.entries(id, "command")) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, title: String(command.title), keys: typeof command.keys === "string" && command.keys ? command.keys : null,
+        group: typeof command.group === "string" && command.group ? command.group : null, surface: id });
+    }
+  }
+  return out;
+}
+
+// What the keyboard help lists: the built-in shortcuts, then every command with a shortcut, then every command
+// reachable only from the palette (keys null). Rows are { keys, title, group, key }; key is null for built-ins.
+export function keyboardHelp(commands) {
+  const rows = BUILT_IN_SHORTCUTS.map((row) => ({ ...row, key: null }));
+  const list = (Array.isArray(commands) ? commands : []).filter((row) => row && typeof row.title === "string" && row.title);
+  const shaped = (row) => ({ keys: typeof row.keys === "string" && row.keys ? row.keys : null, title: row.title,
+    group: typeof row.group === "string" && row.group ? row.group : null, key: typeof row.key === "string" ? row.key : null });
+  return [...rows, ...list.filter((row) => row.keys).map(shaped), ...list.filter((row) => !row.keys).map(shaped)];
+}
+
+// "Mod+Shift+K" as this keyboard shows it: Mod is "Cmd" on a Mac and "Ctrl" elsewhere.
+export function keysLabel(keys, mac = false) {
+  if (typeof keys !== "string" || !keys) return "";
+  return keys.split("+").map((part) => (part === "Mod" ? (mac ? "Cmd" : "Ctrl") : part === "Meta" ? (mac ? "Cmd" : "Meta") : part)).join(" + ");
+}
+
 // ---------- status snapshot ----------
 
 const text = (value) => (typeof value === "string" && value !== "" ? value : null);
@@ -118,6 +173,9 @@ export function statusSnapshot(status) {
 }
 
 // ---------- layers: what Escape closes ----------
+
+// Layer names in use: "settings" (key and safety), "inspector" (the request drawer), "palette", "help" (keyboard help).
+export const LAYER_NAMES = Object.freeze(["settings", "inspector", "palette", "help"]);
 
 // The open overlays (command palette, key and safety settings, request inspector, keyboard help), newest last.
 // open(name, close) returns a release function that reports whether the layer was still open. closeTop() calls the

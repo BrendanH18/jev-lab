@@ -3,7 +3,8 @@ import { installLab, labEnv } from "./lab/env.js";
 import { LAB } from "./lab/pages/play.js";
 import { playHistoryCtx } from "./lab/surfaces/play.js";
 
-const S = { game: null, busy: false };
+// past: the earlier games of this page session (raw server objects, oldest first, the last 20), for Lab packs only.
+const S = { game: null, busy: false, past: [] };
 const SUGGESTIONS = ["Is it alive?", "Is it bigger than a car?", "Can you eat it?", "Is it man-made?", "Would I find it in a kitchen?", "Does it have wheels?"];
 
 // Lab surface "play.history": the turns of the current game (contract in static/js/lab/surfaces/play.js). The ctx
@@ -14,6 +15,7 @@ const HISTORY = playHistoryCtx({
   game: () => S.game,
   busy: () => S.busy,
   suggestions: SUGGESTIONS,
+  past: () => S.past,
   matches: (item, ctx) => LAB.matches(HISTORY_ID, item, ctx),
   arrange: (items, ctx) => LAB.arrange(HISTORY_ID, items, ctx),
   refresh: () => renderTurns(),
@@ -44,7 +46,9 @@ async function boot() {
 
 async function newGame() {
   try {
-    S.game = await api("/api/play/new", {});
+    const next = await api("/api/play/new", {});
+    if (S.game && (S.game.over || S.game.turns?.length)) S.past = [...S.past, S.game].slice(-20);
+    S.game = next;
     render();
     $("#ask-input")?.focus();
   } catch (e) { handleError(e); }
@@ -87,9 +91,11 @@ function turnNode(t) {
       h("span", {}, ms(t.meta.latency_ms))));
 }
 
-// The turns to list: newest first, minus what a Lab filter hides, in Lab's sort order when one is set.
+// The turns to list: newest first, minus what a Lab filter hides, in Lab's sort order when one is set. Items are
+// matched back to the server's turns by number (the builder numbers a turn without one by its position).
 function shownTurns() {
-  const byNumber = new Map((S.game?.turns || []).map((turn) => [turn.n, turn]));
+  const turns = (S.game?.turns || []).filter((turn) => turn && typeof turn === "object");
+  const byNumber = new Map(turns.map((turn, index) => [Number.isInteger(turn.n) && turn.n >= 1 ? turn.n : index + 1, turn]));
   return HISTORY.shown().map((item) => byNumber.get(item.n)).filter(Boolean);
 }
 
@@ -109,6 +115,7 @@ function renderTurns() {
     active && total ? h("div", { class: "faint", role: "status", style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
       `Showing ${turns.length} of ${total} question${total === 1 ? "" : "s"}: ${active} Lab filter or sort setting${active === 1 ? " is" : "s are"} active.`,
       h("button", { class: "btn ghost sm", onclick: resetLab }, "Show all, newest first")) : null,
+    active && total && !turns.length ? h("div", { class: "faint" }, "No question matches the Lab filters.") : null,
     turns.map(turnNode));
 }
 

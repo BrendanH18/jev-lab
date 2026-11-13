@@ -62,7 +62,11 @@ test("every pack has a test file that runs checkPack on it", () => {
 test("packs import only the kit and the shared libraries, and never touch the page, storage or network themselves", () => {
   for (const { page, file, path } of loaded) {
     const source = readFileSync(path, "utf8");
-    for (const [, specifier] of source.matchAll(/\bfrom\s*["']([^"']+)["']/g)) assert.match(specifier, ALLOWED_IMPORT, `${page}/${file} imports ${specifier}`);
+    // Static import statements only (a help text may well contain the word "from" followed by a quote).
+    const imports = [...source.matchAll(/^\s*import\b[^;"'`]*?\bfrom\s*["']([^"']+)["']/gm), ...source.matchAll(/^\s*import\s*["']([^"']+)["']/gm)];
+    for (const [, specifier] of imports) assert.match(specifier, ALLOWED_IMPORT, `${page}/${file} imports ${specifier}`);
+    const statements = (source.match(/^\s*import\b/gm) || []).length;
+    assert.equal(imports.length, statements, `${page}/${file}: every import statement must name a module the check can read`);
     const hit = source.match(FORBIDDEN);
     assert.equal(hit, null, `${page}/${file} uses ${hit?.[0]}: go through ctx instead`);
   }

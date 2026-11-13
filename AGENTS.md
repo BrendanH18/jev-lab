@@ -22,7 +22,10 @@ uv run python -m unittest discover tests      # run all tests (no key/network ne
 python3 -m unittest discover tests            # same, no uv
 python3 -m unittest tests.test_workbench -v   # run one test module
 python3 -m unittest tests.test_workbench.ItemTests.test_save_list_run_delete  # run one test
-node --test tests/js/*.test.mjs               # browser-module tests (Node 22, no DOM; CI runs them)
+node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs  # browser-module and Lab pack tests (Node 22, no DOM)
+node scripts/lab_inventory.mjs                # regenerate Lab page indexes and docs/lab/ after changing packs
+                                               # (--check: exit 1 when they are out of date; the JS tests run it)
+python3 scripts/lab.py --help                 # offline commands from the Python Lab packs (no key, no network)
 
 uv run scripts/validate.py                    # run every built-in scenario against the LIVE model
                                                # and print a report (~100 calls, well under $0.01).
@@ -191,6 +194,34 @@ New test splits keep exact-input groups together, including unlabeled copies, us
 dataset health and Review (labels and test markers ignored, picture names retained). Select the closest
 feasible labeled-row count to the requested share, with at least two labeled rows on each side, and show
 the actual share. Existing splits are never regrouped automatically; impossible splits must leave files unchanged.
+
+## Lab packs
+
+Lab (`static/js/lab/`, `jev/lab/`) is the extension layer that holds most small improvements. A pack is one module
+that declares features; pages show them through one set of generic controls (Refine, Checks, Edits, Metrics, Copy
+and download, Paste to import, Commands, Tools, panels), the Workbench's Toolbox tab and the command palette
+(Ctrl/Cmd+K), and `scripts/lab.py` runs the Python ones.
+
+- JavaScript packs live in `static/js/lab/packs/<page>/<pack-id>.js` and default-export `definePack(...)` from
+  `static/js/lab/kit.js` (its header is the contract). They import only the kit and `static/js/lab/lib/*.js` and
+  reach the page only through the `ctx` of their surface: the builders in `static/js/lab/surfaces/*.js`, whose header
+  comments define each surface's items, data, actions and content boundaries. Never the DOM, storage, the network
+  or the model; `tests/js/lab/registry.test.mjs` enforces this. Page code reaches Lab through `W.lab` (Workbench)
+  or the page's `LAB` from `static/js/lab/pages/<page>.js`; with no Lab filter or sort active a list behaves as before.
+- Python packs live in `jev/lab/packs/<module>.py` and define `PACK = kit.define_pack(...)` from `jev/lab/kit.py`:
+  question checks (reported under the lint report's `lab` key), dataset health findings (health report `lab`), Bulk
+  preflight notes (preflight report `lab`, which never triggers the run confirm), offline `scripts/lab.py` commands
+  and row formats. They never import `jev.client` or reach the network; commands read data only through the app's
+  loaders, which honor `--data-dir`.
+- Every pack has its own test that runs the harness (`checkPack` in `tests/js/lab/harness.mjs`, `pack_tests` in
+  `tests/labkit.py`); the harness registers one test per numbered improvement and refuses a feature without a
+  hand-written case. Expected values are worked out independently of the feature's code.
+- After adding, removing or renaming a pack or a feature, run `node scripts/lab_inventory.mjs`: it regenerates the
+  page indexes (`static/js/lab/pages/*.js`, never edit them) and the numbered inventory in `docs/lab/`.
+- Lab state (filters, sorts, drafts, previews, tool inputs) is page-session only. Packs show only what the page holds
+  from the current user's own calls; exports state their content and keep every boundary in this file (held-out
+  label values, labels and `_test` markers never leave their place, and nothing is sent to the model). The only
+  browser storage the chrome uses is the theme preference under one key.
 
 ## Conventions
 

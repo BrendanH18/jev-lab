@@ -1,9 +1,33 @@
 import {
-  $, $$, api, barRow, h, handleError, icon, initChrome, inspect, money, mount, ms, num, pct, stat, statusBadge,
+  $, $$, api, barRow, currentStatus, h, handleError, icon, initChrome, inspect, money, mount, ms, num, pct, stat, statusBadge,
   toast, usd,
 } from "./common.js";
+import { installLab, labEnv } from "./lab/env.js";
+import { LAB } from "./lab/pages/autopilot.js";
+import { autopilotBenchmarkCtx, autopilotInboxCtx, autopilotRecordsCtx } from "./lab/surfaces/autopilot.js";
 
-const S = { inbox: [], records: {}, worlds: null, running: false, activeId: null, bench: null };
+// benchRuns: the benchmark results of this page load, oldest first (memory only); bench is the latest one.
+const S = { inbox: [], records: {}, worlds: null, running: false, activeId: null, bench: null, benchRuns: [], benchBusy: false };
+const BENCH_RUNS_KEPT = 20;
+
+// Lab surfaces of this page (contract: static/js/lab/surfaces/autopilot.js). Each ctx reads S at call time, so one
+// serves the whole page session. Lab filters and sorts change only what the email list shows: Run and Next still
+// process every waiting email in scenario order.
+const RECORDS_ID = "autopilot.records";
+const INBOX_ID = "autopilot.inbox";
+const BENCH_ID = "autopilot.benchmark";
+const emailSource = {
+  inbox: () => S.inbox, records: () => S.records, worlds: () => S.worlds, running: () => S.running, activeId: () => S.activeId,
+  status: () => currentStatus(), reset: () => reset(), refresh: () => renderRows(),
+};
+const RECORDS = autopilotRecordsCtx({ ...emailSource,
+  matches: (item, ctx) => LAB.matches(RECORDS_ID, item, ctx), arrange: (items, ctx) => LAB.arrange(RECORDS_ID, items, ctx),
+  resolve: (id, approve) => resolve(id, approve),
+  inspect: (id) => inspect(S.records[id].trace, `Autopilot · ${S.inbox.find((m) => m.id === id)?.subject ?? S.records[id].message?.subject ?? id}`) });
+const INBOX = autopilotInboxCtx({ ...emailSource,
+  matches: (item, ctx) => LAB.matches(INBOX_ID, item, ctx), arrange: (items, ctx) => LAB.arrange(INBOX_ID, items, ctx) });
+const BENCH = autopilotBenchmarkCtx({ runs: () => S.benchRuns, busy: () => S.benchBusy, inbox: () => S.inbox, status: () => currentStatus(),
+  refresh: () => { if (S.bench) renderBench(); } });
 
 const SIGNAL_SHORT = {
   ai_instructions: "AI injection", credential_request: "credential ask", payment_change: "payment redirect",
@@ -13,6 +37,7 @@ const SIGNAL_SHORT = {
 
 async function boot() {
   await initChrome("/autopilot");
+  installLab(LAB);
   $$("icon-slot").forEach((el) => el.replaceWith(icon(el.dataset.i)));
   mount("#run", icon("play"), "Run the inbox");
   mount("#step", icon("arrow"), "Next email");
@@ -26,6 +51,7 @@ async function boot() {
   $("#reset").addEventListener("click", reset);
   $("#bench-btn").addEventListener("click", benchmark);
   render();
+  renderLab();
 }
 
 const nextMessage = () => S.inbox.find((m) => !S.records[m.id]);
@@ -38,6 +64,7 @@ async function processOne(message) {
   S.worlds = worlds;
   S.activeId = null;
   render();
+  renderLab();
   return record;
 }
 
@@ -67,6 +94,7 @@ async function reset() {
   S.records = {};
   S.worlds = { integrated: state.integrated, naive: state.naive };
   render();
+  renderLab();
 }
 
 async function resolve(id, approve) {
@@ -75,6 +103,7 @@ async function resolve(id, approve) {
     S.records[id] = record;
     S.worlds = worlds;
     render();
+    renderLab();
     toast(approve ? (record.integrated.executed ? `✓ ${record.integrated.executed.text}` : record.integrated.error || "Nothing to run") : "Dismissed");
   } catch (e) { handleError(e); }
 }
@@ -87,36 +116,10 @@ function setBusy(on) {
 }
 
 // ---------- scoring ----------
-function tally() {
-  const recs = Object.values(S.records);
-  const t = {
-    processed: recs.length, calls: recs.length, cost: 0, latency: 0,
-    auto: 0, needs: 0, quarantined: 0, ignored: 0, harmI: 0, lostI: 0,
-    naiveRuns: 0, harmN: 0, lostN: 0, legitBlockedN: 0,
-  };
-  for (const r of recs) {
-    t.cost += r.meta.cost_usd;
-    t.latency += r.meta.latency_ms;
-    const I = r.integrated;
-    const lane = I.lane;
-    if (lane === "quarantine") t.quarantined++;
-    else if (lane === "ignored") t.ignored++;
-    else if (I.approved || I.dismissed) t.needs++;
-    else if (lane === "handled") t.auto++;
-    else t.needs++;
-    const attack = r.label?.attack;
-    if (I.executed && attack) { t.harmI++; t.lostI += I.executed.amount || 0; }
-    if (r.naive.executed) {
-      t.naiveRuns++;
-      if (attack) { t.harmN++; t.lostN += r.naive.executed.amount || 0; }
-    }
-    if (!attack && r.naive.plan.decision === "reject") t.legitBlockedN++;
-  }
-  return t;
-}
-
+// The tally over every record of this server run lives in the Lab surface module (data.tally), so packs and the
+// scoreboard count the same way. Lab filters never change it.
 function renderScores() {
-  const t = tally();
+  const t = RECORDS.data.tally;
   const tile = (k, v, s, cls = "") => h("div", { class: `tile ${cls}` }, h("div", { class: "k" }, k), h("div", { class: "v" }, v), s ? h("div", { class: "s" }, s) : null);
   mount("#scores",
     h("div", { class: "panel" },
@@ -217,23 +220,71 @@ function renderLedgers() {
   mount("#ledgers", book("Autopilot", w.integrated, false), book("Dispatch alone", w.naive, true));
 }
 
+// The emails to list: every email in scenario order, minus what Lab filters hide. A Lab sort reorders the processed
+// emails among the places processed emails hold, and the waiting ones among theirs. With no Lab filter or sort this
+// is S.inbox exactly. The email being processed is always shown (autopilotInboxCtx keeps it).
+function shownMessages() {
+  const done = RECORDS.shown().map((item) => item.id);
+  const waiting = INBOX.shown().map((item) => item.id);
+  const keep = new Set([...done, ...waiting]);
+  const byId = new Map(S.inbox.map((m) => [m.id, m]));
+  return S.inbox.filter((m) => keep.has(m.id)).map((m) => byId.get((S.records[m.id] ? done : waiting).shift())).filter(Boolean);
+}
+
+function clearLab() {
+  LAB.reset(RECORDS_ID);
+  LAB.reset(INBOX_ID);
+  renderRows();
+  renderLab();
+}
+
+// The email list and its "Showing x of y" note. Lab's refresh() calls this alone, so typing in a Lab control keeps focus.
+function renderRows() {
+  const shown = shownMessages();
+  const active = LAB.active(RECORDS_ID) + LAB.active(INBOX_ID);
+  mount("#rows", S.inbox.length && !shown.length ? h("div", { class: "empty" }, "No email matches the Lab filters.") : shown.map(renderRow));
+  const note = $("#rows-note");
+  note.classList.toggle("hidden", !active);
+  mount(note, active ? h("div", { class: "faint", role: "status", style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
+    `Showing ${shown.length} of ${S.inbox.length} emails · ${active} Lab setting${active === 1 ? "" : "s"} active. Run and Next still process every waiting email in order.`,
+    h("button", { class: "btn sm ghost", onclick: clearLab }, "Clear Lab filters and sort")) : null);
+}
+
+// The Lab tools of the three surfaces. Rendered again when the data changes (an email processed or resolved, a reset,
+// a benchmark), not while a call is in flight, so their metrics read the new results.
+function renderLab() {
+  for (const [id, ctx, slot, title] of [[RECORDS_ID, RECORDS, "#records-lab", "Lab tools · processed emails"], [INBOX_ID, INBOX, "#inbox-lab", "Lab tools · waiting emails"],
+    [BENCH_ID, BENCH, "#bench-lab", "Lab tools · benchmark"]]) {
+    const section = LAB.section(labEnv, id, ctx, { title });
+    $(slot).classList.toggle("hidden", !section);
+    mount(slot, section);
+  }
+}
+
 function render() {
   renderScores();
-  mount("#rows", S.inbox.map(renderRow));
+  renderRows();
   renderLedgers();
 }
 
 // ---------- benchmark ----------
 async function benchmark() {
+  if (S.benchBusy) return;
   const btn = $("#bench-btn");
   btn.disabled = true;
+  S.benchBusy = true;
   mount(btn, h("span", { class: "spin" }), "Measuring…");
+  const model = currentStatus()?.model || null;
   try {
     S.bench = await api("/api/autopilot/benchmark", { id: "bec-invoice" });
+    S.benchRuns.push({ run: (S.benchRuns.at(-1)?.run || 0) + 1, at: Date.now(), model, id: "bec-invoice", ...S.bench });
+    if (S.benchRuns.length > BENCH_RUNS_KEPT) S.benchRuns.shift();
     renderBench();
   } catch (e) { handleError(e); } finally {
+    S.benchBusy = false;
     btn.disabled = false;
     mount(btn, "Run again");
+    renderLab();
   }
 }
 

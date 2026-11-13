@@ -2,6 +2,17 @@
 // script again instead. The Lab packs the autopilot page loads (its own, then the page-wide "chrome" packs) and the
 // ctx builders of its surfaces, which page code reaches as LAB.builders.
 import { createLab } from "../host.js";
+import * as s0 from "../surfaces/autopilot.js";
+import p0 from "../packs/autopilot/autopilot-bench-insights.js";
+import p1 from "../packs/autopilot/autopilot-inbox-facts.js";
+import p2 from "../packs/autopilot/autopilot-outcomes.js";
+import p3 from "../packs/autopilot/autopilot-panels.js";
+import p4 from "../packs/autopilot/autopilot-record-facts.js";
+import p5 from "../packs/autopilot/autopilot-reports.js";
+import p6 from "../packs/autopilot/autopilot-waiting.js";
+import p7 from "../packs/chrome/chrome-essentials.js";
+import p8 from "../packs/chrome/chrome-navigation.js";
+import p9 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [];
-export const LAB = createLab(PACKS, {  });
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9];
+export const LAB = createLab(PACKS, { ...s0 });

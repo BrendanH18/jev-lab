@@ -11,7 +11,8 @@
 //               numbers need two different values, flags one true and one false, text/category two different values;
 //               use null for "unavailable")
 //   diagnostic  { hit: item | [items], miss: item | [items], message?: RegExp, ctx? }   item scope
-//               { hitList: [items], missList: [items], message?, ctx? }                   list scope
+//               { hitList: [items], missList: [items], message?, ctx?, missCtx? }         list scope (missCtx: the
+//               page state for missList when it differs, for example a run with nothing slow in it)
 //   transform   { input: [items], output: [items], params?, shown?: [indexes], unchanged?: [items], rejects?: [{ input, params, message }], ctx? }
 //   metric      { ctx, expect, tolerance?, empty }  or  [ ...several ]   expect: number | string | null | (result) => void;
 //               empty: a ctx with nothing run yet, for which the metric must return null rather than throw
@@ -182,11 +183,12 @@ function diagnosticCase(pack, feature, kase, title) {
     const matches = (findings) => findings.every((finding) => !kase.message || kase.message.test(finding.message));
     if ((feature.scope || "item") === "list") {
       assert.ok(Array.isArray(kase.hitList) && Array.isArray(kase.missList), "a list check case needs hitList and missList");
-      feature.check(kase.hitList, ctx); feature.check(kase.missList, ctx);  // direct calls: an exception fails the test
+      const missCtx = kase.missCtx || ctx;
+      feature.check(kase.hitList, ctx); feature.check(kase.missList, missCtx);  // direct calls: an exception fails the test
       const hits = found(kase.hitList);
       assert.ok(hits.length > 0 && matches(hits), `${key} should report on hitList${kase.message ? ` with a message like ${kase.message}` : ""}`);
       assert.equal(hits[0].index, null);
-      assert.deepEqual(found(kase.missList), [], `${key} should stay quiet on missList`);
+      assert.deepEqual(runDiagnostics([[key, feature]], kase.missList, missCtx), [], `${key} should stay quiet on missList`);
     } else {
       const hits = list(kase.hit), misses = list(kase.miss);
       assert.ok(hits.length && misses.length, "an item check case needs hit and miss");

@@ -1,7 +1,7 @@
 // Build tab: the state, questions and pictures of one request, running it, question checks (jev/lint.py),
 // code export and saving it as a test. Also the helpers that convert questions between the editor and the API.
 import {
-  $, answerCard, api, callStats, copyText, currentStatus, h, handleError, icon, inspect, pct, photoView, prepareImage,
+  $, answerCard, api, callStats, copyText, currentStatus, h, handleError, icon, inspect, mount, pct, photoView, prepareImage,
   statusBadge, toast,
 } from "./common.js";
 import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
@@ -22,6 +22,10 @@ let buildDraftBusy = false;
 let buildCleanupPreview = null;
 let buildCleanupUndo = null;
 const buildQuestionView = { query: "", type: "all" };
+// Lab surfaces of this tab (contract: static/js/lab/surfaces/workbench-build.js). Functions that tests rebuild from
+// this source reach Lab only through W (W.lab, W.labEnv, W.buildLabCtx), so they spell these ids as literals.
+const BUILD_LAB_QUESTIONS = "workbench.build.questions";
+const BUILD_LAB_RESULT = "workbench.build.result";
 
 // ---------- data helpers ----------
 const parseMaybeJson = (s) => {
@@ -291,6 +295,7 @@ function insertBuildQuestion(index, after) {
   W.questions.splice(index + Number(after), 0, blankRow(W.questions[index].type));
   for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key];
   Object.assign(buildQuestionView, { query: "", type: "all" });
+  W.lab?.reset?.("workbench.build.questions");
   markBuildEdited();
   render();
 }
@@ -337,7 +342,11 @@ function visibleBuildQuestions() {
       idCounts.set(id, (idCounts.get(id) || 0) + 1);
     }
   }
-  return W.questions.filter((row, index) => index === focusedIndex || matchesEditorQuestion(row, { ...buildQuestionView, idCounts }, W.expect));
+  // Lab filters count like the page's own (reached through W; absent in tests and before the Lab index exists).
+  const labCtx = W.lab?.active?.("workbench.build.questions") ? W.buildLabCtx?.questions : null;
+  const labItems = labCtx ? labCtx.items() : null;
+  return W.questions.filter((row, index) => index === focusedIndex || (matchesEditorQuestion(row, { ...buildQuestionView, idCounts }, W.expect)
+    && (!labItems || W.lab.matches("workbench.build.questions", labItems[index], labCtx))));
 }
 
 function refreshQuestionVisibility() {
@@ -346,7 +355,8 @@ function refreshQuestionVisibility() {
     card.hidden = !shown.has(W.questions[Number(card.dataset.questionIndex)]);
   });
   const count = $("#build-question-count");
-  if (count) count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.`;
+  const labActive = W.lab?.active?.("workbench.build.questions") || 0;
+  if (count) count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.${labActive ? ` ${labActive} Lab setting${labActive === 1 ? "" : "s"} active.` : ""}`;
   for (const id of ["build-copy-shown", "build-duplicate-shown", "build-copy-shown-json", "build-download-shown-json", "build-download-outline", "build-copy-shown-instructions", "build-download-shown-markdown", "build-move-shown-first", "build-move-shown-last"]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !shown.size;
@@ -364,6 +374,7 @@ function questionFocusOut(event) {
 
 function renderQuestionTools() {
   const shown = visibleBuildQuestions().length;
+  const labActive = W.lab?.active?.("workbench.build.questions") || 0;
   return h("div", { class: "grid", style: { gap: "8px" } },
     h("input", { class: "input", type: "search", "aria-label": "Search Build questions", value: buildQuestionView.query,
       placeholder: "Search ids, instructions or criteria", oninput: (event) => {
@@ -402,14 +413,14 @@ function renderQuestionTools() {
         W.questions = duplicateShownQuestions(W.questions, visibleBuildQuestions());
         markBuildEdited(); render();
       } }, "Duplicate shown"),
-      h("button", { class: "btn sm ghost", onclick: () => { for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key]; Object.assign(buildQuestionView, { query: "", type: "all" }); render(); } }, "Clear question filters"),
+      h("button", { class: "btn sm ghost", onclick: () => { for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key]; Object.assign(buildQuestionView, { query: "", type: "all" }); W.lab?.reset?.("workbench.build.questions"); render(); } }, "Clear question filters"),
       [true, false].map((collapse) => h("button", { class: "btn sm ghost", onclick: () => {
         for (const row of visibleBuildQuestions()) {
           if (collapse) buildEditState().collapsed.add(row); else buildEditState().collapsed.delete(row);
         }
         render();
       } }, collapse ? "Collapse shown" : "Expand shown"))),
-    h("span", { class: "faint", id: "build-question-count", "aria-live": "polite" }, `${shown} of ${W.questions.length} questions shown. Run and export include every question.`),
+    h("span", { class: "faint", id: "build-question-count", "aria-live": "polite" }, `${shown} of ${W.questions.length} questions shown. Run and export include every question.${labActive ? ` ${labActive} Lab setting${labActive === 1 ? "" : "s"} active.` : ""}`),
     h("p", { class: "faint", id: "build-question-no-match", hidden: shown > 0 }, "No questions match. Clear filters to show every question."));
 }
 
@@ -571,6 +582,113 @@ function editorMoveButtons(entries, index, label, apply) {
   });
 }
 
+// ---------- Lab ----------
+// The Lab ctx of this tab's two surfaces, built once per page session from the builders the page's Lab index
+// provides (W.lab.builders), and kept on W so the filter functions above reach it the way they reach W.lab. null
+// until those builders exist. Every action goes through the same functions as the tab's own buttons.
+function buildLabContexts() {
+  if (W.buildLabCtx) return W.buildLabCtx;
+  const builders = W.lab?.builders;
+  if (!builders?.wbBuildQuestionsCtx || !builders?.wbBuildResultCtx) return null;
+  const currentIds = () => W.questions.map((row) => String(row.id || "").trim()).filter(Boolean);
+  W.buildLabCtx = {
+    questions: builders.wbBuildQuestionsCtx({
+      rows: () => W.questions, expect: () => W.expect, stateText: () => W.stateText, images: () => W.images,
+      result: () => W.result, stale: () => buildResultStale(), running: () => buildRunning, rawMode: () => W.raw,
+      rawPending: () => buildRawText !== null, lint: () => W.lint, maxImages: () => W.maxImages,
+      origin: () => ({ example: W.loadedExample, test: W.editingId, handoff: W.handoff?.source }),
+      shownRows: () => visibleBuildQuestions(),
+      arrange: (items, ctx) => W.lab.arrange(BUILD_LAB_QUESTIONS, items, ctx),
+      commit: ({ rows, expect, origins }) => {
+        const collapsed = buildEditState().collapsed;
+        rows.forEach((row, index) => { if (origins[index] && collapsed.has(origins[index])) collapsed.add(row); });
+        W.questions = rows;
+        W.expect = expect;
+        markBuildEdited();
+        // Rendered once Lab has recorded the edit's Undo step, so the new Lab section shows it.
+        queueMicrotask(render);
+      },
+      addQuestion: (type) => { W.questions.push(blankRow(type)); markBuildEdited(); render(); },
+      focus: (index) => navigateBuildQuestion(index),
+      checkQuestions: () => checkQuestions(), exportCode: () => exportCode(),
+      formatState: () => formatBuildStateText(), compactState: () => compactBuildStateText(),
+      canUndoRemove: () => !!W.buildEditing?.deleted, undoRemove: () => undoBuildQuestion(),
+      clearFilters: () => {
+        for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key];
+        Object.assign(buildQuestionView, { query: "", type: "all" });
+        W.lab.reset(BUILD_LAB_QUESTIONS);
+        render();
+      },
+      refresh: () => { refreshQuestionVisibility(); arrangeBuildQuestionCards(); },
+    }),
+    result: builders.wbBuildResultCtx({
+      result: () => W.result, expect: () => W.expect, stale: () => buildResultStale(), running: () => buildRunning,
+      currentIds, saveOpen: () => W.saveOpen,
+      arrange: (items, ctx) => W.lab.arrange(BUILD_LAB_RESULT, items, ctx),
+      matches: (item, ctx) => W.lab.matches(BUILD_LAB_RESULT, item, ctx),
+      inspect: () => inspect(W.result.trace, "Workbench · one Jev request"),
+      openSave: () => openBuildSaveForm(true),
+      focusQuestion: (qid) => {
+        const index = W.questions.findIndex((row) => String(row.id || "").trim() === qid);
+        if (index < 0 || !visibleBuildQuestions().includes(W.questions[index])) return false;
+        navigateBuildQuestion(index);
+        return true;
+      },
+      refresh: () => { if ($("#build-answers")) mount("#build-answers", renderBuildAnswerCards()); },
+    }),
+  };
+  return W.buildLabCtx;
+}
+
+// Card positions in display order: request order, or the shown cards in a Lab sort's order first. Run, export and
+// every "shown" handoff keep request order; only the display follows the sort.
+function buildLabQuestionOrder(shown) {
+  const indexes = W.questions.map((_, index) => index);
+  const ctx = W.buildLabCtx?.questions;
+  if (!ctx || !W.lab?.active?.(BUILD_LAB_QUESTIONS)) return indexes;
+  const shownItems = ctx.items().filter((item) => shown.has(W.questions[item.position - 1]));
+  const arranged = W.lab.arrange(BUILD_LAB_QUESTIONS, shownItems, ctx).map((item) => item.position - 1);
+  const placed = new Set(arranged);
+  return [...arranged, ...indexes.filter((index) => !placed.has(index))];
+}
+
+// Re-orders the existing cards for a Lab sort without re-rendering, so their inputs keep focus and listeners.
+function arrangeBuildQuestionCards() {
+  const list = $(".qlist");
+  if (!list) return;
+  const cards = new Map([...list.querySelectorAll(".build-question-card")].map((card) => [Number(card.dataset.questionIndex), card]));
+  for (const index of buildLabQuestionOrder(new Set(visibleBuildQuestions()))) {
+    const card = cards.get(index);
+    if (card) list.append(card);
+  }
+}
+
+// The answer cards of the latest Run: every answer in response order, unless Lab filters hide some or a Lab sort
+// reorders them.
+function renderBuildAnswerCards() {
+  const r = W.result;
+  if (!r) return [];
+  const questions = r.trace.request.questions;
+  const ctx = W.buildLabCtx?.result;
+  if (!ctx) return Object.entries(r.answers).map(([qid, a]) => answerCard(qid, a, questions[qid]));
+  const total = ctx.items().length;
+  const shown = ctx.shown();
+  const active = W.lab?.active?.(BUILD_LAB_RESULT) || 0;
+  const wide = { gridColumn: "1 / -1" };
+  return [total && !shown.length ? h("div", { class: "empty", style: wide }, "No answer matches the Lab filters.")
+    : shown.map((item) => answerCard(item.id, r.answers[item.id], questions[item.id])),
+  active ? h("div", { class: "faint", style: { ...wide, fontSize: "12px" }, role: "status" },
+    `${shown.length} of ${total} answers shown · ${active} Lab setting${active === 1 ? "" : "s"} active `,
+    h("button", { class: "btn sm ghost", onclick: () => { W.lab.reset(BUILD_LAB_RESULT); render(); } }, "Clear Lab filters and sort")) : null];
+}
+
+// The Save as test button's toggle, or open only (Lab's openSave). Expectations default from the answers.
+function openBuildSaveForm(open = !W.saveOpen) {
+  W.saveOpen = open;
+  if (W.saveOpen && !Object.keys(W.expect).length) W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)]));
+  render();
+}
+
 // ---------- Build ----------
 // Says where an opened demo request came from, and that its answers did not come along.
 function handoffNote() {
@@ -585,6 +703,8 @@ function handoffNote() {
 }
 
 export function renderBuild() {
+  const labCtx = W.labEnv ? buildLabContexts() : null;
+  const buildShown = new Set(visibleBuildQuestions());
   const stateArea = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Request state", placeholder: "Plain text, or a JSON object/array. Point questions at fields with `backticks`." }, W.stateText);
   stateArea.addEventListener("input", () => { W.stateText = stateArea.value; markBuildEdited(); });
   const left = h("div", { class: "grid", style: { gap: "16px" } },
@@ -610,9 +730,10 @@ export function renderBuild() {
         !W.raw ? renderQuestionTools() : null,
         !W.raw ? renderBuildAuthoringTools() : null,
         !W.raw ? renderBuildContentTools() : null,
-        W.raw ? renderRaw() : h("div", { class: "qlist" }, W.questions.map((row, i) =>
-          h("div", { class: "build-question-card", "data-question-index": String(i), hidden: !visibleBuildQuestions().includes(row),
-            onfocusout: questionFocusOut }, renderQuestionCard(row, i)))),
+        !W.raw && labCtx ? W.lab.section(W.labEnv, BUILD_LAB_QUESTIONS, labCtx.questions, { title: "Lab tools for questions" }) : null,
+        W.raw ? renderRaw() : h("div", { class: "qlist" }, buildLabQuestionOrder(buildShown).map((i) =>
+          h("div", { class: "build-question-card", "data-question-index": String(i), hidden: !buildShown.has(W.questions[i]),
+            onfocusout: questionFocusOut }, renderQuestionCard(W.questions[i], i)))),
         !W.raw ? h("div", { class: "chips" }, TYPES.map((t) =>
           h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); markBuildEdited(); render(); } }, icon("plus"), `Add ${t}`)),
         buildEditState().deleted ? h("button", { class: "btn sm", onclick: undoBuildQuestion }, `Undo remove ${buildEditState().deleted.id || "question"}`) : null) : null)));
@@ -623,7 +744,7 @@ export function renderBuild() {
       h("div", { class: "panel-head" }, h("h2", {}, "Answers"), h("div", { class: "spacer" }),
         h("button", { class: "btn sm", onclick: checkQuestions, title: "Read the questions for common mistakes. Plain code: no model call, no cost." }, icon("search"), "Check questions"),
         h("button", { class: "btn sm", onclick: exportCode }, icon("code"), "Export code"),
-        h("button", { class: "btn sm", id: "build-save-test", disabled: !W.result || buildResultStale(), onclick: () => { W.saveOpen = !W.saveOpen; if (W.saveOpen && !Object.keys(W.expect).length) W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)])); render(); } }, icon("save"), "Save as test"),
+        h("button", { class: "btn sm", id: "build-save-test", disabled: !W.result || buildResultStale(), onclick: () => openBuildSaveForm() }, icon("save"), "Save as test"),
         runBtn),
       h("p", { id: "build-stale", class: "callout", role: "status", style: { display: buildResultStale() ? "" : "none" } }, "These answers are from the previous request. Inputs or questions have changed; run again to answer the current request."),
       boxWarning(),
@@ -631,8 +752,12 @@ export function renderBuild() {
         ? h("div", { class: "panel-body grid", style: { gap: "12px" } },
           callStats(W.result.meta, () => inspect(W.result.trace, "Workbench · one Jev request")),
           renderBoxes(),
-          h("div", { class: "answers" }, Object.entries(W.result.answers).map(([qid, a]) => answerCard(qid, a, W.result.trace.request.questions[qid]))))
-        : h("div", { class: "empty" }, "Press Run. Every question is evaluated in parallel against the state, in one request.")),
+          h("div", { class: "answers", id: "build-answers" }, renderBuildAnswerCards()))
+        : h("div", { class: "empty" }, "Press Run. Every question is evaluated in parallel against the state, in one request."),
+      labCtx ? (() => {
+        const section = W.lab.section(W.labEnv, BUILD_LAB_RESULT, labCtx.result, { title: "Lab tools for answers" });
+        return section ? h("div", { class: "panel-body", style: { paddingTop: 0 } }, section) : null;
+      })() : null),
     W.lint ? renderLint() : null,
     W.saveOpen && W.result && !buildResultStale() ? renderSaveForm() : null,
     W.exported ? renderExport() : null,
@@ -951,7 +1076,15 @@ async function checkQuestions({ scroll = true } = {}) {
 
 function renderLint() {
   const { findings, counts, guide } = W.lint;
+  // The Python Lab packs' extra advisory checks (report.lab): listed after the built-in findings, never counted above.
+  const extra = Array.isArray(W.lint.lab?.findings) ? W.lint.lab.findings : [];
   const head = (level, n) => (level === "problem" ? `${n} ${n === 1 ? "problem" : "problems"}` : `${n} advice`);
+  const finding = (f) => h("li", { class: `lint ${f.level}` },
+    f.level === "problem" ? statusBadge("fail", "Problem") : h("span", { class: "badge warning" }, icon("question"), "Advice"),
+    h("div", {},
+      f.question ? h("code", { class: "mono" }, f.question) : h("span", { class: "faint" }, "State"),
+      h("div", { class: "muted" }, f.message),
+      f.guide ? h("a", { class: "faint", href: f.guide, target: "_blank", rel: "noopener" }, "Why: How to build with System One") : null));
   return h("div", { class: "panel", id: "lint" },
     h("div", { class: "panel-head" }, h("h2", {}, "Question checks"),
       counts.problem ? h("span", { class: "badge critical" }, icon("alert"), head("problem", counts.problem)) : null,
@@ -960,14 +1093,12 @@ function renderLint() {
       h("button", { class: "btn sm ghost", title: "Close", "aria-label": "Close question checks", onclick: () => { W.lint = null; render(); } }, icon("x"))),
     h("div", { class: "panel-body grid", style: { gap: "8px" } },
       findings.length
-        ? h("ul", { class: "lint-list" }, findings.map((f) => h("li", { class: `lint ${f.level}` },
-          f.level === "problem" ? statusBadge("fail", "Problem") : h("span", { class: "badge warning" }, icon("question"), "Advice"),
-          h("div", {},
-            f.question ? h("code", { class: "mono" }, f.question) : h("span", { class: "faint" }, "State"),
-            h("div", { class: "muted" }, f.message),
-            h("a", { class: "faint", href: f.guide, target: "_blank", rel: "noopener" }, "Why: How to build with System One")))))
-        : h("div", { class: "callout good" }, icon("check"), h("div", {}, h("b", {}, "No findings."),
+        ? h("ul", { class: "lint-list" }, findings.map(finding))
+        : h("div", { class: "callout good" }, icon("check"), h("div", {}, h("b", {}, extra.length ? "No findings from the built-in checks." : "No findings."),
           h("div", { class: "muted" }, "Checks catch common mistakes, not every one. Run the questions and read the answers."))),
+      extra.length ? [h("div", { class: "section-label", style: { margin: "6px 0 0" } }, `Additional checks · ${extra.length}`),
+        h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } }, "Advisory checks from Lab packs, also plain code. They are not counted in the badges above."),
+        h("ul", { class: "lint-list", "data-lint": "lab" }, extra.map(finding))] : null,
       h("p", { class: "faint", style: { fontSize: "12px" } },
         "Plain code read these questions: no model call, no cost. A problem is almost certainly a mistake; advice is a pattern ",
         h("a", { href: guide, target: "_blank", rel: "noopener" }, "TypeSafe's guide"),

@@ -26,7 +26,8 @@ export function workflowSteps(snapshot = {}) {
   ];
 }
 
-export function renderWorkbenchGuide(h, snapshot, onNavigate, { open = false, onToggle = () => {} } = {}) {
+// extra: an optional node shown at the end of the guide's body (the Workbench's "Page tools" Lab section).
+export function renderWorkbenchGuide(h, snapshot, onNavigate, { open = false, onToggle = () => {}, extra = null } = {}) {
   return h("details", { class: "panel", open, ontoggle: (event) => onToggle(event.target.open) },
     h("summary", { class: "panel-head" }, "Workbench guide · from questions to reviewed decisions"),
     h("div", { class: "panel-body grid", style: { gap: "12px" } },
@@ -36,5 +37,19 @@ export function renderWorkbenchGuide(h, snapshot, onNavigate, { open = false, on
           h("b", {}, step.title), h("span", { class: "faint" }, ` · ${step.status}`),
           h("p", { class: "muted" }, step.detail),
           h("button", { class: "btn sm", disabled: !step.enabled,
-            onclick: () => { if (step.enabled) onNavigate(step.tab, step.target); } }, step.action))))));
+            onclick: () => { if (step.enabled) onNavigate(step.tab, step.target); } }, step.action)))),
+      extra));
+}
+
+// The tab a key press on the tab bar moves to (WAI-ARIA tabs pattern): ArrowRight and ArrowLeft move to the next
+// and previous tab and wrap around, Home and End go to the first and last. Any other key, or no tabs, gives null.
+// ids: the tab ids in order; current: the open tab (an unknown one counts as before the first).
+export function tabForKey(ids, current, key) {
+  if (!Array.isArray(ids) || !ids.length) return null;
+  const at = ids.indexOf(current);
+  if (key === "Home") return ids[0];
+  if (key === "End") return ids[ids.length - 1];
+  if (key === "ArrowRight") return ids[(at + 1) % ids.length];
+  if (key === "ArrowLeft") return ids[at <= 0 ? ids.length - 1 : at - 1];
+  return null;
 }

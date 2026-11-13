@@ -1,5 +1,5 @@
 // Tests tab: saved requests, current-page selection, and results from user-triggered live runs.
-import { $, api, callStats, copyText, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
+import { $, api, callStats, copyText, currentStatus, h, handleError, icon, inspect, ms, statusBadge, toast, usd } from "./common.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, deselectVisibleTests, invertVisibleTests, testRunBody,
   testRunSnapshot, pruneTestResults, mergeTestResults, selectedTestSummary, testMetadataJson, testMetadataCsv, testStatusSummary, testObservedSummary, suiteInventoryText, suiteQuestionInventory, previewSuiteIds, applySuiteIds, firstVisibleSuiteIds } from "./test-selection.js";
@@ -16,8 +16,10 @@ function reconcileTests() {
   W.runResults = pruneTestResults(W.runResults, W.items);
 }
 
+// Lab's filters count like every page filter, and Lab's sort applies after the page's (W.lab is absent in the tests
+// that rebuild these functions from source, so the Lab parts are skipped there).
 function shownTests() {
-  return visibleTests(W.items, W.runResults, { ...testView, query: W.testSearch || "" });
+  return visibleTests(W.items, W.runResults, { ...testView, query: W.testSearch || "", lab: W.lab?.builders?.testsItemsCtx ? savedTestsLab().page : null });
 }
 
 function unsuccessfulTestIds() {
@@ -25,7 +27,8 @@ function unsuccessfulTestIds() {
 }
 
 function testCountText(shown = shownTests()) {
-  return `${shown.length} of ${W.items.length} tests shown · ${testView.selected.length} selected. Run all runs every saved test.`;
+  const lab = W.lab?.active("workbench.tests.items") || 0;
+  return `${shown.length} of ${W.items.length} tests shown · ${testView.selected.length} selected${lab ? ` · ${lab} Lab setting${lab === 1 ? "" : "s"} active` : ""}. Run all runs every saved test.`;
 }
 
 // Typing into search keeps focus and the cursor, and never changes selection.
@@ -67,6 +70,36 @@ function refreshTestVisibility() {
     const button = $(`#${id}`);
     if (button) button.disabled = testView.busy || !visible.size;
   }
+  const labSection = W.lab?.builders?.testsItemsCtx ? $('[data-lab-surface="workbench.tests.items"]') : null;
+  if (labSection) labSection.replaceWith(W.lab.section(W.labEnv, "workbench.tests.items", savedTestsLab()) || "");
+}
+
+// Lab surface "workbench.tests.items" (contract: static/js/lab/surfaces/workbench-tests.js). Built once, on first use,
+// from the page's own state and handlers; it is reached only behind a W.lab check.
+function savedTestsLab() {
+  if (!W.testsLab) W.testsLab = W.lab.builders.testsItemsCtx({
+    items: () => W.items,
+    results: () => W.runResults,
+    shown: () => shownTests(),
+    matches: (item, ctx) => W.lab.matches("workbench.tests.items", item, ctx),
+    arrange: (list, ctx) => W.lab.arrange("workbench.tests.items", list, ctx),
+    selected: () => testView.selected,
+    canUndoSelection: () => testView.previousSelection !== null,
+    busy: () => testView.busy,
+    filters: () => ({ ...Object.fromEntries(Object.keys(testFilterDefaults()).map((key) => [key, testView[key]])), query: W.testSearch || "" }),
+    defaults: () => testFilterDefaults(),
+    tab: () => W.tab,
+    editingId: () => W.editingId,
+    status: () => currentStatus(),
+    now: () => Date.now(),
+    setSelection: (ids) => { testView.previousSelection = [...testView.selected]; testView.selected = selectedTestIds(W.items, ids); render(); },
+    undoSelection: () => { testView.selected = selectedTestIds(W.items, testView.previousSelection || []); testView.previousSelection = null; render(); },
+    open: (item) => openItem(item),
+    inspect: (trace, title) => inspect(trace, title),
+    resetFilters: () => { Object.assign(testView, testFilterDefaults()); W.testSearch = ""; W.lab.reset("workbench.tests.items"); render(); },
+    refresh: () => render(),
+  });
+  return W.testsLab;
 }
 
 // ---------- Tests ----------
@@ -94,7 +127,7 @@ export function renderTests() {
   const visibleSummary = selectedTestSummary(W.items, [...shown]);
   const passed = W.items.filter((item) => testResultStatus(byId.get(item.id)) === "pass").map((item) => item.id);
   const selectedObserved = testObservedSummary(W.items.filter((item) => selected.has(item.id)), res);
-  const ordered = visibleTests(W.items, res, { sort: testView.sort });
+  const ordered = visibleTests(W.items, res, { sort: testView.sort, lab: W.lab?.builders?.testsItemsCtx ? { arrange: savedTestsLab().page.arrange } : null });
   return h("div", { class: "grid", style: { gap: "16px" } },
     h("div", { class: "panel tests", "aria-busy": String(busy) },
       h("div", { class: "panel-head" }, h("h2", {}, "Saved tests · data/workbench/"), h("div", { class: "spacer" }),
@@ -145,7 +178,7 @@ export function renderTests() {
               } }))),
           filter("Test selection", "selection", [["all", "All tests"], ["selected", "Selected tests"], ["unselected", "Unselected tests"]]),
           h("button", { class: "btn sm ghost", onclick: () => {
-            Object.assign(testView, testFilterDefaults()); W.testSearch = ""; render();
+            Object.assign(testView, testFilterDefaults()); W.testSearch = ""; W.lab?.reset("workbench.tests.items"); render();
           } }, "Reset test filters")),
         h("details", { open: testView.advanced, ontoggle: (event) => { testView.advanced = event.target.open; } },
           h("summary", {}, "Advanced suite triage"),
@@ -287,7 +320,8 @@ export function renderTests() {
           onclick: () => copyText(selectedTestIds(W.items, testView.selected).join("\n")) }, "Copy selected test IDs"),
         h("label", { class: "faint" }, h("input", { type: "checkbox", checked: testView.details,
           onchange: (event) => { testView.details = event.target.checked; render(); } }), " Show result checks and call details"),
-        h("span", { class: "faint", id: "saved-test-count", "aria-live": "polite" }, testCountText())),
+        h("span", { class: "faint", id: "saved-test-count", "aria-live": "polite" }, testCountText()),
+        W.lab?.builders?.testsItemsCtx ? W.lab.section(W.labEnv, "workbench.tests.items", savedTestsLab()) : null),
       W.items.length ? h("div", { id: "saved-test-results" },
         h("div", { class: "empty", id: "saved-test-no-match", hidden: shown.size > 0 }, "No saved tests match these filters. Your selection is kept."),
         ordered.map((it) => {

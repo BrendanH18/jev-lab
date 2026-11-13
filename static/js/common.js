@@ -536,6 +536,10 @@ export const openKeyModal = openSettings;
 function themePicker() {
   const buttons = THEMES.map((name) => h("button", { class: "chip", type: "button", "data-theme-choice": name,
     onclick: () => { setTheme(name); sync(); } }, THEME_LABELS[name]));
+  // A choice made elsewhere while the dialog is open (the command palette, another tab) shows here too; the
+  // listener goes away with the dialog.
+  const follow = () => { if (buttons[0].isConnected === false) window.removeEventListener("jev:theme", follow); else sync(); };
+  window.addEventListener("jev:theme", follow);
   function sync() {
     buttons.forEach((button, index) => {
       const on = THEMES[index] === theme;

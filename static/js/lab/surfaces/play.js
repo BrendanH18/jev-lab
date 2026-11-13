@@ -8,7 +8,11 @@
 //   The turns of the CURRENT game of 20 Questions: what the player typed and what their own call answered.
 //   The list is READ-ONLY. There is no replaceItems and no importItems, so transforms and importers do not render
 //   here: a turn is the record of a call the user made, and an edited or pasted turn would be a made-up answer.
-//   Kinds this surface hosts: fact, diagnostic, metric, exporter, command, panel (and behavior).
+//   Kinds this surface hosts: fact, diagnostic, metric, exporter, command, tool, panel (and behavior).
+//   Starter pack: static/js/lab/packs/play/play-history-insights.js (copy its tests: tests/js/lab/play-history-insights.test.mjs).
+//   Fixture games (tests/js/lab/fixtures/play.mjs GAMES): fresh, playing (default, 7 turns of every kind but win),
+//   won, gaveUp, outOfQuestions (20 turns, last-question note), repeats, odd (missing and malformed values); PAST holds
+//   a given-up and an abandoned earlier game; turnsByN(ctx) keys items by turn number.
 //
 // ITEM  one turn, a fresh plain object (JSON-serializable, frozen with its probs and meta):
 //   { n,              integer >= 1: the turn number the page shows as "#n". Unique; 1 is the first question.
@@ -49,7 +53,18 @@
 //                The game id is deliberately not here: it is the server's handle for asking in this game.
 //   secret       null until the game is over (won, given up or out of questions), then the secret word
 //   traces       null until the game is over, then one { request, response, meta } per turn IN PLAY ORDER
-//                (traces[n - 1] belongs to turn n). request.state.secret holds the secret.
+//                (traces[n - 1] belongs to turn n). request.state.secret holds the secret. A frozen deep copy: the
+//                page's own Inspect button keeps the originals.
+//   past         the earlier games of THIS page session, oldest first, at most the last 20; [] before the first
+//                "New game" / "Play again". One frozen record per game that had a question or had ended:
+//                { category,        string hint the page showed
+//                  outcome,         "won" | "gave_up" | "out_of_questions" | "abandoned" (left by New game mid-game)
+//                  asked,           integer: questions asked in it
+//                  secret,          the secret word for a game that ENDED; null for an abandoned game (the server
+//                                   never sent it, and nothing may guess it)
+//                  cost_usd,        number: measured cost of its calls summed, or null when no turn had a cost
+//                  mean_latency_ms  number: mean measured latency of its turns, or null when none had one }
+//                The current game is never in past.
 //   busy         boolean: a question is on its way to the server
 //   suggestions  the page's starter questions (strings), which it offers as chips before the first question
 //   answers      ["Yes", "Probably", "Hard to say", "Probably not", "No"], from yes to no
@@ -87,7 +102,11 @@
 //     yet is an estimate and must be labeled as one, never shown as spend.
 //   - Exports hold what the label says and nothing else; CSV goes through csvText/csvCell (formula escaping).
 //   - Lab filters and sorts are presentation only. They never change the game, the question count or what the
-//     server knows, and the page shows a "Showing x of y" note with a reset while one is active.
+//     server knows, and the page shows a "Showing x of y" note with a reset while one is active (and "No question
+//     matches the Lab filters." when nothing is left).
+//   - Do not duplicate what the page shows: per turn P(yes), yes/no-question, guess, match (guess turns only) and
+//     latency; for the game questions left, mean latency ("avg") and game cost; the starter chips; Give up & reveal,
+//     New game / Play again, and Inspect the LAST turn's JSON after the game.
 
 const LAST_QUESTION = " That was your last question.";
 const ANSWERS = Object.freeze(["Yes", "Probably", "Hard to say", "Probably not", "No"]);
@@ -141,10 +160,35 @@ function outcomeOf(game, asked) {
   return asked >= RULES.max_turns ? "out_of_questions" : "gave_up";
 }
 
+// A frozen deep copy of plain JSON data, so a pack cannot change what the page holds.
+function frozenCopy(value) {
+  if (Array.isArray(value)) return Object.freeze(value.map(frozenCopy));
+  if (value && typeof value === "object") return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, frozenCopy(entry)])));
+  return value;
+}
+
+// One earlier game of the session, or null when it had no question and had not ended.
+function pastRecord(game) {
+  if (!game || typeof game !== "object") return null;
+  const turns = Array.isArray(game.turns) ? game.turns.filter((turn) => turn && typeof turn === "object") : [];
+  if (!turns.length && !game.over) return null;
+  const costs = turns.map((turn) => number(turn.meta?.cost_usd)).filter((value) => value !== null);
+  const latencies = turns.map((turn) => number(turn.meta?.latency_ms)).filter((value) => value !== null);
+  return Object.freeze({
+    category: typeof game.category === "string" ? game.category : "",
+    outcome: game.over ? outcomeOf(game, turns.length) : "abandoned",
+    asked: turns.length,
+    secret: game.over && typeof game.secret === "string" ? game.secret : null,
+    cost_usd: costs.length ? costs.reduce((total, value) => total + value, 0) : null,
+    mean_latency_ms: latencies.length ? latencies.reduce((total, value) => total + value, 0) / latencies.length : null,
+  });
+}
+
 // source: {
 //   game()          the page's current public game object (the server's response), or null before the first loads
 //   busy()          whether a question is in flight
 //   suggestions     the page's starter questions
+//   past()          the page's earlier games of this session (raw server objects, oldest first)
 //   matches(item, ctx), arrange(items, ctx)   the Lab hooks: LAB.matches / LAB.arrange for "play.history"
 //   refresh()       re-render the turn list
 //   draft(text)     put text in the question box and focus it; false when the box is missing or disabled
@@ -177,6 +221,25 @@ export function playHistoryCtx(source = {}) {
     return out;
   };
   const pending = () => { if (busy()) throw new Error("Wait for the current answer first."); };
+  // Copies are made once per raw array, so repeated reads of data hand out the same frozen values.
+  const traceCopies = new WeakMap();
+  const tracesOf = (raw) => {
+    if (!traceCopies.has(raw)) traceCopies.set(raw, frozenCopy(raw));
+    return traceCopies.get(raw);
+  };
+  const pastRecords = new WeakMap();
+  const past = () => {
+    const raw = source.past ? source.past() : null;
+    if (!Array.isArray(raw)) return Object.freeze([]);
+    const out = [];
+    for (const game of raw.slice(-20)) {
+      if (!game || typeof game !== "object") continue;
+      if (!pastRecords.has(game)) pastRecords.set(game, pastRecord(game));
+      const record = pastRecords.get(game);
+      if (record) out.push(record);
+    }
+    return Object.freeze(out);
+  };
 
   const ctx = {
     items,
@@ -194,7 +257,8 @@ export function playHistoryCtx(source = {}) {
           outcome: outcomeOf(current, asked), asked,
           turns_left: Number.isInteger(current.turns_left) ? current.turns_left : Math.max(0, RULES.max_turns - asked) }) : null,
         secret: over && typeof current.secret === "string" ? current.secret : null,
-        traces: over && Array.isArray(current.traces) ? current.traces : null,
+        traces: over && Array.isArray(current.traces) ? tracesOf(current.traces) : null,
+        past: past(),
         busy: busy(),
         suggestions: Object.freeze([...(Array.isArray(source.suggestions) ? source.suggestions : [])].filter((entry) => typeof entry === "string")),
         answers: ANSWERS,
