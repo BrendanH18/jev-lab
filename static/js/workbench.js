@@ -7,6 +7,8 @@ import { renderWorkbenchGuide } from "./workbench-guide.js";
 import { createGuidelines } from "./guidelines.js";
 import { renderExamplesBrowser } from "./examples-browser.js";
 import { W } from "./workbench-state.js";
+import { LAB } from "./lab/pages/workbench.js";
+import { installLab, labEnv } from "./lab/env.js";
 import { buildUnsaved, loadInto, renderBuild } from "./workbench-build.js";
 import { renderTests } from "./workbench-tests.js";
 import { rowsText, bulkUnsaved, countRows, bulkQuestions, renderBulk } from "./workbench-bulk.js";
@@ -23,11 +25,16 @@ import { renderCompare, updateCmpChart, updateCascade } from "./workbench-compar
 // Labeling guidelines (static/js/guidelines.js): human-only, shown beside label controls, never sent to the model.
 // Kept on W so a view rendered without it (tests/js) simply shows no guideline.
 W.guides = createGuidelines({ h, api, handleError, toast, rerender: () => render(), beforeSave: (id) => confirmReviewDiscard(id) });
+// Lab (static/js/lab): this page's packs, the ctx builders of its surfaces (W.lab.builders) and the env they act
+// through. Kept on W, like the guidelines, so a view rendered without it (tests/js) simply shows no Lab tools.
+W.lab = LAB;
+W.labEnv = labEnv;
 const TABS = [["build", "Build"], ["tests", "Tests"], ["bulk", "Bulk"], ["compare", "Compare"], ["examples", "Examples"]];
 
 // ---------- boot ----------
 async function boot() {
   await initChrome("/workbench");
+  installLab(LAB);
   const [ex, items, sample, pics, sets] = await Promise.all([api("/api/workbench/examples"), api("/api/workbench/items"),
     api("/api/workbench/bulk/sample"), api("/api/images/samples"), api("/api/workbench/datasets")]);
   W.samples = pics.samples;
@@ -73,6 +80,7 @@ export function renderGuide() {
 
 export function render() {
   syncAttachedSets();
+  LAB.unmountAll(["chrome"]);  // only the surfaces rendered below stay reachable from the command palette
   let view;
   switch (W.tab) {
     case "tests": view = renderTests(); break;

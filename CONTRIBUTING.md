@@ -51,10 +51,10 @@ For JavaScript edits, Node.js 22 is used in CI to check module syntax and to run
 browser modules that need no DOM:
 
 ```sh
-for file in static/js/*.js; do
+for file in $(find static/js -name '*.js' | sort); do
   node --input-type=module --check < "$file" || exit 1
 done
-node --test tests/js/*.test.mjs
+node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 ```
 
 For interface changes, also inspect the affected pages in a browser at desktop and narrow widths.

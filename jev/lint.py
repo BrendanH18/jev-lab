@@ -22,6 +22,8 @@ import json
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from . import lab
+
 GUIDE = "https://docs.typesafe.ai/concepts/how-to-build-with-system-one"
 LEVELS = ("problem", "advice")
 LONG_WORDS = 60  # string instructions longer than this read as more than one short question
@@ -220,6 +222,14 @@ def check(state: Any, questions: Dict[str, dict], image_refs: Iterable[str] = ()
     for qid, q in questions.items():
         findings += _missing_paths(qid, q, state, refs) + _instructions(qid, q) + _criteria(qid, q)
     order = {qid: i for i, qid in enumerate(questions)}
-    findings.sort(key=lambda f: (LEVELS.index(f["level"]), -1 if f["question"] is None else order.get(f["question"], 0)))
+
+    def rank(f: dict) -> tuple:
+        return LEVELS.index(f["level"]), -1 if f["question"] is None else order.get(f["question"], 0)
+
+    findings.sort(key=rank)
     counts = {level: sum(f["level"] == level for f in findings) for level in LEVELS}
-    return {"findings": findings, "counts": counts, "guide": GUIDE}
+    # Lab packs (jev/lab/packs, kind lint_rule) add checks beside the built-in ones. They are reported apart, under
+    # "lab", so the built-in findings and counts stay exactly what they were.
+    more = sorted(lab.lint_findings(state, questions, refs, _finding), key=rank)
+    return {"findings": findings, "counts": counts, "guide": GUIDE,
+            "lab": {"findings": more, "counts": {level: sum(f["level"] == level for f in more) for level in LEVELS}}}
