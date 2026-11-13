@@ -166,7 +166,7 @@ checkPack(pack, {
   },
   unwrap_lines: {
     values: { text: "First line\nsecond line.\n\n\nNext   para\n  here." },
-    expect: exactly([["Lines before", 6], ["Paragraphs", 2]], undefined, "First line\nsecond line.".replace("\n", " ") + "\n\nNext   para here."),
+    expect: exactly([["Lines before", 6], ["Paragraphs", 2]], undefined, "First line second line.\n\nNext   para here."),
   },
   // NUL, BEL and NEL (U+0085) are control characters; the tab stays; the zero-width space goes only when asked.
   strip_control: {

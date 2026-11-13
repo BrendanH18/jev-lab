@@ -89,7 +89,7 @@ export default definePack({
     { id: "summary_markdown", kind: "exporter", label: "Shown checks and this session's runs as a Markdown table", filename: "jev-checks.md", mime: "text/markdown",
       help: "Dataset ids, gates, targets, model and your latest run's status, accuracy and automation. No row inputs, labels or answers.",
       build: (ctx) => {
-        const cell = (value) => String(value).replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+        const cell = (value) => String(value).replace(/[\\|]/g, "\\$&").replace(/\s+/g, " ").trim();
         const rows = ctx.shown().map((item) => {
           const gates = Object.entries(item.gates || {}).map(([qid, threshold]) => `${qid} ≥ ${finite(threshold) === null ? "?" : threshold.toFixed(2)}`).join(", ");
           const rep = item.report;

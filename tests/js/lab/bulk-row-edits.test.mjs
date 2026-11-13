@@ -34,9 +34,10 @@ checkPack(pack, {
   unicode_nfc: { input: [row("Cafe\u0301"), held("Cafe\u0301")], output: [row("Caf\u00E9"), held("Cafe\u0301")] },
   unix_newlines: { input: [row("a\r\nb\rc"), row({ text: "x\r\ny", channel: "chat" })], output: [row("a\nb\nc"), row({ text: "x\ny", channel: "chat" })] },
   literal_newlines: { input: [row("line one\\nline two\\r\\nthree")], output: [row("line one\nline two\nthree")], unchanged: [row("C:/no/escapes"), row("a backslash \\ alone and \\t")] },
+  // Removing "<b>" from "<sc<b>ript>" joins a new tag; that is removed too.
   // Block and <br> tags become line breaks (worked by hand: "<p>" and "</p>" each give "\n", ends trimmed), inline tags vanish.
-  strip_html_tags: { input: [row("<p>Hello <b>there</b></p> 2 < 3"), held("<i>x</i>"), row({ text: "Hi<br>there<div>Bye</div>", n: 1 }), row("<ul><li>a</li><li>b</li></ul>")],
-    output: [row("Hello there\n 2 < 3"), held("<i>x</i>"), row({ text: "Hi\nthere\nBye", n: 1 }), row("a\n\nb")], unchanged: [row("2 < 3 and 4 > 1"), row("<br>")] },
+  strip_html_tags: { input: [row("<p>Hello <b>there</b></p> 2 < 3"), held("<i>x</i>"), row({ text: "Hi<br>there<div>Bye</div>", n: 1 }), row("<ul><li>a</li><li>b</li></ul>"), row("<sc<b>ript>x")],
+    output: [row("Hello there\n 2 < 3"), held("<i>x</i>"), row({ text: "Hi\nthere\nBye", n: 1 }), row("a\n\nb"), row("x")], unchanged: [row("2 < 3 and 4 > 1"), row("<br>")] },
   decode_entities: { input: [row("Tom &amp; Jerry &lt;3 &#233;&#x41; &foo;"), row("&amp;lt; once &#xD800; &#0;")], output: [row("Tom & Jerry <3 \u00E9A &foo;"), row("&lt; once &#xD800; &#0;")] },
 
   // ---------- fields ----------
@@ -105,7 +106,7 @@ checkPack(pack, {
     items: [fresh("Where is my order?"), fresh("Grinder broke after a week"), fresh("Decaf?")], warnings: 1, rejects: ["no markers here"] },
   message_blocks: { text: "Hi,\nmy bag tore.\n\n\nSecond message  \n \nThird", items: [fresh("Hi,\nmy bag tore."), fresh("Second message"), fresh("Third")], rejects: ["\n\n"] },
   tab_separated: { ctx: sample(),
-    text: "text\tchannel\t_image\tlabel:department\tlabel:is_urgent\tlabel:frustration\nBag torn\temail\ttorn-bag\tshipping\tTRUE\t2\nDecaf?\t\t\t\t\t\n\t\t\t\t\t\n\tchat\t\t\tmaybe\t\n",
+    text: "\r\n \t\r\ntext\tchannel\t_image\tlabel:department\tlabel:is_urgent\tlabel:frustration\nBag torn\temail\ttorn-bag\tshipping\tTRUE\t2\nDecaf?\t\t\t\t\t\n\t\t\t\t\t\n\tchat\t\t\tmaybe\t\n",
     items: [fresh({ text: "Bag torn", channel: "email" }, { image: "torn-bag", labels: { department: "shipping", is_urgent: true, frustration: 2 } }),
       fresh("Decaf?"), fresh({ channel: "chat" }, { labels: { is_urgent: "maybe" } })],
     warnings: 1, rejects: ["text,department\na,b", "text\tlabel:\nx\ty", "text\t_test\nx\ttrue", "text\tlabel:q", "text\ttext\na\tb"] },

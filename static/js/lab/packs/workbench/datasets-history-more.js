@@ -20,7 +20,7 @@ const csvRows = (rows) => rows.map((row) => row.map((value) => (typeof value ===
 const kept = (at) => (typeof at === "string" ? `${at.slice(0, 10)} ${at.slice(11, 16)}` : "—");
 const idsOf = (item) => (Array.isArray(item?.questions) ? item.questions : []);
 // A Markdown table cell: pipes and line breaks would break the table.
-const cell = (value) => String(value ?? "").replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
+const cell = (value) => String(value ?? "").replace(/[\\|]/g, "\\$&").replace(/[\r\n]+/g, " ");
 // Nonzero parts only, joined with "and": [[3, "remove", "label"], [0, "change", "label"]] -> "remove 3 labels".
 const parts = (list) => list.filter(([n]) => n > 0).map(([n, verb, word]) => `${verb} ${plural(n, word)}`).join(" and ");
 // What the page says about undoing a restore: only an existing file is kept as a revision first.

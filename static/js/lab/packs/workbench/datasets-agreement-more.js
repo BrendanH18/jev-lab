@@ -16,7 +16,7 @@ const asksType = (type) => (item, ctx) => { const types = typesOf(ctx); return a
 const missingOf = (item) => asked(item).filter((qid) => item.second?.[qid] === null || item.second?.[qid] === undefined);
 const nameOf = (ctx) => ctx.data.dataset_name || ctx.data.dataset_id || "dataset";
 // A Markdown table cell: pipes and line breaks would break the table.
-const cell = (value) => String(value ?? "").replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
+const cell = (value) => String(value ?? "").replace(/[\\|]/g, "\\$&").replace(/[\r\n]+/g, " ");
 const fileOf = (ctx, suffix) => `${ctx.data.dataset_id || "dataset"}-${suffix}`;
 
 // Characters (code points) in an input's text values; the "_image" picture name is not input text.

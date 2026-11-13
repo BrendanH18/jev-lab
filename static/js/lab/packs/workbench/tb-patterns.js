@@ -927,7 +927,7 @@ export default definePack({
           const out = rewrite(source, (token, inClass) => {
             if (/^\\U/.test(token)) { wide = true; return note(token, `\\u{${token.slice(2).replace(/^0+(?=.)/, "")}}`); }
             need(!/^\\N\{/.test(token), `Named characters such as ${token} have no JavaScript counterpart; write the character itself.`);
-            if (/^\[\^?\]$/.test(token)) return note(token, token.replace("]", "\\]"));
+            if (/^\[\^?\]$/.test(token)) return note(token, `${token.slice(0, -1)}\\]`);
             if (inClass) return undefined;
             if (token.startsWith("(?P<")) return note(token, `(?<${token.slice(4)}`);
             if (token.startsWith("(?P=")) return note(token, `\\k<${token.slice(4, -1)}>`);

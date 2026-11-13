@@ -80,11 +80,27 @@ function refill(items, tuning) {
 // HTML tags removed; line-breaking tags become line breaks so words on either side stay apart.
 function stripTags(text) {
   if (!/<\/?[A-Za-z][^<>]*>/.test(text)) return text;
-  return text.replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/?(?:p|div|li|ul|ol|tr|table|blockquote|h[1-6])\b[^<>]*>/gi, "\n")
-    .replace(/<\/?[A-Za-z][^<>]*>/g, "")
-    .replace(/\n{3,}/g, "\n\n")
+  // Repeat until nothing changes, so removing one tag cannot join the pieces of another ("<sc<b>ript>").
+  let out = text, before;
+  do {
+    before = out;
+    out = out.replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?(?:p|div|li|ul|ol|tr|table|blockquote|h[1-6])\b[^<>]*>/gi, "\n")
+      .replace(/<\/?[A-Za-z][^<>]*>/g, "");
+  } while (out !== before);
+  return out.replace(/\n{3,}/g, "\n\n")
     .replace(/^\n+|\n+$/g, "");
+}
+
+// Blank lines (spaces and tabs only) removed from both ends; other whitespace and line endings stay.
+// A scan rather than a regular expression, whose alternatives for \r\n can backtrack badly.
+function trimBlankLines(text) {
+  const blank = (ch) => ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
+  const ends = (ch) => ch === "\r" || ch === "\n";
+  let start = 0, end = text.length;
+  for (let i = 0; i < text.length && blank(text[i]); i++) if (ends(text[i])) start = i + 1;
+  for (let j = text.length; j > start && blank(text[j - 1]); j--) if (ends(text[j - 1])) end = j - 1;
+  return text.slice(start, end);
 }
 
 // ---------- labels and cells ----------
@@ -435,7 +451,7 @@ export default definePack({
     { id: "tab_separated", kind: "importer", label: "Tab-separated table with a header (spreadsheet paste)",
       help: "The first line names the columns: _image for a picture, label:<question id> for labels, any other column an input field. Adds rows after the existing ones; the page's Import CSV replaces the box instead.",
       parse: (text, ctx) => {
-        const body = text.replace(/^(?:[ \t]*(?:\r\n|\r|\n))+/, "").replace(/(?:(?:\r\n|\r|\n)[ \t]*)+$/, "");
+        const body = trimBlankLines(text);
         const table = parseDelimited(body, "\t") || [];
         if (table.length < 2) throw new Error("Paste a header line and at least one row, with columns separated by tabs.");
         const columns = table[0].map((name) => name.trim());

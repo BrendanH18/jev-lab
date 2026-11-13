@@ -19,7 +19,7 @@ const perQuestion = (item) => {
 };
 // The server's file name for a dataset name (jev/workbench.py slugify).
 const slugOf = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
-const cell = (value) => String(value ?? "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+const cell = (value) => String(value ?? "").replace(/[\\|]/g, "\\$&").replace(/\s+/g, " ").trim();
 
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);

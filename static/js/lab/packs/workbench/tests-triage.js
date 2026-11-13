@@ -132,7 +132,7 @@ export default definePack({
     { id: "results_markdown", kind: "exporter", label: "Shown results as a Markdown table", filename: "jev-test-results.md", mime: "text/markdown",
       help: "Test IDs, names, status, failed question IDs, measured latency and spend of your latest run. No inputs, instructions, expectation values, answers or check text.",
       build: (ctx) => {
-        const cell = (value) => String(value).replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+        const cell = (value) => String(value).replace(/[\\|]/g, "\\$&").replace(/\s+/g, " ").trim();
         const rows = ctx.shown().map((item) => {
           const failed = checksOf(item).filter((check) => check.ok === false).map((check) => check.id);
           const latency = finite(item.result?.meta?.latency_ms), cost = finite(item.result?.meta?.cost_usd);
