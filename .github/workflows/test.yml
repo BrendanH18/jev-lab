@@ -71,11 +71,11 @@ jobs:
           node-version: "22"
       - name: Check browser modules
         run: |
-          for file in static/js/*.js; do
+          for file in $(find static/js -name '*.js' | sort); do
             node --input-type=module --check < "$file" || exit 1
           done
       - name: Test browser modules
-        run: node --test tests/js/*.test.mjs
+        run: node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 
   samples:
     name: Sample pictures match the script

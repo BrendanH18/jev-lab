@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from . import calibrate, decisions, slices, workbench
+from . import calibrate, decisions, lab, slices, workbench
 from .workbench import WorkbenchError
 
 
@@ -128,6 +128,9 @@ def analyze(rows: Any, questions: Any = None, field: Any = None) -> dict:
             values = {json.dumps(labels[n - 1][qid], sort_keys=True) for n in labeled}
             if len(values) > 1:
                 conflicts.append({"rows": labeled, "question": qid})
+    # "lab": extra advisory findings from Lab packs (jev/lab/packs, kind health_check), as titles, row numbers and
+    # messages. Like everything above, they never carry a label value or an input.
     return {"rows": len(rows), "unique_inputs": len(groups), "duplicate_groups": duplicates,
             "conflicts": conflicts, "overlap": overlap, "questions": list(reports.values()),
-            "invalid_labels": invalid_labels, "by_slice": _by_slice(slice_rows, asked, field)}
+            "invalid_labels": invalid_labels, "by_slice": _by_slice(slice_rows, asked, field),
+            "lab": lab.health_findings(rows, asked)}

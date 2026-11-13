@@ -2,8 +2,7 @@
 import {
   $, api, copyText, currentStatus, h, handleError, icon, mount, ms, num, pct, stat, statusBadge, toast, usd,
 } from "./common.js";
-import { parseUniqueJson } from "./build-request.js";
-import { reverseOptions } from "./variants.js";
+import { parseVariantText, reverseOptions } from "./variants.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W, canon } from "./workbench-state.js";
 import { toQuestions, applyBuildQuestions } from "./workbench-build.js";
@@ -26,13 +25,7 @@ const PERTURBS = {
 };
 
 function parseVariant(i) {
-  const name = VARIANTS[i];
-  const text = W.compare.variants[i].text.trim();
-  if (!text) throw new Error(`Variant ${name} has no questions`);
-  let questions;
-  try { questions = parseUniqueJson(text); } catch (e) { throw new Error(`Variant ${name}: invalid JSON (${e.message})`); }
-  if (!questions || typeof questions !== "object" || Array.isArray(questions)) throw new Error(`Variant ${name}: questions must be an object keyed by question id`);
-  return questions;
+  return parseVariantText(W.compare.variants[i].text, VARIANTS[i]);
 }
 
 function variantStatus(i) {
@@ -70,14 +63,13 @@ function variantPanel(i) {
     h("option", { value: "", selected: !v.average }, "Once, with the options as listed"),
     h("option", { value: "both", selected: v.average }, "Twice, with the options in both orders, averaged")) : null;
   asked?.addEventListener("change", () => { v.average = asked.value === "both"; render(); });
-  const set = (questions) => { v.text = JSON.stringify(questions, null, 2); render(); };
   return h("div", { class: "panel raw" },
     h("div", { class: "panel-head" }, h("i", { class: `cmp-key ${name.toLowerCase()}` }), h("h2", {}, `Variant ${name}`), h("div", { class: "spacer" }),
       h("div", { class: "chips" },
-        h("button", { class: "btn sm ghost", onclick: () => set(toQuestions(W.questions)) }, "Build questions"),
-        h("button", { class: "btn sm ghost", onclick: () => set(W.bulk.sampleQuestions) }, "Sample"),
-        h("button", { class: "btn sm ghost", onclick: () => set(W.compare.terse) }, "Sample, terse"),
-        i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model", onclick: () => { v.text = W.compare.variants[0].text; v.model = W.compare.variants[0].model; render(); } }, "Copy A") : null,
+        h("button", { class: "btn sm ghost", onclick: () => cmpFill(i, "build") }, "Build questions"),
+        h("button", { class: "btn sm ghost", onclick: () => cmpFill(i, "sample") }, "Sample"),
+        h("button", { class: "btn sm ghost", onclick: () => cmpFill(i, "terse") }, "Sample, terse"),
+        i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model", onclick: cmpCopyA }, "Copy A") : null,
         i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, with each Choice question's options in reverse order", onclick: reverseA }, "Reverse A's options") : null,
         i === 1 ? h("button", { class: "btn sm ghost", title: "A's questions and model, asked in both option orders and averaged", onclick: averageA }, "Average A's orders") : null)),
     h("div", { class: "panel-body grid", style: { gap: "10px" } },
@@ -87,6 +79,21 @@ function variantPanel(i) {
       asked ? h("label", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, h("span", { class: "muted" }, "Ask"), asked,
         v.average ? h("span", { class: "faint" }, "Each row is sent twice, the second time with every Choice question's options in reverse order, and the two answers are averaged in code. That costs twice as much per row.") : null) : null,
       area, note));
+}
+
+// The fill buttons: a variant gets Build's questions ("build"), the sample set ("sample") or its terse rewording ("terse").
+function cmpFill(i, from) {
+  const questions = from === "build" ? toQuestions(W.questions) : from === "sample" ? W.bulk.sampleQuestions : W.compare.terse;
+  W.compare.variants[i].text = JSON.stringify(questions, null, 2);
+  render();
+}
+
+// "Copy A": B gets A's questions and model.
+function cmpCopyA() {
+  const [a, b] = W.compare.variants;
+  b.text = a.text;
+  b.model = a.model;
+  render();
 }
 
 // An order check: B becomes A, with the same model and each Choice question's options in reverse order, so
@@ -144,7 +151,8 @@ export function renderCompare() {
       h("b", {}, "Reverse A's options"), " makes B an order check: if an answer changes when only the order of the options changes, the model is reading the list, not the row. ",
       h("b", {}, "Rows"), ", on B, makes it an input check: B's rows get typos, lowercase, an unrelated sentence, or shuffled fields, changes that should not move a good answer. ",
       h("b", {}, "Average A's orders"), " tests a fix for an order effect: B asks A's questions twice, once with the options reversed, and averages the answers, so the report shows what a second call per row buys."),
-    h("div", { class: "grid cmp-grid" }, variantPanel(0), variantPanel(1)),
+    h("div", { class: "grid cmp-grid", id: "cmp-variants" }, variantPanel(0), variantPanel(1)),
+    cmpLabSection("workbench.compare.variants", cmpLabVariants()),
     h("datalist", { id: "cmp-models" }, (c.models || []).map((n) => h("option", { value: n }))),
     h("div", { class: "grid wb-grid" },
       h("div", { class: "panel bulk" },
@@ -318,11 +326,7 @@ function renderCompareReport() {
   sigSel.addEventListener("change", async () => { c.signal = sigSel.value; await rescoreCompare(); render(); });
   const rep = c.report;
   const hasLabels = rep && rep.variants.some((v) => v.labeled);
-  const use = (i) => h("button", { class: "btn sm", onclick: () => {
-    if (!applyBuildQuestions(res.variants[i].questions)) return;
-    location.hash = "build";
-    toast(`Build now has variant ${VARIANTS[i]}'s questions`);
-  } }, `Use ${VARIANTS[i]} in Build`);
+  const use = (i) => h("button", { class: "btn sm", onclick: () => cmpUseInBuild(i) }, `Use ${VARIANTS[i]} in Build`);
   const failures = res.results.flatMap((r) => r.runs.map((run, v) => (run.error ? `row ${r.index + 1} (${VARIANTS[v]}): ${run.error}` : null)).filter(Boolean));
   const notes = [
     failures.length ? h("p", { style: { color: "var(--critical-text)" } }, `${failures.length} calls failed: `, failures.slice(0, 3).join("; "), failures.length > 3 ? "…" : "") : null,
@@ -371,6 +375,14 @@ function renderCompareReport() {
       body,
       h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes),
       h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, use(0), use(1))));
+}
+
+// "Use A in Build" / "Use B in Build": Build gets that variant's questions as the latest run asked them.
+function cmpUseInBuild(i) {
+  if (!applyBuildQuestions(W.compare.result.variants[i].questions)) return false;
+  location.hash = "build";
+  toast(`Build now has variant ${VARIANTS[i]}'s questions`);
+  return true;
 }
 
 // How often A and B answer each shared question differently, read from the answers, so it needs no labels.
@@ -473,29 +485,147 @@ function sentText(res, index) {
       : null]);
 }
 
+// The disagreement table of the scored question. Its rows are the Lab surface "workbench.compare.rows" (contract in
+// static/js/lab/surfaces/workbench-compare.js): Lab filters and sorts pick and order the rows listed here, and with
+// none active the table is the server's list as it was. The labeling handoff always sends every disagreement.
 function renderCompareRows() {
   const c = W.compare;
   const rep = c.report;
-  const res = c.result;
+  const lab = cmpLabRows();
+  const section = cmpLabSection("workbench.compare.rows", lab);
+  return h("div", { class: "panel", id: "compare-rows" },
+    h("div", { class: "panel-head" }, icon("list"), h("h2", { id: "cmp-rows-title" }, cmpRowsTitle(lab)), h("div", { class: "spacer" }),
+      h("span", { id: "cmp-rows-reset" }, cmpRowsReset(lab)),
+      h("span", { class: "faint", style: { fontSize: "12px" } }, `${rep.agree} of ${rep.answered_both} rows agree`),
+      h("button", { class: "btn sm", disabled: c.labelingBusy || !rep.disagreements.length || !["choice", "noul", "score"].includes(rep.type),
+        onclick: handoffCompareDisagreements }, c.labelingBusy ? "Preparing labels…" : "Label missing disagreement inputs")),
+    h("div", { id: "cmp-rows-list" }, cmpRowsList(lab)),
+    section ? h("div", { class: "panel-body" }, section) : null);
+}
+
+// The disagreements to list: the server's list, or, while a Lab filter or sort is active, the rows Lab shows.
+function cmpShownDisagreements(lab) {
+  const rep = W.compare.report;
+  if (!lab || !W.lab?.active("workbench.compare.rows")) return rep.disagreements;
+  const byIndex = new Map(rep.disagreements.map((d) => [d.index, d]));
+  return lab.shown().map((item) => byIndex.get(item.index)).filter(Boolean);
+}
+
+function cmpRowsTitle(lab) {
+  const c = W.compare;
+  const total = c.report.disagreements.length;
+  const count = lab && W.lab?.active("workbench.compare.rows") ? `${cmpShownDisagreements(lab).length} of ${total}` : String(total);
+  return `Rows where A and B answer “${c.qid}” differently · ${count}`;
+}
+
+function cmpRowsReset(lab) {
+  return lab && W.lab?.active("workbench.compare.rows")
+    ? h("button", { class: "btn sm ghost", title: "Clear the Lab filters and sort of this table", onclick: resetCmpRowsLab }, "Show every disagreement") : null;
+}
+
+function cmpRowsList(lab) {
+  const res = W.compare.result;
+  const rep = W.compare.report;
   const verdicts = { a_only: ["pass", "A right"], b_only: ["pass", "B right"], both_wrong: ["fail", "Both wrong"] };
   const answer = (x) => h("td", {}, h("span", { class: "cell-choice" }, x.predicted),
     h("span", { class: "faint mono", style: { marginLeft: "6px", fontSize: "11px" } }, x.signal.toFixed(2)),
     x.correct === null ? null : h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, x.correct ? "right" : "wrong"));
-  return h("div", { class: "panel", id: "compare-rows" },
-    h("div", { class: "panel-head" }, icon("list"), h("h2", {}, `Rows where A and B answer “${c.qid}” differently · ${rep.disagreements.length}`), h("div", { class: "spacer" }),
-      h("span", { class: "faint", style: { fontSize: "12px" } }, `${rep.agree} of ${rep.answered_both} rows agree`),
-      h("button", { class: "btn sm", disabled: c.labelingBusy || !rep.disagreements.length || !["choice", "noul", "score"].includes(rep.type),
-        onclick: handoffCompareDisagreements }, c.labelingBusy ? "Preparing labels…" : "Label missing disagreement inputs")),
-    rep.disagreements.length
-      ? h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
-        h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "label"), h("th", {}, "A"), h("th", {}, "B"), h("th", {}, "result"))),
-        h("tbody", {}, rep.disagreements.map((d) => h("tr", {},
-          h("td", { class: "num" }, String(d.index + 1)),
-          h("td", { class: "row" }, rowText(res.results[d.index]?.row), sentText(res, d.index)),
-          h("td", {}, d.label ?? h("span", { class: "faint" }, "—")),
-          d.answers.map(answer),
-          h("td", {}, d.verdict && verdicts[d.verdict] ? statusBadge(...verdicts[d.verdict]) : h("span", { class: "faint" }, "no label")))))))
-      : h("div", { class: "panel-body muted" }, "A and B gave the same answer on every row they both answered."));
+  if (!rep.disagreements.length) return h("div", { class: "panel-body muted" }, "A and B gave the same answer on every row they both answered.");
+  const list = cmpShownDisagreements(lab);
+  if (!list.length) return h("div", { class: "panel-body muted" }, "No disagreement matches the Lab filters.");
+  return h("div", { class: "scroll" }, h("table", { class: "table bulk-table" },
+    h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "label"), h("th", {}, "A"), h("th", {}, "B"), h("th", {}, "result"))),
+    h("tbody", {}, list.map((d) => h("tr", {},
+      h("td", { class: "num" }, String(d.index + 1)),
+      h("td", { class: "row" }, rowText(res.results[d.index]?.row), sentText(res, d.index)),
+      h("td", {}, d.label ?? h("span", { class: "faint" }, "—")),
+      d.answers.map(answer),
+      h("td", {}, d.verdict && verdicts[d.verdict] ? statusBadge(...verdicts[d.verdict]) : h("span", { class: "faint" }, "no label")))))));
+}
+
+// Lab's refresh: the table and its heading count only, so the Lab section keeps its controls and focus.
+function refreshCmpRows() {
+  if (!W.compare.report || !$("#cmp-rows-list")) return;
+  const lab = cmpLabRows();
+  mount("#cmp-rows-title", cmpRowsTitle(lab));
+  mount("#cmp-rows-reset", cmpRowsReset(lab));
+  mount("#cmp-rows-list", cmpRowsList(lab));
+}
+
+function resetCmpRowsLab() {
+  W.lab?.reset("workbench.compare.rows");
+  refreshCmpRows();
+  const section = cmpLabSection("workbench.compare.rows", cmpLabRows());
+  if (section) $('[data-lab-surface="workbench.compare.rows"]')?.replaceWith(section);
+}
+
+// The Lab tools block of a surface, or null while the page's Lab has no ctx builder or no pack for it.
+function cmpLabSection(id, ctx) {
+  return ctx && W.lab?.section ? W.lab.section(W.labEnv, id, ctx) : null;
+}
+
+// The ctx of the Lab surface "workbench.compare.rows", or null before the page's Lab has its builder. Every field
+// reads W.compare when called, so a ctx built at one render never goes stale.
+function cmpLabRows() {
+  const build = W.lab?.builders?.compareRowsCtx;
+  if (!build) return null;
+  const c = W.compare;
+  return build({
+    result: () => c.result, report: () => c.report, qid: () => c.qid, signal: () => c.signal, bound: () => c.bound, first: () => c.first,
+    cascadeT: () => c.cascadeT, slices: () => c.slices, slicesError: () => c.slicesError, reportError: () => c.reportError,
+    running: () => c.running, labeling: () => c.labelingBusy,
+    matches: (item, ctx) => W.lab.matches("workbench.compare.rows", item, ctx),
+    arrange: (items, ctx) => W.lab.arrange("workbench.compare.rows", items, ctx),
+    refresh: () => refreshCmpRows(),
+    selectQuestion: async (qid) => { c.qid = qid; await rescoreCompare(); render(); },
+    setSignal: async (signal) => { c.signal = signal; await rescoreCompare(); render(); },
+    setBound: async (bound) => {
+      c.bound = bound;
+      const keep = c.cascadeT;  // as the targets select: the basis changes only the targets
+      await rescoreCompare();
+      c.cascadeT = keep;
+      render();
+    },
+    setFirst: async (name) => { c.first = name; await rescoreCompare(); render(); },
+    setCascadeThreshold: (t) => { c.cascadeT = t; updateCascade(); },
+    labelDisagreements: () => handoffCompareDisagreements(),
+    useInBuild: (i) => cmpUseInBuild(i),
+  });
+}
+
+// The ctx of the Lab surface "workbench.compare.variants" (the questions typed in the two editors), or null before
+// the page's Lab has its builder. Its actions are the editors' own buttons; replacing the list writes the editors'
+// JSON exactly as the fill buttons do, and Run goes through runCompare and its spend preview.
+function cmpLabVariants() {
+  const build = W.lab?.builders?.compareVariantsCtx;
+  if (!build) return null;
+  const c = W.compare;
+  return build({
+    variants: () => c.variants, currentModel: () => currentStatus()?.model || null, models: () => c.models,
+    rowCount: () => countRows(W.bulk.rowsText), running: () => c.running, lastRun: () => c.result?.variants || null,
+    matches: (item, ctx) => W.lab.matches("workbench.compare.variants", item, ctx),
+    arrange: (items, ctx) => W.lab.arrange("workbench.compare.variants", items, ctx),
+    setQuestions: (i, questions) => { c.variants[i].text = JSON.stringify(questions, null, 2); },
+    refresh: () => refreshCmpVariants(),
+    copyAToB: () => cmpCopyA(),
+    reverseA: () => reverseA(),
+    averageA: () => averageA(),
+    fill: (i, from) => {
+      if ((from === "sample" && !W.bulk.sampleQuestions) || (from === "terse" && !c.terse)) throw new Error("The sample questions have not loaded yet.");
+      cmpFill(i, from);
+    },
+    setModel: (i, model) => { c.variants[i].model = model; render(); },
+    setRows: (kind) => { c.variants[1].perturb = kind; render(); },
+    setAsk: (both) => { c.variants[1].average = both; render(); },
+  });
+}
+
+// Lab's refresh for the variants: the two editors only, then a change event so the spend preview beside Run follows.
+function refreshCmpVariants() {
+  const grid = $("#cmp-variants");
+  if (!grid) return;
+  mount(grid, variantPanel(0), variantPanel(1));
+  grid.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function compareSlices() {

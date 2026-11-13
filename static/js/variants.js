@@ -1,4 +1,16 @@
 // Variant helpers for Workbench Compare, free of the DOM so tests/js can import them.
+import { parseUniqueJson } from "./build-request.js";
+
+// A variant's questions from the JSON typed in its editor: an object keyed by question id, with repeated keys refused.
+// Throws an Error with the message the Compare tab shows under the editor. name is "A" or "B".
+export function parseVariantText(text, name) {
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) throw new Error(`Variant ${name} has no questions`);
+  let questions;
+  try { questions = parseUniqueJson(trimmed); } catch (e) { throw new Error(`Variant ${name}: invalid JSON (${e.message})`); }
+  if (!questions || typeof questions !== "object" || Array.isArray(questions)) throw new Error(`Variant ${name}: questions must be an object keyed by question id`);
+  return questions;
+}
 
 // The questions with each Choice question's options listed in reverse order, for an order check in
 // Compare: instructions, option descriptions, and every other question stay as they are. A Score scale

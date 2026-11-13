@@ -1,6 +1,9 @@
 // Shared helpers for the Jev Lab pages: API calls (with the session token), formatting, DOM
 // building, probability bars, the request inspector, the key/settings modal, and the top bar.
+// The parts of the chrome that need no DOM (nav links, theme preference, layers, Tab wrap) live in chrome.js.
 
+import { FOCUSABLE, MAIN_ID, NAV_LINKS, THEMES, THEME_KEY, THEME_LABELS, applyTheme, createLayers, normalizeTheme, readTheme, trapFocus,
+  writeTheme } from "./chrome.js";
 import { handoffFromTrace, writeHandoff } from "./handoff.js";
 
 const TOKEN = document.querySelector('meta[name="jev-csrf"]')?.content || "";
@@ -68,6 +71,73 @@ export function debounce(fn, wait) {
 export async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast("Copied"); }
   catch { toast("Copy failed. Select the text and copy it manually.", "error"); }
+}
+
+// ---------- theme ----------
+// System, light or dark, shown through data-theme on <html> (app.css) and remembered in localStorage under
+// THEME_KEY, which holds only that word. Applied as this module loads, before the page draws its content.
+function themeStore() {
+  try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; }
+}
+let theme = readTheme(themeStore());
+function showTheme() {
+  if (document.documentElement) applyTheme(document.documentElement, theme);
+}
+showTheme();
+export const themePreference = () => theme;
+export function systemPrefersLight() {
+  try { return window.matchMedia("(prefers-color-scheme: light)").matches === true; } catch { return false; }
+}
+// Returns whether the browser will remember the choice; it applies to this page either way.
+export function setTheme(preference) {
+  theme = normalizeTheme(preference);
+  showTheme();
+  const kept = writeTheme(themeStore(), theme);
+  window.dispatchEvent(new CustomEvent("jev:theme", { detail: theme }));
+  return kept;
+}
+// A choice made in another tab of this browser shows here too.
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== THEME_KEY && event.key !== null) return;
+    theme = readTheme(themeStore());
+    showTheme();
+    window.dispatchEvent(new CustomEvent("jev:theme", { detail: theme }));
+  });
+}
+
+// ---------- layers: dialogs that Escape closes and that give focus back ----------
+// The settings modal, the request inspector, the command palette and the keyboard help each register while open.
+// Escape closes only the newest one, and closing a layer returns focus to whatever had it when the layer opened.
+const layers = createLayers();
+let escapeBound = false;
+export function openLayer(name, close) {
+  if (!escapeBound) {
+    escapeBound = true;
+    // Capture phase, so the newest layer closes before a handler under it sees the key.
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || event.isComposing || !layers.top()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      layers.closeTop();
+    }, true);
+  }
+  const opener = document.activeElement || null;
+  const release = layers.open(name, close);
+  return () => {
+    if (release() && opener && opener.isConnected !== false) opener.focus?.();
+  };
+}
+export const openLayers = () => layers.names();
+
+// Keep Tab and Shift+Tab inside an open dialog: call from its keydown handler.
+export function trapTab(event, container) {
+  if (event.key !== "Tab") return;
+  const list = [...container.querySelectorAll(FOCUSABLE)].filter((node) => node.style?.display !== "none");
+  const target = trapFocus(list, document.activeElement, event.shiftKey === true);
+  if (!target) return;
+  event.preventDefault();
+  target.focus();
 }
 
 // ---------- icons (inline SVG, stroke = currentColor) ----------
@@ -254,26 +324,48 @@ let drawer;
 // pictures this page uploaded, since the trace leaves their bytes out; Open in Workbench needs them.
 export function inspect(trace, title = "Jev request", { source = null, uploads = [] } = {}) {
   if (!drawer) {
-    const pre = h("pre");
-    const tabs = ["request", "response"].map((t) => h("button", { class: "tab", "data-tab": t }, t === "request" ? "Request" : "Response"));
+    const tabs = ["request", "response"].map((t) => h("button", { class: "tab", "data-tab": t, "aria-pressed": "false" }, t === "request" ? "Request" : "Response"));
     const meta = h("div", { class: "stat-row" });
     const heading = h("h3");
+    const pre = h("pre", { tabindex: "0", role: "region", "aria-label": "Request and response JSON" });
     const backdrop = h("div", { class: "drawer-backdrop", onclick: () => close() });
     const copyBtn = h("button", { class: "btn ghost sm", title: "Copy JSON", onclick: () => copyText(JSON.stringify(drawer.current[drawer.which], null, 2)) }, icon("copy"));
     const workbenchBtn = h("button", { class: "btn sm", title: "Edit and rerun this request in the Workbench, in a new tab. Its answers stay here.", onclick: () => openInWorkbench() }, icon("arrow"), "Open in Workbench");
-    const panel = h("aside", { class: "drawer", role: "dialog", "aria-label": "Request inspector" },
-      h("div", { class: "panel-head" }, icon("code"), heading, h("div", { class: "spacer" }), h("div", { class: "tabs" }, tabs), workbenchBtn, copyBtn,
-        h("button", { class: "btn ghost sm", onclick: () => close(), "aria-label": "Close" }, icon("x"))),
-      h("div", { style: { padding: "12px 18px", borderBottom: "1px solid var(--line)" } }, meta),
-      pre);
+    const closeBtn = h("button", { class: "btn ghost sm", onclick: () => close(), "aria-label": "Close" }, icon("x"));
+    // Closed, the drawer is inert: it sits off screen, so nothing in it may take focus or be read out.
+    const panel = h("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Request inspector", inert: true,
+      onkeydown: (e) => trapTab(e, panel) },
+    h("div", { class: "panel-head" }, icon("code"), heading, h("div", { class: "spacer" }), h("div", { class: "tabs" }, tabs), workbenchBtn, copyBtn, closeBtn),
+    h("div", { style: { padding: "12px 18px", borderBottom: "1px solid var(--line)" } }, meta),
+    pre);
     document.body.append(backdrop, panel);
-    const close = () => { panel.classList.remove("open"); backdrop.classList.remove("open"); };
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-    drawer = { pre, tabs, meta, heading, panel, backdrop, workbenchBtn, current: null, which: "request", source: "", uploads: [] };
-    tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.tab)));
+    let release = null;
+    // Escape (through the layer), the backdrop and the Close button all end here; focus goes back to the opener.
+    const close = () => {
+      if (!release) return;
+      panel.classList.remove("open");
+      backdrop.classList.remove("open");
+      panel.setAttribute("inert", "");
+      const done = release;
+      release = null;
+      done();
+    };
+    const open = () => {
+      if (!release) release = openLayer("inspector", close);
+      panel.removeAttribute("inert");
+      panel.classList.add("open");
+      backdrop.classList.add("open");
+      closeBtn.focus();
+    };
+    drawer = { pre, tabs, meta, heading, panel, backdrop, workbenchBtn, open, close, current: null, which: "request", source: "", uploads: [] };
+    tabs.forEach((t) => t.addEventListener("click", () => show(t.getAttribute("data-tab"))));
     function show(which) {
       drawer.which = which;
-      tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === which));
+      tabs.forEach((t) => {
+        const on = t.getAttribute("data-tab") === which;
+        t.classList.toggle("active", on);
+        t.setAttribute("aria-pressed", on ? "true" : "false");
+      });
       pre.innerHTML = highlight(JSON.stringify(drawer.current[which], null, 2));
       pre.scrollTop = 0;
     }
@@ -290,9 +382,9 @@ export function inspect(trace, title = "Jev request", { source = null, uploads =
     stat("latency", ms(m.latency_ms)),
     stat("input tokens", num(m.input_tokens)), stat("cost", usd(m.cost_usd), true));
   drawer.show("request");
-  drawer.panel.classList.add("open");
-  drawer.backdrop.classList.add("open");
+  drawer.open();
 }
+export function closeInspector() { drawer?.close(); }
 
 export function stat(k, v, accent = false) {
   return h("span", { class: `stat${accent ? " accent" : ""}` }, k, h("b", {}, v));
@@ -308,10 +400,20 @@ export function callStats(meta, onInspect, calls = 1) {
 }
 
 // ---------- toast ----------
-export function toast(message, kind = "") {
+// Toasts are announced: the host is a polite live region that reads each new toast by itself, and an error toast
+// is an alert, which interrupts. initChrome() adds the host up front, since a region added together with its
+// first message is often not read out.
+function toastHost() {
   let host = $(".toast-host");
-  if (!host) { host = h("div", { class: "toast-host", role: "status" }); document.body.append(host); }
-  const t = h("div", { class: `toast pop ${kind}` }, message);
+  if (!host) {
+    host = h("div", { class: "toast-host", role: "status", "aria-live": "polite", "aria-atomic": "false" });
+    document.body.append(host);
+  }
+  return host;
+}
+export function toast(message, kind = "") {
+  const host = toastHost();
+  const t = h("div", { class: `toast pop ${kind}`, role: kind === "error" ? "alert" : null }, message);
   host.append(t);
   setTimeout(() => t.remove(), kind === "error" ? 7000 : 3200);
 }
@@ -351,7 +453,10 @@ export function openSettings(reason = "") {
   if (!env.can_save) save.disabled = true;
   const error = h("p", { style: { color: "var(--critical-text)", minHeight: "18px", fontSize: "12.5px" } }, reason);
   const connect = h("button", { class: "btn primary" }, icon("key"), "Validate & connect");
-  const wrap = h("div", { class: "modal-wrap", onclick: (e) => { if (e.target === wrap) close(); } });
+  const wrap = h("div", { class: "modal-wrap", onclick: (e) => { if (e.target === wrap) close(); }, onkeydown: (e) => trapTab(e, wrap) });
+  const closeBtn = h("button", { class: "btn ghost", onclick: () => close() }, "Close");
+  // Registered before the modal takes focus, so closing it (Escape included) returns focus to what opened it.
+  const release = openLayer("settings", () => close());
   const replaceable = !status.configured || status.key_source === "memory";
 
   const sourceText = { env: "the TYPESAFE_API_KEY environment variable", file: ".env in the project folder", memory: "this server's memory (until restart)" }[status.key_source];
@@ -371,7 +476,7 @@ export function openSettings(reason = "") {
     error,
     h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" } },
       status.configured ? h("button", { class: "btn danger", onclick: forget }, icon("trash"), status.key_source === "file" ? "Forget key (remove from .env)" : status.key_source === "env" ? "Ignore env key for this run" : "Forget key") : null,
-      h("button", { class: "btn ghost", onclick: () => close() }, "Close"), replaceable ? connect : null));
+      closeBtn, replaceable ? connect : null));
 
   const budgetPct = s.budget_usd ? Math.min(1, s.spent_usd / s.budget_usd) : 0;
   const spendSection = h("div", { class: "grid", style: { gap: "8px" } },
@@ -381,12 +486,18 @@ export function openSettings(reason = "") {
 
   const modelSection = status.configured ? modelPicker() : null;
 
-  mount(wrap, h("div", { class: "panel modal pop", style: { width: "min(600px, 100%)", maxHeight: "92vh", overflow: "auto" } },
-    h("div", { class: "panel-head" }, icon("key"), h("h3", {}, "API key & safety"), h("div", { class: "spacer" }),
-      h("span", { class: "faint", style: { fontSize: "12px" } }, status.backend)),
-    h("div", { class: "panel-body grid", style: { gap: "18px" } }, keySection, modelSection, spendSection)));
+  mount(wrap, h("div", { class: "panel modal pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "settings-title",
+    style: { width: "min(600px, 100%)", maxHeight: "92vh", overflow: "auto" } },
+  h("div", { class: "panel-head" }, icon("key"), h("h3", { id: "settings-title" }, "API key & safety"), h("div", { class: "spacer" }),
+    h("span", { class: "faint", style: { fontSize: "12px" } }, status.backend)),
+  h("div", { class: "panel-body grid", style: { gap: "18px" } }, keySection, modelSection, spendSection, themePicker())));
 
-  function close() { wrap.remove(); modalOpen = false; }
+  function close() {
+    if (!modalOpen) return;
+    wrap.remove();
+    modalOpen = false;
+    release();
+  }
   async function submit() {
     connect.disabled = true;
     error.textContent = "";
@@ -416,9 +527,32 @@ export function openSettings(reason = "") {
   connect.addEventListener("click", submit);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
   document.body.append(wrap);
-  input.focus();
+  // The key field when there is one to fill in; otherwise Close, so focus is always inside the dialog.
+  (replaceable ? input : closeBtn).focus();
 }
 export const openKeyModal = openSettings;
+
+// System, light or dark for this browser. Each button shows whether it is the current choice.
+function themePicker() {
+  const buttons = THEMES.map((name) => h("button", { class: "chip", type: "button", "data-theme-choice": name,
+    onclick: () => { setTheme(name); sync(); } }, THEME_LABELS[name]));
+  // A choice made elsewhere while the dialog is open (the command palette, another tab) shows here too; the
+  // listener goes away with the dialog.
+  const follow = () => { if (buttons[0].isConnected === false) window.removeEventListener("jev:theme", follow); else sync(); };
+  window.addEventListener("jev:theme", follow);
+  function sync() {
+    buttons.forEach((button, index) => {
+      const on = THEMES[index] === theme;
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  sync();
+  return h("div", { class: "grid", style: { gap: "8px" } },
+    h("div", { class: "section-label" }, "Appearance · this browser"),
+    h("div", { class: "chips", role: "group", "aria-label": "Theme" }, buttons),
+    h("div", { class: "faint", style: { fontSize: "11.5px" } }, "System follows your device. The choice is remembered in this browser only, and nothing else is stored with it."));
+}
 
 // Choose the model for this server run. The list comes from GET /v1/models for the connected key.
 function modelPicker() {
@@ -455,16 +589,32 @@ function modelPicker() {
 }
 
 // ---------- nav ----------
-const LINKS = [["/", "Overview"], ["/shield", "Shield"], ["/dispatch", "Dispatch"], ["/autopilot", "Autopilot"],
-  ["/claims", "Claims"], ["/reviews", "Reviews"], ["/find", "Find"], ["/play", "Play"], ["/counter", "Counter"], ["/workbench", "Workbench"]];
+// Move focus to the page's <main>, past the top bar. Returns false on a page without one.
+export function focusMain() {
+  const main = $("main");
+  if (!main) return false;
+  main.focus();
+  main.scrollIntoView?.({ block: "start" });
+  return true;
+}
 
 export async function initChrome(active) {
+  // The skip link is the first thing Tab reaches. It focuses <main> itself instead of following its href, so the
+  // location hash (the Workbench's tab) is left alone.
+  const main = $("main");
+  if (main) {
+    if (!main.id) main.id = MAIN_ID;
+    main.setAttribute("tabindex", "-1");
+  }
+  const skip = h("a", { class: "skip-link", href: `#${main?.id || MAIN_ID}`, onclick: (e) => { e.preventDefault(); focusMain(); } }, "Skip to content");
   const bar = h("header", { class: "topbar" },
     h("a", { class: "brand", href: "/" }, h("span", { class: "brand-mark" }, "J"), "Jev Lab", h("small", {}, "TypeSafe System One")),
-    h("nav", { class: "nav" }, LINKS.map(([href, label]) => h("a", { href, class: href === active ? "active" : "" }, label))),
+    h("nav", { class: "nav", "aria-label": "Demos" }, NAV_LINKS.map(([href, label]) => h("a", { href, class: href === active ? "active" : "",
+      "aria-current": href === active ? "page" : null }, label))),
     h("div", { class: "spacer" }),
     h("button", { id: "key-pill", class: "key-pill", onclick: () => openSettings(), title: "API key and spend settings" }, h("span", { class: "dot" }), "Checking…"));
-  document.body.prepend(bar);
+  document.body.prepend(skip, bar);
+  toastHost();
   return refreshStatus();
 }
 

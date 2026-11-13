@@ -49,6 +49,8 @@ export const W = {
   compare: { variants: [{ text: "", model: "", perturb: "", average: false }, { text: "", model: "", perturb: "", average: false }], terse: null, models: null, modelsLoading: false,
     running: false, result: null, qid: null, signal: "confidence", bound: "estimate", report: null, reportError: null, first: "A", cascadeT: 0.5 },
   loadedExample: null, images: [], samples: [], maxImages: 4,
+  // The picture limits the server reported (GET /api/images/samples: min_side, max_side, max_images); null until loaded.
+  imageLimits: null,
   // A demo's request opened with Open in Workbench (static/js/handoff.js): the page's name and the model it asked.
   handoff: null,
 };

@@ -1,6 +1,6 @@
 // Policy: consistency rules (jev/rules.py), gates over several questions, "Do the gates earn their place?"
 // (jev/prune.py) and accuracy by slice (jev/slices.py).
-import { $, api, copyText, debounce, h, handleError, icon, mount, pct, stat, toast } from "./common.js";
+import { $, api, copyText, debounce, h, handleError, icon, mount, pct, stat, statusBadge, toast } from "./common.js";
 import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "./prune.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
@@ -10,7 +10,7 @@ import { exportGate, gateModel, pinControl, checkSaveBody } from "./workbench-ch
 import {
   SIGNALS, boundSelect, interval, withCI, unreached, targetName, labeledQids, invalidNote, attachedSetsPayload, refreshSets,
 } from "./workbench-calibrate.js";
-import { costsPayload, costVs, cheapestChip, clearHoldout, holdoutPanel, gatesText } from "./workbench-costs.js";
+import { costsPayload, costVs, cheapestChip, clearHoldout, holdoutPanel, gatesText, runHoldout } from "./workbench-costs.js";
 
 // ---------- Rules ----------
 // What a row's answers may say together (jev/rules.py): "if wants_refund = yes then department in billing, shipping".
@@ -236,6 +236,7 @@ export function renderPolicy() {
       nOn ? null : h("p", { class: "muted" }, "Check at least one question to gate."),
       h("div", { id: "pol-tunes", class: "chips" }),
       h("div", { id: "pol-out", class: "grid", style: { gap: "14px" } }),
+      nOn ? polLabBlock() : null,
       nOn ? h("div", { id: "pol-prune", class: "holdout" }, pruneView(p)) : null,
       nOn ? holdoutPanel(p, "pol-holdout", () => Object.keys(activeGates())) : null,
       h("div", { id: "pol-check", class: "holdout" }),
@@ -290,12 +291,15 @@ function policyTable(rep) {
 }
 
 function policyMistakes(rep) {
-  const wrong = rep.rows.filter((r) => r.automated && !r.correct);
-  if (!wrong.length) return null;
+  const every = rep.rows.filter((r) => r.automated && !r.correct);
+  if (!every.length) return null;
+  const wrong = polLabWrongRows(every);
+  const labActive = W.lab?.active?.(POL_LAB) || 0;
   const rowsBy = new Map(W.bulk.result.results.map((r) => [r.index, r.row]));
   return h("div", { class: "grid", style: { gap: "6px" } },
-    h("h3", { class: "cal-h" }, `Automated but wrong · ${wrong.length}: your code would act on these with a wrong answer`),
-    h("div", { class: "scroll" }, h("table", { class: "table" },
+    h("h3", { class: "cal-h" }, `Automated but wrong · ${labActive ? `${wrong.length} of ${every.length}` : wrong.length}: your code would act on these with a wrong answer`),
+    labActive && !wrong.length ? h("p", { class: "faint", style: { fontSize: "12.5px" } }, "No automated-but-wrong row matches Policy's Lab filters.") : null,
+    wrong.length ? h("div", { class: "scroll" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "wrong answers"))),
       h("tbody", {}, wrong.slice(0, 12).map((r) => h("tr", {},
         h("td", { class: "num" }, String(r.index + 1)),
@@ -304,7 +308,7 @@ function policyMistakes(rep) {
           const a = r.answers[q];
           return h("div", { style: { fontSize: "12.5px" } }, h("span", { class: "mono" }, q), `: answered ${a.answer}, label ${a.label} `,
             h("span", { class: "faint mono" }, `(${a.signal.toFixed(2)})`));
-        }))))))),
+        }))))))) : null,
     wrong.length > 12 ? h("p", { class: "faint", style: { fontSize: "12px" } }, `…and ${wrong.length - 12} more.`) : null);
 }
 
@@ -336,6 +340,7 @@ export function updatePolicy() {
     await rescorePolicy();
     render();
   }));
+  if ($("#pol-lab-rows")) mount("#pol-lab-rows", polLabRows());
   if (!rep) { mount("#pol-check"); mount("#pol-test"); return mount("#pol-out"); }
   const n = rep.labeled;
   mount("#pol-check", ...(n ? checkSaveBody(rep) : []));
@@ -375,7 +380,7 @@ export function updatePolicy() {
       stat("this run, all rows", `${rep.routed_automated} of ${rep.routed} automated`)),
     policyBar(rep),
     policyTable(rep),
-    policyMistakes(rep),
+    h("div", { id: "pol-mistakes" }, policyMistakes(rep)),
     h("div", { id: "pol-slices", class: "grid", style: { gap: "8px" } }, sliceBody("pol")),
     code,
     h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes));
@@ -577,4 +582,105 @@ export function sliceBody(kind) {
       ? "A marked slice is right less often than every other slice together, by more than chance explains (one-sided Fisher exact test, p < 0.05). Even a slice that is no worse is marked about one time in twenty, so with several slices, label more rows of a marked one before acting on it."
       : "No slice is worse than the rest by more than chance explains (one-sided Fisher exact test, p < 0.05). Small slices rarely show a difference, so this does not show every slice is as accurate."),
   ];
+}
+
+// ---------- Lab surface "workbench.policy" (contract: static/js/lab/surfaces/workbench-analysis.js) ----------
+// Policy's scored rows as a Lab list. The page reaches Lab only through W (W.lab, W.labEnv, W.lab.builders): without
+// them there is no ctx, no section and no list, and Policy works exactly as it does without Lab. The ctx is built once
+// per page session and reads W when called. Its actions are Policy's own controls.
+const POL_LAB = "workbench.policy";
+const polLabCtxs = {};
+
+function polLab() {
+  if (polLabCtxs.ctx) return polLabCtxs.ctx;
+  const build = W.lab?.builders?.policyCtx;
+  if (typeof build !== "function") return null;
+  polLabCtxs.ctx = build({
+    result: () => W.bulk.result,
+    report: () => W.bulk.policy.report,
+    gates: () => W.bulk.policy.gates,
+    signal: () => W.bulk.policy.signal,
+    bound: () => W.bulk.policy.bound,
+    labeledQids: () => labeledQids(W.bulk),
+    tunes: () => W.bulk.policy.tunes,
+    cost: () => W.bulk.policy.cost,
+    cheapest: () => W.bulk.policy.cheapest,
+    holdout: () => W.bulk.policy.holdout,
+    prune: () => W.bulk.policy.prune,
+    rules: () => W.bulk.rules,
+    rulesInForce: () => policyRules(),
+    slices: () => W.bulk.slice.pol,
+    requestReady: () => !!W.bulk.ranQuestions,
+    holdoutReady: () => !!$("#pol-holdout"),
+    matches: (item, ctx) => W.lab.matches(POL_LAB, item, ctx),
+    arrange: (items, ctx) => W.lab.arrange(POL_LAB, items, ctx),
+    refresh: () => refreshPolLab(),
+    // As the Tune chips apply thresholds, the gate checkbox, the two selects and the three buttons below the gates.
+    setThresholds: async (gates) => {
+      for (const [q, v] of Object.entries(gates)) W.bulk.policy.gates[q].t = v;
+      await rescorePolicy();
+      render();
+    },
+    setGate: async (qid, on) => { W.bulk.policy.gates[qid].on = on; await repolicy(); render(); },
+    setSignal: async (signal) => { W.bulk.policy.signal = signal; await repolicy(); render(); },
+    setBound: async (bound) => {
+      const p = W.bulk.policy;
+      p.bound = bound;
+      clearHoldout(p);
+      clearPrune(p);
+      await retunePolicy();
+      render();
+    },
+    checkUnseen: () => runHoldout(W.bulk.policy, "pol-holdout", () => Object.keys(activeGates())),
+    checkGates: () => runPrune(),
+    exportGate: () => exportGate({ questions: W.bulk.ranQuestions, gates: activeGates(), signal: W.bulk.policy.signal, model: gateModel() || undefined,
+      rules: policyRules() || undefined, answer_sets: attachedSetsPayload() }, "Policy's gate"),
+  });
+  return polLabCtxs.ctx;
+}
+
+// The Lab tools block of Policy, and the rows it shows while a Lab setting is active. null without a pack.
+function polLabBlock() {
+  const ctx = polLab();
+  const section = ctx ? W.lab?.section(W.labEnv, POL_LAB, ctx, { title: "Lab tools for Policy's rows" }) || null : null;
+  if (!section) return null;
+  return h("div", { class: "grid", style: { gap: "8px" } }, h("div", { id: "pol-lab-rows" }, polLabRows()), section);
+}
+
+// "Automated but wrong" keeps the rows Lab shows, in Lab's order, while a Lab setting is active; unchanged otherwise.
+function polLabWrongRows(rows) {
+  const ctx = W.lab?.active?.(POL_LAB) ? polLab() : null;
+  if (!ctx) return rows;
+  const order = new Map(ctx.shown().map((item, i) => [item.index, i]));
+  return rows.filter((r) => order.has(r.index)).sort((a, c) => order.get(a.index) - order.get(c.index));
+}
+
+const POL_OUTCOMES = { right: ["pass", "Automated, right"], wrong: ["fail", "Automated, wrong"], review: ["review", "Sent to review"] };
+
+// "Rows Lab shows": exactly the ctx's shown() rows at the current gates. Nothing while no Lab setting is active.
+function polLabRows() {
+  const ctx = polLab();
+  const active = ctx ? W.lab.active(POL_LAB) : 0;
+  if (!active) return null;
+  const shown = ctx.shown();
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("p", { class: "faint", role: "status", style: { fontSize: "12.5px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+      `Rows Lab shows · ${shown.length} of ${ctx.items().length} scored rows · ${active} Lab setting${active === 1 ? "" : "s"} active. Policy's numbers still cover every scored row.`,
+      h("button", { class: "btn sm ghost", onclick: () => { W.lab.reset(POL_LAB); render(); } }, "Clear Lab filters and sort")),
+    shown.length ? h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "outcome"), h("th", {}, "held by"), h("th", {}, "wrong answers"))),
+      h("tbody", {}, shown.map((item) => h("tr", {},
+        h("td", { class: "num" }, String(item.number)),
+        h("td", { class: "row", style: { maxWidth: "340px" } }, item.text),
+        h("td", {}, statusBadge(...POL_OUTCOMES[item.outcome])),
+        h("td", { class: "mono" }, [...item.held, ...item.rules.map((line) => `rule line ${line}`)].join(", ") || "—"),
+        h("td", { class: "mono" }, item.wrong.map((q) => `${q}: ${item.answers[q]?.answer} (label ${item.answers[q]?.label})`).join("; ") || "—"))))))
+      : h("p", { class: "faint", style: { fontSize: "12.5px" } }, "No scored row matches the Lab filters."));
+}
+
+// Lab's refresh: the two row lists only, so the Lab section keeps its controls and focus.
+function refreshPolLab() {
+  const rep = W.bulk.policy.report;
+  if ($("#pol-lab-rows")) mount("#pol-lab-rows", polLabRows());
+  if (rep && $("#pol-mistakes")) mount("#pol-mistakes", policyMistakes(rep));
 }

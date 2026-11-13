@@ -2,32 +2,71 @@ import {
   $, api, barRow, callStats, debounce, h, handleError, icon, initChrome, inspect, money, mount, ms, pct,
   statusBadge, toast,
 } from "./common.js";
+import { installLab, labEnv } from "./lab/env.js";
+import { LAB } from "./lab/pages/dispatch.js";
+import { dispatchActivityCtx, dispatchCalendarCtx, dispatchInvoicesCtx, dispatchOrdersCtx, dispatchPlanCtx } from "./lab/surfaces/dispatch.js";
 
-const S = { world: null, last: null, seq: 0, shown: 0, busy: false };
+// inflight/executing: requests on their way; calls/history: this page load's answered commands, in memory only.
+const S = { world: null, last: null, seq: 0, shown: 0, busy: false, inflight: 0, executing: false, calls: 0, history: [], examples: [] };
+const HISTORY_LIMIT = 50;
 
 const TOOL_PREFIX = {
   refund_order: "refund.", reschedule_meeting: "reschedule.", pay_vendor: "pay.", create_task: "task.", send_info: "info.",
 };
 const MISSING_VALUES = new Set(["not_identified", "not_stated"]);
 
+// Lab surfaces of this page (contract: static/js/lab/surfaces/dispatch.js). One ctx per surface for the page session;
+// each reads S at call time. Packs act only through these callbacks: running an action still goes through execute(),
+// the server's approved-plan path, and nothing here edits the world directly.
+const ORDERS = "dispatch.orders", INVOICES = "dispatch.invoices", CALENDAR = "dispatch.calendar", ACTIVITY = "dispatch.activity", PLAN = "dispatch.plan";
+const LAB_SOURCE = {
+  world: () => S.world, last: () => S.last, history: () => S.history, calls: () => S.calls,
+  draft: () => $("#cmd")?.value ?? "", live: () => !!$("#live")?.checked,
+  busy: () => S.inflight > 0, executing: () => S.executing, examples: () => S.examples,
+  matches: (id, item, ctx) => LAB.matches(id, item, ctx), arrange: (id, items, ctx) => LAB.arrange(id, items, ctx),
+  refresh: (id) => LAB_LISTS[id]?.(),
+  draftCommand: (text) => { const input = $("#cmd"); input.value = text; input.focus(); },
+  focusCommand: () => $("#cmd").focus(),
+  resetWorld: () => resetWorld(),
+  inspect: () => inspect(S.last.res.trace, "Dispatch · one Jev request"),
+  pickTool: (tool) => replan({ tool }),
+  pickArg: (name, value) => replan({ args: { [name]: value } }),
+  runPlan: (plan) => execute(plan),
+};
+const LAB_CTX = {
+  [ORDERS]: dispatchOrdersCtx(LAB_SOURCE), [INVOICES]: dispatchInvoicesCtx(LAB_SOURCE), [CALENDAR]: dispatchCalendarCtx(LAB_SOURCE),
+  [ACTIVITY]: dispatchActivityCtx(LAB_SOURCE), [PLAN]: dispatchPlanCtx(LAB_SOURCE),
+};
+for (const ctx of Object.values(LAB_CTX)) ctx.env = labEnv;
+// Re-render one surface's list after a Lab filter or sort changes (the Lab section itself is left in place).
+const LAB_LISTS = {
+  [ORDERS]: () => renderOrders(), [INVOICES]: () => renderInvoices(), [CALENDAR]: () => renderCalendar(),
+  [ACTIVITY]: () => renderActivity(), [PLAN]: () => renderFanout(),
+};
+
 async function boot() {
   await initChrome("/dispatch");
+  installLab(LAB);
+  LAB.mount(PLAN, LAB_CTX[PLAN]);  // its commands reach the palette before the first command is answered
   mount("#cmd-icon", icon("bolt"));
   mount("#reset-icon", icon("reset"));
   const [{ commands }, world] = await Promise.all([api("/api/scenarios"), api("/api/dispatch/world")]);
   S.world = world;
+  S.examples = commands;
   renderWorld();
   mount("#examples", commands.map((c) => h("button", { class: "chip", onclick: () => useExample(c) }, c)));
 
   const input = $("#cmd");
   input.addEventListener("input", () => { if ($("#live").checked && input.value.trim().length > 3) preview(); });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
-  $("#reset").addEventListener("click", async () => {
-    S.world = await api("/api/dispatch/reset", {});
-    renderWorld();
-    toast("World reset");
-  });
+  $("#reset").addEventListener("click", resetWorld);
   input.focus();
+}
+
+async function resetWorld() {
+  S.world = await api("/api/dispatch/reset", {});
+  renderWorld();
+  toast("World reset");
 }
 
 function useExample(text) {
@@ -42,12 +81,16 @@ const preview = debounce(() => ask($("#cmd").value.trim(), false), 380);
 async function ask(text, execute) {
   if (!text) return null;
   const seq = ++S.seq;
+  S.inflight += 1;
   mount("#cmd-status", h("span", { class: "spin" }));
   try {
     const res = await api("/api/dispatch", { text, execute: false });
     if (seq < S.shown) return null; // a newer response is already on screen
     S.shown = seq;
     S.last = { text, res, plan: res.plan, override: null };
+    S.calls += 1;
+    S.history.push({ call: S.calls, at: Date.now(), text, res });
+    if (S.history.length > HISTORY_LIMIT) S.history.shift();
     renderRead();
     if (execute) await maybeExecute();
     return res;
@@ -55,6 +98,7 @@ async function ask(text, execute) {
     handleError(e);
     return null;
   } finally {
+    S.inflight -= 1;
     if (seq === S.seq) mount("#cmd-status");
   }
 }
@@ -75,6 +119,7 @@ async function maybeExecute() {
 }
 
 async function execute(plan) {
+  S.executing = true;
   try {
     const { executed, world } = await api("/api/dispatch/execute", { tool: plan.tool, exec_args: plan.exec_args });
     S.world = world;
@@ -82,7 +127,7 @@ async function execute(plan) {
     toast(`✓ ${executed.text}`);
     S.last.done = true;
     renderRead();
-  } catch (e) { handleError(e); }
+  } catch (e) { handleError(e); } finally { S.executing = false; }
 }
 
 async function replan(override) {
@@ -160,16 +205,8 @@ function renderRead() {
     }
   }
 
-  const prefix = TOOL_PREFIX[plan.tool];
-  const fanout = Object.entries(res.answers).map(([qid, ans]) => {
-    const used = qid === "tool" || (prefix && qid.startsWith(prefix));
-    let value, p;
-    if (ans.type === "choice") { value = ans.choice; p = pct(ans.probabilities[ans.choice]); }
-    else if (ans.type === "score") { value = `score ${ans.score.toFixed(2)}`; p = pct(ans.confidence); }
-    else { value = ans.noul >= 0.5 ? "yes" : "no"; p = pct(ans.noul); }
-    return h("div", { class: `fq ${used ? "used" : "unused"}` }, h("div", { class: "id" }, qid),
-      h("div", { class: "v" }, h("span", {}, String(value).replace(/_/g, " ")), h("span", {}, p)));
-  });
+  const answerCount = Object.keys(res.answers).length;
+  const labSection = LAB.section(labEnv, PLAN, LAB_CTX[PLAN]);
 
   mount("#read",
     h("div", { class: "panel-head" }, icon("code"), h("h2", {}, "Jev's read"), h("div", { class: "spacer" }),
@@ -196,16 +233,64 @@ function renderRead() {
         h("div", { class: "section-label" }, "Which function? · one Choice across 6 options"),
         h("div", { class: "bars" }, plan.tool_ranking.map((t, i) => barRow(plan.tool_meta[t.value]?.label || t.value, t.prob, { top: i === 0 })))),
       h("div", {},
-        h("div", { class: "section-label" }, `All ${fanout.length} answers from the same call · highlighted = used by code, faded = ignored`),
-        h("div", { class: "fanout" }, fanout))));
+        h("div", { class: "section-label" }, `All ${answerCount} answers from the same call · highlighted = used by code, faded = ignored`),
+        h("div", { id: "fanout-note" }),
+        h("div", { class: "fanout", id: "fanout" })),
+      labSection));
+  renderFanout();
 }
+
+function fanoutCard(qid, ans, prefix) {
+  const used = qid === "tool" || (prefix && qid.startsWith(prefix));
+  let value, p;
+  if (ans.type === "choice") { value = ans.choice; p = pct(ans.probabilities[ans.choice]); }
+  else if (ans.type === "score") { value = `score ${ans.score.toFixed(2)}`; p = pct(ans.confidence); }
+  else { value = ans.noul >= 0.5 ? "yes" : "no"; p = pct(ans.noul); }
+  return h("div", { class: `fq ${used ? "used" : "unused"}` }, h("div", { class: "id" }, qid),
+    h("div", { class: "v" }, h("span", {}, String(value).replace(/_/g, " ")), h("span", {}, p)));
+}
+
+// The answer cards of the shown call: every answer in response order, unless Lab filters hide some or a Lab sort
+// reorders them.
+function renderFanout() {
+  if (!S.last || !$("#fanout")) return;
+  const { res, plan } = S.last;
+  const ctx = LAB_CTX[PLAN];
+  const prefix = TOOL_PREFIX[plan.tool];
+  const total = ctx.items().length, shown = ctx.shown();
+  mount("#fanout", total && !shown.length ? labEmpty("No answer matches the Lab filters.", { gridColumn: "1 / -1" })
+    : shown.map((item) => fanoutCard(item.id, res.answers[item.id], prefix)));
+  mount("#fanout-note", labNote(PLAN, shown.length, total, "answers"));
+}
+
+// ---------- Lab ----------
+function labEmpty(text, style = {}) {
+  return h("div", { class: "faint", role: "status", style: { fontSize: "12.5px", ...style } }, text);
+}
+
+// "x of y shown" with a reset, only while a Lab filter or sort is active on that surface.
+function labNote(id, shown, total, noun) {
+  const active = LAB.active(id);
+  if (!active) return null;
+  return h("div", { class: "faint", role: "status", style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", fontSize: "12px", margin: "0 0 8px" } },
+    `${shown} of ${total} ${noun} shown · ${active} Lab setting${active === 1 ? "" : "s"} active`,
+    h("button", { class: "btn sm ghost", onclick: () => resetLab(id) }, "Clear Lab filters and sort"));
+}
+
+function resetLab(id) {
+  LAB.reset(id);
+  LAB_LISTS[id]();
+  const node = $(`[data-lab-surface="${id}"]`);
+  const section = LAB.section(labEnv, id, LAB_CTX[id]);
+  if (node && section) node.replaceWith(section);
+}
+
+const labSectionOf = (id) => LAB.section(labEnv, id, LAB_CTX[id]);
 
 // ---------- world ----------
 function renderWorld(flashKind) {
   const w = S.world;
   const flash = (kind) => (flashKind === kind ? " flash" : "");
-  const days = ["monday", "tuesday", "wednesday", "thursday", "friday"];
-  const unpaid = Object.values(w.vendors).flatMap((v) => Object.entries(v.invoices).map(([id, inv]) => ({ vendor: v.name, id, ...inv })));
 
   mount("#world",
     h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" } },
@@ -214,29 +299,69 @@ function renderWorld(flashKind) {
         h("div", { class: "s" }, w.tasks[0] ? `${w.tasks[0].area} · ${w.tasks[0].priority}` : "none yet"))),
     h("div", { class: flash("calendar").trim() },
       h("h3", {}, icon("calendar"), "This week"),
-      h("div", { class: "cal" }, days.map((d) => h("div", { class: "day" }, h("b", {}, d.slice(0, 3)),
-        Object.values(w.meetings).filter((m) => m.day === d).map((m) =>
-          h("div", { class: "evt", style: m.moved ? { borderLeftColor: "var(--accent)", background: "var(--accent-soft)" } : {} },
-            h("div", { class: "t" }, m.time), m.title)))))),
+      h("div", { id: "calendar-note" }), h("div", { id: "calendar-list" }), labSectionOf(CALENDAR)),
     h("div", {},
       h("h3", {}, icon("box"), "Orders"),
-      h("table", { class: "table" }, h("tbody", {}, Object.entries(w.orders).map(([id, o]) => h("tr", {},
-        h("td", { class: "mono" }, id),
-        h("td", {}, w.customers[o.customer].name, h("div", { class: "faint" }, o.items)),
-        h("td", {}, o.refunded ? statusBadge("handled", "Refunded") : h("span", { class: "badge" }, o.status)),
-        h("td", { class: "num" }, money(o.total))))))),
+      h("div", { id: "orders-note" }), h("div", { id: "orders-list" }), labSectionOf(ORDERS)),
     h("div", {},
       h("h3", {}, icon("money"), "Vendor invoices"),
-      h("table", { class: "table" }, h("tbody", {}, unpaid.map((i) => h("tr", {},
-        h("td", {}, i.vendor, h("div", { class: "faint mono" }, i.id)),
-        h("td", {}, i.paid ? statusBadge("handled", "Paid") : h("span", { class: "badge warning" }, "Open")),
-        h("td", { class: "num" }, money(i.amount))))))),
+      h("div", { id: "invoices-note" }), h("div", { id: "invoices-list" }), labSectionOf(INVOICES)),
     h("div", {},
       h("h3", {}, icon("list"), "Activity"),
-      w.activity.length
-        ? h("div", { class: "activity" }, w.activity.map((a, i) => h("div", { class: `a${i === 0 && flashKind ? " flash" : ""}` },
-          icon({ refund: "money", payment: "money", calendar: "calendar", task: "list", reply: "send" }[a.kind] || "check"), a.text)))
-        : h("div", { class: "faint", style: { fontSize: "12.5px" } }, "Nothing has run yet.")));
+      h("div", { id: "activity-note" }), h("div", { id: "activity-list" }), labSectionOf(ACTIVITY)));
+  renderCalendar();
+  renderOrders();
+  renderInvoices();
+  renderActivity(flashKind);
+}
+
+// Each world list shows its Lab surface's shown() items: all of them in the world's order unless a Lab filter hides
+// some or a Lab sort reorders them. The rows themselves are drawn from the world exactly as before.
+function renderCalendar() {
+  const w = S.world, ctx = LAB_CTX[CALENDAR];
+  const days = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+  const shown = ctx.shown();
+  mount("#calendar-list",
+    h("div", { class: "cal" }, days.map((d) => h("div", { class: "day" }, h("b", {}, d.slice(0, 3)),
+      shown.filter((item) => item.day === d).map((item) => w.meetings[item.id]).map((m) =>
+        h("div", { class: "evt", style: m.moved ? { borderLeftColor: "var(--accent)", background: "var(--accent-soft)" } : {} },
+          h("div", { class: "t" }, m.time), m.title))))));
+  mount("#calendar-note", labNote(CALENDAR, shown.length, ctx.items().filter((item) => item.on_calendar).length, "meetings"));
+}
+
+function renderOrders() {
+  const w = S.world, ctx = LAB_CTX[ORDERS];
+  const total = ctx.items().length, shown = ctx.shown();
+  mount("#orders-list", total && !shown.length ? labEmpty("No order matches the Lab filters.")
+    : h("table", { class: "table" }, h("tbody", {}, shown.map((item) => [item.id, w.orders[item.id]]).map(([id, o]) => h("tr", {},
+      h("td", { class: "mono" }, id),
+      h("td", {}, w.customers[o.customer].name, h("div", { class: "faint" }, o.items)),
+      h("td", {}, o.refunded ? statusBadge("handled", "Refunded") : h("span", { class: "badge" }, o.status)),
+      h("td", { class: "num" }, money(o.total)))))));
+  mount("#orders-note", labNote(ORDERS, shown.length, total, "orders"));
+}
+
+function renderInvoices() {
+  const w = S.world, ctx = LAB_CTX[INVOICES];
+  const unpaid = Object.values(w.vendors).flatMap((v) => Object.entries(v.invoices).map(([id, inv]) => ({ vendor: v.name, id, ...inv })));
+  const total = ctx.items().length, shown = ctx.shown();
+  mount("#invoices-list", total && !shown.length ? labEmpty("No invoice matches the Lab filters.")
+    : h("table", { class: "table" }, h("tbody", {}, shown.map((item) => unpaid[item.position - 1]).map((i) => h("tr", {},
+      h("td", {}, i.vendor, h("div", { class: "faint mono" }, i.id)),
+      h("td", {}, i.paid ? statusBadge("handled", "Paid") : h("span", { class: "badge warning" }, "Open")),
+      h("td", { class: "num" }, money(i.amount)))))));
+  mount("#invoices-note", labNote(INVOICES, shown.length, total, "invoices"));
+}
+
+function renderActivity(flashKind) {
+  const w = S.world, ctx = LAB_CTX[ACTIVITY];
+  const total = ctx.items().length, shown = ctx.shown();
+  mount("#activity-list", w.activity.length
+    ? (shown.length ? h("div", { class: "activity" }, shown.map((item) => [item.position - 1, w.activity[item.position - 1]]).map(([i, a]) => h("div", { class: `a${i === 0 && flashKind ? " flash" : ""}` },
+      icon({ refund: "money", payment: "money", calendar: "calendar", task: "list", reply: "send" }[a.kind] || "check"), a.text)))
+      : labEmpty("No activity matches the Lab filters."))
+    : h("div", { class: "faint", style: { fontSize: "12.5px" } }, "Nothing has run yet."));
+  mount("#activity-note", labNote(ACTIVITY, shown.length, total, "entries"));
 }
 
 boot().catch(handleError);

@@ -305,6 +305,29 @@ deliberately as fixtures. Review their input data before sharing them.
 
 See the [Workbench guide](docs/workbench.md) for a complete request, expectation format, and limits.
 
+## Lab tools on every page
+
+Every page also carries **Lab tools**: local tools from small, separately tested packs. None calls the model or saves
+anything by itself; each works on what the page already holds, including the answers of calls you made in it.
+
+- **Lab tools** sits beside a list or a result. *Refine* filters and sorts by derived facts (a word count, a
+  confidence margin, whether a row is labeled), *Checks* runs advisory checks on the shown items, *Edits* previews a
+  change and applies it only on request, with one guarded Undo, *Metrics* computes from the page's own data, and
+  *Copy and download* states what each file holds.
+- **Toolbox**, a Workbench tab, holds calculators and converters for building typed-answer gates: intervals and
+  sample sizes, hypothesis tests, labeler agreement, classification, calibration and ranking metrics, costs and rate
+  limits, Box geometry, and row and question format converters.
+- **Commands** in the top bar, or Ctrl/Cmd+K, searches every action the current page offers and shows its keyboard
+  shortcut. The key and safety settings also choose a light, dark or system theme for this browser.
+- Offline commands for saved datasets, tests, question files and statistics run from a terminal with no key:
+
+  ```sh
+  python3 scripts/lab.py --help
+  ```
+
+Python packs also add question checks, dataset health findings and Bulk input notes, shown apart from the built-in
+ones. The numbered [Lab inventory](docs/lab/README.md) lists every improvement and the test that proves it.
+
 ## Configuration
 
 Set variables in your process environment or a project-root `.env` file. Nonempty environment
@@ -343,7 +366,8 @@ uv run --locked python -m unittest discover -v tests
 No API key or external API access is needed for the tests. SDK tests use an in-memory transport;
 HTTP tests start a temporary loopback server. CI tests the locked dependencies on Python
 3.10–3.14, the legacy standard-library fallback on Python 3.9, JavaScript syntax and module tests
-(`node --test tests/js/*.test.mjs`), and that the committed sample pictures match their script. A
+(`node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs`), and that the committed sample pictures match their script.
+After adding or changing a Lab pack, regenerate its page index and the inventory with `node scripts/lab_inventory.mjs`. A
 separate workflow audits `uv.lock` for known vulnerabilities on pull requests and weekly.
 
 The sample pictures in `static/img/samples/` are drawn by a standard-library script. After changing

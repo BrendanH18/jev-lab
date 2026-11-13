@@ -5,7 +5,7 @@ import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 import { bulkQuestions, tuningResults, rowText, bulkQuestionsForResult } from "./workbench-bulk.js";
 import { rereview, reviewSoon } from "./workbench-labeling.js";
-import { costCalibrate, updateCalCost, clearHoldout, holdoutPanel } from "./workbench-costs.js";
+import { costCalibrate, updateCalCost, clearHoldout, holdoutPanel, runHoldout } from "./workbench-costs.js";
 import { reslice, sliceSoon, sliceBody } from "./workbench-policy.js";
 
 // ---------- Calibrate ----------
@@ -222,7 +222,8 @@ export function renderCalibrate() {
           ? "A Noul has no confidence field; Calibrate uses |2p − 1|, so 0.40 is the docs' starting band of P(yes) ≥ 0.7 or ≤ 0.3. Right means P(yes) ≥ 0.5 agrees with the label."
           : rep.type === "score" ? "Right means the most likely level equals the labeled level."
             : rep.type === "box" ? `Right means the answer's box overlaps the labeled box with an IoU of at least ${rep.iou_right}. A Box has no options, so the gate reads its confidence either way.`
-              : "Right means the selected option equals the label."))));
+              : "Right means the selected option equals the label.")),
+      calLabBlock()));
 }
 
 // A Score's levels are ordered, so say how far off its answers are, and which cut on the expected score
@@ -327,6 +328,7 @@ export function updateCal() {
     tr.classList.toggle("below", !auto);
     mount(cell, auto ? statusBadge("execute", "Auto") : statusBadge("review"), h("span", { class: "faint mono", style: { marginLeft: "6px", fontSize: "11px" } }, signal.toFixed(2)));
   }
+  if (W.lab?.active?.(CAL_LAB) && $("#cal-lab-rows")) mount("#cal-lab-rows", calLabRows());  // its route column follows t
 }
 
 function calChart(rep, t) {
@@ -525,7 +527,7 @@ export function renderAnswerSets() {
   const line = (label, x) => h("tr", {}, h("td", {}, label), h("td", {}, withCI(pct(x.coverage, 1), x.low, x.high)),
     h("td", {}, single(x)), h("td", {}, `${x.short} short · ${x.none} every option`), h("td", {}, perReview(x)));
   const sizes = Object.entries(m.sizes).sort(([a], [c]) => (a === "none") - (c === "none") || Number(a) - Number(c));
-  const shown = rep.rows.filter((r) => r.size >= 2).slice(0, SETS_SHOWN);
+  const shown = calLabSetsRows(rep.rows.filter((r) => r.size >= 2)).slice(0, SETS_SHOWN);
   const rowsBy = new Map(b.result.results.map((r) => [r.index, r.row]));
   const at = cutText(rep.cut);
   return panel(
@@ -548,7 +550,8 @@ export function renderAnswerSets() {
       u.spread ? ` (cuts from ${cutText(u.spread[0])} to ${cutText(u.spread[1])})` : "",
       u.unreached ? `; ${u.unreached} of ${u.folds} folds had too few rows to promise ${target} and sent every row to review with every option` : "",
       ". Coverage there below the target, or cuts that swing between folds, mean the cut fits these rows more than the question.") : null,
-    shown.length ? h("div", { class: "grid", style: { gap: "6px" } }, h("h3", { class: "cal-h" }, "Rows a person would choose for, from a short list"),
+    shown.length ? h("div", { class: "grid", style: { gap: "6px" } }, h("h3", { class: "cal-h" }, "Rows a person would choose for, from a short list",
+      W.lab?.active?.(CAL_LAB) ? h("span", { class: "faint" }, " · rows Calibrate's Lab filters show") : null),
       h("div", { class: "scroll" }, h("table", { class: "table" },
         h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "the set"), h("th", {}, "label"))),
         h("tbody", {}, shown.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.index + 1)),
@@ -596,4 +599,94 @@ function setsCode(rep, qid) {
     + `CUT = ${at}\n${read}\n`
     + `answer_set = sorted((k for k, p in options.items() if p + 1e-9 >= CUT), key=lambda k: -options[k])\n`
     + `if len(answer_set) == 1:\n    act_on(answer_set[0])\nelif answer_set:\n    send_to_review(choices=answer_set)  # a person picks from these\nelse:\n    send_to_review(choices=list(options))  # no option reached the cut\n`;
+}
+
+// ---------- Lab surface "workbench.calibrate" (contract: static/js/lab/surfaces/workbench-analysis.js) ----------
+// Calibrate's scored rows as a Lab list. The page reaches Lab only through W (W.lab, W.labEnv, W.lab.builders): without
+// them there is no ctx, no section and no list, and Calibrate works exactly as it does without Lab. The ctx is built
+// once per page session and reads W when called.
+const CAL_LAB = "workbench.calibrate";
+const calLabCtxs = {};
+
+function calLab() {
+  if (calLabCtxs.ctx) return calLabCtxs.ctx;
+  const build = W.lab?.builders?.calibrateCtx;
+  if (typeof build !== "function") return null;
+  calLabCtxs.ctx = build({
+    result: () => W.bulk.result,
+    report: () => W.bulk.cal.report,
+    qid: () => W.bulk.cal.qid,
+    signal: () => W.bulk.cal.signal,
+    bound: () => W.bulk.cal.bound,
+    threshold: () => W.bulk.cal.threshold,
+    labeledQids: () => labeledQids(W.bulk),
+    cost: () => W.bulk.cal.cost,
+    holdout: () => W.bulk.cal.holdout,
+    sets: () => W.bulk.sets.report,
+    setsCoverage: () => W.bulk.sets.coverage,
+    attached: () => attachedSetsPayload() || {},
+    slices: () => W.bulk.slice.cal,
+    holdoutReady: () => !!$("#cal-holdout"),
+    matches: (item, ctx) => W.lab.matches(CAL_LAB, item, ctx),
+    arrange: (items, ctx) => W.lab.arrange(CAL_LAB, items, ctx),
+    refresh: () => refreshCalLab(),
+    // The page's own controls: the slider, the three selects, the coverage select and the unseen-row button.
+    setThreshold: (t) => { W.bulk.cal.threshold = t; updateCal(); },
+    selectQuestion: async (qid) => { W.bulk.cal.qid = qid; await recalibrate(); render(); },
+    setSignal: async (signal) => { W.bulk.cal.signal = signal; await recalibrate(); render(); },
+    setBound: async (bound) => { W.bulk.cal.bound = bound; await recalibrate(); render(); },
+    setCoverage: (coverage) => { W.bulk.sets.coverage = coverage; return refreshSets(); },
+    checkUnseen: () => runHoldout(W.bulk.cal, "cal-holdout", () => [W.bulk.cal.qid]),
+  });
+  return calLabCtxs.ctx;
+}
+
+// The Lab tools block of Calibrate and, while a Lab setting is active, the rows it shows. null without a pack.
+function calLabBlock() {
+  const ctx = calLab();
+  const section = ctx ? W.lab?.section(W.labEnv, CAL_LAB, ctx, { title: "Lab tools for Calibrate's rows" }) || null : null;
+  if (!section) return null;
+  return h("div", { class: "grid", style: { gap: "8px" } }, h("div", { id: "cal-lab-rows" }, calLabRows()), section);
+}
+
+// "Rows Lab shows": exactly the ctx's shown() rows, at the slider's threshold. Nothing while no Lab setting is active.
+function calLabRows() {
+  const ctx = calLab();
+  const active = ctx ? W.lab.active(CAL_LAB) : 0;
+  if (!active) return null;
+  const shown = ctx.shown();
+  const t = W.bulk.cal.threshold;
+  return h("div", { class: "grid", style: { gap: "6px" } },
+    h("p", { class: "faint", role: "status", style: { fontSize: "12.5px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+      `Rows Lab shows · ${shown.length} of ${ctx.items().length} scored rows · ${active} Lab setting${active === 1 ? "" : "s"} active. Calibrate's numbers above still cover every scored row.`,
+      h("button", { class: "btn sm ghost", onclick: resetCalLab }, "Clear Lab filters and sort")),
+    shown.length ? h("div", { class: "scroll" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "#"), h("th", {}, "row"), h("th", {}, "label"), h("th", {}, "answer"), h("th", {}, SIGNALS[W.bulk.cal.signal] || "signal"), h("th", {}, "route"), h("th", {}, "result"))),
+      h("tbody", {}, shown.map((item) => h("tr", {},
+        h("td", { class: "num" }, String(item.number)),
+        h("td", { class: "row", style: { maxWidth: "340px" } }, item.text),
+        h("td", {}, h("code", {}, item.label)), h("td", {}, h("code", {}, item.predicted)),
+        h("td", { class: "mono" }, item.signal.toFixed(2)),
+        h("td", {}, item.signal + 1e-9 >= t ? statusBadge("execute", "Auto") : statusBadge("review")),
+        h("td", {}, item.correct ? statusBadge("pass", "Right") : statusBadge("fail", "Wrong")))))))
+      : h("p", { class: "faint", style: { fontSize: "12.5px" } }, "No scored row matches the Lab filters."));
+}
+
+function refreshCalLab() {
+  if ($("#cal-lab-rows")) mount("#cal-lab-rows", calLabRows());
+  if ($("#answer-sets")) $("#answer-sets").replaceWith(renderAnswerSets());
+}
+
+function resetCalLab() {
+  W.lab?.reset?.(CAL_LAB);
+  render();
+}
+
+// Answer sets' short-list rows, kept to the rows Calibrate's Lab filters show, in Lab's order, while a Lab setting is
+// active; unchanged otherwise.
+function calLabSetsRows(rows) {
+  const ctx = W.lab?.active?.(CAL_LAB) ? calLab() : null;
+  if (!ctx) return rows;
+  const order = new Map(ctx.shown().map((item, i) => [item.index, i]));
+  return rows.filter((r) => order.has(r.index)).sort((a, c) => order.get(a.index) - order.get(c.index));
 }

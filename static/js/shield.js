@@ -2,6 +2,9 @@ import {
   $, api, barRow, callStats, choiceBars, debounce, h, handleError, icon, initChrome, inspect, mount, ms, pct,
   stat, statusBadge, toast, usd, num,
 } from "./common.js";
+import { installLab, labEnv } from "./lab/env.js";
+import { LAB } from "./lab/pages/shield.js";
+import { shieldInboxCtx, shieldResultCtx } from "./lab/surfaces/shield.js";
 
 const IDENTITY_LABELS = {
   bean_brokers: "Bean Brokers Ltd", packright: "PackRight Packaging", coastline_freight: "Coastline Freight",
@@ -17,6 +20,8 @@ const S = {
   inbox: [], selected: null, compose: false, live: false,
   results: {}, // id -> last /api/shield result
   weights: null, policy: null,
+  pending: new Set(), // ids with a /api/shield call in flight (for Lab packs)
+  scanning: false,    // "Scan whole inbox" is in flight (for Lab packs)
 };
 
 const COMPOSE_ID = "__compose__";
@@ -26,8 +31,30 @@ const draft = {
   body: "Congrats! You've been approved for a $500 staff bonus. Log in with your email password at the link below within 3 hours to claim it.",
 };
 
+// Lab surfaces of this page (contract: static/js/lab/surfaces/shield.js). Both ctx objects read the page state at
+// call time, so one of each serves the whole page session. Packs never screen a message: they can open one that
+// already has a result, fill the "Write your own" form without screening it, and move the policy sliders (re-scoring
+// is pure code, no Jev call). Lab's filters and sort reach the inbox, the batch table and the signal rows.
+const INBOX_ID = "shield.inbox";
+const RESULT_ID = "shield.result";
+const labSource = {
+  inbox: () => S.inbox, results: () => S.results, selected: () => S.selected, composeId: COMPOSE_ID,
+  draft: () => draft, live: () => S.live, pending: () => S.pending, scanning: () => S.scanning,
+  weights: () => S.weights, policy: () => S.policy, defaults: () => defaults, batch: () => lastBatch,
+  labels: () => ({ signals: SIGNAL_NAMES, identities: IDENTITY_LABELS, categories: CATEGORY_LABELS }),
+  open: (id) => select(id), openCompose: () => select(COMPOSE_ID), draftCompose: (fields) => draftCompose(fields),
+  applyPolicy: (next) => applyPolicy(next), resetPolicy: () => resetPolicy(), inspect: (trace, title) => inspect(trace, title),
+};
+const INBOX = shieldInboxCtx({ ...labSource,
+  matches: (item, ctx) => LAB.matches(INBOX_ID, item, ctx), arrange: (items, ctx) => LAB.arrange(INBOX_ID, items, ctx),
+  refresh: () => { renderInbox(); renderBatch(lastBatch); } });
+const RESULT = shieldResultCtx({ ...labSource,
+  matches: (item, ctx) => LAB.matches(RESULT_ID, item, ctx), arrange: (items, ctx) => LAB.arrange(RESULT_ID, items, ctx),
+  refresh: () => { const res = S.results[S.selected]; if (res) renderResult(res); } });
+
 async function boot() {
   await initChrome("/shield");
+  installLab(LAB);
   const { inbox } = await api("/api/scenarios");
   S.inbox = inbox;
   renderInbox();
@@ -48,9 +75,17 @@ function resultBadge(r) {
   return null;
 }
 
+// The inbox messages to list: page order, minus what a Lab filter hides, in Lab's sort order when one is set.
+function shownMessages() {
+  return INBOX.shown().map((item) => S.inbox[item.position - 1]).filter(Boolean);
+}
+
 function renderInbox() {
-  $("#inbox-count").textContent = `${S.inbox.length} messages`;
-  const items = S.inbox.map((m) => {
+  const total = S.inbox.length;
+  const shown = shownMessages();
+  const active = LAB.active(INBOX_ID);
+  $("#inbox-count").textContent = active ? `${shown.length} of ${total} messages` : `${total} messages`;
+  const items = shown.map((m) => {
     const r = S.results[m.id];
     return h("button", { class: `inbox-item${S.selected === m.id ? " active" : ""}`, onclick: () => select(m.id) },
       h("div", { class: "from" }, h("span", {}, m.from_name), resultBadge(r)),
@@ -60,7 +95,37 @@ function renderInbox() {
   items.push(h("button", { class: `inbox-item${S.selected === COMPOSE_ID ? " active" : ""}`, onclick: () => select(COMPOSE_ID) },
     h("div", { class: "from" }, h("span", { style: { color: "var(--accent-text)" } }, "✎ Write your own"), resultBadge(composeResult)),
     h("div", { class: "subj" }, "Try to sneak something past it")));
-  mount("#inbox", items);
+  mount("#inbox",
+    active ? h("div", { class: "faint", role: "status", style: { padding: "8px 14px", fontSize: "12px", borderBottom: "1px solid var(--line)" } },
+      `${active} Lab setting${active === 1 ? "" : "s"} active${total && !shown.length ? ": no message matches." : "."} `,
+      h("button", { class: "btn sm ghost", onclick: resetInboxLab }, "Clear Lab filters and sort")) : null,
+    items);
+}
+
+function resetInboxLab() {
+  LAB.reset(INBOX_ID);
+  renderInbox();
+  renderBatch(lastBatch);
+  renderInboxLab();
+}
+
+// The Lab tools beside the inbox and under the verdict. Rendered again when results, the selection or the weights
+// change, so their metrics read the page as it is; Lab's refresh() re-renders only the lists.
+function renderInboxLab() {
+  const section = LAB.section(labEnv, INBOX_ID, INBOX);
+  $("#inbox-lab").classList.toggle("hidden", !section);
+  mount("#inbox-lab", section);
+}
+
+function renderResultLab() {
+  const section = LAB.section(labEnv, RESULT_ID, RESULT);
+  $("#result-lab").classList.toggle("hidden", !section);
+  mount("#result-lab", section);
+}
+
+function renderLab() {
+  renderInboxLab();
+  renderResultLab();
 }
 
 function select(id) {
@@ -71,6 +136,14 @@ function select(id) {
   if (cached) renderResult(cached);
   else if (id !== COMPOSE_ID) screen(currentMessage());
   else renderResult(null);
+  renderLab();
+}
+
+// What a Lab pack may do with "Write your own": fill the form and open it WITHOUT screening. Nothing fires an input
+// event, so even with Live on the page asks only after the user's next edit or "Screen message", as always.
+function draftCompose(fields) {
+  for (const key of ["from_name", "from_email", "subject", "body"]) if (typeof fields[key] === "string") draft[key] = fields[key];
+  select(COMPOSE_ID);
 }
 
 function renderMessage() {
@@ -112,15 +185,20 @@ const liveScreen = debounce(() => screen(draft), 450);
 async function screen(message) {
   const id = message.id;
   if (!S.results[id]) mount("#result-panel", h("div", { class: "empty" }, h("span", { class: "spin" }), " Asking Jev ten questions at once…"));
+  S.pending.add(id);
   try {
     const res = await api("/api/shield", { message, weights: S.weights, policy: S.policy });
     S.results[id] = res;
     if (!S.weights) adoptPolicy(res.verdict);
+    S.pending.delete(id);
     renderInbox();
     if (S.selected === id) renderResult(res);
   } catch (e) {
     handleError(e);
     if (S.selected === id && !S.results[id]) mount("#result-panel", h("div", { class: "empty" }, e.message));
+  } finally {
+    S.pending.delete(id);
+    renderLab();
   }
 }
 
@@ -143,7 +221,7 @@ function renderResult(res, note = "") {
     h("span", { class: "tick", style: { left: pct(v.policy.review_at, 1) }, title: "review threshold" }),
     h("span", { class: "tick", style: { left: pct(v.policy.quarantine_at, 1) }, title: "quarantine threshold" }));
 
-  const signals = [...v.signals].sort((x, y) => y.contribution - x.contribution).map((s) =>
+  const signals = shownSignals(res).map((s) =>
     h("div", { class: `signal-row${s.contribution >= 0.15 ? " hot" : ""}`, title: `p=${s.value.toFixed(3)} × weight ${s.weight.toFixed(2)} = ${s.contribution.toFixed(3)}` },
       h("span", { class: "lbl" }, s.label),
       (() => { const r = barRow("", s.value); return r.querySelector(".bar"); })(),
@@ -186,12 +264,31 @@ function renderResult(res, note = "") {
           h("span", {}, h("b", {}, r.action === "quarantine" ? "Quarantine: " : "Review: "), r.text)))) : null,
       h("div", {},
         h("div", { class: "section-label" }, "Signals · Noul probabilities, weighted in code"),
+        signalsNote(res, signals.length),
         h("div", { class: "bars" }, signals)),
       h("div", { class: "two-col" },
         identity,
         h("div", { class: "grid", style: { gap: "16px" } },
           h("div", {}, h("div", { class: "section-label" }, "What kind of message? · Choice"), choiceBars(a.category, CATEGORY_LABELS, 3)),
           scoreBlock("Loss if obeyed blindly", a.harm_if_obeyed)))));
+}
+
+// The signal rows of a verdict: strongest contribution first, minus what a Lab filter hides, in Lab's sort order when
+// one is set. Lab reads the opened message's result, so any other result keeps the page's own order.
+function shownSignals(res) {
+  const v = res.verdict;
+  if (res !== S.results[S.selected]) return [...v.signals].sort((x, y) => y.contribution - x.contribution);
+  const byId = new Map(v.signals.map((s) => [s.id, s]));
+  return RESULT.shown().map((item) => byId.get(item.id)).filter(Boolean);
+}
+
+function signalsNote(res, count) {
+  const active = LAB.active(RESULT_ID);
+  if (!active || res !== S.results[S.selected]) return null;
+  const total = res.verdict.signals.length;
+  return h("div", { class: "faint", role: "status", style: { fontSize: "12px", margin: "4px 0 8px" } },
+    `${count} of ${total} signals shown · ${active} Lab setting${active === 1 ? "" : "s"} active${count ? "" : ": no signal matches"}. `,
+    h("button", { class: "btn sm ghost", onclick: () => { LAB.reset(RESULT_ID); renderResult(res); renderResultLab(); } }, "Clear Lab filters and sort"));
 }
 
 // ---------- policy sliders: re-score without calling Jev ----------
@@ -231,6 +328,14 @@ function adoptPolicy(verdict) {
   renderPolicy();
 }
 
+// What a Lab pack's setWeights/setPolicy does: the same as moving those sliders (the contract checks the values).
+function applyPolicy({ weights, policy }) {
+  if (weights) S.weights = { ...S.weights, ...weights };
+  if (policy) S.policy = { ...S.policy, ...policy };
+  renderPolicy();
+  rescore();
+}
+
 function resetPolicy() {
   if (!defaults) return;
   S.weights = { ...defaults.weights };
@@ -254,6 +359,7 @@ const rescore = debounce(async () => {
     const current = S.results[S.selected];
     if (current) renderResult(current, `Re-scored ${updated.length} message${updated.length > 1 ? "s" : ""} in ${ms(took)} · 0 Jev calls`);
     if (!$("#batch-panel").classList.contains("hidden")) renderBatch(lastBatch);
+    renderLab();
   } catch (e) { handleError(e); }
 }, 60);
 
@@ -262,6 +368,7 @@ let lastBatch = null;
 async function scanAll() {
   const btn = $("#scan-all");
   btn.disabled = true;
+  S.scanning = true;
   mount("#scan-icon", h("span", { class: "spin" }));
   try {
     const res = await api("/api/shield/batch", { messages: S.inbox, weights: S.weights });
@@ -286,7 +393,9 @@ async function scanAll() {
       : `Screened ${done} messages in ${ms(res.wall_ms)} for ${usd(res.total_cost_usd)}`);
   } catch (e) { handleError(e); } finally {
     btn.disabled = false;
+    S.scanning = false;
     mount("#scan-icon", icon("layers"));
+    renderLab();
   }
 }
 
@@ -294,7 +403,9 @@ function renderBatch(res) {
   if (!res) return;
   const panel = $("#batch-panel");
   panel.classList.remove("hidden");
-  const rows = res.results.map((r) => {
+  const visible = shownBatchResults(res);
+  const active = LAB.active(INBOX_ID);
+  const rows = visible.map((r) => {
     const m = S.inbox.find((x) => x.id === r.id);
     const current = S.results[r.id];
     if (!current?.verdict) {
@@ -323,11 +434,21 @@ function renderBatch(res) {
       h("div", { class: "stat-row" },
         stat("wall time", ms(res.wall_ms), true), stat("sum of calls", ms(sumLatency)),
         stat("tokens", num(res.total_input_tokens)), stat("total cost", usd(res.total_cost_usd), true))),
+    active ? h("div", { class: "panel-body faint", role: "status", style: { fontSize: "12px", paddingBottom: "0" } },
+      `${visible.length} of ${res.results.length} messages shown · ${active} Lab setting${active === 1 ? "" : "s"} active on the inbox. The totals cover the whole batch.`) : null,
     h("div", { class: "scroll" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, ["Message", "Verdict", "Risk", "Expected from the text", "Latency", "Tokens"].map((t, i) => h("th", { class: i >= 2 && i !== 3 ? "num" : "" }, t)))),
       h("tbody", {}, rows))),
     h("div", { class: "panel-body faint", style: { fontSize: "12px" } },
       "“Expected” is what the message text alone should trigger, written with the demo and never sent to Jev. A stranger asking for someone else's refund reads as safe here; Autopilot catches that one with a code check against the order data."));
+}
+
+// The batch rows to list: every result in the batch's order, or with Lab settings active on the inbox, the results of
+// the shown messages in their shown order.
+function shownBatchResults(res) {
+  if (!LAB.active(INBOX_ID)) return res.results;
+  const byId = new Map(res.results.map((r) => [r.id, r]));
+  return INBOX.shown().map((item) => byId.get(item.id)).filter(Boolean);
 }
 
 boot().catch(handleError);

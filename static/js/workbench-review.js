@@ -55,7 +55,10 @@ function queueNextIncomplete(items, gates, kind = "all", afterLine = null, field
 function nextQueueRow(id, direction = 1) {
   const q = W.bulk.checkRuns[id].queue;
   if (q.busy) return;
-  const item = queueNextIncomplete(q.report.items, q.report.gates, q.kindFilter, q.nextLine, q.sliceField, q.sliceValue, direction);
+  // With a Lab filter active, Next skips the rows it hides (the queue never draws them), still in queue order.
+  const lab = W.lab?.active?.("workbench.review.queue") ? W.checkLabs?.review?.[id] : null;
+  const pool = lab ? q.report.items.filter((entry) => lab.page.matches(entry)) : q.report.items;
+  const item = queueNextIncomplete(pool, q.report.gates, q.kindFilter, q.nextLine, q.sliceField, q.sliceValue, direction);
   if (!item) return;
   q.statusFilter = "incomplete";
   q.nextLine = item.line;
@@ -154,12 +157,17 @@ export function queueSelect(item, qid, question, onChange, disabled = false) {
   return sel;
 }
 
-export function queueView(x, q) {
+// lab: the "workbench.review.queue" ctx (reviewQueueLab), or null. Without it, or with no Lab filter or sort active,
+// the queue shows exactly the rows its own filters leave.
+export function queueView(x, q, lab = null) {
   const rep = q.report;
   const c = rep.counts;
   const gates = rep.gates;
   const ready = rep.items.filter((i) => queueReady(i, gates));
-  const visible = queueVisible(rep.items, gates, q.kindFilter, q.statusFilter, q.sliceField, q.sliceValue);
+  const byFilters = queueVisible(rep.items, gates, q.kindFilter, q.statusFilter, q.sliceField, q.sliceValue);
+  const labActive = lab ? W.lab?.active?.("workbench.review.queue") || 0 : 0;
+  const visible = labActive ? lab.page.visible() : byFilters;
+  const pool = labActive ? rep.items.filter((item) => lab.page.matches(item)) : rep.items;
   const filter = (name, label, options) => h("label", { class: "faint", style: { display: "flex", gap: "6px", alignItems: "center" } },
     label, h("select", { class: "input sm", disabled: q.busy, "aria-label": label,
       onchange: (e) => { q[name] = e.target.value; q.nextLine = null; render(); } },
@@ -221,7 +229,7 @@ export function queueView(x, q) {
         rep.problems_total > rep.problems.length ? h("li", {}, `…and ${rep.problems_total - rep.problems.length} more`) : null)) : null,
     rep.items.length ? queueCsv(x.id, q) : null,
     rep.items.length ? h("div", { class: "grid", style: { gap: "6px" } },
-      h("div", { class: "faint", role: "status" }, `${ready.length} of ${rep.items.length} rows ready · ${rep.items.length - ready.length} incomplete · showing ${visible.length}`),
+      h("div", { class: "faint", role: "status", id: `queue-status-${x.id}` }, `${ready.length} of ${rep.items.length} rows ready · ${rep.items.length - ready.length} incomplete · showing ${visible.length}`),
       h("div", { class: "faint", "aria-label": "Labeling progress by question" }, Object.keys(rep.questions).map((qid) => {
         const labeled = rep.items.filter((item) => item.labels[qid] !== null && item.labels[qid] !== undefined).length;
         return h("div", {}, `${qid}: ${labeled} of ${rep.items.length} labeled · ${rep.items.length - labeled} missing`);
@@ -230,12 +238,18 @@ export function queueView(x, q) {
       h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
         filter("kindFilter", "Queue rows", [["all", "Review and audit"], ["review", "Review only"], ["audit", "Audit only"]]),
         filter("statusFilter", "Labeling status", [["all", "All statuses"], ["incomplete", "Incomplete"], ["ready", "Ready"]]),
-        h("button", { class: "btn sm", disabled: q.busy || !queueNextIncomplete(rep.items, gates, q.kindFilter, null, q.sliceField, q.sliceValue),
+        h("button", { class: "btn sm", id: `queue-next-${x.id}`, disabled: q.busy || !queueNextIncomplete(pool, gates, q.kindFilter, null, q.sliceField, q.sliceValue),
           onclick: () => nextQueueRow(x.id) }, "Next incomplete row")),
       h("p", { class: "faint", style: { margin: 0, fontSize: "12px" } },
         "Filters change only the rows shown. CSV handoff and Add use the whole queue. Next follows the selected row kind and slice. Ctrl/⌘+Enter moves to the next incomplete row; Ctrl/⌘+Shift+Enter moves to the previous one. Progress counts current labels, including suggested labels on review rows."),
-      visible.length ? h("div", { class: "queue-list" }, visible.map(card))
-        : h("div", { class: "empty" }, "No rows match these filters. Choose another row kind or labeling status."))
+      lab && W.lab?.section ? W.lab.section(W.labEnv, "workbench.review.queue", lab, { title: "Lab tools for the Review queue" }) : null,
+      h("div", { class: "grid", id: `queue-rows-${x.id}`, style: { gap: "6px" } },
+        labActive ? h("p", { class: "faint", role: "status", style: { fontSize: "12px", margin: 0, display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" } },
+          `Showing ${visible.length} of ${byFilters.length} rows the queue filters leave · ${labActive} Lab setting${labActive === 1 ? "" : "s"} active. Labels on hidden rows stay; CSV handoff and Add still use the whole queue.`,
+          h("button", { class: "btn sm ghost", onclick: () => { W.lab.reset("workbench.review.queue"); render(); } }, "Clear Lab filters and sort")) : null,
+        visible.length ? h("div", { class: "queue-list" }, visible.map(card))
+          : h("div", { class: "empty" }, labActive && byFilters.length ? "No row matches the Lab filters. Clear them to see the queue's rows."
+            : "No rows match these filters. Choose another row kind or labeling status.")))
       : h("div", { class: "empty" }, "No eligible rows to label. Check the file problems and provenance notices above; matching rows may already be in the dataset."),
     rep.items.length ? h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" } },
       h("button", { class: "btn sm primary", disabled: q.busy || !adding, onclick: () => addQueued(x.id) },
@@ -492,4 +506,80 @@ function auditSlices(a) {
         h("td", {}, withCI(pct(s.accuracy, 1), s.accuracy_low, s.accuracy_high))))))),
     h("p", { class: "faint", style: { margin: 0 } },
       "Small slices have wide intervals; a high accuracy alone is not enough evidence. Missing or blank values appear as (none). These are descriptive accuracy results, not slice-target checks or automation coverage. No additional model calls are made, and results are not saved."));
+}
+
+// ---------- Lab surface "workbench.review.queue" (contract: static/js/lab/surfaces/workbench-checks.js) ----------
+// One ctx per check, built from W.lab.builders on first use and kept on W.checkLabs, so queueView (through its lab
+// argument) and nextQueueRow reach it only through W. Every field reads W at call time: reading decisions or restoring a
+// session replaces the queue's report as a whole.
+export function reviewQueueLab(x) {
+  const build = W.lab?.builders?.reviewQueueCtx;
+  if (typeof build !== "function") return null;
+  const labs = W.checkLabs ||= { list: null, review: {}, drift: {} };
+  const id = x.id;
+  const queue = () => W.bulk.checkRuns[id]?.queue;
+  return labs.review[id] ||= build({
+    dataset: () => W.bulk.datasets.find((d) => d.id === id) || { id, name: id },
+    queue,
+    pictures: () => W.bulk.pictures,
+    pageVisible: () => {
+      const q = queue();
+      return q?.report ? queueVisible(q.report.items, q.report.gates, q.kindFilter, q.statusFilter, q.sliceField, q.sliceValue) : [];
+    },
+    matches: (item, ctx) => W.lab.matches("workbench.review.queue", item, ctx),
+    arrange: (items, ctx) => W.lab.arrange("workbench.review.queue", items, ctx),
+    writeLabels: (changes, label) => reviewLabWrite(id, changes, label),
+    goTo: (line) => reviewLabGoTo(id, line),
+    next: (direction) => nextQueueRow(id, direction),
+    setFilter: (name, value) => { const q = queue(); q[name] = value; q.nextLine = null; render(); },
+    setSlice: (field, value) => { const q = queue(); q.sliceField = field; q.sliceValue = value; q.nextLine = null; render(); },
+    resetFilters: () => {
+      const q = queue();
+      if (q) Object.assign(q, { kindFilter: "all", statusFilter: "all", sliceField: "", sliceValue: "", nextLine: null });
+      W.lab?.reset("workbench.review.queue");
+      render();
+    },
+    refresh: () => reviewLabRefresh(id),
+  });
+}
+
+// A Lab edit of the labels takes the path a row's select takes: the label changes, it is recorded as a human edit, and a
+// pending CSV or session preview is dropped. Nothing is saved until Add.
+function reviewLabWrite(id, changes, label) {
+  const q = W.bulk.checkRuns[id]?.queue;
+  if (!q?.report || q.busy) throw new Error("Wait for the Review operation to finish.");
+  for (const [line, labels] of changes) {
+    const item = q.report.items.find((entry) => entry.line === line);
+    if (!item) continue;
+    for (const [qid, value] of Object.entries(labels)) {
+      item.labels[qid] = value;
+      ((q.edits ||= {})[item.line] ||= Object.create(null))[qid] = value;
+    }
+  }
+  if (changes.length === 1) q.nextLine = changes[0][0];
+  q.sessionPreview = q.csvPreview = null;
+  render();
+  toast(`${label}: labels changed on ${changes.length} row${changes.length === 1 ? "" : "s"}. Add labeled rows to save them to the dataset.`);
+}
+
+function reviewLabGoTo(id, line) {
+  W.bulk.checkRuns[id].queue.nextLine = line;
+  render();
+  const card = document.getElementById(`queue-${id}-${line}`);
+  if (!card) throw new Error("Open this check's Review queue to go to a row.");
+  card.scrollIntoView({ block: "center", behavior: "smooth" });
+  (card.querySelector(".label-sel.open") || card.querySelector("select:not(:disabled)") || card).focus({ preventScroll: true });
+}
+
+// Lab filters and sorts redraw the queue rows, the "showing N" line and Next only, so the Lab section keeps its controls.
+function reviewLabRefresh(id) {
+  const q = W.bulk.checkRuns[id]?.queue;
+  const x = W.bulk.datasets.find((d) => d.id === id);
+  if (!q?.report || !x) return render();
+  const fresh = h("div", {}, queueView(x, q, W.checkLabs?.review?.[id] || null));
+  for (const part of ["queue-status", "queue-next", "queue-rows"]) {
+    const live = document.getElementById(`${part}-${id}`), next = fresh.querySelector(`#${part}-${id}`);
+    if (!live || !next) return render();
+    live.replaceWith(next);
+  }
 }

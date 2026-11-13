@@ -7,7 +7,9 @@ export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "", idPrefix = "", excludeType = "all", minStateBytes = "", maxStateBytes = "", namePrefix = "", idSuffix = "", questionMatch = "contains", minUncovered = "", maxUncovered = "", minOptions = "", maxOptions = "", minInstructions = "", maxInstructions = "", minLatency = "", maxLatency = "", minCost = "", maxCost = "", latency = "all", cost = "all", ...refinements } = {}) {
+// lab: the Tests tab's Lab hook ({ matches(test), arrange(tests) }, from the workbench.tests.items ctx), or null.
+// Lab filters count like every other filter here; Lab's sort applies after the page's own.
+export function visibleTests(items, results, { query = "", status = "all", type = "all", sort = "saved", expectations = "all", images = "all", selection = "all", selected = [], minQuestions = "", maxQuestions = "", stateType = "all", notes = "all", questionId = "", coverage = "all", typeMix = "all", searchField = "all", exclude = "", minExpectations = "", maxExpectations = "", minImages = "", maxImages = "", idPrefix = "", excludeType = "all", minStateBytes = "", maxStateBytes = "", namePrefix = "", idSuffix = "", questionMatch = "contains", minUncovered = "", maxUncovered = "", minOptions = "", maxOptions = "", minInstructions = "", maxInstructions = "", minLatency = "", maxLatency = "", minCost = "", maxCost = "", latency = "all", cost = "all", lab = null, ...refinements } = {}) {
   const byId = new Map((results?.runs || []).map((run) => [run.id, run]));
   const selectedSet = new Set(selected);
   const presenceMatches = (value, mode) => mode === "all" || (mode === "with" ? value : !value);
@@ -70,7 +72,8 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     && (stateType === "all" || (typeof item.state === "string" ? "text" : Array.isArray(item.state) ? "array" : "object") === stateType)
     && countMatches(Object.keys(item.questions || {}).length, minQuestions, true)
     && countMatches(Object.keys(item.questions || {}).length, maxQuestions, false)
-    && (selection === "all" || selectedSet.has(item.id) === (selection === "selected")));
+    && (selection === "all" || selectedSet.has(item.id) === (selection === "selected"))
+    && (!lab?.matches || lab.matches(item) !== false));
   // Array#sort is stable; ties retain the saved list's order.
   if (sort === "input-smallest") shown.sort((a, b) => inputBytes(a) - inputBytes(b));
   if (sort === "input-largest") shown.sort((a, b) => inputBytes(b) - inputBytes(a));
@@ -100,7 +103,9 @@ export function visibleTests(items, results, { query = "", status = "all", type 
     const priority = { error: 0, fail: 1, "not-run": 2, pass: 3 };
     shown.sort((a, b) => priority[testResultStatus(byId.get(a.id))] - priority[testResultStatus(byId.get(b.id))]);
   }
-  return refineSuite(shown, { ...refinements, sort });
+  const refined = refineSuite(shown, { ...refinements, sort });
+  // Lab's sort applies last (static/js/lab/surfaces/workbench-tests.js); with none set the order is unchanged.
+  return lab?.arrange ? lab.arrange(refined) : refined;
 }
 
 // Authored counts, never question wording or labels in reports/downloads.
