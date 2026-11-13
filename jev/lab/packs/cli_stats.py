@@ -198,6 +198,8 @@ def read_pairs(path: str, columns: Optional[str], width: int = 2) -> List[Tuple[
         records = [(reader.line_num, row) for row in reader if any(cell.strip() for cell in row)]
     except csv.Error as err:
         raise kit.CliError("cannot read %s as CSV: %s" % (path, err))
+    if not records:
+        raise kit.CliError("%s holds only blank cells" % path)
     first = records[0][1]
     header = bool(columns) or not all(_number(cell) for cell in first)
     if header:

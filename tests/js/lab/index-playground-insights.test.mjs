@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import pack from "../../../static/js/lab/packs/index/index-playground-insights.js";
 import { runExporter } from "../../../static/js/lab/kit.js";
 import { checkPack } from "./harness.mjs";
-import { HELLO_EXAMPLES, PLAYGROUND_EMPTY, PLAYGROUND_HISTORY, PLAYGROUND_RESULTS, sampleIndexPlaygroundCtx } from "./fixtures/index.mjs";
+import { HELLO_EXAMPLES, PLAYGROUND_EMPTY, PLAYGROUND_HISTORY, PLAYGROUND_RESULTS, HELLO_QUESTIONS, helloResult, sampleIndexPlaygroundCtx } from "./fixtures/index.mjs";
 
 const ctx = (overrides) => sampleIndexPlaygroundCtx(overrides);
 const byId = (overrides) => Object.fromEntries(ctx(overrides).items().map((item) => [item.id, item]));
@@ -13,22 +13,40 @@ const P = byId({ result: PLAYGROUND_RESULTS.praise });
 const O = byId({ result: PLAYGROUND_RESULTS.odd });           // box, unknown type, missing values
 const empty = () => ctx(PLAYGROUND_EMPTY);
 
+// Edge answers made by the real builder. "edge": a Choice 0.35 vs 0.25, exactly 0.10 apart (0.35 - 0.25 is
+// 0.09999999999999998 in floating point, which must not read as a close call), a Score of 0.6 that rounds to level 1
+// while level 0 and level 1 tie at 0.45. "tie": the Choice picked complaining, tied with making_request at 0.45, which
+// the builder lists first as top; "off": the Choice picked complaining at 0.3 while making_request has 0.6.
+const edge = (intent, urgency) => byId({ result: helloResult({ text: "Is the Harbor House Blend back in stock?", answers: {
+  intent: { type: "choice", confidence: 0.45, ...intent },
+  urgency: { type: "score", confidence: 0.45, legend: { 0: "Not urgent", 1: "Somewhat urgent", 2: "Very urgent" }, ...urgency },
+}, meta: { latency_ms: 90, input_tokens: 200, cost_usd: 0.00001 }, questions: { intent: HELLO_QUESTIONS.intent, urgency: HELLO_QUESTIONS.urgency } }) });
+const E = edge({ choice: "making_request", probabilities: { making_request: 0.35, complaining: 0.25, asking_question: 0.2, sharing_info: 0.2, praising: 0 } },
+  { score: 0.6, probabilities: { 0: 0.45, 1: 0.45, 2: 0.1 } });
+const T = edge({ choice: "complaining", probabilities: { making_request: 0.45, complaining: 0.45, asking_question: 0.1 } },
+  { score: 1.4, probabilities: { 0: 0.5, 1: 0.3, 2: 0.2 } });
+const F = edge({ choice: "complaining", probabilities: { making_request: 0.6, complaining: 0.3, praising: 0.1 } },
+  { score: 1, probabilities: { 0: 0.2, 1: 0.5, 2: 0.3 } });
+
 checkPack(pack, {
   top_p: { items: [R.intent, R.urgency, R.wants_money_back, O.spot, O.pending_choice], values: [0.62, 0.66, 0.97, null, 0.5] },
   // .62-.34, .66-.30, .97-.03, .51-.47; a Box has no probabilities and the odd Choice lists only one usable entry.
-  margin: { items: [R.intent, R.urgency, R.wants_money_back, I.intent, O.spot, O.pending_choice], values: [0.28, 0.36, 0.94, 0.04, null, null] },
+  margin: { items: [R.intent, R.urgency, R.wants_money_back, I.intent, O.spot, O.pending_choice, E.intent, T.intent], values: [0.28, 0.36, 0.94, 0.04, null, null, 0.1, 0] },
   // -(Σ p ln p) / ln n, worked out separately: intent over five options, a 0.97 Noul over two, an even Noul.
-  uncertainty: { items: [R.intent, R.wants_money_back, O.yes_no, O.spot], values: [0.5092824, 0.1943919, 1, null], tolerance: 1e-6 },
+  // Reference values from a separate Python computation of -(sum p ln p) / ln n: refund intent (n = 5) 0.5092824,
+  // a 0.97 Noul (n = 2) 0.1943919, an even Noul 1, praise intent 0.1226323, refund urgency (n = 3) 0.6955930.
+  uncertainty: { items: [R.intent, R.wants_money_back, O.yes_no, P.intent, R.urgency, O.spot], values: [0.5092824, 0.1943919, 1, 0.1226323, 0.695593, null], tolerance: 1e-6 },
   confidence: { items: [R.intent, R.urgency, R.wants_money_back, O.spot, O.pending_choice], values: [0.62, 0.66, null, 0.8, null] },
   yes_p: { items: [R.wants_money_back, R.talks_to_ai, R.intent, O.silent_noul, O.yes_no], values: [0.97, 0.03, null, null, 0.5] },
   // 1.62 / 2, 0.08 / 2, 3.4 / 4
   score_share: { items: [R.urgency, P.urgency, O.legacy_score, R.intent], values: [0.81, 0.04, 0.85, null] },
-  // The odd legacy Score has no request question (""), and the unknown type's object instructions read as JSON.
-  question_words: { items: [R.intent, R.wants_money_back, R.talks_to_ai, O.legacy_score, O.mystery], values: [8, 13, 12, null, 3] },
-  close_call: { items: [I.intent, I.wants_money_back, R.intent, O.spot, O.yes_no], values: [true, true, false, false, true] },
-  // round(3.4) = 3 but level 4 is likeliest; round(1.62) = 2 is the top level.
-  differs_from_top: { items: [O.legacy_score, R.urgency, R.intent, O.pending_choice, R.wants_money_back], values: [true, false, false, false, false] },
-  leans_yes: { items: [R.wants_money_back, R.talks_to_ai, O.yes_no, R.intent], values: [true, false, false, false] },
+  // .51 vs .47, .54 vs .46 and .5 vs .5 are close; .35 vs .25 is exactly 0.10 apart, which is not under 0.10; .45 vs .45 ties.
+  close_call: { items: [I.intent, I.wants_money_back, R.intent, O.spot, O.yes_no, E.intent, E.urgency], values: [true, true, false, false, true, false, true] },
+  // round(3.4) = 3 (0.35) but level 4 is likeliest (0.5); round(1.62) = 2 is the top level. Edge: 0.6 rounds to level 1,
+  // tied with level 0 at 0.45 (no difference); T: complaining tied with the top (no difference), 1.4 rounds to level 1
+  // at 0.3 under level 0 at 0.5 (differs); F: complaining 0.3 under making_request 0.6 (differs), 1 is the top level.
+  differs_from_top: { items: [O.legacy_score, R.urgency, R.intent, O.pending_choice, R.wants_money_back, E.urgency, T.intent, T.urgency, F.intent, F.urgency],
+    values: [true, false, false, false, false, false, false, true, true, false] },
   missing_value: { items: [O.mystery, O.pending_choice, O.silent_noul, O.spot, R.intent], values: [true, true, true, false, false] },
   type: { items: [R.intent, R.urgency, R.wants_money_back, O.spot, O.mystery], values: ["choice", "score", "noul", "box", "rank"] },
   band: { items: [R.intent, R.wants_money_back, O.pending_choice, O.spot, I.urgency],
@@ -49,7 +67,10 @@ checkPack(pack, {
   tokens_per_question: [{ ctx: ctx(), expect: 103, empty: empty() }, { ctx: ctx({ result: PLAYGROUND_RESULTS.praise }), expect: 99.5 }],
   // (.62 + .66 + .97 + .97) / 4; without talks_to_ai (.62 + .66 + .97) / 3.
   mean_top_p: [{ ctx: ctx(), expect: 0.805, empty: empty() }, { ctx: ctx({ hide: ["talks_to_ai"] }), expect: 0.75 }],
+  // Refund: none. Injection: intent (0.04) and wants_money_back (0.08). Odd: pending_choice lists one usable entry,
+  // legacy_score .5 vs .35, yes_no .5 vs .5 -> 1.
   close_calls: [{ ctx: ctx(), expect: 0, empty: empty() }, { ctx: ctx({ result: PLAYGROUND_RESULTS.injection }), expect: 2 },
+    { ctx: ctx({ result: PLAYGROUND_RESULTS.odd }), expect: 1 },
     { ctx: ctx({ result: PLAYGROUND_RESULTS.injection, hide: ["intent"] }), expect: 1 }],
 
   answers_csv: { ctx: ctx({ hide: ["urgency", "talks_to_ai"] }), filename: "playground-answers.csv",

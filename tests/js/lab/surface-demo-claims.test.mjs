@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
+import { improvementsOf } from "../../../static/js/lab/kit.js";
 import { claimsExampleOf, claimsLabNote, claimsOrderOptions, claimsOrdersCtx, claimsPhotoOf, claimsResultCtx } from "../../../static/js/lab/surfaces/claims.js";
 import orderDesk from "../../../static/js/lab/packs/claims/claims-order-desk.js";
 import exampleFacts from "../../../static/js/lab/packs/claims/claims-example-facts.js";
@@ -284,9 +285,9 @@ test("shown() applies Lab filters and sorts after the page's order", () => {
   const hook = (id) => ({ matches: (item, ctx) => lab.matches(id, item, ctx), arrange: (list, ctx) => lab.arrange(id, list, ctx) });
   const orders = sampleClaimsOrdersCtx(hook("claims.orders"));
   assert.deepEqual(orders.shown(), orders.items(), "with no Lab setting, shown() is the page's list");
-  lab.view("claims.orders").filters = [{ key: "claims-order-desk/delivered", op: "with" }];
+  lab.view("claims.orders").filters = [{ key: "claims-order-desk/open_to_claim", op: "with" }];
   lab.view("claims.orders").sort = { key: "claims-order-desk/total", dir: "desc" };
-  assert.deepEqual(orders.shown().map((item) => item.id), ["A-1042", "A-1046", "A-1044", "A-1041"]);
+  assert.deepEqual(orders.shown().map((item) => item.id), ["A-1042", "A-1044", "A-1041"], "delivered and not refunded, largest total first");
   assert.equal(lab.active("claims.orders"), 2);
   lab.reset("claims.orders");
   assert.deepEqual(orders.shown().map((item) => item.id), ["A-1041", "A-1042", "A-1043", "A-1044", "A-1045", "A-1046", "A-1047"]);
@@ -296,15 +297,18 @@ test("shown() applies Lab filters and sorts after the page's order", () => {
   assert.deepEqual(examples.shown().map((item) => item.label), ["Torn bag", "Intact bag"]);
 
   const result = sampleClaimsResultCtx(hook("claims.result"));
-  lab.view("claims.result").filters = [{ key: "claims-result-insights/close_call", op: "with" }];
+  lab.view("claims.result").filters = [{ key: "claims-result-insights/cut_distance", op: "max", value: "0.1" }];
   assert.deepEqual(result.shown().map((item) => item.id), ["matches_note", "damage_box"]);
   lab.view("claims.result").filters = [];
   lab.view("claims.result").sort = { key: "claims-result-insights/top_probability", dir: "asc" };
   assert.deepEqual(result.shown().map((item) => item.id), ["matches_note", "damage_kind", "severity", "damage_visible", "shows_item", "damage_box"],
     "the box has no top probability and sorts last");
-  for (const [id, ctx, count] of [["claims.orders", orders, 40], ["claims.examples", examples, 33], ["claims.result", result, 43]]) {
+  const improvements = (id) => lab.packs.filter((pack) => pack.surface === id).reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
+  for (const [id, ctx, count] of [["claims.orders", orders, improvements("claims.orders")], ["claims.examples", examples, improvements("claims.examples")],
+    ["claims.result", result, improvements("claims.result")]]) {
+    assert.ok(count > 0, `${id} holds improvements from the starter packs`);
     const section = lab.section(fakeEnv(), id, ctx);
-    assert.match(textOf(section), new RegExp(`Lab tools · ${count}`));
+    assert.match(textOf(section), new RegExp(`Lab tools · ${count}(?!\\d)`));
     assert.equal(textOf(section).includes("Edits"), false, "read-only surfaces show no Edits block");
   }
 });

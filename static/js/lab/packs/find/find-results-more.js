@@ -19,10 +19,10 @@ const plainWords = (text) => wordsOf(text).map((word) => word.toLowerCase().repl
 
 // The searched lines' texts by index, from the request's tagged document ("L000| text"), or null without one.
 function searchedTexts(ctx) {
-  const document = ctx?.data?.request?.state?.document;
-  if (typeof document !== "string") return null;
+  const tagged = ctx?.data?.request?.state?.document;
+  if (typeof tagged !== "string") return null;
   const out = [];
-  for (const line of document.split("\n")) {
+  for (const line of tagged.split("\n")) {
     const match = line.match(/^L(\d+)\| ?(.*)$/);
     if (match) out[Number(match[1])] = match[2];
   }

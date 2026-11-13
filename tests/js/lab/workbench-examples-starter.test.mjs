@@ -13,21 +13,29 @@ const items = sampleExamplesCtx().items();
 const [order, lead, bag, review, late, blank, crate] = items;
 const ID = "workbench.examples.gallery";
 const only = (scope, query) => sampleExamplesCtx({ view: { searchScope: scope, query } });
+// An odd item (a question that is not an object, a Choice without criteria, a picture entry that is not an object, a
+// type list without text): facts must read it without throwing.
+const odd = { id: "odd", questions: [null, { id: "c", type: "choice" }], types: [null], pictures: [null], state: 7 };
+// Picture references the way the server finds them (jev/images.py _uses): a name in a criterion counts, and "photo1"
+// is not counted inside "photo12".
+const inCriterion = { id: "crit", state: "see the attached picture", picture_count: 1, pictures: [{ name: "crate-photo", sample: null }],
+  questions: [{ id: "which", position: 1, type: "choice", instructions: "Which crate?", criteria: [{ key: "a", text: "the one in crate-photo" }, { key: "b", text: "another" }] }] };
+const overlapping = { id: "overlap", state: { photo: "photo12" }, picture_count: 2, pictures: [{ name: "photo1", sample: null }, { name: "photo12", sample: null }], questions: [] };
 
 checkPack(pack, {
-  instruction_words: { items, values: [21, 27, 15, 7, 18, null, 10] },
+  instruction_words: { items: [...items, odd], values: [21, 27, 15, 7, 18, null, 10, 0] },
   longest_instruction: { items, values: [48, 56, 52, 52, 37, null, 27] },
   yes_no_count: { items, values: [1, 1, 1, 0, 2, 0, 0] },
-  largest_choice: { items, values: [3, 3, null, null, 1, null, null] },
+  largest_choice: { items: [...items, odd], values: [3, 3, null, null, 1, null, null, 0] },
   score_levels: { items, values: [3, 4, null, 3, null, null, 1] },
   state_fields: { items, values: [null, 3, 2, null, 1, null, 1] },
-  state_words: { items, values: [15, 19, 8, 8, 10, 0, 1] },
+  state_words: { items: [...items, odd], values: [15, 19, 8, 8, 10, 0, 1, 0] },
   noul_wording: { items, values: [false, true, false, false, true, false, false] },
   field_references: { items, values: [false, true, true, false, true, false, true] },
-  type_combination: { items, values: ["choice + noul + score", "choice + noul + score", "box + noul", "score", "choice + noul", null, "box + score"] },
+  type_combination: { items: [...items, odd], values: ["choice + noul + score", "choice + noul + score", "box + noul", "score", "choice + noul", null, "box + score", null] },
   picture_source: {
-    items: [order, bag, { id: "x", pictures: [{ name: "photo-a", sample: "torn-bag" }] }, { id: "y", pictures: [{ name: "upload-b", sample: null }] }, { id: "z" }],
-    values: ["no pictures", "samples and embedded", "built-in samples", "embedded", "no pictures"],
+    items: [order, bag, { id: "x", pictures: [{ name: "photo-a", sample: "torn-bag" }] }, { id: "y", pictures: [{ name: "upload-b", sample: null }] }, { id: "z" }, odd],
+    values: ["no pictures", "samples and embedded", "built-in samples", "embedded", "no pictures", "no pictures"],
   },
 
   missing_state_field: { hit: lead, miss: [late, bag, order, crate], message: /`notes` is named in an instruction/ },
@@ -36,8 +44,8 @@ checkPack(pack, {
   box_without_picture: { hit: crate, miss: [bag, order], message: /crate_box asks where something is/ },
   one_sided_noul: { hit: late, miss: [lead, order], message: /^is_late describes only one answer\.$/ },
   repeated_instructions: { hit: late, miss: [order, lead, blank], message: /^repeat_check repeats the instructions of is_late\.$/ },
-  unused_picture: { hit: bag, miss: [order, { ...bag, pictures: [{ name: "photo-torn-bag", sample: "torn-bag" }] }], message: /^photo-spare-angle is attached/ },
-  duplicate_ids: { hitList: [order, lead, order], missList: items, message: /^order-triage appears 2 times\.$/ },
+  unused_picture: { hit: [bag, overlapping], miss: [order, inCriterion, odd, { ...bag, pictures: [{ name: "photo-torn-bag", sample: "torn-bag" }] }],
+    message: /^(?:photo-spare-angle|photo1) is attached, but neither the state nor a question mentions it\.$/ },
 
   picture_share: [
     { ctx: sampleExamplesCtx(), expect: 1 / 7 },
@@ -62,8 +70,13 @@ checkPack(pack, {
 
   outlines_markdown: {
     ctx: only("title", "Late delivery"),
-    text: "## Late delivery check · late-delivery\n\n1. is_late · noul · 2 criteria\n2. team · choice · 1 criteria\n3. repeat_check · noul · 0 criteria\n",
+    // Criteria as the card's own outline counts them: Noul wording adds nothing, the one-option Choice is 1 criterion.
+    text: "## Late delivery check · late-delivery\n\n1. is_late · noul · 0 criteria\n2. team · choice · 1 criterion\n3. repeat_check · noul · 0 criteria\n",
     filename: "example-outlines.md",
+    check: () => {
+      const feature = pack.features.find((entry) => entry.id === "outlines_markdown");
+      assert.equal(feature.build(only("id", "blank-draft")), "## Blank starting point · blank-draft\n\nNo questions.\n");
+    },
   },
   requests_jsonl: {
     ctx: only("id", "bag-photo"),
@@ -85,6 +98,11 @@ checkPack(pack, {
     ctx: only("id", "review-batch"),
     text: "\"example\",\"position\",\"question\",\"type\",\"criteria\"\r\n\"review-batch\",\"1\",\"sentiment\",\"score\",\"3\"\r\n",
     filename: "example-questions.csv",
+    check: () => {
+      const feature = pack.features.find((entry) => entry.id === "questions_csv");
+      assert.equal(feature.build(only("id", "late-delivery")), "\"example\",\"position\",\"question\",\"type\",\"criteria\"\r\n"
+        + "\"late-delivery\",\"1\",\"is_late\",\"noul\",\"0\"\r\n\"late-delivery\",\"2\",\"team\",\"choice\",\"1\"\r\n\"late-delivery\",\"3\",\"repeat_check\",\"noul\",\"0\"\r\n");
+    },
   },
   instructions_markdown: {
     ctx: only("id", "review-batch"),

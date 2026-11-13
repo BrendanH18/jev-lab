@@ -66,7 +66,9 @@ checkPack(pack, {
   max_calibration_error: { values: { pairs: D }, expect: [["Maximum calibration error", 0.7 / 3], ["Bin from", 0.9], ["Bin to", 1], ["Rows in that bin", 3],
     ["Observed rate − mean probability there", -0.7 / 3], ["Bins counted", 4]],
   more: [
-    { values: { pairs: D, minRows: "4" }, expect: [["Maximum calibration error", null], ["Bin from", null], ["Bin to", null], ["Rows in that bin", null], ["Bins counted", 0]] },
+    { values: { pairs: D, minRows: "4" }, expect: [["Maximum calibration error", null], ["Bin from", null], ["Bin to", null], ["Rows in that bin", null], ["Observed rate − mean probability there", null], ["Bins counted", 0]] },
+    // at least 3 rows: only the 0.3 bin (gap 0.1/3) and the 0.9 bin (0.7/3) count
+    { values: { pairs: D, minRows: "3" }, expect: [["Maximum calibration error", 0.7 / 3], ["Bin from", 0.9], ["Bin to", 1], ["Rows in that bin", 3], ["Observed rate − mean probability there", -0.7 / 3], ["Bins counted", 2]] },
     // equal mass, 3 bins: [0.1–0.3] gap 0.1/5, [0.7] 0.2, [0.9] 0.7/3
     { values: { pairs: D, binning: "mass", bins: "3", minRows: "1" }, expect: (result) => { approx(result.rows[0][1], 0.7 / 3); approx(result.rows[1][1], 0.9); approx(result.rows[5][1], 3); } },
   ],
@@ -85,7 +87,8 @@ checkPack(pack, {
     more: [
       // calibrated in the large: slope ln3/ln4 when 0.2 → 1/4 and 0.8 → 3/4
       { values: { pairs: "0.2,1\n0.2,0\n0.2,0\n0.2,0\n0.8,1\n0.8,1\n0.8,1\n0.8,0" }, expect: [["Calibration slope", Math.log(3) / Math.log(4)], ["Calibration intercept", 0], ["Calibration-in-the-large", 0]], tolerance: 1e-8 },
-      { values: { pairs: D }, expect: (result) => approx(result.rows[2][1], -0.8057019838777157, 1e-8) },
+      // not saturated: slope and intercept from a separate Newton fit in Python (math.exp only), which also matched plain gradient descent
+      { values: { pairs: D }, expect: [["Calibration slope", 0.6756457527514371], ["Calibration intercept", -0.6215267666002972], ["Calibration-in-the-large", -0.8057019838777159]], tolerance: 1e-8 },
       { values: { pairs: "0.2,0\n0.8,1\n0.6,1" }, expect: (result) => { assert.equal(result.rows[0][1], null); assert.match(result.note, /separated/); } },
     ],
     invalid: [...BAD, { pairs: "0.2,1\n0.8,1" }, { pairs: "0.3,1\n0.3,0" }] },
@@ -115,8 +118,11 @@ checkPack(pack, {
   // (0.01 + 0.16)/2, (0.25 + 0.04)/2, (0.04 + 0.04)/2 → 0.09; shares ⅓ each → 5/18, 5/18, 1/9 → 2/9; skill 1 − 0.09·9/2.
   ranked_probability_score: { values: { rows: "level,1,2,3\n3,0.1,0.3,0.6\n1,0.5,0.3,0.2\n2,0.2,0.6,0.2" },
     expect: [["Ranked probability score", 0.09], ["Score of predicting the level shares", 2 / 9], ["Skill against the level shares", 0.595], ["Rows", 3], ["Levels", 3]],
-    more: [{ values: { rows: "2,0,1\n1,1,0" }, expect: [["Ranked probability score", 0], ["Score of predicting the level shares", 0.25], ["Skill against the level shares", 1], ["Rows", 2], ["Levels", 2]] }],
-    invalid: BAD_VECTORS },
+    more: [{ values: { rows: "2,0,1\n1,1,0" }, expect: [["Ranked probability score", 0], ["Score of predicting the level shares", 0.25], ["Skill against the level shares", 1], ["Rows", 2], ["Levels", 2]] },
+      // levels named 0, 1, 2 on the header: labels are those names, the same rows as above
+      { values: { rows: "level,0,1,2\n2,0.1,0.3,0.6\n0,0.5,0.3,0.2\n1,0.2,0.6,0.2" }, expect: [["Ranked probability score", 0.09], ["Score of predicting the level shares", 2 / 9], ["Skill against the level shares", 0.595], ["Rows", 3], ["Levels", 3]] }],
+    // with numeric level names a 3 is not read as the third position
+    invalid: [...BAD_VECTORS, { rows: "level,0,1,2\n3,0.1,0.3,0.6" }] },
   // Scores −1 (1 of 4 positive) and 1 (3 of 4). Smoothed targets 5/6 and 1/6 make the group means 1/3 and 2/3, so a = ln 2, b = 0.
   platt_fit: { values: { pairs: "-1,1\n-1,0\n-1,0\n-1,0\n1,1\n1,1\n1,1\n1,0" }, tolerance: 1e-8, expect: (result) => {
     rowsNear([["Slope (a)", Math.LN2], ["Intercept (b)", 0], ["Log loss after (nats)", 0.5787519032481507], ["Log loss before (nats)", null], ["Rows", 8]], 1e-8)(result);
@@ -163,7 +169,7 @@ checkPack(pack, {
     approx(result.table.rows[1][1], 0.5); assert.equal(result.table.rows[1][3], "a");
   },
   more: [{ values: { temperature: "1", rows: "0 0 0" }, expect: (result) => { assert.deepEqual(result.table.columns, ["Row", "1", "2", "3", "Top option"]); approx(result.table.rows[0][2], 1 / 3); } }],
-  invalid: [{ temperature: "0", rows: "1,2" }, { temperature: "1", rows: "" }, { temperature: "1", rows: "1,2\n3" }] },
+  invalid: [{ temperature: "0", rows: "1,2" }, { temperature: "1", rows: "" }, { temperature: "1", rows: "1,2\n3" }, { temperature: "0.000001", rows: "1e303,0" }] },
   // E = 5.2, O = 4, Σ p(1 − p) = 1.5; above 0.5: E = 4.1, O = 3, variance 0.69.
   observed_vs_expected: { values: { pairs: D }, expect: [["Rows checked", 10], ["Expected positives", 5.2], ["Observed positives", 4], ["Observed ÷ expected", 4 / 5.2], ["Observed − expected", -1.2],
     ["z", -0.9797958971132714], ["Two-sided p-value", 0.32718687779030553]],
@@ -185,9 +191,6 @@ checkPack(pack, {
   ks_calibration: { values: { pairs: D }, expect: [["KS calibration error", 0.12], ["Up to probability", 0.9], ["Outcomes there run", "below the probabilities"], ["Rows", 10]],
     more: [{ values: { pairs: "0.2,1\n0.4,0" }, expect: [["KS calibration error", 0.4], ["Up to probability", 0.2], ["Outcomes there run", "above the probabilities"], ["Rows", 2]] }],
     invalid: BAD },
-  // Mean probability of the four 1s: (0.9 + 0.9 + 0.7 + 0.3)/4; of the six 0s: 2.4/6.
-  discrimination_slope: { values: { pairs: D }, expect: [["Mean probability when the outcome is 1", 0.7], ["Mean probability when the outcome is 0", 0.4], ["Discrimination slope", 0.3]],
-    invalid: [...BAD, { pairs: "0.4,1\n0.6,1" }] },
   // Wilson 95%: 0/1 → (0, 0.79345…), 2/2 → (0.34238…, 1), 1/2 → (0.09453…, 0.90547…).
   calibration_by_group: { values: { rows: "group,probability,outcome\nweb,0.9,1\nweb,0.7,0\nphone,0.6,1\nphone,0.4,yes\nemail,0.2,0" }, expect: (result) => {
     rowsNear([["Groups", 3], ["Largest absolute gap", 0.5], ["Group with the largest gap", "phone"]])(result);

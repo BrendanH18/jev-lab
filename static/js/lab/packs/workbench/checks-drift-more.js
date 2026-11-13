@@ -1,7 +1,7 @@
 // More for the saved checks in the Datasets panel ("workbench.checks.list"; contract in
-// static/js/lab/surfaces/workbench-checks.js): gate, split and target facts from each check's configuration, result
+// static/js/lab/surfaces/workbench-checks.js): gate and target facts from each check's configuration, result
 // facts from your own latest run in this session, the state of its drift, upgrade and Review queues, configuration
-// checks, two portfolio metrics, and exports of the configuration, the session's results and scripts/check.py
+// checks, a queue metric, and exports of the configuration, the session's results and scripts/check.py
 // commands. Never row inputs, labels or model answers, and measured values are always marked as this session's.
 import { csvText, definePack } from "../../kit.js";
 
@@ -21,12 +21,10 @@ export default definePack({
   id: "checks-drift-more",
   surface: "workbench.checks.list",
   title: "Saved check details and drift",
-  about: "Gate, split and target facts, your latest session run's results, drift, upgrade and Review state per check, configuration checks, portfolio metrics, and configuration, results and scripts/check.py exports. Never row inputs, labels or model answers; measured values are this session's runs, never saved.",
+  about: "Gate and target facts, your latest session run's results, drift, upgrade and Review state per check, configuration checks, a queue-size metric, and configuration, results and scripts/check.py exports. Never row inputs, labels or model answers; measured values are this session's runs, never saved.",
   features: [
     { id: "highest_threshold", kind: "fact", type: "number", label: "highest gate threshold", unit: "0 to 1",
       value: (item) => { const values = thresholds(item); return values.length ? Math.max(...values) : null; } },
-    { id: "held_out_share", kind: "fact", type: "number", label: "held-out share of rows", unit: "0 to 1", help: "Held-out test rows over saved rows; a check run never sends them.",
-      value: (item) => (Number.isInteger(item?.rows) && item.rows > 0 && Number.isInteger(item.held_out_rows) ? item.held_out_rows / item.rows : null) },
     { id: "wrong_automated", kind: "fact", type: "number", label: "wrong automated rows, last run", unit: "rows",
       help: "Automated rows minus correct ones in your latest run this session.",
       value: (item) => (item?.report && Number.isInteger(item.report.automated) && Number.isInteger(item.report.correct) ? item.report.automated - item.report.correct : null) },
@@ -43,12 +41,14 @@ export default definePack({
       value: (item) => list(item?.report?.slices).some((slice) => slice?.status === "fail") },
     { id: "run_notes", kind: "fact", type: "flag", label: "notes from the last run", value: (item) => list(item?.report?.notes).length > 0 },
     { id: "missed_target", kind: "fact", type: "category", label: "target missed, last run",
+      help: "Which target your latest run in this session missed: accuracy, automation, both, only a required slice, or none. A run that could not be judged says so.",
       value: (item) => {
         const report = item?.report;
-        if (!report) return null;
+        if (!report || typeof report !== "object") return null;
         const accuracy = report.accuracy_ok, coverage = report.coverage_ok;
-        if (typeof accuracy !== "boolean" || typeof coverage !== "boolean") return "not judged";
-        return !accuracy && !coverage ? "both" : !accuracy ? "accuracy" : !coverage ? "automation" : "neither";
+        if (report.status === "error" || typeof accuracy !== "boolean" || typeof coverage !== "boolean") return "not judged";
+        if (!accuracy || !coverage) return !accuracy && !coverage ? "both" : !accuracy ? "accuracy" : "automation";
+        return report.status === "fail" ? "a required slice" : "none";
       } },
     { id: "drift_verdict", kind: "fact", type: "category", label: "drift verdict",
       value: (item) => {
@@ -64,12 +64,13 @@ export default definePack({
     { id: "low_threshold", kind: "diagnostic", severity: "info", label: "Gate threshold under 0.5",
       check: (item) => {
         const low = Object.entries(item?.gates || {}).filter(([, threshold]) => finite(threshold) !== null && threshold < 0.5);
-        return low.length ? `${low.map(([qid, threshold]) => `${qid} ≥ ${fixed2(threshold)}`).join(", ")} can automate answers given with under even odds; check that this is intended.` : null;
+        const signal = item?.signal === "top_probability" ? "a top-option probability" : "a confidence";
+        return low.length ? `${low.map(([qid, threshold]) => `${qid} ≥ ${fixed2(threshold)}`).join(", ")} can automate answers with ${signal} under 0.5; check that this is intended.` : null;
       } },
     { id: "high_threshold", kind: "diagnostic", severity: "advice", label: "Gate threshold at 0.99 or above",
       check: (item) => {
         const high = Object.entries(item?.gates || {}).filter(([, threshold]) => finite(threshold) !== null && threshold >= 0.99);
-        return high.length ? `${high.map(([qid, threshold]) => `${qid} ≥ ${fixed2(threshold)}`).join(", ")} sends almost every row to review, so the gate automates little.` : null;
+        return high.length ? `${high.map(([qid, threshold]) => `${qid} ≥ ${fixed2(threshold)}`).join(", ")} automates only answers at least that sure, so the gate may automate little.` : null;
       } },
     { id: "override_differs", kind: "diagnostic", severity: "advice", label: "Next run asks another model",
       check: (item) => (item?.model_override && item.model_override !== item.model
@@ -93,24 +94,15 @@ export default definePack({
       check: (item) => (item?.queue?.edited_labels > 0
         ? `${plural(item.queue.edited_labels, "Review label")} you edited in this session ${item.queue.edited_labels === 1 ? "is" : "are"} not in the dataset until Add.` : null) },
 
-    { id: "worst_accuracy_margin", kind: "metric", format: "percent", label: "Worst accuracy margin among shown runs",
-      help: "The judged accuracy minus the target, lowest among the shown checks you ran in this session.",
-      compute: (ctx) => {
-        let worst = null;
-        for (const item of ctx.shown()) {
-          const margin = accuracyMargin(item);
-          if (margin !== null && (worst === null || margin < worst.margin)) worst = { margin, id: item.id };
-        }
-        return worst ? { value: worst.margin, detail: worst.id } : null;
-      } },
-    { id: "rows_to_label", kind: "metric", format: "integer", label: "Queued rows waiting for labels",
-      help: "New traffic rows plus Review rows not yet ready, across the shown checks.",
+    { id: "rows_to_label", kind: "metric", format: "integer", label: "Rows waiting in traffic and Review queues",
+      help: "Rows still in the shown checks' Label new traffic and Review queues, labeled or not: none is in the dataset until Add.",
       compute: (ctx) => {
         const shown = ctx.shown().filter((item) => item.drift?.queued > 0 || item.queue?.read);
         if (!shown.length) return null;
         const traffic = shown.reduce((sum, item) => sum + (item.drift?.queued || 0), 0);
-        const review = shown.reduce((sum, item) => sum + Math.max(0, (item.queue?.rows || 0) - (item.queue?.ready || 0)), 0);
-        return { value: traffic + review, detail: `${plural(traffic, "new traffic row")}, ${plural(review, "Review row")} not ready` };
+        const review = shown.reduce((sum, item) => sum + (item.queue?.rows || 0), 0);
+        const ready = shown.reduce((sum, item) => sum + (item.queue?.ready || 0), 0);
+        return { value: traffic + review, detail: `${plural(traffic, "new traffic row")}, ${plural(review, "Review row")} (${ready} ready)` };
       } },
 
     { id: "config_csv", kind: "exporter", label: "Shown checks' configuration as CSV (no results, inputs or labels)", filename: "jev-check-config.csv", mime: "text/csv",

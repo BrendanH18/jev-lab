@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import pack from "../../../static/js/lab/packs/workbench/review-queue-more.js";
 import { checkPack } from "./harness.mjs";
@@ -42,7 +43,6 @@ checkPack(pack, {
   picture_not_loaded: { items: [unloaded[6], unloaded[2], R6], values: [true, false, false] },
   held_set: { items: [R2, R6, R4, R9], values: ["urgent", "topic", "none", null] },
   missing_set: { items: [R2, R4, R6, R9], values: ["urgent", "none", "topic, urgent", "topic, urgent"] },
-  kind_status: { items: [R2, R4, R13, R9], values: ["review, incomplete", "review, ready", "audit, ready", "audit, incomplete"] },
   rule_text: { items: [R4, R2, { rules: ["if tone = 0 then urgent in yes"] }],
     values: ["if urgent = yes then topic in shipping, billing", "", "if tone = 0 then urgent in yes"] },
 
@@ -50,7 +50,9 @@ checkPack(pack, {
   audit_partly_labeled: { hit: R15, miss: [R9, R13, R2], message: /^urgent still needs a label\. Add skips this audit row/ },
   no_audit_sample: (() => {
     const none = ctx({ report: report({ items: reviewOnly(), audit_requested: 0 }, { audit: 0, queued: 3 }) });
-    return { ctx: none, hitList: none.items(), missList: ctx().items(), missCtx: ctx(), message: /^The queue holds no audit rows from the 15 automated decisions/ };
+    // Quiet when a sample was asked for but none could be drawn: "Fewer audit rows than asked" says that instead.
+    const shortfall = ctx({ report: report({ items: reviewOnly(), audit_requested: 3 }, { audit: 0, queued: 3 }) });
+    return { ctx: none, hitList: none.items(), missList: shortfall.items(), missCtx: shortfall, message: /^The queue holds no audit rows from the 15 automated decisions/ };
   })(),
   // 0.98 / √3 = 0.5658 -> ±56.6; (0.98 / 0.10)² = 96.04 -> 97 rows; (0.98 / 0.05)² = 384.16 -> 385 rows. 100 rows: 0.098.
   wide_audit_margin: { ctx: ctx(), hitList: ctx().items(), missList: ctx().items(), missCtx: ctx({ report: report({}, { audit: 100 }) }),
@@ -71,20 +73,13 @@ checkPack(pack, {
   // Review rows 2, 4, 6: only line 4 is ready.
   review_progress: [{ ctx: ctx(), expect: 1 / 3, tolerance: 1e-12, empty: empty() },
     { ctx: ctx({ items: sampleReviewItemsRaw().filter((item) => item.kind === "audit") }), expect: null }],
-  slice_values: { ctx: ctx(), empty: empty(),
+  // Lines 2 and 9 email, 4 and 6 chat, 13 and 15 phone. Review rows only: 2 email, 4 and 6 chat.
+  slice_values: [{ ctx: ctx(), empty: empty(),
     expect: (result) => { assert.equal(result.value, 3); assert.equal(result.detail, "channel: chat 2, email 2, phone 2"); } },
+  { ctx: ctx({ items: reviewOnly() }), expect: (result) => { assert.equal(result.value, 2); assert.equal(result.detail, "channel: chat 2, email 1"); } }],
   // Lines 4 and 13 are ready, room for 1.
   ready_waiting: [{ ctx: ctx(), expect: 1, empty: empty() }, { ctx: ctx({ room: 5 }), expect: 0 }],
 
-  todo_markdown: { ctx: ctx(), filename: "jev-review-checklist.md",
-    text: "# Review queue: Harbor support inbox\n\n"
-      + "- [ ] line 2 (review): needs urgent\n"
-      + "- [x] line 4 (review)\n"
-      + "- [ ] line 6 (review): needs topic, urgent\n"
-      + "- [ ] line 9 (audit): needs topic, urgent\n"
-      + "- [x] line 13 (audit)\n"
-      + "- [ ] line 15 (audit): needs urgent\n",
-    excludes: ["grinder", "shipping", "billing", "beans", "receipt-scan"] },
   // topic: labeled on 2, 4, 13, 15; edited on 4, 13, 15; suggested on 2. urgent: labeled and edited on 4, 13. tone: 13.
   question_progress_csv: { ctx: ctx(), filename: "jev-review-questions.csv",
     text: '"question","type","gated","threshold","labeled","missing","edited","suggested"\r\n'
@@ -130,3 +125,21 @@ checkPack(pack, {
     },
     hidden: () => ctx() },
 }, { ctx: () => ctx() });
+
+test("review-queue-more: no audit sample fires on an ordinary queue only when none was asked for", () => {
+  const check = pack.features.find((feature) => feature.id === "no_audit_sample");
+  assert.equal(check.check(ctx().items(), ctx()), null);
+  const shortfall = ctx({ report: report({ items: reviewOnly(), audit_requested: 3 }, { audit: 0, queued: 3 }) });
+  const short = pack.features.find((feature) => feature.id === "audit_short");
+  assert.match(short.check(shortfall.items(), shortfall), /^You asked for 3 audit rows; the queue holds 0\./);
+});
+
+test("review-queue-more: facts and checks never throw on odd items", () => {
+  const odd = [{}, { labels: "x", open: "y", candidates: [], revealed: true }, { kind: "review", held: null, missing: 3 }, { row: null, rules: "z" }];
+  for (const feature of pack.features) {
+    for (const item of odd) {
+      if (feature.kind === "fact") feature.value(item, ctx());
+      if (feature.kind === "diagnostic" && (feature.scope || "item") === "item") feature.check(item, ctx(), 0);
+    }
+  }
+});

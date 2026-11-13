@@ -59,6 +59,38 @@ test("every pack has a test file that runs checkPack on it", () => {
   }
 });
 
+// Source with comments removed and string/template text blanked; ${...} expressions inside template literals are kept,
+// since they are code. A help text that mentions "document.md" or "location" is not a use of the browser global.
+function codeOnly(src) {
+  let out = "";
+  let i = 0;
+  const templates = [];  // brace depth at each open ${
+  let depth = 0;
+  const skipTemplate = () => {  // from just after ` or } up to the closing ` or ${
+    while (i < src.length) {
+      if (src[i] === "\\") { i += 2; continue; }
+      if (src[i] === "`") { i++; out += '""'; return; }
+      if (src[i] === "$" && src[i + 1] === "{") { i += 2; out += "("; templates.push(depth); depth++; return; }
+      i++;
+    }
+  };
+  while (i < src.length) {
+    const c = src[i], n = src[i + 1];
+    if (c === "/" && n === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
+    if (c === "/" && n === "*") { const end = src.indexOf("*/", i + 2); i = end < 0 ? src.length : end + 2; out += " "; continue; }
+    if (c === '"' || c === "'") { i++; while (i < src.length && src[i] !== c) { if (src[i] === "\\") i++; i++; } i++; out += '""'; continue; }
+    if (c === "`") { i++; skipTemplate(); continue; }
+    if (c === "{") depth++;
+    if (c === "}") {
+      depth--;
+      if (templates.length && templates[templates.length - 1] === depth) { templates.pop(); i++; out += ")"; skipTemplate(); continue; }
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 test("packs import only the kit and the shared libraries, and never touch the page, storage or network themselves", () => {
   for (const { page, file, path } of loaded) {
     const source = readFileSync(path, "utf8");
@@ -67,7 +99,7 @@ test("packs import only the kit and the shared libraries, and never touch the pa
     for (const [, specifier] of imports) assert.match(specifier, ALLOWED_IMPORT, `${page}/${file} imports ${specifier}`);
     const statements = (source.match(/^\s*import\b/gm) || []).length;
     assert.equal(imports.length, statements, `${page}/${file}: every import statement must name a module the check can read`);
-    const hit = source.match(FORBIDDEN);
+    const hit = codeOnly(source).match(FORBIDDEN);
     assert.equal(hit, null, `${page}/${file} uses ${hit?.[0]}: go through ctx instead`);
   }
 });
@@ -93,4 +125,18 @@ test("each page's packs load together: no pack twice, and no two commands share 
 test("the generated page indexes and inventory match the packs", async () => {
   const { files } = await generate();
   assert.deepEqual(staleFiles(files), [], "run: node scripts/lab_inventory.mjs");
+});
+
+test("the page-access scan reads code only: strings and comments are ignored, template expressions are not", () => {
+  const caught = (src) => FORBIDDEN.test(codeOnly(src));
+  assert.equal(caught('const name = "find-document.md"; // location.href in a comment'), false);
+  assert.equal(caught("const help = 'Uses window.open when you click';"), false);
+  assert.equal(caught("/* document.title */ const a = 1;"), false);
+  assert.equal(caught("const t = `Saved to ${'document.md'}`;"), false);
+  assert.equal(caught("const title = document.title;"), true);
+  assert.equal(caught("const t = `Page ${location.href} now`;"), true);
+  assert.equal(caught("run: () => fetch('/api/x')"), true);
+  assert.equal(caught("const store = localStorage.getItem('k');"), true);
+  assert.equal(caught("const a = `x ${`y ${window.name}`}`;"), true);
+  assert.equal(caught("const tagged = state.document; tagged.split('\\n');"), false);
 });

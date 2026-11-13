@@ -89,7 +89,12 @@ checkPack(pack, {
     near([["Sum of the values given", 4], ["Options", 3]])(result);
     tableIs(["Option", "Given", "Probability"], [["refund", 2, 0.5], ["exchange", 1, 0.25], ["other", 1, 0.25]])(result);
   },
-  more: [{ values: { answer: "3 1" }, expect: tableIs(["Option", "Given", "Probability"], [["1", 3, 0.75], ["2", 1, 0.25]]) }],
+  more: [{ values: { answer: "3 1" }, expect: tableIs(["Option", "Given", "Probability"], [["1", 3, 0.75], ["2", 1, 0.25]]) },
+    // the values given come back exactly as typed, not recomputed from the probabilities; 0.1 + 0.2 + 0.7 sums to 1 in floating point
+    { values: { answer: "a=0.1, b=0.2, c=0.7, d=0.3" }, expect: (result) => {
+      assert.deepEqual(result.table.rows.map((row) => row[1]), [0.1, 0.2, 0.7, 0.3]);
+      approx(result.rows[0][1], 1.3); approx(result.table.rows[3][2], 3 / 13);
+    } }],
   invalid: [{ answer: "" }, { answer: "a=0, b=0" }, { answer: "a=-1, b=2" }, { answer: "a=1, a=2" }] },
   // 2^1.5 = 2√2 and 1 ÷ 0.375.
   effective_options: { values: { answer: P }, expect: [["Perplexity (2^entropy)", 2 * Math.SQRT2], ["Inverse Simpson (1 ÷ Σ p²)", 8 / 3], ["Options", 3]],

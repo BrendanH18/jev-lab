@@ -108,11 +108,15 @@ checkPack(pack, {
     unchanged: instructionsOf(["Plain \"text\" - here"]) },
   strip_control_characters: {
     input: [q("q1", "in\u0007tent", { type: "choice", instructions: "Is\u0000 it\tlate?\n", choice: [["a\u0001", "b\u0002"]] })],
-    output: [q("q1", "intent", { type: "choice", instructions: "Is it\tlate?\n", choice: [["a", "b"]] })] },
+    output: [q("q1", "intent", { type: "choice", instructions: "Is it\tlate?\n", choice: [["a", "b"]] })],
+    rejects: [{ input: [q("q1", "x", { type: "choice", choice: [["late\u0007", ""], ["paid", ""]], expectation: { choice: "late\u0007" } })],
+      message: /expects “late\u0007”; this edit would change that option's key/ }] },
+  // Decomposed (e + U+0301, NFD) in, composed (U+00E9, NFC) out.
   unicode_nfc: {
-    input: [q("q1", "café", { instructions: "Café?", noulYes: "crème" })],
-    output: [q("q1", "café", { instructions: "Café?", noulYes: "crème" })],
-    rejects: [{ input: ids("cafe\u0301", "caf\u00e9"), message: /Two questions would have the id “café”/ }] },  // only position 1 is shown
+    input: [q("q1", "café", { type: "choice", instructions: "Café?", choice: [["crème", "crème brûlée"]] })],
+    output: [q("q1", "café", { type: "choice", instructions: "Café?", choice: [["crème", "crème brûlée"]] })],
+    rejects: [{ input: ids("café", "café"), message: /Two questions would have the id “café”/ },
+      { input: [q("q1", "x", { type: "choice", choice: [["crème", ""]], expectation: { choice: "crème" } })], message: /expects “crème”/ }] },
   trim_line_ends: { input: instructionsOf(["Line one  \n  Line two\t\r\nend ", "clean"]), output: instructionsOf(["Line one\n  Line two\r\nend", "clean"]) },
   squeeze_blank_lines: { input: instructionsOf(["A\n\n\n\nB\n\nC", "X\r\n\r\n \r\n\r\nY"]), output: instructionsOf(["A\n\nB\n\nC", "X\r\n\r\nY"]) },
   collapse_criteria_spaces: {
@@ -260,4 +264,24 @@ test("build-question-edits: imported rows pass the surface's import guard", () =
   ctx.actions.importItems(items, { label: "Import" });
   assert.equal(ctx.page.rows.length, 8);
   assert.deepEqual(ctx.page.rows[7], { id: "late", type: "noul", instructions: "Is the order late?", choice: BLANK_CHOICE, score: BLANK_SCORE, noulYes: "Past the promised date", noulNo: "" });
+});
+
+test("build-question-edits: the multipart curl snippet (with pictures) is read too, without its assets", () => {
+  const feature = pack.features.find((entry) => entry.id === "curl_questions");
+  // The shape jev/workbench.py export_curl writes when the request has pictures: cat > request.json <<'EOF' … EOF.
+  const request = { state: { photo: "photo-0a1b2c3d4e" }, model: "jev-1.14",
+    questions: { mug: { type: "box", instructions: "The mug in `photo`." } }, assets: { "photo-0a1b2c3d4e": { type: "image", part: "image-0" } } };
+  const text = `# Multipart: the JSON request first, then one file part per picture.\ncat > request.json <<'EOF'\n${JSON.stringify(request, null, 2)}\nEOF\n\n`
+    + "curl https://api.typesafe.ai/v1/systemone \\\n  -F 'request=<request.json;type=application/json' \\\n  -F 'image-0=@mug.png'\n";
+  const out = feature.parse(text, fakeCtx({}));
+  assert.deepEqual(out.items, [row("mug", "box", { instructions: "The mug in `photo`." })]);
+  assert.deepEqual(out.warnings, ["Only the questions are added; the state, the pictures and the model were left out."]);
+});
+
+test("build-question-edits: a key edit that would orphan a Choice expectation is refused on the real surface too", () => {
+  const ctx = sampleBuildQuestionsCtx({ hide: [] });
+  const items = ctx.items().map((item) => JSON.parse(JSON.stringify(item)));
+  const feature = pack.features.find((entry) => entry.id === "replace_in_keys");
+  // intent expects "refund"; renaming refund -> money_back would leave that expectation naming no option.
+  assert.throws(() => previewTransform("k", feature, items, new Set([0]), { find: "refund", replace: "money_back" }, ctx), /expects “refund”/);
 });

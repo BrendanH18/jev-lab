@@ -1225,6 +1225,8 @@ test("incompleteGamma, chiSquare and poisson agree with the Poisson sum identity
   assert.equal(math.chiSquareSf(-1, 3), 1);
   // a shape so small that x^a e^-x / gamma(a) underflows, while P is still essentially 1
   assert.equal(math.incompleteGammaP(5e-324, 1), 1);
+  assert.equal(math.incompleteGammaP(5e-324, 0.9), 1);
+  assert.equal(math.incompleteGammaQ(5e-324, 0.9), 0);
   assert.equal(math.incompleteGammaP(1e-310, 2), 1);
   assert.equal(math.chiSquareCdf(1, 5e-324), 1, "half of the smallest double underflows to a shape of 0: all mass at 0");
   assert.equal(math.chiSquareQuantile(0.9, 5e-324), 0);

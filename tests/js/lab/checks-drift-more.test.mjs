@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import pack from "../../../static/js/lab/packs/workbench/checks-drift-more.js";
 import { checkPack } from "./harness.mjs";
@@ -24,24 +25,27 @@ const WL2 = byId(all({ runs: runsWith((runs) => { runs["wholesale-leads"].report
 
 checkPack(pack, {
   highest_threshold: { items: [H, WL, B, R, NONE], values: [0.71, 0.55, 0.8, 0.5, null] },
-  // Harbor 8 of 48 held out, bean 20 of 260, wholesale none; a dataset with no rows has no share.
-  held_out_share: { items: [H, WL, B, { rows: 0, held_out_rows: 0 }], values: [8 / 48, 0, 20 / 260, null], tolerance: 1e-12 },
   // Harbor 26 automated, 25 correct; wholesale 18 and 17; roastery automated nothing; bean never ran.
-  wrong_automated: { items: [H, WL, R, B], values: [1, 1, 0, null] },
+  // and a hand-made run that automated 10 rows, 7 of them right.
+  wrong_automated: { items: [H, WL, R, B, { report: { automated: 10, correct: 7 } }], values: [1, 1, 0, null, 3] },
   interval_width: { items: [H, WL, R, B], values: [0.993 - 0.811, 0.99 - 0.742, null, null], tolerance: 1e-12 },
   queued_traffic: { items: [H, WL], values: [3, 0] },
   no_tuned_on: { items: [B, R, H], values: [true, true, false] },
   has_answer_sets: { items: [H, WL], values: [true, false] },
   slice_failed: { items: [H, WL, B], values: [true, false, false] },
   run_notes: { items: [WL, H, B], values: [true, false, false] },
-  // Harbor missed accuracy only; wholesale met both; roastery's run was not judged; bean never ran.
-  missed_target: { items: [H, WL, R, B], values: ["accuracy", "neither", "not judged", null] },
+  // Harbor missed accuracy only; wholesale met both; roastery's run was not judged; bean never ran; then hand-made runs:
+  // both missed, automation only, a fail from a required slice alone, and an error run whose overall targets held.
+  missed_target: { items: [H, WL, R, B,
+    { report: { status: "fail", accuracy_ok: false, coverage_ok: false } }, { report: { status: "fail", accuracy_ok: true, coverage_ok: false } },
+    { report: { status: "fail", accuracy_ok: true, coverage_ok: true } }, { report: { status: "error", accuracy_ok: true, coverage_ok: true } }],
+  values: ["accuracy", "none", "not judged", null, "both", "automation", "a required slice", "not judged"] },
   drift_verdict: { items: [H, WL, BR], values: ["shifted", "not compared", "restored draft"] },
   upgrade_verdict: { items: [WL, H], values: ["retune", "not tried"] },
   signal: { items: [H, WL, { signal: "" }], values: ["confidence", "probability", null] },
 
-  low_threshold: { hit: EDGE, miss: [H, WL, B, R], message: /^crema ≥ 0\.40 can automate answers given with under even odds/ },
-  high_threshold: { hit: EDGE, miss: [H, WL, B, R], message: /^bitter ≥ 0\.99 sends almost every row to review/ },
+  low_threshold: { hit: EDGE, miss: [H, WL, B, R], message: /^crema ≥ 0\.40 can automate answers with a confidence under 0\.5; check that this is intended\.$/ },
+  high_threshold: { hit: EDGE, miss: [H, WL, B, R], message: /^bitter ≥ 0\.99 automates only answers at least that sure/ },
   override_differs: { hit: WL, miss: [H, B, R],
     message: /^The model box says jev-1\.3, so the next run measures that model; the saved check keeps asking jev-latest and was tuned on jev-1\.2\.$/ },
   several_versions: { hit: H2, miss: [H, WL, B], message: /answered by jev-1\.2 and jev-1\.3/ },
@@ -51,14 +55,9 @@ checkPack(pack, {
   drift_queue_waiting: { hit: H, miss: [WL, B, R], message: /^New traffic shifted and 3 rows wait in Label new traffic/ },
   unsaved_review_edits: { hit: H, miss: [WL, B], message: /^2 Review labels you edited in this session are not in the dataset until Add\.$/ },
 
-  // Shown: harbor 0.811 - 0.95 = -0.139, wholesale 17/18 - 0.9 = +0.044, bean not run. Without harbor: wholesale's.
-  worst_accuracy_margin: [
-    { ctx: ctx(), empty: empty(), expect: (result) => { assert.ok(Math.abs(result.value - (0.811 - 0.95)) < 1e-12); assert.equal(result.detail, "harbor-support"); } },
-    { ctx: ctx({ catalogHidden: ["harbor-support"] }), expect: 17 / 18 - 0.9, tolerance: 1e-12 },
-    { ctx: ctx({ catalogHidden: ["harbor-support", "wholesale-leads"] }), expect: null }],
-  // Harbor: 3 new traffic rows, and 4 Review rows of which 2 are ready.
+  // Harbor: 3 new traffic rows, and 4 Review rows of which 2 are ready; wholesale and bean have neither queue.
   rows_to_label: [
-    { ctx: ctx(), empty: empty(), expect: (result) => { assert.equal(result.value, 5); assert.equal(result.detail, "3 new traffic rows, 2 Review rows not ready"); } },
+    { ctx: ctx(), empty: empty(), expect: (result) => { assert.equal(result.value, 7); assert.equal(result.detail, "3 new traffic rows, 4 Review rows (2 ready)"); } },
     { ctx: ctx({ catalogHidden: ["harbor-support"] }), expect: null }],
 
   config_csv: { ctx: ctx(), filename: "jev-check-config.csv",
@@ -86,3 +85,18 @@ checkPack(pack, {
     excludes: ["harbor-support", "bean-reviews"] },
 }, { ctx: () => ctx() });
 
+test("checks-drift-more: a top-probability gate under 0.5 names that signal", () => {
+  const check = pack.features.find((feature) => feature.id === "low_threshold");
+  assert.equal(check.check({ gates: { roast: 0.35 }, signal: "top_probability" }),
+    "roast ≥ 0.35 can automate answers with a top-option probability under 0.5; check that this is intended.");
+});
+
+test("checks-drift-more: facts and checks never throw on odd items", () => {
+  const odd = [{}, { gates: null, report: {}, drift: {}, upgrade: {} }, { report: { slices: "x", notes: 3, answered_by: "jev" }, queue: null }, { answer_sets: [] }];
+  for (const feature of pack.features) {
+    for (const item of odd) {
+      if (feature.kind === "fact") feature.value(item, ctx());
+      if (feature.kind === "diagnostic") feature.check(item, ctx(), 0);
+    }
+  }
+});

@@ -6,8 +6,15 @@ import { formatMarkdownTable } from "../../lib/tables.js";
 const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const orderOf = (item, ctx) => (Array.isArray(ctx?.data?.orders) ? ctx.data.orders.find((order) => order.id === item?.order) || null : null);
 const shownOf = (ctx) => (ctx.shown ? ctx.shown() : ctx.items());
+const historyOf = (ctx) => (Array.isArray(ctx?.data?.history) ? ctx.data.history : []);
+// Whether a check of this session used exactly this example's inputs: its order, its note (trimmed, as the server
+// trims it) and its sample photo. The same identity the surface uses for item.checked, so two examples that share a
+// label are never confused.
+const usedBy = (entry, item) => !!entry && !!item && entry.order === item.order && typeof entry.note === "string" && typeof item.note === "string"
+  && entry.note.trim() === item.note.trim() && entry.photo?.source === "sample" && entry.photo.name === item.sample;
 // The latest check of this session made with this example's inputs, or null.
-const latestCheck = (item, ctx) => [...(ctx?.data?.history || [])].reverse().find((entry) => entry.example === item?.label) || null;
+const latestCheck = (item, ctx) => [...historyOf(ctx)].reverse().find((entry) => usedBy(entry, item)) || null;
+const knownSample = (item, ctx) => Array.isArray(ctx?.data?.samples) && ctx.data.samples.some((sample) => sample?.name === item?.sample);
 
 function step(ctx, direction) {
   const shown = shownOf(ctx);
@@ -21,17 +28,18 @@ export default definePack({
   id: "claims-example-facts",
   surface: "claims.examples",
   title: "Example facts",
-  about: "Filters, checks, exports and commands for the Claims example chips: note length, the order behind each example, and how this session's own checks compare with the hand-written expectations. Exports hold the examples' inputs and written expectations, never answers.",
+  about: "Filters, checks, exports and commands for the Claims example chips: note length, the sample and the order behind each example, and how this session's own checks compare with the hand-written expectations. Exports hold the examples' inputs and written expectations (and, where they say so, your own checks' decisions), never answers.",
   features: [
     { id: "label", kind: "fact", type: "text", label: "example name", value: (item) => item.label },
     { id: "order", kind: "fact", type: "category", label: "order", value: (item) => item.order || null },
     { id: "sample", kind: "fact", type: "category", label: "sample picture", value: (item) => item.sample || null },
+    { id: "sample_about", kind: "fact", type: "text", label: "sample picture description", help: "The setup's description of the example's sample picture; empty when the sample is unknown.",
+      value: (item) => item.sample_about },
     { id: "expectation", kind: "fact", type: "category", label: "written expectation", help: "What a person decided by hand, not Jev's answer.",
       value: (item) => item.expect || null },
     { id: "chars", kind: "fact", type: "number", label: "note length in characters", value: (item) => num(item.chars) },
     { id: "words", kind: "fact", type: "number", label: "note words", value: (item) => num(item.words) },
     { id: "loaded", kind: "fact", type: "flag", label: "loaded in the form", value: (item) => item.loaded === true },
-    { id: "was_checked", kind: "fact", type: "flag", label: "a check this session", value: (item) => num(item.checked) > 0 },
     { id: "checks", kind: "fact", type: "number", label: "checks this session", value: (item) => num(item.checked) },
     { id: "order_total", kind: "fact", type: "number", label: "order total", unit: "USD", value: (item, ctx) => num(orderOf(item, ctx)?.total) },
     { id: "order_open", kind: "fact", type: "flag", label: "an order open to a claim (delivered, not refunded)",
@@ -43,19 +51,28 @@ export default definePack({
         return item.expect && decided && decided !== item.expect
           ? `check ${entry.call} of this session decided ${decided} when sent; the written expectation is ${item.expect}.` : null;
       } },
+    { id: "unknown_sample", kind: "diagnostic", label: "Its sample picture is not in the setup", severity: "problem",
+      check: (item, ctx) => (Array.isArray(ctx?.data?.samples) && ctx.data.samples.length && !knownSample(item, ctx)
+        ? `${item.sample ? `sample ${item.sample} is not among the setup's sample pictures` : "the example names no sample picture"}: loading it picks no photo.` : null) },
+    { id: "blank_note", kind: "diagnostic", label: "Blank customer note", severity: "advice",
+      check: (item) => (typeof item?.note === "string" && item.note.trim() === ""
+        ? "the note is blank, so the matches_note question would compare the photo with no description." : null) },
     { id: "order_missing", kind: "diagnostic", label: "Its order is not in the picker", severity: "problem",
       check: (item, ctx) => (Array.isArray(ctx?.data?.orders) && ctx.data.orders.length && !orderOf(item, ctx) ? `order ${item.order || "(none)"} is not among the loaded orders.` : null) },
 
     { id: "examples_checked", kind: "metric", label: "shown examples checked this session", format: "integer",
-      compute: (ctx) => (ctx.data.history?.length && shownOf(ctx).length ? shownOf(ctx).filter((item) => item.checked > 0).length : null) },
+      compute: (ctx) => (historyOf(ctx).length && shownOf(ctx).length ? shownOf(ctx).filter((item) => item.checked > 0).length : null) },
     { id: "expectation_agreement", kind: "metric", label: "example checks matching the written expectation", format: "percent",
-      help: "This session's checks of an example, each as decided when sent.",
+      help: "This session's checks made with an example's exact inputs, each as decided when sent, against that example's written expectation.",
       compute: (ctx) => {
-        const expected = new Map(ctx.items().filter((item) => item.expect).map((item) => [item.label, item.expect]));
-        const checks = (ctx.data.history || []).filter((entry) => expected.has(entry.example) && entry.decided?.decision);
-        if (!checks.length) return null;
-        const agree = checks.filter((entry) => entry.decided.decision === expected.get(entry.example)).length;
-        return { value: agree / checks.length, detail: `${agree} of ${checks.length}` };
+        const examples = ctx.items().filter((item) => item?.expect);
+        const pairs = historyOf(ctx).flatMap((entry) => {
+          const example = examples.find((item) => usedBy(entry, item));
+          return example && entry.decided?.decision ? [[entry, example]] : [];
+        });
+        if (!pairs.length) return null;
+        const agree = pairs.filter(([entry, example]) => entry.decided.decision === example.expect).length;
+        return { value: agree / pairs.length, detail: `${agree} of ${pairs.length}` };
       } },
 
     { id: "examples_csv", kind: "exporter", label: "Shown examples as CSV", help: "inputs and written expectations; no answers",

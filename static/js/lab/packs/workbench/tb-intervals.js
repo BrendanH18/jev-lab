@@ -21,6 +21,8 @@ const PRIOR = [real("a", "Prior successes + 1 (Beta a)", "1 = uniform", { min: 0
   real("b", "Prior failures + 1 (Beta b)", "1 = uniform", { min: 0.0001, default: 1 })];
 const INTEGER_PRIOR = [count("a", "Prior successes + 1 (Beta a)", "1 = uniform", { min: 1, max: MAX_EXACT, default: 1 }),
   count("b", "Prior failures + 1 (Beta b)", "1 = uniform", { min: 1, max: MAX_EXACT, default: 1 })];
+const ERROR_PRIOR = [real("a", "Prior errors + 1 (Beta a)", "1 = uniform", { min: 0.0001, default: 1 }),
+  real("b", "Prior correct rows + 1 (Beta b)", "1 = uniform", { min: 0.0001, default: 1 })];
 const LIST_FORMAT = "Separate the numbers with commas, spaces, tabs, semicolons or new lines.";
 
 // ---------- helpers ----------
@@ -163,12 +165,19 @@ function strata(text) {
   });
 }
 
-// P(X <= k) and P(X >= k) for X hypergeometric: k errors among n audited rows from a batch of size holding errors.
-function hyperTails(k, size, errors, audited) {
-  let below = 0, above = 0;
-  for (let j = 0; j <= k; j++) below += hypergeometricPmf(j, size, errors, audited);
-  for (let j = k; j <= Math.min(audited, errors); j++) above += hypergeometricPmf(j, size, errors, audited);
-  return [Math.min(1, below), Math.min(1, above)];
+// P(X <= k) (below) or P(X >= k) (above) for X hypergeometric: k errors among n audited rows from a batch of size
+// holding errors. The sum starts at k and walks away from it; once the terms fall (past the mode) below 1e-17 of the
+// total, the rest cannot change the sum, so it stops there instead of visiting every count.
+function hyperTail(k, size, errors, audited, below) {
+  const end = below ? 0 : Math.min(audited, errors), step = below ? -1 : 1;
+  let total = 0, previous = Infinity;
+  for (let j = k; below ? j >= end : j <= end; j += step) {
+    const term = hypergeometricPmf(j, size, errors, audited);
+    total += term;
+    if (total > 0 && term < previous && term <= total * 1e-17) break;
+    previous = term;
+  }
+  return Math.min(1, total);
 }
 
 // The largest m in [lo, hi] with ok(m) true, given ok is true up to some point and false after it (lo must be ok).
@@ -242,6 +251,7 @@ export default definePack({
           const weight = binomialPmf(k, n, p);
           if (weight < 1e-20) continue;
           const [lower, upper] = interval(k, n, level);
+          if (lower === null || upper === null) return [["Actual coverage", null], ["Nominal coverage", Number(level)], ["Actual minus nominal", null], ["Expected interval width", null]];
           if (lower <= p && p <= upper) covered += weight;
           width += weight * (upper - lower);
         }
@@ -260,8 +270,8 @@ export default definePack({
         counts(k, n);
         if (target <= 0 || target >= 1) fail("The target must be strictly between 0 and 1.");
         const pa = a + k, pb = b + n - k;
-        const above = incompleteBeta(1 - target, pb, pa);   // P(rate > t) = I_(1−t)(b', a')
-        return [["Posterior mean accuracy", pa / (pa + pb)], ["Chance the accuracy is above the target", above], ["Chance it is at or below the target", 1 - above]];
+        const above = incompleteBeta(1 - target, pb, pa);   // P(rate > t) = I_(1−t)(b', a'); null when it cannot be computed
+        return [["Posterior mean accuracy", pa / (pa + pb)], ["Chance the accuracy is above the target", above], ["Chance it is at or below the target", above === null ? null : 1 - above]];
       }),
     tool("probability_b_beats_a", "Chance one variant's accuracy beats another's", "With independent Beta posteriors for two variants (whole-number prior; 1 and 1 is uniform), the chance that B's true accuracy is above A's, by the exact sum for whole-number shapes. Counts up to 100,000.",
       [count("kA", "A: correct rows", "e.g. 80", { max: MAX_EXACT }), count("nA", "A: rows checked", "e.g. 100", { min: 1, max: MAX_EXACT }),
@@ -383,10 +393,10 @@ export default definePack({
         if (audited > size) fail("Rows audited cannot be more than the rows in the batch.");
         if (k > audited) fail("Errors found cannot be more than rows audited.");
         const alpha = 1 - Number(level), least = k, most = size - (audited - k);
-        const upperAt = (cut) => lastTrue((m) => hyperTails(k, size, m, audited)[0] > cut, least, most);
+        const upperAt = (cut) => lastTrue((m) => hyperTail(k, size, m, audited, true) > cut, least, most);
         // smallest m with P(X >= k | m) > alpha / 2: that tail rises with m
         let lo = least, hi = most;
-        while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (hyperTails(k, size, mid, audited)[1] > alpha / 2) hi = mid; else lo = mid + 1; }
+        while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (hyperTail(k, size, mid, audited, false) > alpha / 2) hi = mid; else lo = mid + 1; }
         const upper = upperAt(alpha / 2), oneSided = upperAt(alpha);
         return [["Error rate in the sample", k / audited], ["Estimated errors in the batch", k * size / audited], ["Fewest errors in the batch", lo], ["Most errors in the batch", upper],
           ["Most errors as a share of the batch", upper / size], ["One-sided upper bound on errors", oneSided], ["Rows not audited", size - audited]];
@@ -420,7 +430,7 @@ export default definePack({
         return { table: { columns: ["Class", "Count", "Share", "Lower bound", "Upper bound"], rows }, note: `${percent(level)} simultaneous intervals for ${classes.length} classes and ${total} items.` };
       }),
     tool("next_batch_errors", "Errors to expect in the next batch", "From k errors in n checked rows and a Beta prior (1 and 1 is uniform), the predictive (beta-binomial) distribution of errors in the next m rows: the expected number, the chance of none, and an equal-tailed prediction range. Up to 100,000 rows.",
-      [count("k", "Errors found", "e.g. 3", { max: MAX_EXACT }), count("n", "Rows checked", "e.g. 200", { min: 1, max: MAX_EXACT }), count("m", "Rows in the next batch", "e.g. 1000", { min: 1, max: MAX_EXACT }), ...PRIOR, LEVEL],
+      [count("k", "Errors found", "e.g. 3", { max: MAX_EXACT }), count("n", "Rows checked", "e.g. 200", { min: 1, max: MAX_EXACT }), count("m", "Rows in the next batch", "e.g. 1000", { min: 1, max: MAX_EXACT }), ...ERROR_PRIOR, LEVEL],
       ({ k, n, m, a, b, level }) => {
         if (k > n) fail("Errors found cannot be more than rows checked.");
         const pa = a + k, pb = b + n - k, tail = (1 - Number(level)) / 2, base = logBeta(pa, pb);

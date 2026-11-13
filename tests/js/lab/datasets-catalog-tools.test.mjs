@@ -43,10 +43,6 @@ checkPack(pack, {
   split_csv: { ctx: all(), filename: "jev-dataset-splits.csv", excludes: NOTES,
     text: '"dataset","held_out_rows","held_out_labeled","tuning_labeled","held_out_share","test_looks","drawn_at"\r\n'
       + '"archived-refunds","3","3","6","0.3333","4","2026-06-02T09:00:00Z"\r\n"harbor-support-inbox","8","6","24","0.2","1","2026-10-31T09:00:00Z"\r\n' },
-  status_lines: { ctx: ctx(), filename: "jev-datasets-status.txt", excludes: NOTES,
-    text: "bean-reviews: 12/12 rows labeled · 1 question · no split · no check\ncafe-photos: 0/6 rows labeled · 0 questions · no split · no check\n"
-      + "empty-draft: 0/0 rows labeled · 0 questions · no split · no check\n"
-      + "harbor-support-inbox: 30/40 rows labeled · 2 questions · 8 held out, 1 test look · saved check\nwholesale-leads: 5/20 rows labeled · 2 questions · no split · no check\n" },
 
   // Shown order: bean, cafe, empty, harbor (loaded), wholesale.
   load_next: { ctx: () => ctx(), check: (c) => assert.deepEqual(c.log, [["load", "wholesale-leads"]]), hidden: () => ctx({ loadedId: "wholesale-leads" }) },
@@ -84,7 +80,11 @@ checkPack(pack, {
   split_plan: { values: { labeled: 30, share: 25 }, expect: [["Labeled rows held out", 8], ["Labeled rows left for tuning", 22], ["Held-out share of labeled rows (%)", 26.7]],
     more: [{ values: { labeled: 4, share: 10 }, expect: [["Labeled rows held out", 2], ["Labeled rows left for tuning", 2], ["Held-out share of labeled rows (%)", 50]] },
       { values: { labeled: 30, share: 20 }, expect: [["Labeled rows held out", 6], ["Labeled rows left for tuning", 24], ["Held-out share of labeled rows (%)", 20]] },
-      { values: { labeled: 9, share: 33.3 }, expect: [["Labeled rows held out", 3], ["Labeled rows left for tuning", 6], ["Held-out share of labeled rows (%)", 33.3]] }],
+      { values: { labeled: 9, share: 33.3 }, expect: [["Labeled rows held out", 3], ["Labeled rows left for tuning", 6], ["Held-out share of labeled rows (%)", 33.3]] },
+      // 50% of 5 is 2.5, a tie that goes to the larger count (jev/testsplit.py key (distance, -count)): 3, leaving 2 for tuning.
+      { values: { labeled: 5, share: 50 }, expect: [["Labeled rows held out", 3], ["Labeled rows left for tuning", 2], ["Held-out share of labeled rows (%)", 60]] },
+      // A large count answers at once: 25% of 1,000,001 is 250,000.25, so 250,000.
+      { values: { labeled: 1000001, share: 25 }, expect: [["Labeled rows held out", 250000], ["Labeled rows left for tuning", 750001], ["Held-out share of labeled rows (%)", 25]] }],
     invalid: [{ labeled: 3, share: 25 }, { labeled: 30, share: 60 }, { labeled: 30, share: 5 }, { labeled: 2.5, share: 25 }] },
   // 124 labeled at 20% holds out round(24.8) = 25, leaving 99; 125 holds out 25, leaving 100.
   // 39 at 25% holds out round(9.75) = 10, leaving 29; 40 holds out 10, leaving 30.
@@ -92,7 +92,10 @@ checkPack(pack, {
     expect: [["Labeled rows needed", 125], ["Held out at that size", 25], ["Labeled tuning rows at that size", 100], ["Rows still to label", 95]],
     more: [{ values: { tuning: 30, share: 25, labeled: 0 }, expect: [["Labeled rows needed", 40], ["Held out at that size", 10], ["Labeled tuning rows at that size", 30], ["Rows still to label", 40]] },
       { values: { tuning: 2, share: 50, labeled: 0 }, expect: [["Labeled rows needed", 4], ["Held out at that size", 2], ["Labeled tuning rows at that size", 2], ["Rows still to label", 4]] },
-      { values: { tuning: 10, share: 0, labeled: 12 }, expect: [["Labeled rows needed", 10], ["Held out at that size", 0], ["Labeled tuning rows at that size", 10], ["Rows still to label", 0]] }],
+      { values: { tuning: 10, share: 0, labeled: 12 }, expect: [["Labeled rows needed", 10], ["Held out at that size", 0], ["Labeled tuning rows at that size", 10], ["Rows still to label", 0]] },
+      // The largest input: 133,333 at 25% holds out round(33,333.25) = 33,333, leaving 100,000; 133,332 holds out 33,333
+      // too (33,333 exactly), leaving 99,999.
+      { values: { tuning: 100000, share: 25, labeled: 0 }, expect: [["Labeled rows needed", 133333], ["Held out at that size", 33333], ["Labeled tuning rows at that size", 100000], ["Rows still to label", 133333]] }],
     invalid: [{ tuning: 1, share: 20, labeled: 0 }, { tuning: 10, share: 60, labeled: 0 }, { tuning: 10, share: 20, labeled: -1 }] },
 
   stages: { improvements: {
@@ -183,4 +186,18 @@ test("datasets-catalog-tools: commands pick the right neighbour when the loaded 
   assert.deepEqual([...forward.log, ...back.log], [["load", "bean-reviews"], ["load", "wholesale-leads"]]);
   assert.equal(feature("load_loaded_copy").when(ctx({ loadedId: "bean-reviews", copyBusy: true })), false);
   assert.equal(feature("load_next").when(none()), false);
+});
+
+test("datasets-catalog-tools: metrics read a page with nothing on it as unavailable", () => {
+  for (const feature of pack.features.filter((entry) => entry.kind === "metric")) {
+    assert.equal(feature.compute({}), null, feature.id);
+    assert.equal(feature.compute({ shown: () => [], items: () => [], data: { total: 0, pinned_ids: [] } }), null, feature.id);
+  }
+});
+
+test("datasets-catalog-tools: the split tools stay fast on their largest inputs", () => {
+  const started = Date.now();
+  feature("tuning_size").compute({ tuning: 100000, share: 50, labeled: 0 });
+  feature("split_plan").compute({ labeled: 10000000, share: 10 });
+  assert.ok(Date.now() - started < 500, "the split tools must not scan every count");
 });

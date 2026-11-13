@@ -4,7 +4,7 @@ import { csvText, definePack } from "../../kit.js";
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"];
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
-const minutesOf = (item) => (typeof item.minutes === "number" ? item.minutes : null);
+const minutesOf = (item) => (typeof item.minutes === "number" && Number.isFinite(item.minutes) ? item.minutes : null);
 const dayIndexOf = (item) => (Number.isInteger(item.day_index) ? item.day_index : null);
 const clock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 const businessDomain = (ctx) => (typeof ctx?.data?.business_domain === "string" ? ctx.data.business_domain : "harborcoffee.example");
@@ -30,7 +30,8 @@ export default definePack({
   about: "Filters, sorts, clash and working-hours checks, counts and calendar exports for the simulated shop's meetings this week, plus a shortcut that only drafts a reschedule command. Exports hold simulation data only.",
   features: [
     { id: "day", kind: "fact", type: "category", label: "weekday", value: (item) => item.day || null },
-    { id: "start", kind: "fact", type: "number", label: "start minute of the day", unit: "minutes", help: "600 is 10:00.", value: (item) => minutesOf(item) },
+    { id: "start", kind: "fact", type: "number", label: "start hour", unit: "hours", help: "Time of day in hours: 10.5 is 10:30.",
+      value: (item) => (minutesOf(item) === null ? null : minutesOf(item) / 60) },
     { id: "day_number", kind: "fact", type: "number", label: "weekday number", help: "1 is Monday, 5 is Friday.",
       value: (item) => (dayIndexOf(item) === null ? null : dayIndexOf(item) + 1) },
     { id: "moved", kind: "fact", type: "flag", label: "moved meeting", value: (item) => item.moved === true },
@@ -53,16 +54,18 @@ export default definePack({
           slots.set(key, [...(slots.get(key) || []), item]);
         }
         return [...slots.values()].filter((list) => list.length > 1)
-          .map((list) => `${list.map((item) => item.title || item.id).join(" and ")} both start ${capital(list[0].day)} ${clock(minutesOf(list[0]))}.`);
+          .map((list) => {
+            const names = list.map((item) => item.title || item.id);
+            return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} ${list.length > 2 ? "all" : "both"} start ${capital(list[0].day)} ${clock(minutesOf(list[0]))}.`;
+          });
       } },
     { id: "outside_hours", kind: "diagnostic", severity: "advice", label: "Outside working hours",
       check: (item) => (minutesOf(item) !== null && (minutesOf(item) < 480 || minutesOf(item) >= 1080)
         ? `Starts at ${clock(minutesOf(item))}, outside 08:00 to 18:00.` : null) },
     { id: "unreadable_time", kind: "diagnostic", severity: "problem", label: "Start time not readable",
-      check: (item) => (minutesOf(item) === null ? `The start time ${JSON.stringify(item.time ?? null)} is not HH:MM.` : null) },
+      check: (item) => (minutesOf(item) !== null ? null
+        : typeof item.time === "string" && item.time.trim() ? `The start time ${JSON.stringify(item.time)} is not HH:MM.` : "No start time is on file.") },
 
-    { id: "moved_count", kind: "metric", format: "integer", label: "Meetings moved since the last reset",
-      compute: (ctx) => (ctx.items().length ? ctx.items().filter((item) => item.moved === true).length : null) },
     { id: "busiest_day", kind: "metric", format: "text", label: "Busiest shown day",
       compute: (ctx) => {
         const counts = DAYS.map((day) => ctx.shown().filter((item) => item.day === day).length);
@@ -120,14 +123,14 @@ export default definePack({
         ctx.actions.draftCommand(`move the ${meeting.title.charAt(0).toLowerCase()}${meeting.title.slice(1)} to `);
         ctx.env?.toast?.("Drafted in the command box. Type the new day or time, then press Enter to plan it.");
       } },
-    { id: "copy_today", kind: "command", group: "Dispatch calendar", title: "Copy today's shown meetings",
+    { id: "copy_today", kind: "command", group: "Dispatch calendar", title: "Copy the shown meetings on the world's date",
       when: (ctx) => dateOfWeekday(ctx.data?.today, 0) !== null,
       run: (ctx) => {
         const match = ctx.data.today.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         const weekday = (new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay() + 6) % 7;
         const list = weekday > 4 ? [] : weekOrder(ctx.shown().filter((item) => item.day === DAYS[weekday]));
         ctx.env.copy(list.length ? list.map((item) => `${minutesOf(item) === null ? item.time || "?" : clock(minutesOf(item))} ${item.title || item.id}`).join("\n") : "No meetings today.");
-        ctx.env.toast?.(`Copied ${list.length} meeting${list.length === 1 ? "" : "s"} for today.`);
+        ctx.env.toast?.(`Copied ${list.length} meeting${list.length === 1 ? "" : "s"} for the world's date.`);
       } },
   ],
 });

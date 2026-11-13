@@ -4,18 +4,11 @@
 // run the current user made in this page session. Projections are labeled as projections.
 import { csvText, definePack } from "../../kit.js";
 
-const answersOf = (item) => (item && item.answers && typeof item.answers === "object" ? Object.entries(item.answers) : []);
+const answersOf = (item) => (item && item.answers && typeof item.answers === "object"
+  ? Object.entries(item.answers).filter(([, answer]) => answer && typeof answer === "object") : []);
 const numbers = (values) => values.filter((value) => typeof value === "number" && Number.isFinite(value));
 const lowest = (values) => (numbers(values).length ? Math.min(...numbers(values)) : null);
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
-const CLOSE = 0.1;
-
-// The gap between the two most likely options or levels of a Choice or Score answer; null when it has fewer than two.
-function margin(answer) {
-  if (answer.type !== "choice" && answer.type !== "score") return null;
-  const ps = numbers((answer.probabilities || []).map((entry) => entry.p)).sort((a, b) => b - a);
-  return ps.length >= 2 ? ps[0] - ps[1] : null;
-}
 
 const show = (value) => (value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value));
 
@@ -35,20 +28,20 @@ export default definePack({
     { id: "disagreements", kind: "fact", type: "number", label: "label disagreements",
       help: "Answers whose human label says otherwise (Box: overlap under 0.5). Unanswered and held-out rows are unavailable.",
       value: (item) => (item.answers ? answersOf(item).filter(([, answer]) => answer.agrees === false).length : null) },
-    { id: "latency", kind: "fact", type: "number", label: "call latency", unit: "ms", value: (item) => item.meta?.latency_ms ?? null },
-    { id: "cost", kind: "fact", type: "number", label: "measured call cost", unit: "USD", value: (item) => item.meta?.cost_usd ?? null },
-    { id: "failed", kind: "fact", type: "flag", label: "failed call", value: (item) => item.status === "failed" },
-    { id: "close_call", kind: "fact", type: "flag", label: "close call between two options",
-      help: `A Choice or Score answer whose two most likely options are within ${CLOSE} of each other. Plain local arithmetic, advisory only.`,
-      value: (item) => answersOf(item).some(([, answer]) => { const gap = margin(answer); return gap !== null && gap < CLOSE; }) },
-    { id: "status", kind: "fact", type: "category", label: "run status", value: (item) => item.status ?? null },
+    { id: "latency", kind: "fact", type: "number", label: "call latency", unit: "ms", help: "Measured for the row's call; unavailable on unanswered rows.",
+      value: (item) => numbers([item.meta?.latency_ms])[0] ?? null },
+    { id: "cost", kind: "fact", type: "number", label: "measured call cost", unit: "USD", help: "Measured cost of the row's call, not an estimate; unavailable on unanswered rows.",
+      value: (item) => numbers([item.meta?.cost_usd])[0] ?? null },
+    { id: "status", kind: "fact", type: "category", label: "run status", help: "answered, failed (the call returned an error) or skipped (never sent).",
+      value: (item) => (typeof item.status === "string" && item.status ? item.status : null) },
     { id: "cal_answer", kind: "fact", type: "category", label: "answer to Calibrate's question",
       help: "The predicted answer for the question Calibrate shows; unavailable for unanswered and held-out rows.",
       value: (item, ctx) => {
         const qid = ctx?.data?.calQuestion;
         return qid ? item.answers?.[qid]?.predicted ?? null : null;
       } },
-    { id: "error", kind: "fact", type: "text", label: "error message", value: (item) => item.error ?? "" },
+    { id: "error", kind: "fact", type: "text", label: "error message", help: "The failed call's message; empty on other rows.",
+      value: (item) => (typeof item.error === "string" ? item.error : "") },
 
     // ---------- checks ----------
     { id: "invalid_label", kind: "diagnostic", severity: "advice", label: "Label that fits no answer",
@@ -92,11 +85,6 @@ export default definePack({
         const run = ctx.data.run;
         return run && run.completed > 0 && typeof run.cost_usd === "number" ? (run.cost_usd / run.completed) * 1000 : null;
       } },
-    { id: "answered_share", kind: "metric", format: "percent", label: "Rows answered",
-      compute: (ctx) => {
-        const run = ctx.data.run;
-        return run && run.rows > 0 ? { value: run.completed / run.rows, detail: `${run.completed} of ${run.rows}` } : null;
-      } },
     { id: "tokens_per_row", kind: "metric", label: "Input tokens per answered row", help: "Measured totals of the run, retries included.",
       compute: (ctx) => {
         const run = ctx.data.run;
@@ -127,7 +115,8 @@ export default definePack({
         if (!run) throw new Error("Run Bulk first: there is no run to summarize.");
         return ["# Bulk run summary", "",
           `- Rows: ${run.rows} (${run.completed} answered, ${run.failed} failed, ${run.skipped} skipped; ${run.held_out} held out)`,
-          `- Model asked: ${run.requested_model ?? run.model ?? "unknown"}`,
+          `- Model asked: ${run.requested_model ?? "unknown"}`,
+          `- Model that answered: ${run.model ?? "unknown"}`,
           `- Wall time: ${run.wall_ms === null ? "unknown" : `${Math.round(run.wall_ms)} ms`} (summed across attempts)`,
           `- Input tokens: ${run.input_tokens ?? "unknown"}`,
           `- Measured cost: ${run.cost_usd === null ? "unknown" : `$${run.cost_usd}`}`,

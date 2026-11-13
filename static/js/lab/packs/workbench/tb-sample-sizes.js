@@ -290,7 +290,9 @@ export default definePack({
           const neg = ceilCount(ratio * pos);
           return z * Math.sqrt((auc * (1 - auc) + (pos - 1) * (q1 - auc * auc) + (neg - 1) * (q2 - auc * auc)) / (pos * neg));
         };
-        const pos = firstTrue((size) => ceilCount(ratio * size) >= 1 && width(size) <= half, 1), neg = ceilCount(ratio * pos);
+        const pos = firstTrue((size) => ceilCount(ratio * size) >= 1 && width(size) <= half, 1);
+        if (pos === null) return { rows: [["Positives needed", null], ["Negatives needed", null], ["Rows in total", null], ["Half-width at that size", null]], note: "No size up to 1,000,000,000 positives is enough." };
+        const neg = ceilCount(ratio * pos);
         return [["Positives needed", pos], ["Negatives needed", neg], ["Rows in total", pos + neg], ["Half-width at that size", width(pos)]];
       }),
     tool("correlation_rows", "Pairs to detect a correlation", "How many pairs (for example confidence score and human score) a two-sided test needs to detect a correlation of r with the chosen power, by the Fisher z approximation: ((z_α/2 + z_β) ÷ atanh r)² + 3.",
@@ -303,6 +305,7 @@ export default definePack({
       [share("p1", "Expected rate of A", "e.g. 0.85"), share("p2", "Expected rate of B", "e.g. 0.9"), share("margin", "Margin for the difference", "e.g. 0.05"), LEVEL],
       ({ p1, p2, margin, level }) => {
         if (margin <= 0) fail("The margin must be above 0.");
+        if (p1 * (1 - p1) + p2 * (1 - p2) === 0) fail("Both rates are 0 or 1, so there is no spread to plan for.");
         const z = zTwo(level), n = ceilCount(z * z * (p1 * (1 - p1) + p2 * (1 - p2)) / (margin * margin));
         return [["Rows per variant", n], ["Rows in total", 2 * n]];
       }),
@@ -310,6 +313,7 @@ export default definePack({
       [share("coverage", "Expected coverage (share automated)", "e.g. 0.7"), share("accuracy", "Expected accuracy when automated", "e.g. 0.95"), share("margin", "Margin for accuracy", "e.g. 0.03"), LEVEL],
       ({ coverage, accuracy, margin, level }) => {
         if (coverage <= 0) fail("The coverage must be above 0.");
+        strictShare(accuracy, "The expected accuracy");
         if (margin <= 0) fail("The margin must be above 0.");
         const z = zTwo(level), automated = marginRows(z, accuracy, margin), total = ceilCount(automated / coverage);
         return [["Automated rows needed", automated], ["Rows to label in all", total], ["Coverage margin at that size", z * Math.sqrt(coverage * (1 - coverage) / total)]];

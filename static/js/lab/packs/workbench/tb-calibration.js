@@ -11,7 +11,7 @@ const LOGIT_CLIP = 1e-6;
 const PAIR_FORMAT = "Paste probability,outcome pairs, one per line or several on a line, separated by commas, tabs, spaces or semicolons. "
   + "Outcomes are 1/0, yes/no, true/false or correct/wrong (for confidence,correct pairs, whether the answer was right); a first line with no number is skipped as a header.";
 const VECTOR_FORMAT = "Paste one row per line: the right option, then a value for each option, separated by commas, tabs or semicolons. "
-  + "A header line such as label,refund,exchange,other names the options and labels may then use those names; otherwise a label is the option's position (1, 2, …).";
+  + "A header line such as label,refund,exchange,other names the options and labels may then use those names (or positions, unless the names are numbers such as Score levels); otherwise a label is the option's position (1, 2, …).";
 const PROBABILITY_VECTORS = `${VECTOR_FORMAT} Rows whose probabilities add up to within ${SUM_TOLERANCE} of 1 are rescaled to add up to 1.`;
 
 const PAIRS = { name: "pairs", label: "Probability and outcome pairs", type: "textarea", rows: 8, required: true, placeholder: "probability,outcome\n0.92,1\n0.35,0\n0.71,1" };
@@ -91,7 +91,12 @@ const isWhole = (cell) => { const value = toNumber(cell); return value !== null 
 const isVector = (values) => values.every((value) => value !== null && value >= 0 && value <= 1) && Math.abs(values.reduce((a, b) => a + b, 0) - 1) <= SUM_TOLERANCE;
 
 function labelIndex(cell, options, k, where) {
-  if (options) { const index = options.indexOf(cell); if (index >= 0) return index; }
+  if (options) {
+    const index = options.indexOf(cell);
+    if (index >= 0) return index;
+    // Options named by numbers (Score levels 0, 1, 2) would make a position ambiguous, so only their names count.
+    if (options.some(isWhole)) throw new Error(`${where}: "${shown(cell)}" is not an option named on the header line (${options.join(", ")}).`);
+  }
   const position = toNumber(cell);
   if (position !== null && Number.isInteger(position) && position >= 1 && position <= k) return position - 1;
   throw new Error(options ? `${where}: "${shown(cell)}" is neither an option named on the header line (${options.join(", ")}) nor a position from 1 to ${k}.`
@@ -112,7 +117,9 @@ function parseVectors(text, { logits = false, labeled = true } = {}) {
     const cells = splitCells(line);
     if (k === null) {
       const values = cells.slice(skip).map(toNumber);
-      const data = labeled ? isWhole(cells[0]) || (values.every((value) => value !== null) && (logits || isVector(values))) : values.every((value) => value !== null);
+      // Distinct whole numbers after a label that is not a position name the options (level,0,1,2), not one row's values.
+      const numberNames = values.length >= 2 && cells.slice(skip).every(isWhole) && new Set(values).size === values.length;
+      const data = labeled ? isWhole(cells[0]) || (!numberNames && values.every((value) => value !== null) && (logits || isVector(values))) : values.every((value) => value !== null);
       if (!data) {
         options = cells.slice(skip);
         if (options.length < 2 || options.some((option) => !option)) throw new Error(`${where}: a header line needs ${labeled ? "a label column and " : ""}at least two option names.`);
@@ -277,6 +284,7 @@ const temperatureSlope = (rows, beta) => rows.reduce((total, row) => {
   return total + q.reduce((sum, value, k) => sum + value * row.values[k], 0) - row.values[row.label];
 }, 0) / rows.length;
 
+const finite = (value) => (Number.isFinite(value) ? value : null);
 const topIndex = (values) => values.reduce((best, value, k) => (value > values[best] ? k : best), 0);
 
 function scoresList(text, read) {
@@ -366,7 +374,8 @@ export default definePack({
       [PAIRS, BINNING, BINS, { name: "minRows", label: "Minimum rows in a bin", type: "integer", min: 1, default: 1 }], (params) => {
         const data = parsePairs(params.pairs);
         const bins = binsOf(data, params.binning, params.bins).filter((bin) => bin.n >= params.minRows);
-        if (!bins.length) return { rows: [["Maximum calibration error", null], ["Bin from", null], ["Bin to", null], ["Rows in that bin", null], ["Bins counted", 0]], note: "No bin holds the minimum rows." };
+        if (!bins.length) return { rows: [["Maximum calibration error", null], ["Bin from", null], ["Bin to", null], ["Rows in that bin", null], ["Observed rate − mean probability there", null], ["Bins counted", 0]],
+          note: "No bin holds the minimum rows." };
         let worst = bins[0];
         for (const bin of bins) if (Math.abs(bin.sy - bin.sp) / bin.n > Math.abs(worst.sy - worst.sp) / worst.n + 1e-15) worst = bin;
         return [["Maximum calibration error", Math.abs(worst.sy - worst.sp) / worst.n], ["Bin from", worst.lo], ["Bin to", worst.hi], ["Rows in that bin", worst.n],
@@ -387,9 +396,10 @@ export default definePack({
         if (new Set(x).size < 2) throw new Error("Paste at least two different probabilities.");
         const citl = solveOffset(x, data.positives);
         if (separated(x, data.y)) return { rows: [["Calibration slope", null], ["Calibration intercept", null], ["Calibration-in-the-large", citl]],
-          note: "The outcomes are separated by probability (every 1 is at or above every 0, or the reverse), so the slope has no finite estimate." };
+          note: ["The outcomes are separated by probability (every 1 is at or above every 0, or the reverse), so the slope has no finite estimate.", note].filter(Boolean).join(" ") };
         const fit = fitLogistic(x, data.y);
-        return { rows: [["Calibration slope", fit ? fit.b : null], ["Calibration intercept", fit ? fit.a : null], ["Calibration-in-the-large", citl]], note };
+        return { rows: [["Calibration slope", fit ? fit.b : null], ["Calibration intercept", fit ? fit.a : null], ["Calibration-in-the-large", citl]],
+          note: [fit ? null : "The fit did not converge.", note].filter(Boolean).join(" ") || null };
       }),
     tool("hosmer_lemeshow", "Hosmer-Lemeshow test",
       `Groups rows by sorted probability into groups of about equal size (equal probabilities stay in one group), then compares observed and expected positives: H = Σ (O − E)² ÷ (E(1 − E ÷ n)) on groups − 2 degrees of freedom. A small p-value is evidence of miscalibration; with many rows tiny gaps become significant. ${PAIR_FORMAT}`,
@@ -502,7 +512,7 @@ export default definePack({
         const data = parseVectors(params.rows, { logits: true }), rows = data.rows, n = rows.length;
         const accuracy = rows.filter((row) => topIndex(row.values) === row.label).length / n;
         const meanTop = (beta) => rows.reduce((total, row) => total + Math.max(...softmax(row.values, beta)), 0) / n;
-        const base = [["Log loss at T = 1 (nats)", temperatureLoss(rows, 1)], ["Top-choice accuracy", accuracy], ["Mean top probability at T = 1", meanTop(1)]];
+        const base = [["Log loss at T = 1 (nats)", finite(temperatureLoss(rows, 1))], ["Top-choice accuracy", accuracy], ["Mean top probability at T = 1", finite(meanTop(1))]];
         const unknown = (note) => ({ rows: [["Temperature", null], ...base, ["Log loss at the fitted temperature (nats)", null], ["Mean top probability at the fitted temperature", null], ["Rows", n]], note });
         if (temperatureSlope(rows, 0) >= -1e-12) return unknown("The label's logit is on average no higher than the others', so the loss keeps falling as T grows: no finite temperature fits.");
         if (rows.every((row) => row.values[row.label] >= Math.max(...row.values))) {
@@ -512,8 +522,9 @@ export default definePack({
         for (let i = 0; i < 1000 && temperatureSlope(rows, hi) < 0; i++) hi *= 2;
         let lo = 0;
         for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (temperatureSlope(rows, mid) < 0) lo = mid; else hi = mid; }
-        const beta = (lo + hi) / 2;
-        return [["Temperature", 1 / beta], ...base, ["Log loss at the fitted temperature (nats)", temperatureLoss(rows, beta)], ["Mean top probability at the fitted temperature", meanTop(beta)], ["Rows", n]];
+        const beta = (lo + hi) / 2, fitted = [1 / beta, temperatureLoss(rows, beta), meanTop(beta)];
+        if (!(beta > 0) || !fitted.every(Number.isFinite)) return unknown("The logits are too large to fit a temperature; scale them down.");
+        return [["Temperature", fitted[0]], ...base, ["Log loss at the fitted temperature (nats)", fitted[1]], ["Mean top probability at the fitted temperature", fitted[2]], ["Rows", n]];
       }),
     tool("temperature_apply", "Apply a temperature to logits",
       "Turns each row of logits into probabilities with softmax(logits ÷ T), with the top option. Paste one row of logits per line (no label column) separated by commas, tabs or semicolons; an optional first line names the options.",
@@ -523,6 +534,7 @@ export default definePack({
         const data = parseVectors(params.rows, { logits: true, labeled: false });
         return { table: { columns: ["Row", ...data.options, "Top option"], rows: data.rows.map((row, i) => {
           const q = softmax(row.values, 1 / params.temperature);
+          if (!q.every(Number.isFinite)) throw new Error(`Row ${i + 1}: the logits ÷ T are too large to compute; use a higher temperature or smaller logits.`);
           return [i + 1, ...q, data.options[topIndex(q)]];
         }) } };
       }),
@@ -574,15 +586,6 @@ export default definePack({
           if (Math.abs(signed) > best.gap + 1e-15) best = { gap: Math.abs(signed), at: data.p[order[i]], signed };
         }
         return [["KS calibration error", best.gap], ["Up to probability", best.at], ["Outcomes there run", best.signed > 0 ? "above the probabilities" : best.signed < 0 ? "below the probabilities" : "level with the probabilities"], ["Rows", data.n]];
-      }),
-    tool("discrimination_slope", "Discrimination slope (Tjur's R²)",
-      `The mean probability given to rows whose outcome was 1 minus the mean given to rows whose outcome was 0: 0 when the probabilities do not tell the outcomes apart, 1 when they separate them perfectly. It complements calibration, which it ignores. ${PAIR_FORMAT}`,
-      [PAIRS], (params) => {
-        const data = needBoth(parsePairs(params.pairs));
-        let one = 0, zero = 0;
-        data.p.forEach((p, i) => { if (data.y[i]) one += p; else zero += p; });
-        return [["Mean probability when the outcome is 1", one / data.positives], ["Mean probability when the outcome is 0", zero / data.negatives],
-          ["Discrimination slope", one / data.positives - zero / data.negatives]];
       }),
     tool("calibration_by_group", "Calibration by group",
       "Mean probability against observed rate for each group (a slice such as a channel or a product line), with the gap and a 95% Wilson interval for the observed rate, groups in name order. Paste group,probability,outcome per line separated by commas, tabs or semicolons; a first line whose probability is not a number is a header. Outcomes are 1/0, yes/no, true/false or correct/wrong.",

@@ -230,6 +230,12 @@ test("shortcuts: chords, Mod as Ctrl or Cmd, symbols regardless of Shift, and ty
   assert.equal(keysMatch(event("?"), "?"), true);
   assert.equal(keysMatch(event("Escape"), "Escape"), true);
   assert.equal(keysMatch(event("x"), "Hyper+X"), false);
+  // macOS types a composed character with Option held; the physical key still matches an Alt chord.
+  assert.equal(keysMatch(event("˜", { altKey: true, shiftKey: true, code: "KeyN" }), "Alt+Shift+N"), true);
+  assert.equal(keysMatch(event("™", { altKey: true, code: "Digit2" }), "Alt+2"), true);
+  assert.equal(keysMatch(event("˜", { altKey: true, shiftKey: true, code: "KeyM" }), "Alt+Shift+N"), false);
+  assert.equal(keysMatch(event("˜", { shiftKey: true, code: "KeyN" }), "Shift+N"), false, "without Alt the typed character decides");
+  assert.equal(keysMatch(event("q", { code: "KeyA" }), "Q"), true, "a plain letter follows the layout, not the physical key");
   assert.deepEqual(["INPUT", "textarea", "Select", "DIV", undefined].map((tagName) => typingTarget({ tagName })), [true, true, true, false, false]);
   assert.equal(typingTarget({ tagName: "DIV", isContentEditable: true }), true);
 });

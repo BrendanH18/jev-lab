@@ -25,6 +25,10 @@ checkPack(pack, {
     values: { text: "Check the order. Is it late? Reply yes or no!" },
     expect: exactly([["Sentences", 3], ["Words", 10], ["Average words per sentence", 10 / 3], ["Longest sentence (words)", 4]],
       { columns: ["sentence", "words", "text"], rows: [[1, 3, "Check the order."], [2, 3, "Is it late?"], [3, 4, "Reply yes or no!"]] }),
+    // A lone dash is not a word: 5 words, then 1.
+    more: [{ values: { text: "Make the table \u2014 with coffee. Done!" },
+      expect: exactly([["Sentences", 2], ["Words", 6], ["Average words per sentence", 3], ["Longest sentence (words)", 5]],
+        { columns: ["sentence", "words", "text"], rows: [[1, 5, "Make the table \u2014 with coffee."], [2, 1, "Done!"]] }) }],
     invalid: [{ text: "   " }],
   },
   // 9 words, 2 sentences, 10 syllables (every word 1 except hap-py). Then: make 1, the 1, ta-ble 2, with 1, cof-fee 2 =
@@ -56,7 +60,9 @@ checkPack(pack, {
   doubled_words: {
     values: { text: "Check the the order.\nIt is is late, that, that is fine.\nSo so" },
     expect: exactly([["Doubled words", 3]], { columns: ["line", "words"], rows: [[1, "the the"], [2, "is is"], [3, "So so"]] }),
-    more: [{ values: { text: "No repeats here, here." }, expect: exactly([["Doubled words", 0]], { columns: ["line", "words"], rows: [] }) }],
+    more: [{ values: { text: "No repeats here, here." }, expect: exactly([["Doubled words", 0]], { columns: ["line", "words"], rows: [] }) },
+      // CRLF counts as one line break; a pair split across lines is reported on the first word's line.
+      { values: { text: "ok\r\nthe the\r\n\r\nfine\nfine" }, expect: exactly([["Doubled words", 2]], { columns: ["line", "words"], rows: [[2, "the the"], [4, "fine fine"]] }) }],
   },
   // A: refund, the, order, please; B: please, refund, now. Shared 2 of 5 distinct words.
   shared_words: {
@@ -71,21 +77,34 @@ checkPack(pack, {
     values: { a: "order late", b: "Order later" },
     expect: [["Edit distance (characters)", 2], ["Similarity", 9 / 11], ["Same start (characters)", 0], ["Same end (characters)", 0]],
     more: [{ values: { a: "order late", b: "Order later", ignoreCase: true }, expect: [["Edit distance (characters)", 1], ["Similarity", 10 / 11], ["Same start (characters)", 10], ["Same end (characters)", 0]] },
-      { values: { a: "", b: "" }, expect: [["Edit distance (characters)", 0], ["Similarity", 1], ["Same start (characters)", 0], ["Same end (characters)", 0]] }],
+      { values: { a: "", b: "" }, expect: [["Edit distance (characters)", 0], ["Similarity", 1], ["Same start (characters)", 0], ["Same end (characters)", 0]] },
+      // "kitten" to "sitting" is the textbook 3 (k→s, e→i, add g), similarity 1 − 3/7; both share "itt" inside only.
+      { values: { a: "kitten", b: "sitting" }, expect: [["Edit distance (characters)", 3], ["Similarity", 4 / 7], ["Same start (characters)", 0], ["Same end (characters)", 0]] }],
+    // 2,001 × 2,001 characters is over the 4,000,000-cell limit.
+    invalid: [{ a: "a".repeat(2001), b: "b".repeat(2001) }],
   },
-  // Four addresses, the first two the same ignoring case; .example, .test and example.com are reserved, .notreal is not.
+  // Four addresses, the first two the same ignoring case; .example, .test and example.com are all reserved.
   find_emails: {
-    values: { text: "Write ana@harbor.example or Ana@Harbor.Example, cc bo@coffee.test, cy@mail.example.com and x@harbor.notreal." },
-    expect: exactly([["Addresses found", 5], ["Distinct addresses", 4], ["Not on a reserved example domain", 1]],
-      { columns: ["address", "times", "example domain"], rows: [["ana@harbor.example", 2, "yes"], ["bo@coffee.test", 1, "yes"], ["cy@mail.example.com", 1, "yes"], ["x@harbor.notreal", 1, "no"]] }),
+    values: { text: "Write ana@harbor.example or Ana@Harbor.Example, cc bo@coffee.test, cy@mail.example.com and x@shop.example." },
+    expect: exactly([["Addresses found", 5], ["Distinct addresses", 4], ["Not on a reserved example domain", 0]],
+      { columns: ["address", "times", "example domain"], rows: [["ana@harbor.example", 2, "yes"], ["bo@coffee.test", 1, "yes"], ["cy@mail.example.com", 1, "yes"], ["x@shop.example", 1, "yes"]] }),
     more: [{ values: { text: "no addresses" }, expect: exactly([["Addresses found", 0], ["Distinct addresses", 0], ["Not on a reserved example domain", 0]],
-      { columns: ["address", "times", "example domain"], rows: [] }) }],
+      { columns: ["address", "times", "example domain"], rows: [] }) },
+      // 192.0.2.1 is a documentation address (RFC 5737), not a domain reserved for examples, so it counts as not reserved.
+      { values: { text: "Ask dee@192.0.2.1 or eli@shop.example." }, expect: exactly([["Addresses found", 2], ["Distinct addresses", 2], ["Not on a reserved example domain", 1]],
+        { columns: ["address", "times", "example domain"], rows: [["dee@192.0.2.1", 1, "no"], ["eli@shop.example", 1, "yes"]] }) }],
   },
   // The comma and the final period are not part of the links.
   find_links: {
-    values: { text: "See https://harbor.example/menu, www.example.com/a and http://shop.notreal/x?y=1. Again https://harbor.example/menu" },
-    expect: exactly([["Links found", 4], ["Distinct links", 3], ["Not on a reserved example domain", 1]],
-      { columns: ["link", "times", "example domain"], rows: [["https://harbor.example/menu", 2, "yes"], ["www.example.com/a", 1, "yes"], ["http://shop.notreal/x?y=1", 1, "no"]] }),
+    values: { text: "See https://harbor.example/menu, www.example.com/a and http://shop.example/x?y=1. Again https://harbor.example/menu" },
+    expect: exactly([["Links found", 4], ["Distinct links", 3], ["Not on a reserved example domain", 0]],
+      { columns: ["link", "times", "example domain"], rows: [["https://harbor.example/menu", 2, "yes"], ["www.example.com/a", 1, "yes"], ["http://shop.example/x?y=1", 1, "yes"]] }),
+    // The host comes after any user info and before a port: harbor.example twice, shop.example once, then the
+    // documentation address 192.0.2.1 (RFC 5737, not a reserved example domain) behind the user info "harbor.example".
+    more: [{ values: { text: "https://ana:pw@harbor.example/x http://harbor.example:8321/ https://ana@shop.example/ https://harbor.example@192.0.2.1/" },
+      expect: exactly([["Links found", 4], ["Distinct links", 4], ["Not on a reserved example domain", 1]],
+        { columns: ["link", "times", "example domain"], rows: [["https://ana:pw@harbor.example/x", 1, "yes"], ["http://harbor.example:8321/", 1, "yes"],
+          ["https://ana@shop.example/", 1, "yes"], ["https://harbor.example@192.0.2.1/", 1, "no"]] }) }],
   },
   // 1,234.50 → 1234.5; the date gives 2024, 5, 1 (no minus signs); item-2 → 2; " -3" → −3; ".5" → 0.5. Sum 3264.
   find_numbers: {
@@ -118,6 +137,9 @@ checkPack(pack, {
     values: { text: "Dear {name}, order {{order_id}} for {name} is <status>.", values: "name = Ana Ruiz\norder_id: HC-1042\n# note\nunused = x=y" },
     expect: exactly([["Placeholders filled", 3], ["Placeholders left", 1], ["Names without a value", "status"], ["Values not used", "unused"]], undefined,
       "Dear Ana Ruiz, order HC-1042 for Ana Ruiz is <status>."),
+    // The first = or : ends the name, so "note: a=b" sets note to "a=b".
+    more: [{ values: { text: "{note} and {url}", values: "note: a=b\nurl = https://harbor.example/x" },
+      expect: exactly([["Placeholders filled", 2], ["Placeholders left", 0], ["Names without a value", "none"], ["Values not used", "none"]], undefined, "a=b and https://harbor.example/x") }],
     invalid: [{ text: "{a}", values: "just text" }, { text: "{a}", values: "a = 1\na = 2" }, { text: "{a}", values: "" }],
   },
   question_id: {
@@ -127,13 +149,19 @@ checkPack(pack, {
     // Accents stay in the case forms and leave the slug; a leading digit is not a plain identifier.
     more: [{ values: { text: "2nd Crème check" },
       expect: [["snake_case", "2nd_crème_check"], ["camelCase", "2ndCrèmeCheck"], ["kebab-case", "2nd-crème-check"], ["ASCII slug", "2nd_creme_check"],
-        ["Title Case label", "2nd Crème Check"], ["Plain identifier (letters, digits, underscores)", "no"], ["Unique snake_case id", "2nd_crème_check"]] }],
+        ["Title Case label", "2nd Crème Check"], ["Plain identifier (letters, digits, underscores)", "no"], ["Unique snake_case id", "2nd_crème_check"]] },
+      // No letter has an ASCII form, so there is no slug.
+      { values: { text: "\u65E5\u672C \u6CE8\u6587" },
+        expect: [["snake_case", "\u65E5\u672C_\u6CE8\u6587"], ["camelCase", "\u65E5\u672C\u6CE8\u6587"], ["kebab-case", "\u65E5\u672C-\u6CE8\u6587"], ["ASCII slug", null],
+          ["Title Case label", "\u65E5\u672C \u6CE8\u6587"], ["Plain identifier (letters, digits, underscores)", "no"], ["Unique snake_case id", "\u65E5\u672C_\u6CE8\u6587"]] }],
     invalid: [{ text: "?!" }],
   },
   // Width 12 with a two-space indent: "  one two" (9), "  three four" (12), "  five six"; the 20-letter word stays whole.
   wrap_lines: {
     values: { text: "  one two three four five six\nshort\n\nsupercalifragilistic word", width: 12 },
     expect: exactly([["Lines before", 4], ["Lines after", 7]], undefined, "  one two\n  three four\n  five six\nshort\n\nsupercalifragilistic\nword"),
+    // A line that fits keeps its double space; the 18-character line splits at width 10.
+    more: [{ values: { text: "keep  this\none two three four", width: 10 }, expect: exactly([["Lines before", 2], ["Lines after", 3]], undefined, "keep  this\none two\nthree four") }],
     invalid: [{ text: "a", width: 5 }],
   },
   unwrap_lines: {
@@ -142,16 +170,18 @@ checkPack(pack, {
   },
   // NUL, BEL and NEL (U+0085) are control characters; the tab stays; the zero-width space goes only when asked.
   strip_control: {
-    values: { text: "a\u0000b\u0007c\td​e\u0085" },
-    expect: exactly([["Control characters removed", 3], ["Invisible characters removed", 0]], undefined, "abc\td​e"),
-    more: [{ values: { text: "a\u0000b\u0007c\td​e\u0085", invisible: true }, expect: exactly([["Control characters removed", 3], ["Invisible characters removed", 1]], undefined, "abc\tde") }],
+    values: { text: "a\u0000b\u0007c\td\u200Be\u0085" },
+    expect: exactly([["Control characters removed", 3], ["Invisible characters removed", 0]], undefined, "abc\td\u200Be"),
+    more: [{ values: { text: "a\u0000b\u0007c\td\u200Be\u0085", invisible: true }, expect: exactly([["Control characters removed", 3], ["Invisible characters removed", 1]], undefined, "abc\tde") }],
   },
   // Quotes “ ” ’ (3), dashes — and − (2), two no-break spaces; the ellipsis stays unless asked.
   normalize_punctuation: {
-    values: { text: "“Hi” — it’s 5 − 2…" },
+    values: { text: "“Hi” — it’s 5\u00A0−\u00A02…" },
     expect: exactly([["Quotes straightened", 3], ["Dashes replaced", 2], ["Spaces replaced", 2], ["Ellipses expanded", 0]], undefined, "\"Hi\" - it's 5 - 2…"),
-    more: [{ values: { text: "“Hi” — it’s 5 − 2…", quotes: false, ellipsis: true },
-      expect: exactly([["Quotes straightened", 0], ["Dashes replaced", 2], ["Spaces replaced", 2], ["Ellipses expanded", 1]], undefined, "“Hi” - it’s 5 - 2...") }],
+    more: [{ values: { text: "“Hi” — it’s 5\u00A0−\u00A02…", quotes: false, ellipsis: true },
+      expect: exactly([["Quotes straightened", 0], ["Dashes replaced", 2], ["Spaces replaced", 2], ["Ellipses expanded", 1]], undefined, "“Hi” - it’s 5 - 2...") },
+      // An ideographic space and an en space become plain spaces.
+      { values: { text: "a\u3000b\u2002c" }, expect: exactly([["Quotes straightened", 0], ["Dashes replaced", 0], ["Spaces replaced", 2], ["Ellipses expanded", 0]], undefined, "a b c") }],
   },
   // Case-sensitive: "translate", "late." and "late?" (not Late or LATE). Whole words ignoring case: Late, late, late, LATE.
   count_phrase: {
@@ -177,7 +207,7 @@ checkPack(pack, {
       "  keep indent\nx y\n\nend"),
   },
   unusual_characters: {
-    values: { text: "Café menu​ é\u0007" },
+    values: { text: "Café\u00A0menu\u200B é\u0007" },
     expect: exactly([["Distinct unusual characters", 4], ["Control or invisible (times)", 3], ["Other non-ASCII (times)", 2]],
       { columns: ["character", "code point", "times", "kind"], rows: [["é", "U+00E9", 2, "non-ASCII"], ["no-break space", "U+00A0", 1, "invisible or special space"],
         ["zero-width space", "U+200B", 1, "invisible or special space"], ["(not shown)", "U+0007", 1, "control"]] }),

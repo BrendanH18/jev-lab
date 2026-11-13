@@ -23,7 +23,6 @@ const pct = (value) => `${Math.round(value * 100)}%`;
 const usd = (value) => `${value < 0 ? "-" : ""}$${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const plural = (count, word, many = `${word}s`) => `${count} ${count === 1 ? word : many}`;
 const fixed = (value, digits) => (num(value) === null ? "—" : value.toFixed(digits));
-const NEW_ACCOUNT = "new account from the email";
 const SENDER_CHECKS = ["requester_owns_order", "vendor_domain", "sender_attends"];
 const WORLDS = [["integrated", "Autopilot"], ["naive", "Dispatch alone"]];
 
@@ -170,9 +169,6 @@ export default definePack({
   about: "An outcome matrix of Autopilot against Dispatch alone, which layer stopped each attack, the difference between the two simulated businesses, an approvals overview and a full view of one processed email. Everything comes from your own calls in this server run; attacks are judged by the scenario labels, which Jev never sees, and Approve or Dismiss here makes no Jev call.",
   features: [
     // ---------- metrics ----------
-    { id: "decisions_waiting", kind: "metric", format: "integer", label: "decisions still waiting for you",
-      help: "Every processed email of this server run that shows Approve or Dismiss now, whatever the filters show.",
-      compute: (ctx) => (ctx.items().length ? ctx.items().filter((item) => item.awaiting === true).length : null) },
     { id: "decided_share", kind: "metric", format: "percent", label: "needs-you emails you have decided",
       help: "Approved plus dismissed, divided by every email Autopilot sent to you (decided or not).",
       compute: (ctx) => {
@@ -181,29 +177,12 @@ export default definePack({
         const decided = sent.filter((item) => DECIDED.has(item.outcome)).length;
         return { value: decided / sent.length, detail: `${decided} of ${sent.length} decided` };
       } },
-    { id: "shield_caught_share", kind: "metric", format: "percent", label: "stopped attacks shield caught",
-      help: "Of the shown attacks (per the scenario labels) Dispatch alone ran and Autopilot did not, the share Shield's quarantine or review stopped; the rest a sender or photo check stopped.",
-      compute: (ctx) => {
-        const stopped = ctx.shown().filter((item) => isAttack(item) && ran(item, "naive") && !ran(item, "integrated"));
-        if (!stopped.length) return null;
-        const shield = stopped.filter((item) => stopOf(item).layer.startsWith("Shield")).length;
-        return { value: shield / stopped.length, detail: `${shield} of ${plural(stopped.length, "stopped attack")}` };
-      } },
     { id: "naive_only_activity", kind: "metric", format: "integer", label: "actions only Dispatch alone's world holds",
       help: "Activity entries in Dispatch alone's simulated business that Autopilot's does not hold, counting repeats.",
       compute: (ctx) => { const worlds = bothWorlds(ctx); return ctx.items().length && worlds ? onlyIn(worlds.naive, worlds.integrated).length : null; } },
     { id: "integrated_only_activity", kind: "metric", format: "integer", label: "actions only Autopilot's world holds",
       help: "Activity entries in Autopilot's simulated business that Dispatch alone's does not hold, counting repeats.",
       compute: (ctx) => { const worlds = bothWorlds(ctx); return ctx.items().length && worlds ? onlyIn(worlds.integrated, worlds.naive).length : null; } },
-    { id: "new_account_dollars", kind: "metric", format: "usd", label: "dollars paid to accounts named in emails",
-      help: "Payments in either simulated business sent to the bank account an email supplied instead of the account on file.",
-      compute: (ctx) => {
-        const worlds = bothWorlds(ctx);
-        if (!ctx.items().length || !worlds) return null;
-        const paid = (world) => activityOf(world).filter((entry) => entry.destination === NEW_ACCOUNT).reduce((total, entry) => total + (num(entry.amount) ?? 0), 0);
-        const a = paid(worlds.integrated), b = paid(worlds.naive);
-        return { value: a + b, detail: `Dispatch alone ${usd(b)} · Autopilot ${usd(a)}` };
-      } },
 
     // ---------- outcome matrix ----------
     { id: "outcome_matrix", kind: "panel", title: "Outcome matrix: Autopilot against Dispatch alone",
@@ -247,32 +226,25 @@ export default definePack({
     { id: "layer_attribution", kind: "panel", title: "What stopped each attack",
       improvements: [{ id: "table", title: "List each shown attack with what Dispatch alone did and the layer that stopped it in Autopilot" },
         { id: "evidence", title: "Show the rule or failed check behind each stopping layer" },
-        { id: "not_stopped", title: "Flag attacks Autopilot still acted on" },
         { id: "dollars", title: "Total the dollars each stopping layer kept from attackers" },
-        { id: "inspect", title: "Inspect an attack's call from the attribution table" },
-        { id: "copy", title: "Copy the layer attribution as text" }],
+        { id: "inspect", title: "Inspect an attack's call from the attribution table" }],
       render: (h, ctx, api) => {
         const attacks = ctx.shown().filter(isAttack);
         if (!attacks.length) return h("p", { class: "faint" }, "No shown email is an attack per the scenario labels yet.");
         const rows = attacks.map((item) => ({ item, ...attributionOf(item) }));
-        const missed = rows.filter((row) => row.status === "not stopped");
         const byLayer = new Map();
         for (const row of rows.filter((entry) => entry.status === "stopped")) {
           const known = byLayer.get(row.layer) || { dollars: 0, count: 0 };
           byLayer.set(row.layer, { dollars: known.dollars + row.dollars, count: known.count + 1 });
         }
-        const text = `${["What stopped each attack (attacks per the scenario labels; outcomes from your own calls in this server run):",
-          ...rows.map((row) => `${nameOf(row.item)}: ${row.status === "stopped" ? `stopped by ${row.layer}` : row.layer} (${row.evidence})`)].join("\n")}\n`;
         return h("div", {}, h("p", { class: "faint" }, "Attacks per the scenario labels, which Jev never sees. A layer is the first of Shield's quarantine, Shield's review, a sender check or the photo check that held the action."),
-          missed.length ? h("p", { class: "badge bad", "data-not-stopped": "" }, `Autopilot acted on ${plural(missed.length, "attack")}: ${missed.map((row) => nameOf(row.item)).join(", ")}`) : null,
           h("table", { class: "table lab-table" }, h("thead", {}, h("tr", {}, ["Email", "Dispatch alone", "Stopped by", "Why", ""].map((title) => h("th", {}, title)))),
             h("tbody", {}, rows.map((row) => h("tr", { "data-attack": row.item.id, "data-status": row.status },
               h("td", {}, nameOf(row.item)), h("td", {}, ran(row.item, "naive") ? `ran: ${str(executedOf(row.item, "naive").text)}` : str(planOf(row.item, "naive")?.decision) || "—"),
               h("td", { "data-layer": "" }, row.layer), h("td", { "data-evidence": "" }, row.evidence),
               h("td", {}, h("button", { class: "btn sm ghost", "data-inspect": row.item.id, onclick: () => { try { ctx.actions.inspect(row.item.id); } catch (error) { api.toast(error.message, "error"); } } }, "Inspect")))))),
           byLayer.size ? h("ul", { "data-dollars": "" }, [...byLayer].sort((a, b) => b[1].dollars - a[1].dollars || a[0].localeCompare(b[0]))
-            .map(([layer, entry]) => h("li", { "data-layer-dollars": layer }, `${layer}: ${usd(entry.dollars)} kept (${plural(entry.count, "attack")})`))) : null,
-          h("button", { class: "btn sm ghost", "data-copy": "layers", onclick: () => { api.copy(text); api.toast("Copied the layer attribution."); } }, "Copy attribution"));
+            .map(([layer, entry]) => h("li", { "data-layer-dollars": layer }, `${layer}: ${usd(entry.dollars)} kept (${plural(entry.count, "attack")})`))) : null);
       } },
 
     // ---------- the two worlds ----------
@@ -281,7 +253,6 @@ export default definePack({
         { id: "only_naive", title: "List activity only Dispatch alone's world holds" },
         { id: "only_integrated", title: "List activity only Autopilot's world holds" },
         { id: "kinds", title: "Break each world's activity down by kind" },
-        { id: "new_account", title: "Flag payments sent to an account named in an email, in either world" },
         { id: "orders", title: "List orders refunded in one world but not the other" },
         { id: "invoices", title: "List invoices paid in one world but not the other" },
         { id: "meetings", title: "List meetings whose day or time differs between the worlds" },
@@ -294,21 +265,19 @@ export default definePack({
         const cell = (value, money) => (value === null ? "—" : money ? usd(value) : String(value));
         const kinds = ordered(WORLDS.flatMap(([key]) => activityOf(worlds[key]).map((entry) => str(entry.kind) || "other")), []);
         const kindCount = (key, kind) => activityOf(worlds[key]).filter((entry) => (str(entry.kind) || "other") === kind).length;
-        const redirected = WORLDS.flatMap(([key, name]) => activityOf(worlds[key]).filter((entry) => entry.destination === NEW_ACCOUNT).map((entry) => ({ name, entry })));
         const listing = (attr, title, entries) => h("div", { [attr]: "" }, h("h4", {}, title),
           entries.length ? h("ul", {}, entries.map((entry) => h("li", {}, entry))) : h("p", { class: "faint" }, "None."));
         return h("div", {}, h("p", { class: "faint" }, "Simulated businesses after the latest call of this server run (every record, not only the shown ones). No real money moves."),
-          h("table", { class: "table lab-table", "data-counts": "" }, h("thead", {}, h("tr", {}, ["", "Autopilot", "Dispatch alone", "Difference"].map((title) => h("th", {}, title)))),
+          h("table", { class: "table lab-table", "data-counts": "" }, h("thead", {}, h("tr", {}, ["", "Autopilot", "Dispatch alone", "Autopilot minus Dispatch alone"].map((title) => h("th", {}, title)))),
             h("tbody", {}, counts.map(([title, read, money]) => {
               const a = read(worlds.integrated), b = read(worlds.naive);
               return h("tr", { "data-count": title }, h("th", {}, title), h("td", { class: "num" }, cell(a, money)), h("td", { class: "num" }, cell(b, money)),
-                h("td", { class: "num" }, a === null || b === null ? "—" : cell(b - a, money)));
+                h("td", { class: "num" }, a === null || b === null ? "—" : cell(a - b, money)));
             }))),
           listing("data-only-naive", "Only in Dispatch alone's activity", onlyIn(worlds.naive, worlds.integrated).map(entryText)),
           listing("data-only-integrated", "Only in Autopilot's activity", onlyIn(worlds.integrated, worlds.naive).map(entryText)),
           kinds.length ? h("table", { class: "table lab-table", "data-kinds": "" }, h("thead", {}, h("tr", {}, ["Kind", "Autopilot", "Dispatch alone"].map((title) => h("th", {}, title)))),
             h("tbody", {}, kinds.map((kind) => h("tr", { "data-kind": kind }, h("th", {}, kind), h("td", { class: "num" }, String(kindCount("integrated", kind))), h("td", { class: "num" }, String(kindCount("naive", kind))))))) : null,
-          redirected.length ? h("p", { class: "badge bad", "data-new-account": "" }, `Sent to an account named in an email: ${redirected.map(({ name, entry }) => `${name}: ${str(entry.text)}`).join("; ")}`) : null,
           listing("data-orders", "Orders", orderDifferences(worlds)),
           listing("data-invoices", "Invoices", invoiceDifferences(worlds)),
           listing("data-meetings", "Meetings", meetingDifferences(worlds)),
@@ -406,7 +375,7 @@ export default definePack({
             : faint("No policy checks ran for this plan.")),
           section("args", "Arguments", args.length ? h("table", { class: "table lab-table" },
             h("thead", {}, h("tr", {}, ["Argument", "Value", "Probability"].map((title) => h("th", {}, title)))),
-            h("tbody", {}, args.map(([name, arg]) => h("tr", { "data-arg": name }, h("td", {}, name), h("td", {}, arg.value === null || arg.value === undefined ? "—" : String(arg.value)),
+            h("tbody", {}, args.map(([name, arg]) => h("tr", { "data-arg": name }, h("td", {}, name), h("td", {}, arg.value === null || arg.value === undefined ? "—" : typeof arg.value === "object" ? JSON.stringify(arg.value) : String(arg.value)),
               h("td", { class: "num" }, num(arg.prob) === null ? "—" : pct(arg.prob)))))) : faint("No arguments in this plan.")),
           section("photo", "Photo answers", evidence ? h("ul", {}, [
             `Shows the item: ${num(evidence.shows_item) === null ? "—" : pct(evidence.shows_item)}`,

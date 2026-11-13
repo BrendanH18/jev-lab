@@ -268,7 +268,8 @@ test("hook: without Lab every Calibrate list is exactly as before and nothing re
 
 test("hook: a Lab filter on Calibrate reaches its row list and the answer-set short list", () => {
   const lab = labHost();
-  const hooks = calibrateHooks(calibrateW(lab));
+  const W = calibrateW(lab);
+  const hooks = calibrateHooks(W);
   const view = lab.view("workbench.calibrate");
   view.filters = [{ key: "wb-calibrate-rows/result", op: "is", value: "wrong" }];
   view.sort = { key: "wb-calibrate-rows/signal", dir: "desc" };
@@ -278,10 +279,14 @@ test("hook: a Lab filter on Calibrate reaches its row list and the answer-set sh
   const list = hooks.calLabRows();
   assert.match(textOf(list), /Rows Lab shows · 2 of 7 scored rows · 2 Lab settings active/);
   assert.deepEqual(findAll(list, (node) => node.tag === "tr").slice(1).map((tr) => textOf(tr.children[0])), ["6", "2"]);
-  view.filters = [{ key: "wb-calibrate-rows/short_list", op: "without" }];
-  assert.deepEqual(hooks.calLabSetsRows(rows), [], "no shown row has a short list");
+  view.filters = [{ key: "wb-calibrate-rows/label_outside_set", op: "with" }];
+  assert.deepEqual(hooks.calLabSetsRows(rows), [], "every short list holds its row's label");
+  // Row #2's list now misses its label: the answer-set fact reads the fit the page holds, and the short list follows.
+  W.bulk.sets.report = { ...SETS_REPORT, rows: SETS_REPORT.rows.map((r) => (r.index === 1 ? { ...r, set: ["wholesale", "billing"], covered: false } : r)) };
+  const missed = W.bulk.sets.report.rows.filter((r) => r.size >= 2);
+  assert.deepEqual(hooks.calLabSetsRows(missed).map((r) => r.index), [1]);
   lab.reset("workbench.calibrate");
-  assert.equal(hooks.calLabSetsRows(rows), rows);
+  assert.equal(hooks.calLabSetsRows(missed), missed);
 });
 
 function policyHooks(W) {
@@ -310,14 +315,15 @@ test("hook: Policy's 'Automated but wrong' keeps its meaning and counts Lab filt
   const lab = labHost();
   const hooks = policyHooks(policyW(lab));
   assert.equal(textOf(hooks.policyMistakes(POLICY_REPORT)), textOf(before), "with no Lab setting active nothing changes");
-  lab.view("workbench.policy").filters = [{ key: "wb-policy-rows/held_by_rule", op: "with" }];
+  // Only row #2 carries a picture, so the automated-but-wrong row #4 is hidden.
+  lab.view("workbench.policy").filters = [{ key: "wb-policy-rows/picture", op: "with" }];
   const filtered = hooks.policyMistakes(POLICY_REPORT);
   assert.match(textOf(filtered), /Automated but wrong · 0 of 1/);
   assert.match(textOf(filtered), /No automated-but-wrong row matches Policy's Lab filters/);
   assert.equal(findAll(filtered, (node) => node.tag === "table").length, 0);
   const shown = hooks.polLabRows();
-  assert.match(textOf(shown), /Rows Lab shows · 2 of 7 scored rows/);
-  assert.deepEqual(findAll(shown, (node) => node.tag === "tr").slice(1).map((tr) => textOf(tr.children[0])), ["2", "5"]);
+  assert.match(textOf(shown), /Rows Lab shows · 1 of 7 scored rows · 1 Lab setting active/);
+  assert.deepEqual(findAll(shown, (node) => node.tag === "tr").slice(1).map((tr) => textOf(tr.children[0])), ["2"]);
   lab.view("workbench.policy").filters = [{ key: "wb-policy-rows/outcome", op: "is", value: "automated, wrong" }];
   assert.match(textOf(hooks.policyMistakes(POLICY_REPORT)), /Automated but wrong · 1 of 1/);
 });

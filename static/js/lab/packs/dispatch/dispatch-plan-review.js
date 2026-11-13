@@ -4,7 +4,8 @@ import { csvText, definePack } from "../../kit.js";
 
 const MISSING = new Set(["not_identified", "not_stated"]);
 const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const ranked = (item) => (Array.isArray(item.ranked) ? item.ranked : []);
+const ranked = (item) => (Array.isArray(item.ranked) ? item.ranked.filter((entry) => entry && num(entry.p) !== null) : []);
+const CLOSE = 0.1;  // the local close-call rule: a lead under 10 points
 const marginOf = (item) => ((item.type === "choice" || item.type === "score") && ranked(item).length >= 2 ? ranked(item)[0].p - ranked(item)[1].p : null);
 const thresholdOf = (ctx) => {
   const plan = ctx?.data?.plan;
@@ -16,7 +17,7 @@ export default definePack({
   id: "dispatch-plan-review",
   surface: "dispatch.plan",
   title: "Plan review",
-  about: "Filters, sorts, close-call hints, measured cost and latency, and exports for the answers of your own latest command, plus palette commands that inspect, copy or pick an offered option. Answer exports say they hold model answers; the request export holds no answers, and close-call rules are local advice.",
+  about: "Filters, sorts, close-call hints, measured token and session-cost readouts, and exports for the answers of your own latest command, plus palette commands that inspect, copy, restore the command text or pick an offered option. Answer exports say they hold model answers; the request export holds no answers, and close-call rules are local advice.",
   features: [
     { id: "p", kind: "fact", type: "number", label: "answer probability", help: "The percentage the card prints.", value: (item) => num(item.p) },
     { id: "margin", kind: "fact", type: "number", label: "lead over the runner-up", help: "Choice and Score answers only.", value: (item) => marginOf(item) },
@@ -25,10 +26,11 @@ export default definePack({
     { id: "type", kind: "fact", type: "category", label: "question type", value: (item) => item.type || null },
     { id: "option_count", kind: "fact", type: "number", label: "option count",
       value: (item) => (item.criteria?.length ? item.criteria.length : item.probabilities?.length ? item.probabilities.length : null) },
-    { id: "not_found", kind: "fact", type: "flag", label: "not identified or not stated", value: (item) => MISSING.has(item.value) },
-    { id: "spread", kind: "fact", type: "number", label: "spread of the probabilities in bits", help: "0 when one option holds everything.",
+    { id: "not_found", kind: "fact", type: "flag", label: "answer not identified or not stated", value: (item) => MISSING.has(item.value) },
+    { id: "spread", kind: "fact", type: "number", label: "spread of the probabilities in bits",
+      help: "The entropy of the listed probabilities: 0 when one option holds everything, 1 for an even split of two.",
       value: (item) => {
-        const list = Array.isArray(item.probabilities) ? item.probabilities.filter((entry) => num(entry.p) !== null) : [];
+        const list = Array.isArray(item.probabilities) ? item.probabilities.filter((entry) => entry && num(entry.p) !== null) : [];
         return list.length ? Math.abs(list.reduce((sum, { p }) => sum - (p > 0 ? p * Math.log2(p) : 0), 0)) : null;
       } },
     { id: "answer", kind: "fact", type: "text", label: "answer as printed", value: (item) => item.display || "" },
@@ -39,28 +41,26 @@ export default definePack({
     { id: "close_call", kind: "diagnostic", severity: "advice", label: "Close call",
       check: (item) => {
         const margin = marginOf(item);
-        if (margin === null || margin >= 0.1) return null;
+        if (margin === null || margin >= CLOSE - 1e-9) return null;  // tolerance: 0.6 - 0.5 is 0.0999… in binary
         const [first, second] = ranked(item);
         return `${first.key.replace(/_/g, " ")} leads ${second.key.replace(/_/g, " ")} by ${Math.round(margin * 100)} points: a close call by a local 10-point rule, not the page's decision.`;
       } },
     { id: "probability_sum", kind: "diagnostic", severity: "advice", label: "Probabilities do not add up to 100%",
       check: (item) => {
         if (item.type !== "choice" && item.type !== "score") return null;
-        const list = (item.probabilities || []).map((entry) => num(entry.p)).filter((p) => p !== null);
+        const list = (Array.isArray(item.probabilities) ? item.probabilities : []).map((entry) => num(entry?.p)).filter((p) => p !== null);
         if (!list.length) return null;
         const total = list.reduce((sum, p) => sum + p, 0);
         return Math.abs(total - 1) > 0.02 ? `The listed probabilities add up to ${(total * 100).toFixed(1)}%.` : null;
       } },
 
-    { id: "call_cost", kind: "metric", format: "usd", label: "Cost of the shown call (measured)", compute: (ctx) => num(ctx.data?.meta?.cost_usd) },
-    { id: "latency", kind: "metric", format: "ms", label: "Latency of the shown call (measured)", compute: (ctx) => num(ctx.data?.meta?.latency_ms) },
-    { id: "tokens", kind: "metric", format: "integer", label: "Tokens in the shown call (measured)",
+    { id: "tokens", kind: "metric", format: "integer", label: "Input and output tokens of the shown call (measured)",
+      help: "The page's call stats list input tokens only; this adds the output tokens.",
       compute: (ctx) => {
         const input = num(ctx.data?.meta?.input_tokens), output = num(ctx.data?.meta?.output_tokens);
-        return input === null && output === null ? null : (input ?? 0) + (output ?? 0);
+        if (input === null && output === null) return null;
+        return { value: (input ?? 0) + (output ?? 0), detail: `${input === null ? "?" : input.toLocaleString("en-US")} in · ${output === null ? "?" : output.toLocaleString("en-US")} out` };
       } },
-    { id: "used_share", kind: "metric", format: "percent", label: "Shown answers the plan used",
-      compute: (ctx) => (ctx.shown().length ? ctx.shown().filter((item) => item.used).length / ctx.shown().length : null) },
     { id: "session_cost", kind: "metric", format: "usd", label: "Cost of this session's commands (measured)",
       help: "Answered commands since the page loaded, at most the latest 50.",
       compute: (ctx) => {
@@ -68,8 +68,8 @@ export default definePack({
         return costs.length ? { value: costs.reduce((sum, value) => sum + value, 0), detail: `${costs.length} command${costs.length === 1 ? "" : "s"}` } : null;
       } },
     { id: "session_calls", kind: "metric", format: "integer", label: "Commands answered this session",
-      compute: (ctx) => (num(ctx.data?.calls) ? ctx.data.calls : null) },
-    { id: "cost_per_1000", kind: "metric", format: "usd", label: "1,000 commands like this one (projection)",
+      compute: (ctx) => (num(ctx.data?.calls) && ctx.data.calls > 0 ? ctx.data.calls : null) },
+    { id: "cost_per_1000", kind: "metric", format: "usd", label: "Cost of 1,000 commands like this one (projection)",
       help: "The shown call's measured cost times 1,000: arithmetic, not spend.",
       compute: (ctx) => (num(ctx.data?.meta?.cost_usd) === null ? null : ctx.data.meta.cost_usd * 1000) },
 
@@ -117,6 +117,13 @@ export default definePack({
       run: (ctx) => {
         ctx.env.copy(ctx.data.text);
         ctx.env.toast?.("Copied the command text.");
+      } },
+    { id: "restore_command", kind: "command", group: "Dispatch plan", title: "Put the shown plan's command back in the box",
+      help: "When the box was edited after the answers came, this puts their command back so the plan matches it again. Nothing is sent: no model call.",
+      when: (ctx) => ctx.data.text !== null && ctx.data.stale === true,
+      run: (ctx) => {
+        ctx.actions.draftCommand(ctx.data.text);
+        ctx.env.toast?.("The shown plan's command is back in the box. Nothing was sent.");
       } },
   ],
 });

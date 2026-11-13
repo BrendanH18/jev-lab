@@ -58,7 +58,7 @@ const sentStrings = (item) => [sentValue(item.instructions), ...criteriaOf(item)
 
 // ---------- the state (backticked paths, resolved as jev/lint.py _resolve does: a field name may contain dots) ----------
 
-const PATH = /^[\p{L}_][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}_-]+|\[\d+\])*$/u;
+const PATH = /^[A-Za-z_][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}_-]+|\[\d+\])*$/u;
 
 function resolve(value, path, parent = null, key = null) {
   if (path === "") return { parent, key, value };
@@ -88,13 +88,14 @@ function stateValue(ctx) {
   const state = ctx?.data?.state;
   return state && (state.kind === "object" || state.kind === "array") ? state.value : null;
 }
-const pictureRefs = (ctx) => (Array.isArray(ctx?.data?.images) ? ctx.data.images.map((image) => str(image?.ref)).filter(Boolean) : []);
+const picturesOf = (ctx) => (Array.isArray(ctx?.data?.images) ? ctx.data.images.filter((image) => isPlainObject(image) && str(image.ref)) : []);
+const pictureRefs = (ctx) => picturesOf(ctx).map((image) => image.ref);
 
 // Distinct path-like backticked tokens in the card's sent texts, in order.
 function backtickedPaths(item) {
   const found = [];
   for (const text of sentStrings(item)) {
-    for (const [, inner] of text.matchAll(/`([^`]+)`/g)) {
+    for (const [, inner] of text.matchAll(/`([^`\n]+)`/g)) {
       const token = inner.trim();
       if (PATH.test(token) && !found.includes(token)) found.push(token);
     }
@@ -188,6 +189,14 @@ function closestPair(texts) {
   return best;
 }
 
+// Two ids of the same length that differ in one digit (level_1, level_2): a numbered series, meant to differ.
+function numberedPair(a, b) {
+  const x = Array.from(a), y = Array.from(b);
+  if (x.length !== y.length) return false;
+  const at = x.findIndex((char, index) => char !== y[index]);
+  return at >= 0 && /\d/.test(x[at]) && /\d/.test(y[at]);
+}
+
 const NEGATION = /\b(?:not|never|none|neither|nor|without|cannot)\b|n['’]t\b/i;
 
 export default definePack({
@@ -203,12 +212,12 @@ export default definePack({
       help: "UTF-8 bytes of the trimmed id, the instructions as typed and the active criteria (Choice keys and descriptions, Score levels, Noul yes/no). A size, not a spend estimate.",
       value: (item) => utf8Bytes(qidOf(item)) + utf8Bytes(item.instructions)
         + criteriaOf(item).reduce((sum, entry) => sum + (item.type === "choice" ? utf8Bytes(entry.key) : 0) + utf8Bytes(entry.text), 0) },
-    { id: "closest_wording", kind: "fact", type: "number", label: "closest wording to another question",
+    { id: "closest_wording", kind: "fact", type: "number", label: "wording overlap with another question",
       help: "The highest word overlap (Jaccard, 0 to 1, case and edge punctuation ignored) between these text instructions and any other card's; unavailable for structured or empty instructions or when no other card has text instructions.",
       value: (item, ctx) => {
         const own = wording(item);
         if (own === null || !own.trim()) return null;
-        const others = (ctx?.items?.() || []).filter((other) => other !== item && other.position !== item.position)
+        const others = (ctx?.items?.() || []).filter((other) => other && other !== item && (item.position === undefined || other.position !== item.position))
           .map(wording).filter((text) => text !== null && text.trim());
         return others.length ? Math.max(...others.map((text) => jaccard(own, text))) : null;
       } },
@@ -236,7 +245,7 @@ export default definePack({
         const lengths = criteriaOf(item).map((entry) => codePoints(entry.text)).filter((length) => length > 0);
         return lengths.length >= 2 ? Math.max(...lengths) / Math.min(...lengths) : null;
       } },
-    { id: "closest_criteria", kind: "fact", type: "number", label: "closest pair of criteria",
+    { id: "closest_criteria", kind: "fact", type: "number", label: "word overlap between criteria",
       help: "The highest word overlap (Jaccard, 0 to 1) between two active criterion descriptions of this card; near 1 means two options or levels read almost alike. Unavailable with fewer than two descriptions.",
       value: (item) => closestPair(criteriaOf(item).map((entry) => entry.text).filter((text) => text.trim())) },
 
@@ -332,7 +341,9 @@ export default definePack({
       check: (item) => {
         const expectation = expectationOf(item);
         if (!expectation || !TYPES.includes(item.type)) return null;
-        const ignored = item.type === "box" ? ["choice", "min", "max"] : item.type === "choice" ? ["box", "iou_min"] : ["choice", "box", "iou_min"];
+        // check_expectation: a Box checks only box and iou_min, and iou_min only beside a box.
+        const ignored = item.type === "box" ? ["choice", "min", "max", ...(hasOwn(expectation, "box") ? [] : ["iou_min"])]
+          : item.type === "choice" ? ["box", "iou_min"] : ["choice", "box", "iou_min"];
         const present = ignored.filter((name) => hasOwn(expectation, name));
         return present.length ? `A ${item.type} expectation does not check ${present.join(", ")}; those parts are ignored when the test runs.` : null;
       } },
@@ -373,7 +384,7 @@ export default definePack({
       } },
     { id: "unreferenced_picture", kind: "diagnostic", scope: "list", severity: "problem", label: "Picture named nowhere",
       check: (items, ctx) => {
-        const images = Array.isArray(ctx?.data?.images) ? ctx.data.images : [];
+        const images = picturesOf(ctx);
         const state = ctx?.data?.state;
         if (!images.length || !state || state.kind === "invalid") return null;
         const texts = [...(state.kind === "text" ? [str(state.text)] : stringsOf(state.value)), ...items.filter((item) => qidOf(item)).flatMap(sentStrings)];
@@ -400,11 +411,12 @@ export default definePack({
         return spaced.length ? `${spaced.map((key) => `“${key}”`).join(", ")} ha${spaced.length === 1 ? "s" : "ve"} a space inside; code that reads the answer is easier with letters, digits and underscores.` : null;
       } },
     { id: "near_ids", kind: "diagnostic", scope: "list", severity: "advice", label: "Ids one edit apart",
+      help: "Pairs of ids one inserted, removed or changed character apart, such as intent and intents; ids that differ only by case, or only in one digit of a numbered series, are left out.",
       check: (items) => {
         const ids = [...new Set(items.map(qidOf).filter(Boolean))];
         const out = [];
         for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
-          if (ids[i].toLowerCase() !== ids[j].toLowerCase() && levenshtein(ids[i], ids[j]) === 1) {
+          if (ids[i].toLowerCase() !== ids[j].toLowerCase() && levenshtein(ids[i], ids[j]) === 1 && !numberedPair(ids[i], ids[j])) {
             out.push(`${ids[i]} and ${ids[j]} are one character apart; check that they are meant to be different questions.`);
           }
         }

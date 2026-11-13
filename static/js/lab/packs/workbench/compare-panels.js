@@ -235,7 +235,7 @@ function matricesPanel(h, ctx, api) {
   const pickKey = (a, b) => `${a}\u0000${b}`;
   const inCell = (a, b) => both.filter((item) => pickOf(item, 0) === a && pickOf(item, 1) === b);
   const [pa, pb] = typeof state.pick === "string" ? state.pick.split("\u0000") : [null, null];
-  const labels = scored.map((entry) => ({ ...entry, label: labelPick(type, entry.item.label, entry.item.answers[0]) })).filter((entry) => entry.label !== null);
+  const labels = scored.map((entry) => ({ ...entry, label: labelPick(type, entry.item.label, entry.item.answers?.[0]) })).filter((entry) => entry.label !== null);
   const labelAxis = pickOrder(ctx, labels.map((entry) => entry.label));
   const perLabel = labelAxis.map((label) => {
     const group = labels.filter((entry) => entry.label === label);
@@ -337,7 +337,7 @@ function signalsPanel(h, ctx, api) {
     openList.length ? h("div", { "data-bin-rows": state.bin }, h("p", {}, `Variant ${openV}, ${signal} ${range(Number(openBin))}: ${plural(openList.length, "row")}`),
       h("ul", {}, openList.map((item) => rowLine(h, item, `${openV} ${pickOf(item, NAMES.indexOf(openV)) ?? "—"} at ${two(item.signals[NAMES.indexOf(openV)])}`)))) : null,
     reliability(0), reliability(1),
-    h("p", { class: "faint" }, `Each variant's gating signal (${signal}) on every row it answered for “${dataOf(ctx).qid}”; right and wrong only on labeled rows both answered. The reliability tables bin the probability each answer gives its own pick, as the report's calibration gap does. ${NUMBERING}`));
+    h("p", { class: "faint" }, `Each variant's gating signal (${signal}) on every row it answered for “${dataOf(ctx).qid}”; right and wrong only on labeled rows both answered. The reliability tables bin the probability each answer gives its own pick against how often that pick is right; the report's calibration gap does the same for Choice, Score and Box, but for Yes/no it bins P(yes) against yes labels, so the two can differ there. ${NUMBERING}`));
 }
 
 // ---------- row detail ----------
@@ -395,7 +395,7 @@ function detailPanel(h, ctx, api) {
   const fields = detailFields(ctx, item);
   const probabilities = probabilityRows(item.answers || []);
   const qid = dataOf(ctx).qid;
-  const markdown = () => [`# Compare row #${item.number}: your Compare run's answers for “${qid}”`, "", NUMBERING, "",
+  const markdown = () => [`# Compare row #${item.number}: your Compare run's answers and the row's label for “${qid}”`, "", NUMBERING, "",
     `Row as written: ${item.text}`, `Label: ${item.label === null ? "none" : rowText(item.label)}`, "",
     formatMarkdownTable(["", "A", "B"], fields), "",
     probabilities.length ? formatMarkdownTable(["option", "A", "B"], probabilities.map(([key, a, b]) => [key, two(a), two(b)])) : "", ""].join("\n");
@@ -467,7 +467,7 @@ function agreeAccuracy(ctx) {
 function majorityBaseline(ctx) {
   const type = typeOf(ctx);
   if (type === "box") return null;
-  const labels = scoredRows(ctx).map((entry) => labelPick(type, entry.item.label, entry.item.answers[0])).filter((label) => label !== null);
+  const labels = scoredRows(ctx).map((entry) => labelPick(type, entry.item.label, entry.item.answers?.[0])).filter((label) => label !== null);
   if (!labels.length) return null;
   const counts = new Map();
   for (const label of labels) counts.set(label, (counts.get(label) || 0) + 1);
@@ -493,8 +493,6 @@ export default definePack({
   features: [
     { id: "scoreboard", kind: "panel", title: "Shared-question scoreboard",
       improvements: [
-        { id: "table", title: "One row per shared question with its type, check kind and answers changed with a 95% interval" },
-        { id: "score_button", title: "Score another shared question from its scoreboard row" },
         { id: "remembered", title: "A's and B's accuracy on each question scored in this run" },
         { id: "leader", title: "The variant ahead on each scored question, with the exact McNemar p" },
         { id: "sort", title: "Sort the scoreboard by question order, answers changed or accuracy gap" },
@@ -504,7 +502,6 @@ export default definePack({
       render: scoreboardPanel },
     { id: "matrices", kind: "panel", title: "Right/wrong and pick matrices",
       improvements: [
-        { id: "right_wrong", title: "2×2 table of A right or wrong against B right or wrong on labeled rows" },
         { id: "cell_rows", title: "List the rows behind a cell of the right/wrong table" },
         { id: "pick_matrix", title: "Table of A's pick against B's pick on every row both answered" },
         { id: "pick_rows", title: "List the rows behind a cell of the pick table" },
@@ -523,12 +520,10 @@ export default definePack({
       render: signalsPanel },
     { id: "row_detail", kind: "panel", title: "Row detail, A beside B",
       improvements: [
-        { id: "pick_row", title: "Choose a compared row and see both variants' pick, signal and result side by side" },
+        { id: "pick_row", title: "Choose any compared row, agreeing ones included, and see both variants' pick, signal, result, rewrite and option orders side by side" },
         { id: "probabilities", title: "Both variants' probability for every option or level side by side" },
-        { id: "sent", title: "The row as written and as each variant was sent" },
         { id: "measurements", title: "Each call's measured latency, tokens and cost, with failures and skips" },
         { id: "step", title: "Step to the previous or next compared row" },
-        { id: "orders", title: "Each variant's pick in both option orders when it was asked twice" },
         { id: "copy", title: "Copy one row's answers as Markdown" },
       ],
       render: detailPanel },

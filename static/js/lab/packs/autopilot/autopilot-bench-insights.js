@@ -27,14 +27,6 @@ const runCost = (run) => {
 };
 const MODES = [["sequential", "2 calls, in turn"], ["parallel", "2 calls, parallel"], ["merged", "1 merged call"]];
 
-function summaryText(run) {
-  const tokensSaved = both(field(run, "sequential", "input_tokens"), field(run, "merged", "input_tokens"), (a, b) => a - b);
-  const lines = [`Autopilot benchmark, run ${run.run} on ${run.model || "an unknown model"} (${run.id || "one email"}), measured:`,
-    ...MODES.map(([mode, label]) => `- ${label}: ${formatValue(field(run, mode, "wall_ms"), "ms")}, ${formatValue(field(run, mode, "input_tokens"), "integer")} input tokens, ${formatValue(field(run, mode, "cost_usd"), "usd")}`),
-    `Merging saved ${formatValue(tokensSaved, "integer")} input tokens compared with two calls. Latency varies from run to run.`];
-  return `${lines.join("\n")}\n`;
-}
-
 export default definePack({
   id: "autopilot-bench-insights",
   surface: "autopilot.benchmark",
@@ -42,8 +34,6 @@ export default definePack({
   about: "Savings, speed-ups, medians across your runs on the same model, a projection tool, exports and a history table for the merged-call benchmark. Every number is measured by your own runs in this page load; projections are labeled, and exports hold run numbers only.",
   features: [
     // ---------- the latest run ----------
-    { id: "tokens_saved", kind: "metric", format: "integer", label: "input tokens saved by merging",
-      compute: (ctx) => both(field(latest(ctx), "sequential", "input_tokens"), field(latest(ctx), "merged", "input_tokens"), (a, b) => a - b) },
     { id: "token_saving_share", kind: "metric", format: "percent", label: "share of input tokens saved",
       compute: (ctx) => both(field(latest(ctx), "sequential", "input_tokens"), field(latest(ctx), "merged", "input_tokens"), (a, b) => (a > 0 ? (a - b) / a : null)) },
     { id: "time_saved", kind: "metric", format: "ms", label: "wall time saved vs calls in turn",
@@ -56,13 +46,9 @@ export default definePack({
       compute: (ctx) => both(field(latest(ctx), "sequential", "cost_usd"), field(latest(ctx), "merged", "cost_usd"), (a, b) => a - b) },
     { id: "merged_cost_thousand", kind: "metric", format: "usd", label: "projected merged cost per 1,000 emails", help: "Projection: the latest measured merged cost times 1,000, not spend.",
       compute: (ctx) => { const cost = field(latest(ctx), "merged", "cost_usd"); return cost === null ? null : cost * 1000; } },
-    { id: "saving_thousand", kind: "metric", format: "usd", label: "projected saving per 1,000 emails", help: "Projection from the latest run, not spend.",
-      compute: (ctx) => both(field(latest(ctx), "sequential", "cost_usd"), field(latest(ctx), "merged", "cost_usd"), (a, b) => (a - b) * 1000) },
     { id: "merged_call_latency", kind: "metric", format: "ms", label: "merged call latency (server-measured)", compute: (ctx) => num(latest(ctx)?.per_call_ms?.merged) },
     { id: "separate_latency", kind: "metric", format: "ms", label: "shield plus dispatch call latency",
       compute: (ctx) => both(num(latest(ctx)?.per_call_ms?.shield), num(latest(ctx)?.per_call_ms?.dispatch), (a, b) => a + b) },
-    { id: "requests_saved", kind: "metric", format: "integer", label: "requests saved per email",
-      compute: (ctx) => both(field(latest(ctx), "sequential", "requests"), field(latest(ctx), "merged", "requests"), (a, b) => a - b) },
     { id: "tokens_per_question", kind: "metric", format: "number", label: "merged input tokens per question",
       compute: (ctx) => both(field(latest(ctx), "merged", "input_tokens"), field(latest(ctx), "merged", "questions"), (a, b) => (b > 0 ? a / b : null)) },
 
@@ -82,7 +68,7 @@ export default definePack({
         return list.length ? { value: list.filter((run) => field(run, "merged", "wall_ms") < field(run, "parallel", "wall_ms")).length / list.length, detail: `${list.length} run${list.length === 1 ? "" : "s"} on the latest model` } : null;
       } },
 
-    // ---------- exports, command, tool ----------
+    // ---------- exports and a tool ----------
     { id: "runs_csv", kind: "exporter", label: "Benchmark runs as CSV", filename: "autopilot-benchmark.csv", mime: "text/csv",
       help: "the measured time, tokens, cost and requests of each mode of each run this page load, with its model; no answers or email text",
       build: (ctx) => {
@@ -105,14 +91,6 @@ export default definePack({
         return `## Autopilot benchmark, run ${run.run} (${run.model || "unknown model"})\n\n${formatMarkdownTable(["Mode", "Wall time", "Input tokens", "Cost", "Requests"],
           MODES.map(([mode, label]) => [label, formatValue(field(run, mode, "wall_ms"), "ms"), formatValue(field(run, mode, "input_tokens"), "integer"),
             formatValue(field(run, mode, "cost_usd"), "usd"), formatValue(field(run, mode, "requests"), "integer")]))}\n\nMeasured by your own run; latency varies from run to run.\n`;
-      } },
-    { id: "copy_summary", kind: "command", title: "Copy the latest benchmark summary", group: "Autopilot",
-      when: (ctx) => !!latest(ctx),
-      run: (ctx) => {
-        const run = latest(ctx);
-        if (!run) throw new Error("Run the benchmark first.");
-        ctx.env.copy(summaryText(run));
-        ctx.env.toast("Copied the benchmark summary.");
       } },
     { id: "merge_savings", kind: "tool", group: "Projections", title: "Project merge savings",
       help: "What merging saves per day and per 30 days for a volume you type, from token counts and a price you type. A projection, not spend.",

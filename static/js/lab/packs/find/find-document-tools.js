@@ -3,7 +3,7 @@
 // exports of the user's own document. Facts that read probabilities use only the user's own latest search, and
 // nothing here searches: an applied edit drops the old results, as editing the text by hand does.
 import { csvText, definePack } from "../../kit.js";
-import { findEmails } from "../../lib/text.js";
+import { findEmails, sentences } from "../../lib/text.js";
 
 const HEADING = /^Section [A-Z]:/;
 const LIMIT = 60000;
@@ -33,20 +33,28 @@ const probsAt = (result, index) => (Array.isArray(result?.line_probs) && Number.
 const results = (ctx) => (Array.isArray(ctx?.data?.results) ? ctx.data.results : []);
 const topIndexes = (ctx) => new Set(results(ctx).map((result) => result?.top?.index).filter(Number.isInteger));
 
+// A line's sentences, split at . ! or ? followed by a space. A piece stays with the one before it when that one ends in
+// a common abbreviation ("Co.", "e.g.", "a.m.") or when it starts in lower case, so "Harbor Coffee Co. Team Handbook"
+// and "open at 6 a.m. daily" stay whole.
+const ABBREVIATION = /(?:^|\s)(?:Co|Inc|Ltd|Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|No|e\.g|i\.e|a\.m|p\.m)\.$/i;
+function sentencesOf(text) {
+  const pieces = [];
+  for (const piece of sentences(text)) {
+    const previous = pieces[pieces.length - 1];
+    if (previous !== undefined && (ABBREVIATION.test(previous) || /^\p{Ll}/u.test(piece))) pieces[pieces.length - 1] = `${previous} ${piece}`;
+    else pieces.push(piece);
+  }
+  return pieces;
+}
+
 // Rewrites the text of the shown lines with fn, then relabels the whole list.
 const rewriteShown = (fn) => (items, _params, _ctx, shown) => relabel(items.map((item, index) => (shown.has(index) ? fn(item.text) : item.text)));
-
-function scrollTo(ctx, pick) {
-  const shown = ctx.shown();
-  if (!shown.length) throw new Error("No line is shown.");
-  return ctx.actions.showLine(pick(shown).index);
-}
 
 export default definePack({
   id: "find-document-tools",
   surface: "find.document",
   title: "Document tools",
-  about: "Filters, checks, previewed edits, imports and exports for the lines of your own Find document. "
+  about: "Filters, checks, previewed edits, imports, exports and the characters left for the lines of your own Find document. "
     + "Exports hold the document text only; probability facts read only your own latest search, and nothing here searches.",
   features: [
     { id: "words", kind: "fact", type: "number", label: "word count", unit: "words", value: (item) => wordsOf(textOf(item)) || null },
@@ -61,7 +69,7 @@ export default definePack({
         return values.length ? Math.max(...values) : null;
       } },
     { id: "section", kind: "fact", type: "category", label: "section",
-      help: "The Section heading at or above the line; \"no section\" above the first heading.", value: (item) => item?.section || "no section" },
+      help: "The Section heading at or above the line; \"no section\" above the first heading.", value: (item) => (typeof item?.section === "string" && item.section ? item.section : item?.section === null ? "no section" : null) },
     { id: "heading", kind: "fact", type: "flag", label: "section heading", value: (item) => item?.heading === true },
     { id: "has_number", kind: "fact", type: "flag", label: "number in the line", value: (item) => /\d/.test(textOf(item)) },
     { id: "has_email", kind: "fact", type: "flag", label: "email address", value: (item) => findEmails(textOf(item)).length > 0 },
@@ -89,11 +97,13 @@ export default definePack({
           .map((group) => `“${group[0].text}” appears on ${group.map((item) => item.id).join(", ")}. Repeated lines split the probability between them.`);
       } },
     { id: "empty_section", kind: "diagnostic", severity: "info", scope: "list", label: "Section with no lines",
-      help: "A heading directly followed by another heading, or the last line of the document.",
+      help: "A heading directly followed by another heading, or the last line of the document. Read from the whole document, so a filter that hides the next line does not hide the finding.",
       check: (items, ctx) => {
-        const headings = new Set(items.filter((item) => item?.heading).map((item) => item.index));
-        const last = finite(ctx?.data?.lines);
-        return items.filter((item) => item?.heading && (headings.has(item.index + 1) || (last !== null && item.index === last - 1)))
+        const all = typeof ctx?.items === "function" ? ctx.items() : items;
+        const byIndex = new Map(all.map((item) => [item?.index, item]));
+        const last = all.length - 1;
+        return items.filter((item) => item?.heading && Number.isInteger(item.index)
+          && (byIndex.get(item.index + 1)?.heading === true || item.index === last))
           .map((item) => `${item.id} “${item.text}” has no lines under it.`);
       } },
 
@@ -126,23 +136,13 @@ export default definePack({
         return relabel(texts);
       } },
 
-    { id: "sections", kind: "metric", format: "integer", label: "Section headings in the document",
-      compute: (ctx) => (ctx.items().length ? ctx.items().filter((item) => item.heading).length : null) },
-    { id: "mean_words", kind: "metric", format: "number", label: "Mean words per shown line",
-      compute: (ctx) => {
-        const shown = ctx.shown();
-        return shown.length ? shown.reduce((total, item) => total + wordsOf(textOf(item)), 0) / shown.length : null;
-      } },
+    { id: "split_sentences", kind: "transform", label: "Split shown lines into one sentence per line",
+      help: "Find ranks whole lines, so a line holding several facts competes for many questions. Headings stay as they are; a common abbreviation such as \"Co.\" or \"a.m.\" does not end a sentence.",
+      all: (items, _params, _ctx, shown) => relabel(items.flatMap((item, index) => (shown.has(index) && !HEADING.test(item.text) ? sentencesOf(item.text) : [item.text]))) },
+
     { id: "chars_left", kind: "metric", format: "integer", label: "Characters left before Find's 60,000 limit",
       help: "Counted on the text as the page holds it; negative means a search would be refused.",
-      compute: (ctx) => (ctx.items().length && finite(ctx.data?.chars) !== null ? LIMIT - ctx.data.chars : null) },
-    { id: "top_lines", kind: "metric", format: "integer", label: "Shown lines ranked first for a question",
-      help: "From your latest search; not available before one.",
-      compute: (ctx) => {
-        if (!results(ctx).length) return null;
-        const tops = topIndexes(ctx);
-        return ctx.shown().filter((item) => tops.has(item.index)).length;
-      } },
+      compute: (ctx) => (ctx.items().length && finite(ctx.data?.chars) !== null ? (finite(ctx.data?.rules?.max_doc_chars) ?? LIMIT) - ctx.data.chars : null) },
 
     { id: "tagged", kind: "exporter", label: "Document as Find tags it (text only)", filename: "find-document-tagged.txt",
       help: "Every searched line as \"L000| text\", the form one search sends. No answers.",
@@ -181,10 +181,5 @@ export default definePack({
         if (!items.length) throw new Error("No bullet or numbered line found.");
         return { items, warnings: skipped ? [`${plural(skipped, "line")} without a bullet skipped.`] : [] };
       } },
-
-    { id: "first_line", kind: "command", group: "Find", title: "Scroll to the first shown line", keys: "Alt+Shift+Home",
-      when: (ctx) => !ctx.data?.editing && ctx.shown().length > 0, run: (ctx) => scrollTo(ctx, (shown) => shown[0]) },
-    { id: "last_line", kind: "command", group: "Find", title: "Scroll to the last shown line", keys: "Alt+Shift+End",
-      when: (ctx) => !ctx.data?.editing && ctx.shown().length > 0, run: (ctx) => scrollTo(ctx, (shown) => shown[shown.length - 1]) },
   ],
 });

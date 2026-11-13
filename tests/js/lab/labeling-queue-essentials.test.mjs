@@ -21,9 +21,10 @@ const L = lengthCtx.items();
 const closed = () => sampleLabelingQueueCtx({ report: null });
 
 checkPack(pack, {
-  missing_labels: { items: [R[1], R[4], R[6]], values: [3, 2, 1] },
-  drafted_labels: { items: [R[1], R[2], R[4]], values: [3, 1, 0] },
-  blank_labels: { items: [R[1], R[2], R[5]], values: [0, 2, 1] },
+  missing_labels: { items: [R[1], R[4], R[6], {}], values: [3, 2, 1, null] },
+  // Row 9 misses urgent and topic and drafts urgent = no (false still counts as a draft).
+  drafted_labels: { items: [R[1], R[2], R[4], R[9], { draft: { tone: 1 } }], values: [3, 1, 0, 1, null] },
+  blank_labels: { items: [R[1], R[2], R[5], R[9], {}], values: [0, 2, 1, 1, null] },
   input_length: { items: L, values: [8, 10, 5, 4], ctx: lengthCtx },
   picture: { items: [R[4], R[1], R[6]], values: [true, false, true] },
   partly_drafted: { items: [R[1], R[2], R[4], R[9]], values: [false, true, false, true] },
@@ -31,13 +32,13 @@ checkPack(pack, {
   // Guidelines exist for urgent and topic, not tone.
   guided: { items: [R[6], R[7], R[4]], values: [false, true, true], ctx: base() },
   input_shape: { items: [R[2], R[1]], values: ["text", "object"] },
-  next_blank: { items: [R[1], R[2], R[4], R[5]], values: [null, "urgent", "topic", "tone"] },
+  // Row 9 drafts urgent (false), so topic is next; an odd item has none.
+  next_blank: { items: [R[1], R[2], R[4], R[5], R[9], {}], values: [null, "urgent", "topic", "tone", "topic", null] },
   input_text: { items: [R[1], R[2], R[7], R[9]], values: ["My order HC-2041 arrived with a torn bag. · email",
     "Do you sell 5 lb bags of the Harbor House blend wholesale? Reply to buyer@cafe-north.example", "phone", "Where is my order? · chat · HC-2077"] },
   draft_labels: { items: [R[1], R[4], R[9], R[6]], values: ["urgent=yes; topic=shipping; tone=0", "", "urgent=no", "tone=2"] },
 
   draft_conflict: { hit: [C[4], C[5]], miss: [C[1], C[9]], message: /same input with topic = (billing|shipping)/, ctx: conflictCtx() },
-  partial_row: { hit: [R[2], R[9]], miss: [R[1], R[4]], message: /still blank/ },
   // Seven drafts in all; row 1 holds three of them.
   drafts_elsewhere: { hitList: [R[1]], missList: Object.values(R), message: /^4 draft labels sit on rows not listed here/, ctx: base() },
   unguided_questions: { hitList: [R[6]], missList: [R[7], R[9]], message: /guideline for tone\./, ctx: base() },
@@ -62,7 +63,13 @@ checkPack(pack, {
       '"1","{""text"":""My order HC-2041 arrived with a torn bag."",""channel"":""email""}","","tone","score","0"',
       '"6","{""text"":""Love the new Sumatra roast!"",""channel"":""email""}","latte-photo","tone","score","2"',
     ].join("\r\n") + "\r\n",
-    excludes: ["row_id", "label:", "Urgent means"] },
+    excludes: ["row_id", "label:", "Urgent means"],
+    // A row whose input is not text or an object exports a blank input instead of failing.
+    check: () => {
+      const odd = sampleLabelingQueueCtx({ drafts: {}, report: { ...sampleLabelingReport(), items: [{ index: 0, row: null, missing: ["urgent"] }] } });
+      const out = pack.features.find((feature) => feature.id === "drafts_csv").build(odd);
+      assert.equal(out, '"row","input","picture","question","type","draft"\r\n"1","","","urgent","noul",""\r\n');
+    } },
   checklist_md: { ctx: sampleLabelingQueueCtx({ status: "ready" }), filename: "labeling-checklist.md",
     text: "# Labeling checklist\n\n2 rows · inputs and your draft labels only; pictures by name.\n\n"
       + "- [x] Row 1 — urgent: yes · topic: shipping · tone: 0\n  > My order HC-2041 arrived with a torn bag. · email\n"
@@ -94,6 +101,12 @@ checkPack(pack, {
       assert.equal(cell("tone"), "none");
       const unsaved = t.render(sampleLabelingQueueCtx({ guidelines: null }));
       assert.equal(t.textOf(t.find(unsaved, (node) => node.tag === "tr" && node.attrs["data-question"] === "urgent").children[5]), "not loaded");
+      // An unsaved dataset has no guidelines to load.
+      const draft = t.render(sampleLabelingQueueCtx({ dataset: { id: null, name: "" } }));
+      assert.equal(t.textOf(t.find(draft, (node) => node.tag === "tr" && node.attrs["data-question"] === "tone").children[5]), "unsaved dataset");
+      // Saved but empty guidelines read "none" for every question.
+      const empty = t.render(sampleLabelingQueueCtx({ guidelines: { guidelines: {} } }));
+      assert.equal(t.textOf(t.find(empty, (node) => node.tag === "tr" && node.attrs["data-question"] === "urgent").children[5]), "none");
     },
   } },
 }, { ctx: () => base() });

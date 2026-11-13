@@ -1,7 +1,7 @@
 // More facts, checks and measurements for the Shield inbox ("shield.inbox", contract: static/js/lab/surfaces/shield.js).
 // Two kinds of facts. Facts about the authored message (sender address, links, dollar amounts, money, sign-in and
 // urgency words) are plain code on the text the page shows, available before any screen; the word facts are keyword
-// matches, not judgments. Facts about a verdict (margins to the thresholds, hot signals, drivers, time pressure) read
+// matches, not judgments. Facts about a verdict (margin to the review threshold, hot signals, drivers, time pressure) read
 // only the current user's own screens of this page session and are unavailable for an unscreened message. Scenario
 // notes ("expected", "attack") are demo notes, never sent to Jev, and every feature that uses them says so.
 import { definePack } from "../../kit.js";
@@ -53,7 +53,7 @@ export default definePack({
   surface: "shield.inbox",
   title: "More inbox facts",
   about: "Plain-code facts about each message's sender, links, dollar amounts and money, sign-in and urgency words (keyword "
-    + "matches, not judgments), facts about your own verdicts (threshold margins, hot signals, drivers), consistency checks "
+    + "matches, not judgments), facts about your own verdicts (review-threshold margin, hot signals, drivers), consistency checks "
     + "and inbox measurements. Nothing asks Jev; scenario notes are labeled as demo notes, never sent to Jev.",
   features: [
     // ---------- the authored message ----------
@@ -82,7 +82,7 @@ export default definePack({
       help: "Another message in the inbox comes from the same domain.",
       value: (item, ctx) => {
         const domain = str(item?.sender_domain);
-        return !!domain && ctx.items().some((other) => other !== item && other.id !== item.id && other.sender_domain === domain);
+        return !!domain && ctx.items().some((other) => other !== item && other?.id !== item.id && other?.sender_domain === domain);
       } },
     { id: "address_untidy", kind: "fact", type: "flag", label: "an address with capitals or edge spaces",
       help: "The From address has capital letters or spaces at either end; code compares it trimmed and lowercased.",
@@ -98,15 +98,12 @@ export default definePack({
     { id: "review_margin", kind: "fact", type: "number", label: "risk minus the review threshold", unit: "−1 to 1",
       help: "Positive: the risk is that far above review_at on the sliders now; negative: below it.",
       value: (item, ctx) => margin(item, ctx, "review_at") },
-    { id: "quarantine_margin", kind: "fact", type: "number", label: "risk minus the quarantine threshold", unit: "−1 to 1",
-      help: "Positive: the risk is that far above quarantine_at on the sliders now; negative: below it.",
-      value: (item, ctx) => margin(item, ctx, "quarantine_at") },
     { id: "hot_signals", kind: "fact", type: "number", label: "hot signals", unit: "signals",
       help: "Signals whose contribution is at least 0.15; the verdict names at most three of them as drivers.",
       value: (item, ctx) => {
-        if (!item?.verdict) return null;
+        if (!item?.verdict || !Array.isArray(item.verdict.signals)) return null;
         const hot = ruleValue(ctx, "hot", 0.15);
-        return item.verdict.signals.filter((signal) => finite(signal.contribution) !== null && signal.contribution >= hot).length;
+        return item.verdict.signals.filter((signal) => finite(signal?.contribution) !== null && signal.contribution >= hot).length;
       } },
     { id: "domain_distance", kind: "fact", type: "number", label: "edits from the claimed sender's domain", unit: "characters",
       help: "Character edits between the sender domain and the domain of the sender the message claims to be (a code check). "
@@ -117,10 +114,7 @@ export default definePack({
       } },
     { id: "drivers", kind: "fact", type: "text", label: "driver signals",
       help: "The verdict's drivers, strongest first, by their slider names.",
-      value: (item, ctx) => (item?.verdict?.drivers || []).map((id) => ctx?.data?.signal_names?.[id] || id).join(", ") },
-    { id: "claimed_domain", kind: "fact", type: "category", label: "claimed sender's own domain",
-      help: "The domain of the vendor or business the message claims to be from (code's table); none for a customer or other organization.",
-      value: (item) => str(item?.fact?.expected_domain) || null },
+      value: (item, ctx) => (Array.isArray(item?.verdict?.drivers) ? item.verdict.drivers : []).map((id) => ctx?.data?.signal_names?.[id] || id).join(", ") },
     { id: "pressure_level", kind: "fact", type: "category", label: "time pressure level",
       help: "The time-pressure Score rounded to its nearest level, named as its legend names it.",
       value: pressureLevel },
@@ -144,7 +138,7 @@ export default definePack({
         const risk = finite(verdict?.risk), harm = finite(verdict?.harm), cut = policyValue(ctx, "quarantine_at");
         const lift = ruleValue(ctx, "harm_quarantine", 2.5);
         if (verdict?.level !== "quarantine" || risk === null || harm === null || cut === null) return null;
-        if (risk >= cut || harm < lift || verdict.rules.some((rule) => rule.action === "quarantine")) return null;
+        if (risk >= cut || harm < lift || (Array.isArray(verdict.rules) ? verdict.rules : []).some((rule) => rule?.action === "quarantine")) return null;
         return `Quarantined because loss if obeyed is ${harm}, at least ${lift}: the risk ${percent(risk)} is under the quarantine threshold ${percent(cut)} and no hard rule quarantined it.`;
       } },
     { id: "vendor_redirect", kind: "diagnostic", severity: "advice", label: "Matching sender asks to redirect a payment",

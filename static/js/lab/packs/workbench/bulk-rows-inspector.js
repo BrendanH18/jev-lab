@@ -1,17 +1,18 @@
 // Rows box inspector: facts, checks, edits, metrics, exports and commands for the Bulk rows box
 // (surface workbench.bulk.rows; contract in static/js/lab/surfaces/workbench-bulk.js).
 // Everything is local: it reads the parsed rows, never answers, and never shows a held-out row's label values.
-import { compareText, csvText, definePack } from "../../kit.js";
+import { csvText, definePack } from "../../kit.js";
 import { codePoints, findEmails, wordCount } from "../../lib/text.js";
 
-const textOf = (item) => (typeof item.text === "string" ? item.text : null);
-const tuning = (items) => items.filter((item) => !item.test);
+const textOf = (item) => (typeof item?.text === "string" ? item.text : null);
+const tuning = (items) => items.filter((item) => item && !item.test);
+const labeledOf = (item) => (Array.isArray(item?.labeled) ? item.labeled : []);
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const questionIds = (ctx) => Object.keys(ctx?.data?.questions || {});
 
 // A transform's text: a text row's input, or an object input's string "text" field.
 function editText(item, change) {
-  if (item.test) return null;
+  if (!item || item.test) return null;
   if (typeof item.input === "string") {
     const next = change(item.input);
     return next && next !== item.input ? { ...item, input: next } : null;
@@ -23,6 +24,7 @@ function editText(item, change) {
   return null;
 }
 
+// The spellings jev/calibrate.py reads as a Noul label (text, or the numbers 1 and 0).
 const NOUL_WORDS = { yes: true, true: true, 1: true, y: true, no: false, false: false, 0: false, n: false };
 
 // A label as a CSV cell: text as written, true/false, numbers, a Box's edges as JSON.
@@ -41,12 +43,14 @@ export default definePack({
       value: (item) => (textOf(item) === null ? null : wordCount(textOf(item))) },
     { id: "label_count", kind: "fact", type: "number", label: "label count", help: "Questions with a human label on the row (held-out rows count their ids only).",
       value: (item) => (Array.isArray(item.labeled) ? item.labeled.length : null) },
-    { id: "has_picture", kind: "fact", type: "flag", label: "picture", value: (item) => typeof item.image === "string" && item.image !== "" },
-    { id: "held_out", kind: "fact", type: "flag", label: "held-out marker", value: (item) => item.test === true },
-    { id: "has_problem", kind: "fact", type: "flag", label: "row the server would refuse", value: (item) => typeof item.problem === "string" && item.problem !== "" },
-    { id: "unlabeled", kind: "fact", type: "flag", label: "no labels", value: (item) => Array.isArray(item.labeled) && item.labeled.length === 0 },
-    { id: "past_cap", kind: "fact", type: "flag", label: "place past the 200-row cap", value: (item) => item.inRun === false },
-    { id: "kind", kind: "fact", type: "category", label: "row kind", value: (item) => item.kind ?? null },
+    { id: "has_picture", kind: "fact", type: "flag", label: "picture", value: (item) => typeof item?.image === "string" && item.image !== "" },
+    { id: "held_out", kind: "fact", type: "flag", label: "held-out marker", value: (item) => item?.test === true },
+    { id: "has_problem", kind: "fact", type: "flag", label: "a problem the server refuses", help: "A run would stop before any call: a bad _expect, _test or _image, or labels without input.",
+      value: (item) => typeof item?.problem === "string" && item.problem !== "" },
+    { id: "past_cap", kind: "fact", type: "flag", label: "a position past the 200-row cap", help: "A Bulk run sends the first 200 rows only.",
+      value: (item) => item?.inRun === false },
+    { id: "kind", kind: "fact", type: "category", label: "row kind", help: "text, object (a JSON object with other fields), array or value (elements of a JSON-array box).",
+      value: (item) => item?.kind ?? null },
     { id: "text", kind: "fact", type: "text", label: "row text", value: (item) => textOf(item) ?? "" },
 
     // ---------- checks ----------
@@ -70,8 +74,10 @@ export default definePack({
         return found ? `Holds ${plural(found, "email address")}. Check that sending it to the model is fine.` : null;
       } },
     { id: "rows_past_cap", kind: "diagnostic", severity: "advice", scope: "list", label: "Rows past the run cap",
-      check: (items, ctx) => {
-        const past = items.filter((item) => item.inRun === false).length;
+      help: "Reads the whole box, whatever is shown: a run sends the first rows whatever a filter hides.",
+      check: (shown, ctx) => {
+        const items = typeof ctx?.items === "function" ? ctx.items() : shown;
+        const past = items.filter((item) => item?.inRun === false).length;
         return past ? `${plural(past, "row")} past the ${ctx?.data?.cap ?? 200}-row cap: a run sends the first ${ctx?.data?.cap ?? 200} only. Split the box to run the rest.` : null;
       } },
 
@@ -89,50 +95,36 @@ export default definePack({
         return Object.keys(kept).length === Object.keys(item.labels).length ? null : { ...item, labels: kept };
       } },
     { id: "normalize_noul_labels", kind: "transform", label: "Write Noul labels as true or false",
-      help: "Turns yes/no, y/n, 1/0 and true/false text into true or false for the selected Noul questions. Other text is left as it is.",
+      help: "Turns yes/no, y/n, 1/0 and true/false text, and the numbers 1 and 0, into true or false for the selected Noul questions on shown tuning rows. Other values are left as they are.",
       each: (item, params, ctx) => {
         if (item.test || !item.labels || typeof item.labels !== "object") return null;
         const questions = ctx?.data?.questions || {};
         let changed = false;
         const labels = { ...item.labels };
         for (const [id, value] of Object.entries(labels)) {
-          if (questions[id]?.type !== "noul" || typeof value !== "string") continue;
-          const word = value.trim().toLowerCase();
-          if (word in NOUL_WORDS) { labels[id] = NOUL_WORDS[word]; changed = true; }
+          if (questions[id]?.type !== "noul" || !(typeof value === "string" || value === 1 || value === 0)) continue;
+          const word = String(value).trim().toLowerCase();
+          if (Object.prototype.hasOwnProperty.call(NOUL_WORDS, word)) { labels[id] = NOUL_WORDS[word]; changed = true; }
         }
         return changed ? { ...item, labels } : null;
       } },
     { id: "drop_shown", kind: "transform", label: "Remove the shown tuning rows",
       help: "Filter first, preview, then apply. Held-out rows always stay.",
       all: (items, params, ctx, shown) => items.filter((item, index) => item.test || !shown.has(index)) },
-    { id: "sort_by_text", kind: "transform", label: "Sort tuning rows by text, A to Z",
-      help: "Held-out rows keep their places; rows without text go after the others.",
-      all: (items) => {
-        const text = (item) => (typeof item.input === "string" ? item.input : typeof item.input?.text === "string" ? item.input.text : null);
-        const slots = items.flatMap((item, index) => (item.test ? [] : [index]));
-        const sorted = slots.map((index) => items[index]).map((item, order) => ({ item, order })).sort((a, b) => {
-          const ta = text(a.item), tb = text(b.item);
-          if (ta === null || tb === null) return ta === tb ? a.order - b.order : ta === null ? 1 : -1;
-          return compareText(ta, tb) || a.order - b.order;
-        }).map((entry) => entry.item);
-        const out = items.slice();
-        slots.forEach((slot, order) => { out[slot] = sorted[order]; });
-        return out;
-      } },
 
     // ---------- metrics ----------
     { id: "labeled_share", kind: "metric", format: "percent", label: "Shown tuning rows with a label",
       compute: (ctx) => {
         const rows = tuning(ctx.shown());
-        return rows.length ? { value: rows.filter((item) => item.labeled.length > 0).length / rows.length, detail: `of ${plural(rows.length, "tuning row")}` } : null;
+        return rows.length ? { value: rows.filter((item) => labeledOf(item).length > 0).length / rows.length, detail: `of ${plural(rows.length, "tuning row")}` } : null;
       } },
     { id: "held_out_share", kind: "metric", format: "percent", label: "Shown rows held out",
       compute: (ctx) => {
         const rows = ctx.shown();
-        return rows.length ? { value: rows.filter((item) => item.test).length / rows.length, detail: `of ${plural(rows.length, "row")}` } : null;
+        return rows.length ? { value: rows.filter((item) => item?.test === true).length / rows.length, detail: `of ${plural(rows.length, "row")}` } : null;
       } },
     { id: "picture_rows", kind: "metric", format: "integer", label: "Shown rows with a picture",
-      compute: (ctx) => (ctx.shown().length ? ctx.shown().filter((item) => item.image).length : null) },
+      compute: (ctx) => (ctx.shown().length ? ctx.shown().filter((item) => typeof item?.image === "string" && item.image !== "").length : null) },
     { id: "mean_words", kind: "metric", label: "Mean words per shown text",
       compute: (ctx) => {
         const counts = ctx.shown().map(textOf).filter((text) => text !== null).map(wordCount);
@@ -141,7 +133,7 @@ export default definePack({
 
     // ---------- exports ----------
     { id: "shown_inputs_jsonl", kind: "exporter", label: "Shown inputs as JSON Lines", filename: "bulk-inputs.jsonl", mime: "application/x-ndjson",
-      help: "Inputs and picture names only: no labels. Held-out rows are left out.",
+      help: "Inputs and picture names only, one row per line: no labels. Held-out rows are left out. Array and value rows are written as the JSON they are.",
       build: (ctx) => tuning(ctx.shown()).map((item) => {
         if (typeof item.input === "string") return JSON.stringify({ text: item.input, ...(item.image ? { _image: item.image } : {}) });
         if (item.input && typeof item.input === "object" && !Array.isArray(item.input)) return JSON.stringify({ ...item.input, ...(item.image ? { _image: item.image } : {}) });
@@ -164,7 +156,8 @@ export default definePack({
     { id: "check_inputs", kind: "command", title: "Check Bulk inputs before a run", group: "Bulk rows",
       run: (ctx) => ctx.actions.checkPreflight() },
     { id: "open_csv", kind: "command", title: "Open CSV import", group: "Bulk rows", run: (ctx) => ctx.actions.openCsvImport() },
-    { id: "first_problem", kind: "command", title: "Go to the first row that would break a run", group: "Bulk rows",
+    { id: "first_problem", kind: "command", title: "Go to the first broken or refused row", group: "Bulk rows",
+      help: "The first shown row whose JSON line is broken (sent as text) or that the server would refuse.",
       when: (ctx) => ctx.shown().some((item) => (item.problem || item.malformed) && item.line !== null),
       run: (ctx) => {
         const item = ctx.shown().find((entry) => (entry.problem || entry.malformed) && entry.line !== null);

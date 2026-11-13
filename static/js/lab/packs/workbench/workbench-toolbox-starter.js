@@ -51,10 +51,11 @@ function binomialCdf(k, n, p) {
   return Math.min(1, Math.exp(top) * logs.reduce((sum, value) => sum + Math.exp(value - top), 0));
 }
 
-// The p in (0, 1) where a monotone f(p) crosses target; rising says whether f increases with p.
+// The p in (0, 1) where a monotone f(p) crosses target; rising says whether f increases with p. 100 halvings leave an
+// interval of 2^-100, far below double precision even for bounds near 1e-8, at half the cost of more.
 function solve(f, target, rising) {
   let lo = 0, hi = 1;
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 100; i++) {
     const mid = (lo + hi) / 2;
     if ((f(mid) < target) === rising) lo = mid; else hi = mid;
   }

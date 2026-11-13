@@ -21,6 +21,18 @@ const ceilSafe = (x) => Math.ceil(x - EPS);
 const usd = (tokens, price) => tokens * price / M;
 const ratio = (a, b) => (b > 0 ? a / b : null);
 
+// A number that overflowed or is undefined shows as unavailable (null), never as Infinity or NaN.
+const finite = (value) => (typeof value === "number" && !Number.isFinite(value) ? null : value);
+const finiteRows = (rows) => (Array.isArray(rows) ? rows.map((row) => (Array.isArray(row) ? row.map(finite) : row)) : rows);
+function finiteResult(result) {
+  if (Array.isArray(result)) return finiteRows(result);
+  if (!result || typeof result !== "object") return result;
+  const out = { ...result, rows: finiteRows(result.rows) };
+  if (result.table) out.table = { ...result.table, rows: finiteRows(result.table.rows) };
+  return out;
+}
+const finiteTool = (feature) => ({ ...feature, compute: (params) => finiteResult(feature.compute(params)) });
+
 // Lines of "a, b, c" (tab, semicolon or comma separated); blank lines and lines starting with # are skipped.
 function records(text, fields, what) {
   const out = [];
@@ -61,20 +73,26 @@ export default definePack({
   about: "Calculators for what Workbench runs, reviews, audits and labeling cost and how a budget stretches across them. Prices are what you type, and every result is an estimate or upper bound from your inputs, never measured spend.",
   features: [
     { id: "compare_cost", kind: "tool", group: GROUP, title: "Cost of a Compare run",
-      help: "Compare asks both variants every row, so it makes two calls per row. Each variant has its own tokens per call and price (blank B price = A's), which also fits trying a newer model version on the same rows.",
-      inputs: [COUNT("rows", "Rows", { min: 1 }), TOKENS("tokensA", "Variant A input tokens per call"), TOKENS("tokensB", "Variant B input tokens per call"),
-        USD("priceA", "Variant A price per million input tokens (USD)"), USD("priceB", "Variant B price per million input tokens (USD, blank = A's)", { optional: true })],
-      compute: ({ rows, tokensA, tokensB, priceA, priceB }) => {
-        const a = usd(rows * tokensA, priceA), b = usd(rows * tokensB, priceB === null ? priceA : priceB);
-        return { rows: [["Calls", 2 * rows], ["Variant A cost (USD)", a], ["Variant B cost (USD)", b], ["Total cost (USD)", a + b], ["Extra cost of B over A (USD)", b - a]], note: ESTIMATE };
+      help: "Compare asks both variants on every row it keeps: one call per row and variant, two for a variant that averages both option orders, and held-out test rows are left out. Each variant has its own tokens per call and price (blank B price = A's), which also fits trying a newer model version on the same rows.",
+      inputs: [COUNT("rows", "Rows", { min: 1 }), COUNT("heldOut", "Held-out test rows among them", { default: 0 }),
+        TOKENS("tokensA", "Variant A input tokens per call"), TOKENS("tokensB", "Variant B input tokens per call"),
+        USD("priceA", "Variant A price per million input tokens (USD)"), USD("priceB", "Variant B price per million input tokens (USD, blank = A's)", { optional: true }),
+        { name: "averageA", label: "Variant A averages both option orders", type: "checkbox", default: false },
+        { name: "averageB", label: "Variant B averages both option orders", type: "checkbox", default: false }],
+      compute: ({ rows, heldOut, tokensA, tokensB, priceA, priceB, averageA, averageB }) => {
+        need(heldOut < rows, "Held-out rows must be fewer than the rows: Compare leaves them out.");
+        const compared = rows - heldOut, callsA = compared * (averageA ? 2 : 1), callsB = compared * (averageB ? 2 : 1);
+        const a = usd(callsA * tokensA, priceA), b = usd(callsB * tokensB, priceB === null ? priceA : priceB);
+        return { rows: [["Rows compared", compared], ["Calls", callsA + callsB], ["Variant A cost (USD)", a], ["Variant B cost (USD)", b], ["Total cost (USD)", a + b],
+          ["Extra cost of B over A (USD)", b - a]], note: ESTIMATE };
       } },
     { id: "check_rerun_cost", kind: "tool", group: GROUP, title: "Cost of rerunning a check",
-      help: "A check reruns one call per labeled row, leaving held-out test rows out. Gives the cost of one rerun and, with a budget, how many reruns it covers.",
-      inputs: [COUNT("labeled", "Labeled rows in the dataset", { min: 1 }), COUNT("heldOut", "Held-out test rows among them", { default: 0 }), TOKENS(), PRICE,
+      help: "A check reruns one call per row of its dataset, labeled or not, and does not send held-out test rows. Gives the cost of one rerun and, with a budget, how many reruns it covers.",
+      inputs: [COUNT("rows", "Rows in the dataset", { min: 1 }), COUNT("heldOut", "Held-out test rows among them", { default: 0 }), TOKENS(), PRICE,
         USD("budget", "Budget for reruns (USD, optional)", { optional: true })],
-      compute: ({ labeled, heldOut, tokens, price, budget }) => {
-        need(heldOut < labeled, "Held-out rows must be fewer than the labeled rows.");
-        const calls = labeled - heldOut, cost = usd(calls * tokens, price);
+      compute: ({ rows, heldOut, tokens, price, budget }) => {
+        need(heldOut < rows, "Held-out rows must be fewer than the rows: a check does not send them.");
+        const calls = rows - heldOut, cost = usd(calls * tokens, price);
         return { rows: [["Calls per rerun", calls], ["Cost per rerun (USD)", cost], ["Reruns the budget covers", budget === null || cost <= 0 ? null : floorSafe(budget / cost)]], note: ESTIMATE };
       } },
     { id: "cascade_cost", kind: "tool", group: GROUP, title: "Cost of a cascade",
@@ -97,8 +115,8 @@ export default definePack({
         return { rows: [["Tokens per call", each], ["Tokens for all calls", each * calls], ["Estimated cost (USD)", price === null ? null : usd(each * calls, price)]],
           note: `Assumes ${perToken} characters per token, rounded up per call. A rough estimate.` };
       } },
-    { id: "reserve_bound", kind: "tool", group: GROUP, title: "Upper bound a spend preview holds",
-      help: "The server's rule for what a call holds against the budget before it settles: two characters of the request JSON per token, at least 64 tokens, plus a fixed allowance for each picture use. An upper bound, not measured spend.",
+    { id: "reserve_bound", kind: "tool", group: GROUP, title: "Upper bound held for a call",
+      help: "The server's rule for what a call holds against the budget before it settles, which a spend preview adds up: two characters of the request JSON per token, at least 64 tokens, plus a fixed allowance for each picture use. An upper bound, not measured spend.",
       inputs: [COUNT("chars", "Request JSON characters per call"), COUNT("pictures", "Picture uses per call", { default: 0 }),
         COUNT("allowance", "Tokens held per picture use", { default: 16000 }), COUNT("calls", "Calls", { min: 1, default: 1 }), PRICE],
       compute: ({ chars, pictures, allowance, calls, price }) => {
@@ -115,16 +133,6 @@ export default definePack({
         return { rows: [["Calls separately", rows * questions], ["Calls merged", rows], ["Input tokens separately", separate], ["Input tokens merged", merged],
           ["Tokens saved by merging", separate - merged], ["Share of tokens saved", ratio(separate - merged, separate)], ["Cost separately (USD)", usd(separate, price)],
           ["Cost merged (USD)", usd(merged, price)], ["Saving (USD)", usd(separate - merged, price)]], note: ESTIMATE };
-      } },
-    { id: "shorter_request_saving", kind: "tool", group: GROUP, title: "Saving from a shorter request",
-      help: "What dropping tokens from every call saves, such as a question no gate or rule reads or a trimmed instruction.",
-      inputs: [TOKENS("removed", "Input tokens removed per call"), COUNT("perMonth", "Calls per month", { min: 1 }), PRICE,
-        COUNT("months", "Months", { min: 1, default: 12 }), { ...TOKENS("current", "Current input tokens per call (optional)"), optional: true }],
-      compute: ({ removed, perMonth, price, months, current }) => {
-        need(current === null || current >= removed, "The current tokens per call cannot be fewer than the tokens removed.");
-        const monthly = usd(removed * perMonth, price);
-        return { rows: [["Tokens saved per month", removed * perMonth], ["Saving per month (USD)", monthly], [`Saving over ${months} months (USD)`, monthly * months],
-          ["Share of each call removed", current === null ? null : ratio(removed, current)]], note: ESTIMATE };
       } },
     { id: "automation_savings", kind: "tool", group: GROUP, title: "Savings from automating a share of rows",
       help: "Compares reviewing every row by hand with a gate that automates a share and sends the rest to people, paying the model for every row.",
@@ -243,7 +251,8 @@ export default definePack({
       inputs: [USD("first", "Cost of the first month (USD)"), { name: "growth", label: "Growth per month (0.05 = 5%)", type: "number", min: -0.99, max: 10, default: 0 },
         COUNT("months", "Months", { min: 1, max: 600, default: 12 })],
       compute: ({ first, growth, months }) => {
-        const total = growth === 0 ? first * months : first * (Math.pow(1 + growth, months) - 1) / growth;
+        // (1 + g)^n − 1 as expm1(n · log1p(g)), so a tiny growth rate does not lose its digits to cancellation.
+        const total = growth === 0 ? first * months : first * Math.expm1(months * Math.log1p(growth)) / growth;
         return [["Total cost (USD)", total], ["Cost of the last month (USD)", first * Math.pow(1 + growth, months - 1)], ["Average per month (USD)", total / months]];
       } },
     { id: "threshold_cost", kind: "tool", group: GROUP, title: "Cost of a threshold from calibrated probabilities",
@@ -301,5 +310,5 @@ export default definePack({
         const rate = Math.min(1, budget / (mistake * rows));
         return [["Mistakes allowed per month", Math.min(rows, floorSafe(budget / mistake))], ["Highest error rate", rate], ["Lowest accuracy", 1 - rate]];
       } },
-  ],
+  ].map(finiteTool),
 });

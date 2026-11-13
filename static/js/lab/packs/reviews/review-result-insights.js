@@ -8,6 +8,11 @@ const probs = (item) => (Array.isArray(item?.probabilities) ? item.probabilities
 const cutsOf = (item) => (Array.isArray(item?.cuts) ? item.cuts.filter((cut) => number(cut?.at) !== null) : []);
 const CLOSE = 0.1;
 const signed = (value) => `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(2)}`;
+const list = (value) => (Array.isArray(value) ? value : []);
+const flagText = (ctx, flags) => {
+  const names = ctx.data.labels?.flags || {};
+  return flags.length ? flags.map((flag) => names[flag] || flag).join(", ") : "";
+};
 
 function nearestCut(item) {
   const value = number(item?.value);
@@ -47,15 +52,14 @@ const canNudge = (ctx, key, by) => {
 function decisionMarkdown(ctx) {
   const t = ctx.data.triage;
   if (!t) throw new Error("Triage a review first: there is no decision to export.");
-  const flags = ctx.data.labels?.flags || {};
   const policy = ctx.data.policy || {};
   const lines = ["# Review decision", "",
     `Your latest check${ctx.data.review?.channel_label ? ` of a ${ctx.data.review.channel_label}` : ""}, decided by plain code under the policy below.`, "",
-    `- Action: ${t.action_label}`, `- Team: ${t.team_label}`, `- Priority: ${t.priority}`,
-    `- Flags: ${t.flags.length ? t.flags.map((flag) => flags[flag] || flag).join(", ") : "none"}`,
+    `- Action: ${t.action_label || t.action || "—"}`, `- Team: ${t.team_label || t.team || "—"}`, `- Priority: ${t.priority || "—"}`,
+    `- Flags: ${flagText(ctx, list(t.flags)) || "none"}`,
     `- Public auto-reply: ${t.auto_reply_allowed ? "yes, the thank-you template" : "no"}`, "",
-    "## Reasons", "", ...t.reasons.map((reason) => `- ${reason}`), "",
-    "## Checks", "", ...t.checks.map((one) => `- [${one.ok ? "x" : " "}] ${one.label}: ${one.detail}`), "",
+    "## Reasons", "", ...list(t.reasons).map((reason) => `- ${reason}`), "",
+    "## Checks", "", ...list(t.checks).filter((one) => one && typeof one === "object").map((one) => `- [${one.ok ? "x" : " "}] ${one.label ?? ""}: ${one.detail ?? ""}`), "",
     "## Policy", "", "| Setting | Value |", "| --- | ---: |", ...Object.entries(policy).map(([key, value]) => `| ${key} | ${value} |`), ""];
   return lines.join("\n");
 }
@@ -64,7 +68,7 @@ export default definePack({
   id: "review-result-insights",
   surface: "reviews.result",
   title: "Review result insights",
-  about: "Margins, confidence and policy-cut facts over the answers of your own latest Reviews check, with keys to nudge the safety cut and exports of the decision, answers or policy. Close-call rules are advisory local code, never the decision.",
+  about: "Margins, confidence and policy-cut facts over the answers of your own latest Reviews check, with commands to copy the decision, nudge the safety cut (no model call) and inspect the request, and exports of the decision, answers or policy. Close-call rules are advisory local code, never the decision.",
   features: [
     { id: "top_p", kind: "fact", type: "number", label: "top probability", value: (item) => number(item.top?.p) },
     { id: "margin", kind: "fact", type: "number", label: "margin over the runner-up", help: "Top probability minus the second; for a Noul, P(yes) against P(no).",
@@ -83,14 +87,13 @@ export default definePack({
       value: (item) => item.label || item.display || "" },
     { id: "close_call", kind: "fact", type: "flag", label: "a value within 0.1 of a cut", help: "Advisory: a small change in the answer could flip that rule.",
       value: (item) => { const distance = nearestCut(item); return distance !== null && distance <= CLOSE + 1e-9; } },
-    { id: "has_cut", kind: "fact", type: "flag", label: "a policy cut", value: (item) => cutsOf(item).length > 0 },
 
     { id: "between_levels", kind: "diagnostic", severity: "advice", label: "Score between two levels",
       check: (item) => {
         const value = number(item.value);
         if (item.type !== "score" || value === null) return null;
         const floor = Math.floor(value), fraction = value - floor;
-        return fraction >= 0.35 && fraction <= 0.65 ? `Score ${value.toFixed(2)} sits between levels ${floor} and ${floor + 1}.` : null;
+        return fraction >= 0.35 - 1e-9 && fraction <= 0.65 + 1e-9 ? `Score ${value.toFixed(2)} sits between levels ${floor} and ${floor + 1}.` : null;
       } },
     { id: "low_confidence", kind: "diagnostic", severity: "advice", scope: "list", label: "Low mean confidence",
       check: (items) => {
@@ -117,12 +120,6 @@ export default definePack({
         const values = ctx.data.history.map((entry) => number(entry.meta?.latency_ms)).filter((value) => value !== null);
         return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
       } },
-    { id: "p1_headroom", kind: "metric", label: "Severity below the P1 cut", format: "number", help: "The P1 cut in force minus the severity score; negative means P1.",
-      compute: (ctx) => {
-        const severity = ctx.items().find((item) => item.id === "severity");
-        const cut = number(ctx.data.policy?.p1_at), value = number(severity?.value);
-        return cut === null || value === null ? null : cut - value;
-      } },
     { id: "changed_settings", kind: "metric", label: "Policy settings moved from the defaults", format: "integer",
       compute: (ctx) => {
         const settings = ctx.data.settings, defaults = ctx.data.defaults;
@@ -131,9 +128,9 @@ export default definePack({
       } },
 
     { id: "decision_markdown", kind: "exporter", label: "Decision summary as Markdown",
-      help: "your latest check's decision, reasons, plain-code checks and the policy in force; no review text or probabilities",
+      help: "your latest check's decision, reasons, plain-code checks and the policy in force; no review text. The reasons and check details quote answers and percentages as the page prints them.",
       filename: "review-decision.md", mime: "text/markdown", build: decisionMarkdown },
-    { id: "answers_csv", kind: "exporter", label: "Shown answers as CSV", help: "your latest check's answers, top options and probabilities; no review text",
+    { id: "answers_csv", kind: "exporter", label: "Shown answers as CSV", help: "the shown answers of your latest check: value, label, top option, its probability and the confidence; no review text",
       filename: "review-answers.csv", mime: "text/csv",
       build: (ctx) => csvText([["question", "type", "value", "label", "top", "top_probability", "confidence"],
         ...ctx.shown().map((item) => [item.id, item.type, item.value ?? "", item.label, item.top?.key ?? "", item.top?.p ?? "", item.confidence ?? ""])]) },
@@ -146,8 +143,10 @@ export default definePack({
 
     { id: "copy_decision", kind: "command", title: "Copy the decision line", group: "Reviews", when: (ctx) => !!ctx.data.triage,
       run: (ctx) => {
-        const t = ctx.data.triage, flags = ctx.data.labels?.flags || {};
-        ctx.env.copy(`${t.action_label} · ${t.team_label} · ${t.priority} · ${t.flags.length ? t.flags.map((flag) => flags[flag] || flag).join(", ") : "no flags"}`);
+        const t = ctx.data.triage;
+        if (!t) throw new Error("Triage a review first: there is no decision to copy.");
+        ctx.env.copy(`${t.action_label || t.action || "—"} · ${t.team_label || t.team || "—"} · ${t.priority || "—"} · ${flagText(ctx, list(t.flags)) || "no flags"}`);
+        ctx.env.toast("Copied the decision of your latest check.");
       } },
     { id: "raise_safety", kind: "command", title: "Raise the safety cut one step", group: "Reviews policy", when: (ctx) => canNudge(ctx, "safety_at", 0.05),
       run: (ctx) => nudge(ctx, "safety_at", 0.05) },

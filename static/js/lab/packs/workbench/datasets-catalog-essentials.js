@@ -9,6 +9,14 @@ const DAY_MS = 86400000;
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const labelCounts = (item) => (Array.isArray(item?.question_labels) ? item.question_labels.map((entry) => entry?.labeled).filter((n) => Number.isInteger(n) && n > 0) : []);
+const savedQuestions = (item) => (Number.isInteger(item?.questions) && item.questions > 0 ? item.questions : 0);
+// Labeled rows per question: every question ID with a saved label, plus a 0 for each saved question that no label
+// names (when fewer IDs carry labels than the file saves questions, that many saved questions have none). Empty when
+// the dataset has neither labels nor saved questions.
+const perQuestion = (item) => {
+  const counts = labelCounts(item);
+  return [...counts, ...Array(Math.max(0, savedQuestions(item) - counts.length)).fill(0)];
+};
 // The server's file name for a dataset name (jev/workbench.py slugify).
 const slugOf = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const cell = (value) => String(value ?? "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
@@ -29,20 +37,23 @@ export default definePack({
       help: "Question IDs that at least one saved label names; it can exceed the saved questions after a question was removed.",
       value: (item) => labelCounts(item).length },
     { id: "fewest_question_labels", kind: "fact", type: "number", label: "fewest rows labeled for one question", unit: "rows",
-      help: "The least-labeled question's labeled rows; unknown with no labels.",
-      value: (item) => (labelCounts(item).length ? Math.min(...labelCounts(item)) : null) },
+      help: "The least-labeled question's labeled rows: 0 when a saved question has no label yet; unknown with neither labels nor questions.",
+      value: (item) => (perQuestion(item).length ? Math.min(...perQuestion(item)) : null) },
     { id: "question_label_spread", kind: "fact", type: "number", label: "label count spread across questions", unit: "rows",
-      help: "Most minus fewest labeled rows over the labeled questions: 0 means every question is labeled equally often.",
-      value: (item) => (labelCounts(item).length ? Math.max(...labelCounts(item)) - Math.min(...labelCounts(item)) : null) },
+      help: "Most minus fewest labeled rows per question (a saved question without labels counts 0): 0 means every question is labeled equally often.",
+      value: (item) => (perQuestion(item).length ? Math.max(...perQuestion(item)) - Math.min(...perQuestion(item)) : null) },
     { id: "split_age_days", kind: "fact", type: "number", label: "days since the test split was drawn", unit: "days",
-      help: "Whole days since the held-out split was locked; unknown without a split.",
+      help: "Whole days since the held-out split was locked; unknown without a split, a readable date, or for a date after this computer's clock.",
       value: (item, ctx) => {
-        const locked = Date.parse(item?.test?.locked_at ?? ""), now = finite(ctx?.data?.now);
-        return Number.isFinite(locked) && now !== null ? Math.max(0, Math.floor((now - locked) / DAY_MS)) : null;
+        const locked = Date.parse(typeof item?.test?.locked_at === "string" ? item.test.locked_at : ""), now = finite(ctx?.data?.now);
+        return Number.isFinite(locked) && now !== null && locked <= now ? Math.floor((now - locked) / DAY_MS) : null;
       } },
     { id: "held_out_labeled_share", kind: "fact", type: "number", label: "share of labeled rows held out", unit: "0 to 1",
       help: "Held-out labeled rows over all labeled rows; unknown without a split or labels.",
-      value: (item) => (item?.test && item.labeled > 0 ? item.held_out_labeled / item.labeled : null) },
+      value: (item) => {
+        const labeled = finite(item?.labeled), held = finite(item?.held_out_labeled);
+        return item?.test && labeled !== null && labeled > 0 && held !== null && held >= 0 && held <= labeled ? held / labeled : null;
+      } },
     { id: "stage", kind: "fact", type: "category", label: "workflow stage",
       help: "empty, unlabeled, labeling, labeled, split (held-out rows, no check) or checked (a saved check).",
       value: (item) => {
@@ -62,13 +73,17 @@ export default definePack({
       value: (item) => typeof item?.name === "string" && item.name !== item.id && slugOf(item.name) !== item.id },
     { id: "stale_label_questions", kind: "fact", type: "flag", label: "labels for more questions than saved",
       help: "Saved labels name more question IDs than the dataset saves questions.",
-      value: (item) => labelCounts(item).length > (item?.questions || 0) },
+      value: (item) => labelCounts(item).length > savedQuestions(item) },
 
     { id: "few_held_out", kind: "diagnostic", severity: "advice", label: "Few labeled held-out rows",
-      check: (item) => (item?.test && item.test.labeled < 10
-        ? `Only ${plural(item.test.labeled, "held-out row")} ${item.test.labeled === 1 ? "has" : "have"} a label, so a test score has a wide interval.` : null) },
+      check: (item) => {
+        const labeled = item?.test ? finite(item.test.labeled) : null;
+        if (labeled === null || labeled >= 10) return null;
+        return labeled === 0 ? "No held-out row has a label yet, so the test rows cannot be scored."
+          : `Only ${plural(labeled, "held-out row")} ${labeled === 1 ? "has" : "have"} a label, so a test score has a wide interval.`;
+      } },
     { id: "many_looks", kind: "diagnostic", severity: "advice", label: "Test rows scored many times",
-      check: (item) => (item?.test && item.test.looks >= 3
+      check: (item) => (item?.test && finite(item.test.looks) !== null && item.test.looks >= 3
         ? `The test rows were scored ${item.test.looks} times; a gate chosen after earlier looks makes the next score optimistic.` : null) },
     { id: "check_without_split", kind: "diagnostic", severity: "info", label: "Saved check without held-out rows",
       check: (item) => (item?.has_check && !item.test ? "The check reruns rows that tuning also read; hold out test rows for an unbiased number." : null) },

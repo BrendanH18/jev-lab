@@ -85,7 +85,7 @@ function parseDistribution(text, { weights = false, what = "the distribution" } 
   let p = entries.map(([, value]) => value);
   const total = p.reduce((a, b) => a + b, 0);
   if (!(total > 0)) throw new Error(`The values of ${what} add up to 0.`);
-  if (weights) return { names, p: p.map((value) => value / total), total, rescaled: total !== 1 };
+  if (weights) return { names, given: p, p: p.map((value) => value / total), total, rescaled: total !== 1 };
   if (Math.abs(total - 1) > SUM_TOLERANCE) throw new Error(`The probabilities of ${what} add up to ${brief(total)}, not 1. Rescale weights or scores with "Renormalize probabilities".`);
   const rescaled = Math.abs(total - 1) > 1e-12;
   if (rescaled) p = p.map((value) => value / total);
@@ -247,7 +247,7 @@ export default definePack({
       [{ ...ANSWER, label: "Values to rescale", placeholder: "refund=7, exchange=2, other=1" }], (params) => {
         const data = parseDistribution(params.answer, { weights: true, what: "the values" });
         return { rows: [["Sum of the values given", data.total], ["Options", data.p.length]],
-          table: { columns: ["Option", "Given", "Probability"], rows: data.names.map((name, i) => [name, data.p[i] * data.total, data.p[i]]) } };
+          table: { columns: ["Option", "Given", "Probability"], rows: data.names.map((name, i) => [name, data.given[i], data.p[i]]) } };
       }),
     tool("effective_options", "Effective number of options",
       `How many equally likely options the answer behaves like: 2 to the entropy in bits (perplexity) and the inverse Simpson index 1 ÷ Σ p², both from 1 (certain) to the option count (uniform). ${FORMAT}`,

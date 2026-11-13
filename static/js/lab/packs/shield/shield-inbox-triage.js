@@ -33,7 +33,8 @@ function nearest(item, ctx) {
 }
 
 const strongest = (item) => {
-  const values = (item?.verdict?.signals || []).map((signal) => finite(signal.contribution)).filter((value) => value !== null);
+  const signals = Array.isArray(item?.verdict?.signals) ? item.verdict.signals : [];
+  const values = signals.map((signal) => finite(signal.contribution)).filter((value) => value !== null);
   return values.length ? Math.max(...values) : null;
 };
 
@@ -60,7 +61,7 @@ export default definePack({
   surface: "shield.inbox",
   title: "Inbox triage",
   about: "Filters, checks, measurements, exports and keyboard navigation over the verdicts of messages you screened in this page "
-    + "session. Nothing asks Jev; scenario notes are labeled as demo notes, and the CSV holds no message bodies or answers.",
+    + "session. Nothing asks Jev; scenario notes are labeled as demo notes, and the exports hold senders, subjects and verdicts, never message bodies.",
   features: [
     { id: "risk", kind: "fact", type: "number", label: "combined risk", unit: "0 to 1", help: "The verdict's noisy-OR risk; unscreened messages have none.",
       value: (item) => finite(item?.verdict?.risk) },
@@ -74,7 +75,7 @@ export default definePack({
       help: "How far the risk sits from the review or quarantine threshold now set on the sliders.",
       value: (item, ctx) => nearest(item, ctx)?.[2] ?? null },
     { id: "rule_count", kind: "fact", type: "number", label: "hard rules fired", unit: "rules",
-      value: (item) => (item?.verdict ? item.verdict.rules.length : null) },
+      value: (item) => (item?.verdict && Array.isArray(item.verdict.rules) ? item.verdict.rules.length : null) },
 
     { id: "level", kind: "fact", type: "category", label: "verdict", value: (item) => item?.verdict?.level || null },
     { id: "category", kind: "fact", type: "category", label: "message kind", help: "The category Choice answer.",
@@ -92,17 +93,19 @@ export default definePack({
       help: "The verdict differs from what the scenario note expects (a demo note, never sent to Jev).", value: (item) => item?.matched === false },
 
     { id: "near_threshold", kind: "diagnostic", severity: "advice", label: "Close to a threshold",
+      help: "The risk is less than 5 points from the review or quarantine threshold now set on the sliders.",
       check: (item, ctx) => {
         const near = nearest(item, ctx);
         if (!near || near[2] >= NEAR) return null;
-        return `Risk ${percent(item.verdict.risk)} is ${(near[2] * 100).toFixed(1)} points from the ${near[0]} threshold (${percent(near[1])}): a small weight change can flip this verdict.`;
+        return `Risk ${percent(item.verdict.risk)} is ${(near[2] * 100).toFixed(1)} points from the ${near[0]} threshold (${percent(near[1])}): `
+          + "a small weight or threshold change moves it across, though hard rules and the loss score can still hold the level.";
       } },
     { id: "unlike_note", kind: "diagnostic", severity: "info", label: "Verdict unlike the scenario note",
       check: (item) => (item?.matched === false
         ? `Verdict ${item.verdict.level}, but the scenario note expects ${item.expected} (a demo note, never sent to Jev): ${item.note || "no note text"}.` : null) },
     { id: "no_result", kind: "diagnostic", severity: "problem", label: "Screen failed or was skipped",
       check: (item) => (item?.status === "failed" || item?.status === "skipped"
-        ? `${item.status === "failed" ? "The screen failed" : "The batch skipped it"}: ${item.error || "no message"}. Click it to screen it again.` : null) },
+        ? `${item.status === "failed" ? "The screen failed" : "The batch skipped it"}: ${item.error || "no message"}. Open it and press Re-screen to try again.` : null) },
     { id: "unsure_sender", kind: "diagnostic", severity: "advice", label: "Mismatch below the identity cut",
       check: (item, ctx) => {
         const fact = item?.fact;
@@ -113,7 +116,7 @@ export default definePack({
       } },
     { id: "unscreened_left", kind: "diagnostic", severity: "info", scope: "list", label: "Messages without a result",
       check: (items) => {
-        const left = items.filter((item) => item.status === "unscreened");
+        const left = items.filter((item) => item?.status === "unscreened");
         return left.length ? `${plural(left.length, "shown message")} not screened yet: ${left.map((item) => `#${item.position}`).join(", ")}.` : null;
       } },
 
@@ -147,11 +150,11 @@ export default definePack({
       } },
 
     { id: "verdicts_csv", kind: "exporter", label: "Shown verdicts as CSV",
-      help: "senders, subjects, verdicts, risk and the scenario notes' expectation; no message bodies and no answers",
+      help: "senders, subjects, statuses, verdicts, risk, the loss-if-obeyed score, fired hard rules and the scenario notes' expectation (demo notes, never sent to Jev); no message bodies and no other answers",
       filename: "shield-verdicts.csv", mime: "text/csv",
       build: (ctx) => csvText([["position", "from", "sender_domain", "subject", "status", "verdict", "risk", "harm", "hard_rules", "scenario_expected", "matches_note"],
         ...ctx.shown().map((item) => [item.position, item.from_name, item.sender_domain, item.subject, item.status, item.verdict?.level ?? "",
-          finite(item.verdict?.risk) ?? "", finite(item.verdict?.harm) ?? "", (item.verdict?.rules || []).map((rule) => rule.id).join(" "),
+          finite(item.verdict?.risk) ?? "", finite(item.verdict?.harm) ?? "", (Array.isArray(item.verdict?.rules) ? item.verdict.rules : []).map((rule) => rule.id).join(" "),
           item.expected ?? "", item.matched === null ? "" : item.matched ? "yes" : "no"])]) },
     { id: "triage_md", kind: "exporter", label: "Triage summary as Markdown",
       help: "the shown screened messages grouped by verdict with sender, subject, risk and fired hard rules; no bodies or answers",
@@ -164,7 +167,7 @@ export default definePack({
           if (!group.length) continue;
           lines.push(`## ${LEVEL_WORDS[level]} (${group.length})`, "");
           for (const item of group) {
-            const rules = item.verdict.rules.map((rule) => rule.id).join(", ");
+            const rules = (Array.isArray(item.verdict.rules) ? item.verdict.rules : []).map((rule) => rule.id).join(", ");
             lines.push(`- ${cell(item.from_name) || `#${item.position}`}: ${cell(item.subject) || "(no subject)"} · risk ${finite(item.verdict.risk) === null ? "n/a" : percent(item.verdict.risk)}${rules ? ` · ${rules}` : ""}`);
           }
           lines.push("");

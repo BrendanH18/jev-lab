@@ -1,5 +1,5 @@
 // Starter pack for the Workbench pre-run labeling queue ("workbench.labeling.queue"; contract in
-// static/js/lab/surfaces/workbench-labeling.js): draft-progress and input facts, duplicate and partial-row checks,
+// static/js/lab/surfaces/workbench-labeling.js): draft-progress and input facts, duplicate-draft and guideline checks,
 // explicit draft edits, queue metrics, per-question progress, exports of the shown rows and three commands.
 // Draft labels are the user's own human labels; nothing here guesses a label from the input or shows a model answer.
 import { csvText, definePack } from "../../kit.js";
@@ -62,7 +62,7 @@ export default definePack({
   id: "labeling-queue-essentials",
   surface: "workbench.labeling.queue",
   title: "Labeling queue essentials",
-  about: "Draft-progress and input facts, duplicate and partial-row checks, explicit draft edits, per-question progress and exports for the pre-run labeling queue. Draft labels stay the user's own human choices: nothing guesses a label, shows a model answer, or applies or saves drafts.",
+  about: "Draft-progress and input facts, conflicting-draft and guideline checks, explicit draft edits, per-question progress and exports for the pre-run labeling queue. Draft labels stay the user's own human choices: nothing guesses a label, shows a model answer, or applies or saves drafts.",
   features: [
     // ---------- facts ----------
     { id: "missing_labels", kind: "fact", type: "number", label: "missing labels", help: "Questions this row still needs a human label for.",
@@ -112,13 +112,6 @@ export default definePack({
           }
         }
         return out;
-      } },
-    { id: "partial_row", kind: "diagnostic", label: "Partly drafted row", severity: "advice",
-      check: (item) => {
-        const blank = missingOf(item).filter((qid) => !has(draftOf(item)[qid]));
-        const drafted = missingOf(item).length - blank.length;
-        return drafted > 0 && blank.length
-          ? `Row ${item.row_number}: ${drafted} of ${missingOf(item).length} labels drafted; ${blank.join(", ")} still blank. Apply saves the drafted ones and leaves the rest missing.` : null;
       } },
     { id: "drafts_elsewhere", kind: "diagnostic", label: "Drafts on rows not listed here", severity: "info", scope: "list",
       check: (items, ctx) => {
@@ -189,25 +182,25 @@ export default definePack({
       } },
 
     // ---------- metrics ----------
-    { id: "ready_share", kind: "metric", label: "shown rows ready", format: "percent",
+    { id: "ready_share", kind: "metric", label: "Shown rows ready", format: "percent",
       help: "Shown rows whose every missing label has a draft.",
       compute: (ctx) => {
         const shown = shownOf(ctx);
         return shown.length ? { value: shown.filter((item) => item.ready === true).length / shown.length, detail: `${shown.filter((item) => item.ready === true).length} of ${shown.length} rows` } : null;
       } },
-    { id: "shown_drafted", kind: "metric", label: "draft labels in shown rows", format: "integer",
+    { id: "shown_drafted", kind: "metric", label: "Draft labels in the shown rows", format: "integer",
       compute: (ctx) => {
         const shown = shownOf(ctx);
         return shown.length ? shown.reduce((sum, item) => sum + missingOf(item).filter((qid) => has(draftOf(item)[qid])).length, 0) : null;
       } },
-    { id: "top_blank_question", kind: "metric", label: "question with the most blank labels", format: "text",
+    { id: "top_blank_question", kind: "metric", label: "Question with the most blank labels", format: "text",
       help: "Over the shown rows; on a tie, the earlier question.",
       compute: (ctx) => {
         let best = null;
         for (const entry of tally(shownOf(ctx), ctx)) if (entry.blank > 0 && (!best || entry.blank > best.blank)) best = entry;
         return best ? { value: best.id, detail: `${plural(best.blank, "blank label")}` } : null;
       } },
-    { id: "distinct_inputs", kind: "metric", label: "distinct inputs in this slice", format: "integer",
+    { id: "distinct_inputs", kind: "metric", label: "Distinct inputs in this slice", format: "integer",
       compute: (ctx) => {
         const list = typeof ctx?.items === "function" ? ctx.items() : [];
         if (!list.length) return null;
@@ -220,7 +213,7 @@ export default definePack({
       help: "One line per shown row and missing question: the input and your draft label (blank when none). Inputs and human drafts only; not the importable tuning labeling CSV. Pictures by name.",
       build: (ctx) => csvText([["row", "input", "picture", "question", "type", "draft"],
         ...shownOf(ctx).flatMap((item) => missingOf(item).map((qid) => [item.row_number,
-          typeof item.row === "string" ? item.row : JSON.stringify(Object.fromEntries(Object.entries(item.row).filter(([key]) => key !== "_image"))),
+          typeof item.row === "string" ? item.row : isObject(item.row) ? JSON.stringify(Object.fromEntries(Object.entries(item.row).filter(([key]) => key !== "_image"))) : "",
           item.image || "", qid, typeOf(item, qid), labelText(draftOf(item)[qid])]))]) },
     { id: "checklist_md", kind: "exporter", label: "Labeling checklist of the shown rows (Markdown, with inputs)", filename: "labeling-checklist.md", mime: "text/markdown",
       help: "A to-do list to label away from the page: each shown row's input text and its missing questions with your drafts. Inputs and human drafts only; pictures by name.",
@@ -273,7 +266,9 @@ export default definePack({
         const rows = tally(shownOf(ctx), ctx);
         if (!rows.length) return h("p", { class: "faint" }, "Open the queue with Label missing rows to see progress by question.");
         const guidelines = ctx.data.guidelines;
-        const guide = (qid) => (!isObject(guidelines) ? "not loaded" : Object.prototype.hasOwnProperty.call(guidelines, qid) ? "saved" : "none");
+        const unsaved = ctx.data.dataset?.id === null;
+        const guide = (qid) => (!isObject(guidelines) ? (unsaved ? "unsaved dataset" : "not loaded")
+          : Object.prototype.hasOwnProperty.call(guidelines, qid) ? "saved" : "none");
         return h("div", { class: "scroll" }, h("table", { class: "table" },
           h("thead", {}, h("tr", {}, ["question", "type", "rows missing", "drafted", "blank", "guideline"].map((name) => h("th", {}, name)))),
           h("tbody", {}, rows.map((entry) => h("tr", { "data-question": entry.id },

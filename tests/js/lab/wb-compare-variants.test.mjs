@@ -4,17 +4,23 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import pack from "../../../static/js/lab/packs/workbench/wb-compare-variants.js";
+import { applyTransform, previewTransform, snapshot, undoTransform } from "../../../static/js/lab/kit.js";
 import { checkPack } from "./harness.mjs";
 import { sampleCompareVariantsCtx } from "./fixtures/workbench-compare.mjs";
 
 // department, urgent, tone, drink, spot, rush, allergy (A only), refund (B only)
 const items = () => sampleCompareVariantsCtx().items();
 const noul = (instructions) => ({ type: "noul", instructions });
+const feature = (id) => pack.features.find((entry) => entry.id === id);
+// A has rush (Noul) and allergy; B asks rush as a Score: nothing comparable.
+const NOTHING_SHARED = ['{"rush": {"type": "noul", "instructions": "Rush?"}, "allergy": {"type": "noul", "instructions": "Allergy?"}}',
+  '{"rush": {"type": "score", "instructions": "Rush?", "criteria": ["No", "Yes"]}}'];
 
 checkPack(pack, {
   // department: "Team for this message?" (22) minus "Which Harbor Coffee Co. team should handle this message?" (56).
-  instruction_char_delta: { items: items(), values: [-34, 0, 0, 0, 0, 0, null, null] },
+  instruction_char_delta: { items: [...items(), { a: noul("café"), b: noul("cafe ☕☕") }], values: [-34, 0, 0, 0, 0, 0, null, null, 3] },
   option_count_a: { items: items(), values: [4, null, 3, 3, null, null, null, null] },
+  // A: department 0, urgent 1, tone 2, drink 3, spot 4, rush 5, allergy 6; B: urgent 0, department 1, then the same.
   position_shift: { items: items(), values: [1, -1, 0, 0, 0, 0, null, null] },
   only_in_a: { items: items(), values: [false, false, false, false, false, false, true, false] },
   only_in_b: { items: items(), values: [false, false, false, false, false, false, false, true] },
@@ -22,22 +28,34 @@ checkPack(pack, {
   instructions_changed: { items: items(), values: [true, false, false, false, false, false, false, false] },
   criteria_changed: { items: items(), values: [false, false, true, false, false, true, false, false] },
   order_only: { items: items(), values: [false, false, false, true, false, false, false, false] },
-  status: { items: items(), values: ["reworded", "identical", "options changed", "options reordered", "identical", "retyped", "only A", "only B"] },
+  status: {
+    items: [...items(),
+      { qid: "w", a: { type: "noul", instructions: "x" }, b: { instructions: "x", type: "noul" } },
+      { qid: "e", a: { type: "noul", instructions: "x", note: 1 }, b: { type: "noul", instructions: "x", note: 2 } }, {}],
+    values: ["reworded", "identical", "options changed", "options reordered", "identical", "retyped", "only A", "only B",
+      "written in another order", "other fields changed", null],
+  },
   qid: { items: items(), values: ["department", "urgent", "tone", "drink", "spot", "rush", "allergy", "refund"] },
 
   no_comparable: {
-    hitList: [{ qid: "rush", a: { type: "noul" }, b: { type: "score" }, ia: 0, ib: 0, comparable: false }, { qid: "allergy", a: noul("x"), b: null, ia: 1, ib: null, comparable: false }],
+    ctx: sampleCompareVariantsCtx({ texts: NOTHING_SHARED }),
+    hitList: sampleCompareVariantsCtx({ texts: NOTHING_SHARED }).items(),
+    missCtx: sampleCompareVariantsCtx(),
     missList: items(),
     message: /share no question id/,
   },
+  // A's blank model reads as the current model jev-latest; B asks jev-1.14.0. Changed compared questions: department
+  // (reworded), tone (a level reworded), drink (options reordered); rush is retyped, so not compared.
   two_changes: {
     ctx: sampleCompareVariantsCtx(),
-    hitList: items(),
-    missList: items().filter((item) => item.qid === "urgent" || item.qid === "spot" || item.qid === "allergy"),
+    hitList: items().filter((item) => item.qid === "urgent"),
+    missCtx: sampleCompareVariantsCtx({ models: ["jev-latest", ""] }),
+    missList: items(),
     message: /jev-latest against jev-1\.14\.0\) and 3 questions \(department, tone, drink\)/,
   },
   blank_instructions: {
-    hit: [{ qid: "x", a: { type: "noul", instructions: "  " }, b: null }, { qid: "y", a: noul("ok"), b: { type: "noul" } }],
+    hit: [{ qid: "x", a: { type: "noul", instructions: "  " }, b: null }, { qid: "y", a: noul("ok"), b: { type: "noul" } },
+      { qid: "n", a: { type: "noul", instructions: null }, b: null }],
     miss: [items()[0], { qid: "z", a: { type: "box", instructions: { text: "Look at the photo" } }, b: null }],
     message: /has no instructions/,
   },
@@ -58,29 +76,33 @@ checkPack(pack, {
     ],
     unchanged: [{ qid: "spot", a: { type: "box", instructions: "Where?" }, b: { type: "box", instructions: "Where?" }, ia: 0, ib: 0, comparable: true }],
   },
+  // B asks b1, a1, b2. Dropping b1 moves a1 to B's place 0 and b2 to place 1, as the editors would rebuild them.
   drop_only_b: {
     input: [
-      { qid: "a1", a: noul("x"), b: noul("x"), ia: 0, ib: 0, comparable: true },
-      { qid: "b1", a: null, b: noul("y"), ia: null, ib: 1, comparable: false },
+      { qid: "a1", a: noul("x"), b: noul("x"), ia: 0, ib: 1, comparable: true },
+      { qid: "b1", a: null, b: noul("y"), ia: null, ib: 0, comparable: false },
       { qid: "b2", a: null, b: noul("z"), ia: null, ib: 2, comparable: false },
     ],
     shown: [0, 1],
     output: [
       { qid: "a1", a: noul("x"), b: noul("x"), ia: 0, ib: 0, comparable: true },
-      { qid: "b2", a: null, b: noul("z"), ia: null, ib: 2, comparable: false },
+      { qid: "b2", a: null, b: noul("z"), ia: null, ib: 1, comparable: false },
     ],
     unchanged: [{ qid: "a1", a: noul("x"), b: noul("x"), ia: 0, ib: 0, comparable: true }],
   },
+  // A's ids A to Z with new positions; B's only question (alpha) keeps B's order and goes after A's ids.
   sort_a_by_id: {
     input: [
       { qid: "tone", a: { type: "score" }, b: null, ia: 0, ib: null, comparable: false },
+      { qid: "alpha", a: null, b: { type: "noul" }, ia: null, ib: 0, comparable: false },
       { qid: "department", a: { type: "choice" }, b: null, ia: 1, ib: null, comparable: false },
       { qid: "urgent", a: { type: "noul" }, b: null, ia: 2, ib: null, comparable: false },
     ],
     output: [
-      { qid: "department", a: { type: "choice" }, b: null, ia: 1, ib: null, comparable: false },
-      { qid: "tone", a: { type: "score" }, b: null, ia: 0, ib: null, comparable: false },
+      { qid: "department", a: { type: "choice" }, b: null, ia: 0, ib: null, comparable: false },
+      { qid: "tone", a: { type: "score" }, b: null, ia: 1, ib: null, comparable: false },
       { qid: "urgent", a: { type: "noul" }, b: null, ia: 2, ib: null, comparable: false },
+      { qid: "alpha", a: null, b: { type: "noul" }, ia: null, ib: 0, comparable: false },
     ],
   },
 
@@ -91,7 +113,8 @@ checkPack(pack, {
       { qid: "gift", a: null, b: { type: "choice", criteria: { yes: null, no: null } }, ia: null, ib: null, comparable: false },
     ],
     warnings: 1,
-    rejects: ["[1, 2]", "not json", '{"x": {"type": "rating"}}', "{}", '{"  ": {"type": "noul"}}'],
+    rejects: ["[1, 2]", "not json", '{"x": {"type": "rating"}}', "{}", '{"  ": {"type": "noul"}}',
+      '{"gift": {"type": "noul"}, "gift": {"type": "box"}}'],
   },
 
   diff_markdown: {
@@ -105,15 +128,21 @@ checkPack(pack, {
     filename: "variant-b-questions.json",
     text: '{\n  "refund": {\n    "type": "noul",\n    "instructions": "Does the writer ask for money back?"\n  },\n'
       + '  "urgent": {\n    "type": "noul",\n    "instructions": "Does the writer need an answer today?"\n  }\n}\n',
+    excludes: ["allergy"],
   },
 
+  // department, urgent, tone, drink, spot are asked by both with one type; rush is retyped.
   comparable_count: [
     { ctx: sampleCompareVariantsCtx(), expect: 5, empty: sampleCompareVariantsCtx({ texts: ["", ""] }) },
-    { ctx: sampleCompareVariantsCtx({ texts: ['{"urgent": {"type": "noul"}}', "{ not json"] }), expect: 0 },
+    { ctx: sampleCompareVariantsCtx({ texts: NOTHING_SHARED }), expect: 0 },
+    { ctx: sampleCompareVariantsCtx({ texts: ['{"urgent": {"type": "noul"}}', "{ not json"] }), expect: null },
   ],
+  // allergy (A only) and refund (B only).
   one_sided_count: [
     { ctx: sampleCompareVariantsCtx(), expect: 2, empty: sampleCompareVariantsCtx({ texts: ["", ""] }) },
+    { ctx: sampleCompareVariantsCtx({ texts: NOTHING_SHARED }), expect: 1 },
     { ctx: sampleCompareVariantsCtx({ texts: ['{"urgent": {"type": "noul"}}', '{"urgent": {"type": "score"}}'] }), expect: 0 },
+    { ctx: sampleCompareVariantsCtx({ texts: ['{"urgent": {"type": "noul"}}', "{ not json"] }), expect: null },
   ],
 
   order_check: {
@@ -123,15 +152,52 @@ checkPack(pack, {
   },
 }, { ctx: () => sampleCompareVariantsCtx() });
 
-test("wb-compare-variants: the order check is hidden while A does not parse", () => {
-  const feature = pack.features.find((entry) => entry.id === "order_check");
-  assert.equal(feature.when(sampleCompareVariantsCtx({ texts: ["{ oops", "{}"] })), false);
+test("wb-compare-variants: the order check is hidden while A has no Choice question whose options can be reversed", () => {
+  const when = feature("order_check").when;
+  assert.equal(when(sampleCompareVariantsCtx({ texts: ["{ oops", "{}"] })), false);
+  assert.equal(when(sampleCompareVariantsCtx({ texts: ['{"u": {"type": "noul"}}', "{}"] })), false);
+  // Whole-number option names always list in ascending order, so reversing changes nothing.
+  assert.equal(when(sampleCompareVariantsCtx({ texts: ['{"n": {"type": "choice", "criteria": {"1": "one", "2": "two"}}}', "{}"] })), false);
+  assert.equal(when(sampleCompareVariantsCtx({ texts: ['{"n": {"type": "choice", "criteria": {"one": null}}}', "{}"] })), false);
+  // One whole number and one name: "1" always lists first, so the reverse is the same list.
+  assert.equal(when(sampleCompareVariantsCtx({ texts: ['{"n": {"type": "choice", "criteria": {"1": "one", "b": "bee"}}}', "{}"] })), false);
+  // "1", "a", "b" reversed lists "1", "b", "a".
+  assert.equal(when(sampleCompareVariantsCtx({ texts: ['{"n": {"type": "choice", "criteria": {"1": "one", "a": "ay", "b": "bee"}}}', "{}"] })), true);
+});
+
+test("wb-compare-variants: two changes at once is quiet when only the model differs", () => {
+  const same = JSON.stringify({ urgent: noul("Today?") });
+  const ctx = sampleCompareVariantsCtx({ texts: [same, same], models: ["jev-1.14.0", "jev-latest"] });
+  assert.equal(feature("two_changes").check(ctx.items(), ctx), null);
+});
+
+test("wb-compare-variants: list edits rebuild exactly as the editors do, so Undo works", () => {
+  // B lists a question only it asks before the shared ones, so dropping it and sorting A both move positions.
+  const texts = [JSON.stringify({ tone: noul("t"), alpha: noul("a"), drink: noul("d") }), JSON.stringify({ extra: noul("x"), drink: noul("d"), tone: noul("t") })];
+  for (const id of ["drop_only_b", "sort_a_by_id"]) {
+    const ctx = sampleCompareVariantsCtx({ texts });
+    const before = ctx.items();
+    const preview = previewTransform(id, feature(id), before, new Set(before.map((_, index) => index)), {}, ctx);
+    const applied = applyTransform(preview, before);
+    ctx.actions.replaceItems(applied.items);
+    assert.equal(snapshot(ctx.items()), snapshot(applied.items), `${id}: the rebuilt list matches the preview`);
+    ctx.actions.replaceItems(undoTransform(applied.undo, ctx.items()));
+    assert.equal(snapshot(ctx.items()), snapshot(before), `${id}: Undo restores the editors`);
+  }
 });
 
 test("wb-compare-variants: an imported question lands at the end of B through importItems", () => {
   const ctx = sampleCompareVariantsCtx();
-  const importer = pack.features.find((entry) => entry.id === "questions_to_b");
-  ctx.actions.importItems(importer.parse('{"gift": {"type": "noul", "instructions": "Is it a gift?"}}').items);
+  ctx.actions.importItems(feature("questions_to_b").parse('{"gift": {"type": "noul", "instructions": "Is it a gift?"}}').items);
   assert.deepEqual(Object.keys(JSON.parse(ctx.state.variants[1].text)), ["urgent", "department", "tone", "drink", "spot", "rush", "refund", "gift"]);
   assert.equal(ctx.state.variants[0].text, sampleCompareVariantsCtx().state.variants[0].text, "A keeps its text byte for byte");
+});
+
+test("wb-compare-variants: odd items give unavailable facts, not exceptions", () => {
+  for (const fact of pack.features.filter((entry) => entry.kind === "fact")) {
+    for (const odd of [{}, { a: "text", b: 3, ia: "1" }]) {
+      const value = fact.value(odd);
+      assert.ok(value === null || value === false || value === "", `${fact.id} gave ${JSON.stringify(value)}`);
+    }
+  }
 });

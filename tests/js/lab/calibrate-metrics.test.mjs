@@ -10,7 +10,6 @@
 import assert from "node:assert/strict";
 
 import pack from "../../../static/js/lab/packs/workbench/calibrate-metrics.js";
-import { normalSf } from "../../../static/js/lab/lib/math.js";
 import { checkPack, fakeCtx } from "./harness.mjs";
 import { sampleCalibrateCtx, wilson } from "./fixtures/workbench-analysis.mjs";
 
@@ -27,23 +26,11 @@ const both = (value, pattern, tolerance = 1e-12) => (result) => {
   assert.match(result.detail, pattern);
 };
 
-// department's probabilities and labels, typed out again for the full-distribution scores.
-const DEP_PROBS = [
-  [{ billing: 0.82, shipping: 0.12, wholesale: 0.03, other: 0.03 }, "billing"],
-  [{ billing: 0.05, shipping: 0.4, wholesale: 0.45, other: 0.1 }, "shipping"],
-  [{ billing: 0.02, shipping: 0.03, wholesale: 0.05, other: 0.9 }, "other"],
-  [{ billing: 0.95, shipping: 0.02, wholesale: 0.02, other: 0.01 }, "billing"],
-  [{ billing: 0.1, shipping: 0.15, wholesale: 0.7, other: 0.05 }, "wholesale"],
-  [{ billing: 0.4, shipping: 0.3, wholesale: 0.2, other: 0.1 }, "shipping"],
-  [{ billing: 0.04, shipping: 0.88, wholesale: 0.03, other: 0.05 }, "shipping"],
-];
-const depLogLoss = DEP_PROBS.reduce((s, [p, label]) => s - Math.log(p[label]), 0) / 7;
-const depMultiBrier = DEP_PROBS.reduce((s, [p, label]) => s + Object.entries(p).reduce((t, [k, v]) => t + (v - (k === label ? 1 : 0)) ** 2, 0), 0) / 7;
-// Spiegelhalter's Z over department's (stated, right) pairs.
-const DEP_PAIRS = [[0.82, 1], [0.45, 0], [0.9, 1], [0.95, 1], [0.7, 1], [0.4, 0], [0.88, 1]];
-const zTop = DEP_PAIRS.reduce((s, [p, y]) => s + (y - p) * (1 - 2 * p), 0);
-const zVar = DEP_PAIRS.reduce((s, [p]) => s + (1 - 2 * p) ** 2 * p * (1 - p), 0);
-const depZ = zTop / Math.sqrt(zVar);
+// Reference values computed separately in Python (math, fractions, statistics.NormalDist) from the fixture's numbers:
+//   label log loss  −(ln .82 + ln .40 + ln .90 + ln .95 + ln .70 + ln .30 + ln .88) / 7 = 0.42283951434541767
+//   Brier over every option, in exact fractions: 3713 / 17500
+//   Spiegelhalter: Σ(y − p)(1 − 2p) = −0.5764, Σ(1 − 2p)² p(1 − p) = 0.26320152, Z = −1.1235173298243413,
+//   two-sided p = 0.26121784469388754.
 
 const top3 = (label, correct) => ({ type: "choice", label, predicted: "a", correct, signal: 0.5, top: 0.5,
   answer: { type: "choice", choice: "a", probabilities: { a: 0.5, b: 0.3, c: 0.2 } } });
@@ -75,11 +62,6 @@ checkPack(pack, {
     { ctx: dep(), expect: (r) => { assert.equal(r.value, "shipping → wholesale"); assert.equal(r.detail, "1 of 2 wrong shown rows (50.0%)"); }, empty: empty() },
     { ctx: dep({ hide: [1] }), expect: "shipping → billing" },
     { ctx: dep({ hide: [1, 5] }), expect: null },
-  ],
-  // billing and wholesale are both answered once more than labeled: billing comes first in the report's options.
-  over_given: [
-    { ctx: dep(), expect: (r) => { assert.equal(r.value, "billing"); assert.equal(r.detail, "answered 3, labeled 2 of 7 shown rows (14.3 points more)"); }, empty: empty() },
-    { ctx: dep({ hide: [5] }), expect: "wholesale" },
   ],
 
   // urgent: true yes 3, false yes 1, true no 3, missed yes 0.
@@ -120,11 +102,13 @@ checkPack(pack, {
     { ctx: dep(), expect: 1 - (0.5118 / 7) / (10 / 49), tolerance: 1e-9, empty: empty() },
     { ctx: dep({ hide: [1, 5] }), expect: null },
   ],
-  label_log_loss: [{ ctx: dep(), expect: depLogLoss, tolerance: 1e-12, empty: empty() }, { ctx: spot(), expect: null }],
-  multiclass_brier: { ctx: dep(), expect: depMultiBrier, tolerance: 1e-12, empty: empty() },
+  label_log_loss: [{ ctx: dep(), expect: 0.42283951434541767, tolerance: 1e-12, empty: empty() }, { ctx: spot(), expect: null }],
+  // urgent's yes and no as two options: Σ 2(P(yes) − [label yes])² / 7 = 2(.0144 + .09 + .0025 + .49 + .04 + .25 + .0081) / 7.
+  multiclass_brier: [{ ctx: dep(), expect: 3713 / 17500, tolerance: 1e-12, empty: empty() }, { ctx: urgent(), expect: 1.79 / 7, tolerance: 1e-12 },
+    { ctx: spot(), expect: null }],
   // .90 and .95 of seven.
   sharpness: { ctx: dep(), expect: 2 / 7, tolerance: 1e-12, empty: empty() },
-  spiegelhalter: { ctx: dep(), expect: both(2 * normalSf(Math.abs(depZ)), new RegExp(`^Z = ${depZ.toFixed(3)};`), 1e-12), empty: empty() },
+  spiegelhalter: { ctx: dep(), expect: both(0.26121784469388754, /^Z = -1\.124; on 7 shown rows$/, 1e-9), empty: empty() },
 
   // From the highest signal down the five right rows come first, then .20 (1 wrong of 6) and .12 (2 of 7):
   // (1/6 + 2/7) / 7 = 19/294, which is also the best possible ordering.
@@ -137,7 +121,7 @@ checkPack(pack, {
     { ctx: tone(), expect: 0.75, tolerance: 1e-12 },
   ],
   // tone: the lowest right signal .25 sits below the wrong .40, so rows #4 (.25) and #2 (.40) overlap.
-  overlap_rows: [{ ctx: dep(), expect: 0, empty: empty() }, { ctx: tone(), expect: both(2, /^signals 0\.25–0\.40 of 5 shown rows$/) }],
+  overlap_rows: [{ ctx: dep(), expect: 0, empty: empty() }, { ctx: tone(), expect: both(2, /^signals 0\.25–0\.40 of 5 shown rows; signal: confidence$/) }],
   // 0.76 automates .76 .84 .87 .93 (4 of 7, all right); 0.77 only three.
   accuracy_at_half: { ctx: dep(), expect: both(1, /^at threshold 0\.76 \(signal: confidence\): 4 of 4 automated right, 4 of 7 shown rows automated/), empty: empty() },
   // Only 0.12 and below automate at least 90% (all seven).
@@ -159,15 +143,6 @@ checkPack(pack, {
       + '"wholesale","1","2","1","1","0","0.5000","1.0000","0.6667"\r\n'
       + '"other","1","1","1","0","0","1.0000","1.0000","1.0000"\r\n',
     excludes: ["espresso", "#"],
-  },
-  confusion_shares_csv: {
-    ctx: dep(),
-    filename: "calibrate-department-confusion-shares.csv",
-    text: '"label \\ answer","billing","shipping","wholesale","other","rows"\r\n'
-      + '"billing","1.0000","0.0000","0.0000","0.0000","2"\r\n'
-      + '"shipping","0.3333","0.3333","0.3333","0.0000","3"\r\n'
-      + '"wholesale","0.0000","0.0000","1.0000","0.0000","1"\r\n'
-      + '"other","0.0000","0.0000","0.0000","1.0000","1"\r\n',
   },
   // A negative gap starts with "-", so the CSV writer guards it with an apostrophe like any formula-like cell.
   reliability_csv: {
@@ -195,13 +170,6 @@ checkPack(pack, {
       + `"2","0.60","0.76","2","2","1.0000","${f4(w22lo)}","1.0000"\r\n`
       + `"3","0.84","0.93","3","3","1.0000","${f4(w33lo)}","1.0000"\r\n`,
   },
-  risk_coverage_csv: {
-    ctx: dep(),
-    filename: "calibrate-department-risk-coverage.csv",
-    text: '"threshold","automated","share","wrong","share wrong"\r\n"0.93","1","0.1429","0","0.0000"\r\n"0.87","2","0.2857","0","0.0000"\r\n'
-      + '"0.84","3","0.4286","0","0.0000"\r\n"0.76","4","0.5714","0","0.0000"\r\n"0.60","5","0.7143","0","0.0000"\r\n'
-      + '"0.20","6","0.8571","1","0.1667"\r\n"0.12","7","1.0000","2","0.2857"\r\n',
-  },
   summary_markdown: {
     ctx: dep(),
     filename: "calibrate-department-summary.md",
@@ -223,6 +191,20 @@ checkPack(pack, {
     check: (out) => assert.equal(out.text.split("\r\n").length, pack.features.filter((f) => f.kind === "metric").length + 2),
   },
 }, { ctx: () => sampleCalibrateCtx() });
+
+// A report whose classes are not a list is ignored rather than read character by character.
+{
+  const kappa = pack.features.find((f) => f.id === "quadratic_kappa");
+  const items = tone().items();
+  assert.ok(Math.abs(kappa.compute(fakeCtx({ items, data: { type: "score", report: { classes: "012" } } })).value - 6 / 7) < 1e-12);
+}
+// When every shown row carries one label, the majority rate is 1 and no accuracy can beat it: p = 1 or unavailable.
+{
+  const lift = pack.features.find((f) => f.id === "lift_p_value");
+  const rows = [true, false, true].map((correct, i) => ({ type: "choice", label: "a", predicted: correct ? "a" : "b", correct, signal: 0.1 * i }));
+  const value = lift.compute(fakeCtx({ items: rows, data: { type: "choice" } }))?.value ?? null;
+  assert.ok(value === null || value === 1, `got ${value}`);
+}
 
 // Every metric stays quiet (no throw) on odd rows and an odd ctx.
 const odd = fakeCtx({ items: [{ correct: true }, { correct: false, signal: "x", label: null, answer: { type: "box" } }], data: {} });

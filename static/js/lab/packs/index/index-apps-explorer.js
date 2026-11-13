@@ -4,10 +4,10 @@ import { csvText, definePack } from "../../kit.js";
 
 const words = (text) => String(text || "").split(/\s+/).filter(Boolean).length;
 const points = (item) => (Array.isArray(item?.points) ? item.points : []);
-const cardText = (item) => [item.title, item.summary, ...points(item)].filter((part) => typeof part === "string" && part.trim()).join(" ");
+const cardText = (item) => [item?.title, item?.summary, ...points(item)].filter((part) => typeof part === "string" && part.trim()).join(" ");
 // The question types of the Jev API, as the copy names them (capitalized, singular or plural).
 const TYPES = ["Noul", "Score", "Choice", "Box"];
-const label = (item) => item.name || item.title || item.id;
+const label = (item) => item?.name || item?.title || item?.id || "";
 
 export default definePack({
   id: "index-apps-explorer",
@@ -18,20 +18,20 @@ export default definePack({
   features: [
     { id: "bullets", kind: "fact", type: "number", label: "bullet count", unit: "bullets", value: (item) => points(item).length },
     { id: "summary_words", kind: "fact", type: "number", label: "summary word count", unit: "words",
-      value: (item) => words(item.summary) || null },
+      value: (item) => words(item?.summary) || null },
     { id: "app_number", kind: "fact", type: "number", label: "app number", help: "The number printed above the title.",
-      value: (item) => (Number.isInteger(item.number) ? item.number : null) },
+      value: (item) => (Number.isInteger(item?.number) ? item.number : null) },
     { id: "type_mentions", kind: "fact", type: "number", label: "question types named", unit: "of 4",
       help: "How many of Noul, Score, Choice and Box the card's copy mentions.",
       value: (item) => {
         const text = cardText(item);
         return TYPES.filter((type) => new RegExp(`\\b${type}(?:e?s)?\\b`).test(text)).length;
       } },
-    { id: "featured", kind: "fact", type: "flag", label: "featured style", value: (item) => item.featured === true },
-    { id: "has_emoji", kind: "fact", type: "flag", label: "heading symbol", value: (item) => typeof item.emoji === "string" && item.emoji !== "" },
-    { id: "tag", kind: "fact", type: "category", label: "card tag", value: (item) => (typeof item.tag === "string" && item.tag ? item.tag : "untagged") },
+    { id: "featured", kind: "fact", type: "flag", label: "featured style", value: (item) => item?.featured === true },
+    { id: "has_emoji", kind: "fact", type: "flag", label: "heading symbol", value: (item) => typeof item?.emoji === "string" && item.emoji !== "" },
+    { id: "tag", kind: "fact", type: "category", label: "card tag", value: (item) => (typeof item?.tag === "string" && item.tag ? item.tag : "untagged") },
     { id: "card_text", kind: "fact", type: "text", label: "card text", help: "Title, summary and bullets together.", value: cardText },
-    { id: "name", kind: "fact", type: "text", label: "app name", value: (item) => item.name || "" },
+    { id: "name", kind: "fact", type: "text", label: "app name", value: (item) => (typeof item?.name === "string" ? item.name : "") },
 
     { id: "duplicate_numbers", kind: "diagnostic", severity: "advice", scope: "list", label: "App number printed on more than one card",
       check: (items) => {
@@ -40,8 +40,11 @@ export default definePack({
         return [...byNumber].filter(([, names]) => names.length > 1).map(([number, names]) => `App ${number} is printed on ${names.join(" and ")}.`);
       } },
     { id: "out_of_order", kind: "diagnostic", severity: "info", scope: "list", label: "App numbers out of order",
+      help: "Read in page order, whatever the Lab sort, so sorting the cards never makes the page look out of order.",
       check: (items) => {
-        const numbered = items.filter((item) => Number.isInteger(item.number));
+        // Page order: a Lab sort rearranges shown(), but this check is about the order the page prints the numbers in.
+        const numbered = items.filter((item) => Number.isInteger(item?.number) && Number.isInteger(item.position))
+          .sort((a, b) => a.position - b.position);
         const out = [];
         for (let index = 1; index < numbered.length; index++) {
           const before = numbered[index - 1], after = numbered[index];
@@ -88,7 +91,5 @@ export default definePack({
       when: (ctx) => ctx.shown().length > 0, run: (ctx) => ctx.actions.open(ctx.shown()[0].id) },
     { id: "focus_first", kind: "command", title: "Go to the first shown app card", group: "Apps",
       when: (ctx) => ctx.shown().length > 0, run: (ctx) => ctx.actions.focus(ctx.shown()[0].id) },
-    { id: "copy_links", kind: "command", title: "Copy links to the shown apps", group: "Apps",
-      when: (ctx) => ctx.shown().length > 0, run: (ctx) => ctx.env.copy(ctx.shown().map((item) => `${label(item)}: ${item.href}`).join("\n")) },
   ],
 });

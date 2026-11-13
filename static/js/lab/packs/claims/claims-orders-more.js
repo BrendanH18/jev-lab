@@ -50,7 +50,7 @@ export default definePack({
   features: [
     { id: "limit_headroom", kind: "fact", type: "number", label: "headroom under the automatic limit for a full refund", unit: "USD",
       help: "The automatic limit now in the sliders minus the order total; negative when a full refund would go to a person (plain arithmetic).",
-      value: (item, ctx) => (num(item.total) === null || autoLimit(ctx) === null ? null : Math.round((autoLimit(ctx) - item.total) * 100) / 100) },
+      value: (item, ctx) => (num(item?.total) === null || autoLimit(ctx) === null ? null : Math.round((autoLimit(ctx) - item.total) * 100) / 100) },
     { id: "best_case", kind: "fact", type: "category", label: "best case before a photo (advisory)",
       help: "approve possible, review at best, or reject: what the plain-code record rules leave open under the current sliders, whatever the photo shows.",
       value: (item, ctx) => bestCase(item, ctx) },
@@ -77,21 +77,20 @@ export default definePack({
       } },
     { id: "window_closing", kind: "diagnostic", label: "Refund window closes within 3 days", severity: "advice",
       check: (item, ctx) => {
-        if (item.delivered !== true || item.refunded === true || item.within_window !== true || num(item.days_since_delivery) === null) return null;
+        if (item?.delivered !== true || item.refunded === true || item.within_window !== true || num(item.days_since_delivery) === null) return null;
         const left = windowDays(ctx) - item.days_since_delivery;
         if (left > 3) return null;
         return `the ${windowDays(ctx)}-day refund window closes ${left === 0 ? "today" : `in ${left} day${left === 1 ? "" : "s"}`} (delivered ${item.days_since_delivery} days ago).`;
       } },
     { id: "incomplete_record", kind: "diagnostic", label: "Order record is incomplete", severity: "advice",
       check: (item) => {
+        if (!item || typeof item !== "object") return null;
         const missing = [["total", num(item.total) === null], ["customer", !item.customer], ["items", !item.items], ["status", !item.status]]
           .filter(([, gone]) => gone).map(([field]) => field);
         return missing.length ? `the record has no ${joinOr(missing)}${missing.includes("total") ? ": refund amounts cannot be worked out" : ""}.` : null;
       } },
-    { id: "checked_repeatedly", kind: "diagnostic", label: "Checked more than once this session", severity: "info",
-      check: (item) => (num(item.checked) !== null && item.checked >= 2 ? `checked ${item.checked} times this session; each check is one paid call.` : null) },
     { id: "checked_unclaimable", kind: "diagnostic", label: "Paid check on an order the record already settles", severity: "advice",
-      check: (item) => (num(item.checked) !== null && item.checked >= 1 && unclaimable(item)
+      check: (item) => (num(item?.checked) !== null && item.checked >= 1 && unclaimable(item)
         ? `${item.checked} paid check${item.checked === 1 ? "" : "s"} this session on an order that is ${item.refunded ? "already refunded" : item.status}: the plain-code rules reject a claim on it whatever the photo shows.` : null) },
     { id: "no_auto_approval", kind: "diagnostic", scope: "list", label: "No shown order could be approved automatically", severity: "info",
       check: (items, ctx) => (items.length && autoLimit(ctx) !== null && !items.some((item) => bestCase(item, ctx) === "approve possible")

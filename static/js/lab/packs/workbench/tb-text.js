@@ -54,22 +54,28 @@ function reservedDomain(host) {
   const tld = name.split(".").pop();
   return ["example", "test", "invalid", "localhost"].includes(tld) || /(?:^|\.)example\.(?:com|net|org)$/.test(name);
 }
-const urlHost = (url) => url.replace(/^https?:\/\//i, "").split(/[/?#:]/)[0];
+// A link's host: after the scheme, before the path, query or fragment, without user info ("user:pw@") or a port.
+const urlHost = (url) => {
+  const authority = url.replace(/^https?:\/\//i, "").split(/[/?#]/)[0];
+  return authority.slice(authority.lastIndexOf("@") + 1).replace(/:\d*$/, "");
+};
 
 const NAMES = { 0x00A0: "no-break space", 0x00AD: "soft hyphen", 0x2007: "figure space", 0x2009: "thin space", 0x200B: "zero-width space",
   0x200C: "zero-width non-joiner", 0x200D: "zero-width joiner", 0x200E: "left-to-right mark", 0x200F: "right-to-left mark", 0x2028: "line separator",
   0x2029: "paragraph separator", 0x202F: "narrow no-break space", 0x2060: "word joiner", 0xFEFF: "byte order mark" };
 const codeLabel = (code) => `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
-const INVISIBLE = /[​-‍⁠﻿­]/g;
+const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF\u00AD]/g;
 
 function finder(found, noun) {
   const counts = tally(found);
   return { rows: [[`${noun} found`, found.length], [`Distinct ${noun.toLowerCase()}`, counts.length]], table: { columns: [noun.replace(/s$/, "").toLowerCase(), "times"], rows: counts } };
 }
 
-// The greedy wrap of one line: words joined by single spaces, each output line at most width code points (a word that
-// is longer stays whole on its own line), every line keeping the original indentation.
+// The greedy wrap of one line: a line that fits stays exactly as it is; a longer one is split into words joined by
+// single spaces, each output line at most width code points (a word that is longer stays whole on its own line), every
+// line keeping the original indentation.
 function wrapLine(line, width) {
+  if (codePoints(line) <= width) return [line];
   const indent = line.match(/^\s*/)[0];
   const list = line.trim().split(/\s+/).filter(Boolean);
   if (!list.length) return [""];
@@ -103,10 +109,13 @@ function diffLines(a, b, same) {
 function shorten(text, max, measure, tail) {
   if (measure(text) <= max) return text;
   const end = measure(tail) <= max ? tail : "";
-  let out = "";
+  const room = max - measure(end);
+  let out = "", used = 0;
   for (const char of text) {
-    if (measure(out + char) + measure(end) > max) break;
+    const size = measure(char);
+    if (used + size > room) break;
     out += char;
+    used += size;
   }
   return out + end;
 }
@@ -124,12 +133,12 @@ export default definePack({
       inputs: [TEXT()],
       compute: ({ text }) => [["Characters", graphemeCount(text)], ["Code points", codePoints(text)], ["UTF-8 bytes", utf8Bytes(text)], ["Words", wordCount(text)], ["Lines", lineCount(text)]] },
     { id: "sentence_lengths", kind: "tool", group: GROUP, title: "Sentences and their lengths",
-      help: "Splits the text into sentences (ending at . ! or ? before a space or the end) and gives each one's length in words, the average, and the longest, for keeping instructions short and direct.",
+      help: "Splits the text into sentences (ending at . ! or ? before a space or the end) and gives each one's length in words (a word holds a letter or digit, so a lone dash is not one), the average, and the longest, for keeping instructions short and direct.",
       inputs: [TEXT()],
       compute: ({ text }) => {
         const list = sentences(text);
         need(list.length > 0, "Type some text.");
-        const counts = list.map(wordCount);
+        const counts = list.map((sentence) => words(sentence).filter((token) => core(token) !== "").length);
         const total = counts.reduce((sum, value) => sum + value, 0);
         return { rows: [["Sentences", list.length], ["Words", total], ["Average words per sentence", total / list.length], ["Longest sentence (words)", Math.max(...counts)]],
           table: { columns: ["sentence", "words", "text"], rows: list.map((sentence, index) => [index + 1, counts[index], sentence]) } };
@@ -172,12 +181,15 @@ export default definePack({
       compute: ({ text }) => {
         const tokens = [...String(text).matchAll(/\S+/g)];
         const found = [];
+        let line = 1, seen = 0;
         for (let i = 0; i + 1 < tokens.length; i++) {
+          line += (String(text).slice(seen, tokens[i].index).match(/\r\n|\r|\n/g) || []).length;
+          seen = tokens[i].index;
           const first = tokens[i][0], second = tokens[i + 1][0];
           const word = core(first);
           if (!word || !isWordChar(Array.from(first).pop()) || !isWordChar(Array.from(second)[0])) continue;
           if (core(second).toLowerCase() !== word.toLowerCase()) continue;
-          found.push([lineCount(String(text).slice(0, tokens[i].index + 1)), `${word} ${core(second)}`]);
+          found.push([line, `${word} ${core(second)}`]);
         }
         return { rows: [["Doubled words", found.length]], table: { columns: ["line", "words"], rows: found } };
       } },
@@ -198,6 +210,7 @@ export default definePack({
       inputs: [TEXT("a", "Text A", { required: false, rows: 3 }), TEXT("b", "Text B", { required: false, rows: 3 }), CHECK("ignoreCase", "Ignore case")],
       compute: ({ a, b, ignoreCase }) => {
         const x = ignoreCase ? a.toLowerCase() : a, y = ignoreCase ? b.toLowerCase() : b;
+        need(codePoints(x) * codePoints(y) <= 4e6, "These texts are too long to compare here (at most about 2,000 characters each).");
         const distance = levenshtein(x, y), longer = Math.max(codePoints(x), codePoints(y));
         return [["Edit distance (characters)", distance], ["Similarity", longer ? 1 - distance / longer : 1], ["Same start (characters)", codePoints(commonPrefix([x, y]))],
           ["Same end (characters)", codePoints(commonSuffix([x, y]))]];
@@ -257,15 +270,14 @@ export default definePack({
           table: { columns: ["name", "written as", "times"], rows: groups } };
       } },
     { id: "fill_placeholders", kind: "tool", group: GROUP, title: "Fill in placeholders",
-      help: "Replaces placeholders ({name}, {{name}}, <name>, [NAME]) with values typed one per line as name = value (or name: value). Placeholders with no value stay as written, and the result lists them and any value that was not used.",
+      help: "Replaces placeholders ({name}, {{name}}, <name>, [NAME]) with values typed one per line as name = value (or name: value; the first = or : ends the name). Placeholders with no value stay as written, and the result lists them and any value that was not used.",
       inputs: [TEXT(), TEXT("values", "Values (name = value per line)", { rows: 4, placeholder: "customer = Ana Ruiz\norder_id: HC-1042" })],
       compute: ({ text, values }) => {
         const given = new Map();
         String(values).split(/\r\n|\r|\n/).forEach((raw, index) => {
           const line = raw.trim();
           if (!line || line.startsWith("#")) return;
-          const equals = line.indexOf("="), colon = line.indexOf(":");
-          const at = equals !== -1 ? equals : colon;
+          const at = line.search(/[=:]/);
           need(at > 0, `Values, line ${index + 1}: write name = value.`);
           const name = line.slice(0, at).trim();
           need(name && !given.has(name), `Values, line ${index + 1}: ${name ? `${name} is given twice` : "the name is missing"}.`);
@@ -285,18 +297,18 @@ export default definePack({
           ["Values not used", listOr([...given.keys()].filter((name) => !used.has(name)))]], text: out };
       } },
     { id: "question_id", kind: "tool", group: GROUP, title: "Name a question id",
-      help: "A question id from a phrase in snake_case, camelCase, kebab-case and as an ASCII slug, the phrase as a Title Case label, and a snake_case id made unique against ids already in use (adding _2, _3, ...).",
+      help: "A question id from a phrase in snake_case, camelCase, kebab-case and as an ASCII slug (none when the phrase has no letters with an ASCII form), the phrase as a Title Case label, and a snake_case id made unique against ids already in use (adding _2, _3, ...).",
       inputs: [{ name: "text", label: "Phrase or name", type: "text", required: true, placeholder: "e.g. Is the order late?" },
         TEXT("taken", "Ids already in use (one per line, optional)", { required: false, rows: 3 })],
       compute: ({ text, taken }) => {
         const snake = toSnakeCase(text);
         need(snake !== "", "The phrase has no letters or digits to name it from.");
         const used = lines(taken).map((line) => line.trim()).filter(Boolean);
-        return [["snake_case", snake], ["camelCase", toCamelCase(text)], ["kebab-case", toKebabCase(text)], ["ASCII slug", slugify(text, "_")],
+        return [["snake_case", snake], ["camelCase", toCamelCase(text)], ["kebab-case", toKebabCase(text)], ["ASCII slug", slugify(text, "_") || null],
           ["Title Case label", toTitleCase(text)], ["Plain identifier (letters, digits, underscores)", yesNo(isIdentifier(snake))], ["Unique snake_case id", uniqueName(snake, used)]];
       } },
     { id: "wrap_lines", kind: "tool", group: GROUP, title: "Wrap lines to a width",
-      help: "Breaks long lines at spaces so none is longer than a width (in characters), keeping each line's indentation and the existing line breaks. A word longer than the width stays whole on its own line.",
+      help: "Breaks long lines at spaces so none is longer than a width (in characters), keeping each line's indentation and the existing line breaks. Lines that already fit are left exactly as they are; a word longer than the width stays whole on its own line.",
       inputs: [TEXT(), { name: "width", label: "Width (characters)", type: "integer", min: 10, default: 72 }],
       compute: ({ text, width }) => {
         const before = lines(text);
@@ -325,7 +337,7 @@ export default definePack({
         return { rows: [["Control characters removed", codePoints(text) - codePoints(clean)], ["Invisible characters removed", codePoints(clean) - codePoints(out)]], text: out };
       } },
     { id: "normalize_punctuation", kind: "tool", group: GROUP, title: "Straighten quotes and dashes",
-      help: "Turns curly quotes into straight ones, Unicode dashes and the minus sign into a hyphen, no-break and other fixed-width spaces into plain spaces, and optionally the ellipsis character into three dots. Each change can be turned off.",
+      help: "Turns curly quotes into straight ones, Unicode dashes and the minus sign into a hyphen, no-break, thin, wide and other special spaces (U+00A0, U+2000 to U+200A, U+202F, U+205F, U+3000) into plain spaces, and optionally the ellipsis character into three dots. Each change can be turned off.",
       inputs: [TEXT(), CHECK("quotes", "Straighten quotes", true), CHECK("dashes", "Replace dashes", true), CHECK("spaces", "Replace special spaces", true),
         CHECK("ellipsis", "Ellipsis character to three dots")],
       compute: ({ text, quotes, dashes, spaces, ellipsis }) => {
@@ -336,10 +348,10 @@ export default definePack({
           if (on) out = out.replace(pattern, replace);
           counts.push([label, found]);
         };
-        step("Quotes straightened", quotes, /[‘’‚‛“”„‟]/g, (char) => ("‘’‚‛".includes(char) ? "'" : '"'));
-        step("Dashes replaced", dashes, /[‐-―−]/g, "-");
-        step("Spaces replaced", spaces, /[    ]/g, " ");
-        step("Ellipses expanded", ellipsis, /…/g, "...");
+        step("Quotes straightened", quotes, /[\u2018-\u201F]/g, (char) => ("\u2018\u2019\u201A\u201B".includes(char) ? "'" : '"'));
+        step("Dashes replaced", dashes, /[\u2010-\u2015\u2212]/g, "-");
+        step("Spaces replaced", spaces, /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+        step("Ellipses expanded", ellipsis, /\u2026/g, "...");
         return { rows: counts, text: out };
       } },
     { id: "count_phrase", kind: "tool", group: GROUP, title: "Count a phrase",
@@ -404,7 +416,7 @@ export default definePack({
           rows: all.map((entry) => [entry.kind === "non-ASCII" ? entry.char : NAMES[entry.code] || "(not shown)", codeLabel(entry.code), entry.times, entry.kind]) } };
       } },
     { id: "shorten_text", kind: "tool", group: GROUP, title: "Shorten text to a length",
-      help: "Cuts text to at most a number of characters (code points) or UTF-8 bytes, never inside a character, ending with … when it is cut (the … counts toward the limit and is left out when it does not fit). Text that fits comes back unchanged.",
+      help: "Cuts text to at most a number of characters (code points) or UTF-8 bytes, never inside a code point's bytes, ending with … when it is cut (the … counts toward the limit and is left out when it does not fit). Text that fits comes back unchanged.",
       inputs: [TEXT(), { name: "max", label: "Longest allowed", type: "integer", min: 1, default: 200 },
         { name: "unit", label: "Measured in", type: "select", options: [["points", "Characters (code points)"], ["bytes", "UTF-8 bytes"]] }, CHECK("ellipsis", "End with … when cut", true)],
       compute: ({ text, max, unit, ellipsis }) => {

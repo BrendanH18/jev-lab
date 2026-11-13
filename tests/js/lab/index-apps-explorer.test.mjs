@@ -20,7 +20,8 @@ checkPack(pack, {
   app_number: { items: [A.shield, A.counter, A.reviews, ODD["app-1"]], values: [1, 8, 5, null] },
   // Shield names Noul, Score and Choice; Find names Choice and Noul; Claims a Box; Play "Nouls"; Dispatch none.
   // Shield's lowercase "re-scores" is not a type name.
-  type_mentions: { items: [A.shield, A.claims, A.find, A.dispatch, A.play], values: [3, 1, 2, 0, 1] },
+  // Workbench and Counter name none; the odd untitled card has no copy to search.
+  type_mentions: { items: [A.shield, A.claims, A.find, A.dispatch, A.play, A.workbench, ODD["app-1"]], values: [3, 1, 2, 0, 1, 0, 0] },
   featured: { items: [A.autopilot, A.shield, ODD["shield-2"]], values: [true, false, true] },
   has_emoji: { items: [A.shield, A.counter, ODD["app-1"]], values: [true, false, false] },
   tag: { items: [A.autopilot, A.claims, A.shield, A.workbench], values: ["INTEGRATED", "IMAGES", "untagged", "BUILD YOUR OWN"] },
@@ -28,7 +29,10 @@ checkPack(pack, {
   name: { items: [A.shield, A.counter, ODD["shield-2"]], values: ["Shield", "Counter", ""] },
 
   duplicate_numbers: { hitList: Object.values(A), missList: [A.shield, A.dispatch, A.autopilot, A.claims], message: /^App 8 is printed on Counter and Workbench\.$/ },
-  out_of_order: { hitList: Object.values(A), missList: [A.shield, A.dispatch, A.autopilot, A.reviews], message: /^Counter \(App 8\) comes before Reviews \(App 5\)\.$/ },
+  // The page prints 1, 2, 3, 4, 8, 5, 6, 7, 8: only Counter before Reviews is out of order. The hit list comes in A-to-Z
+  // name order and the miss list in reverse page order, as a Lab sort would hand them over: the check reads page order.
+  out_of_order: { hitList: [A.autopilot, A.claims, A.counter, A.dispatch, A.find, A.play, A.reviews, A.shield, A.workbench],
+    missList: [A.reviews, A.autopilot, A.dispatch, A.shield], message: /^Counter \(App 8\) comes before Reviews \(App 5\)\.$/ },
   no_bullets: { hit: A.counter, miss: [A.shield, ODD["app-1"]], message: /Counter has a summary but no bullet points/ },
 
   // Eight cards with three bullets each; without Shield, seven.
@@ -53,5 +57,4 @@ checkPack(pack, {
     check: (c) => { assert.equal(c.log.length, 1); assert.equal(c.log[0][0], "open"); assert.equal(c.log[0][1].id, "autopilot"); }, hidden: empty },
   focus_first: { ctx: () => ctx({ order: ["workbench"] }),
     check: (c) => { assert.equal(c.log.length, 1); assert.equal(c.log[0][0], "focus"); assert.equal(c.log[0][1].href, "/workbench"); }, hidden: () => ctx({ hide: ALL }) },
-  copy_links: { ctx: () => only("find", "play"), check: (c) => assert.deepEqual(c.env.copied, ["Find: /find\nPlay: /play"]), hidden: empty },
 }, { ctx: () => sampleIndexAppsCtx() });

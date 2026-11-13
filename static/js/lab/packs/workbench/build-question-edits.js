@@ -56,6 +56,14 @@ function checkList(next, items, ctx, before = next.map((_, index) => items[index
     if (from && from.expectation && !now) throw new Error(`Question “${was}” has human expectations, so it needs an id.`);
     if (now && owned.has(now)) throw new Error(`Expectations already exist for “${now}”, so another question cannot take that id.`);
   });
+  // A Choice expectation must keep naming an offered option: an edit that renames or drops that key is refused.
+  next.forEach((item, index) => {
+    const from = before[index];
+    const expected = from && item.type === "choice" && typeof from.expectation?.choice === "string" ? from.expectation.choice : null;
+    if (expected !== null && keysOf(from).includes(expected) && !keysOf(item).includes(expected)) {
+      throw new Error(`${nameOf(item, index)} expects “${expected}”; this edit would change that option's key and leave its expectation pointing at nothing. Change the expectation first.`);
+    }
+  });
   return next;
 }
 
@@ -233,7 +241,8 @@ function questionsFromMap(map, ctx, warnings) {
 const LEFT_OUT = [["state", "the state"], ["expect", "the expectations"], ["images", "the pictures"], ["assets", "the pictures"], ["model", "the model"]];
 function leftOut(value) {
   const names = [...new Set(LEFT_OUT.filter(([key]) => hasOwn(value, key)).map(([, name]) => name))];
-  return names.length ? [`Only the questions are added; ${names.join(", ")} ${names.length === 1 ? "was" : "were"} left out.`] : [];
+  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+  return names.length ? [`Only the questions are added; ${list} ${names.length === 1 ? "was" : "were"} left out.`] : [];
 }
 
 export default definePack({

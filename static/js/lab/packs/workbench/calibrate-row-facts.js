@@ -99,20 +99,40 @@ function rowIou(item) {
 // already has no label or test marker). null for a row the run does not hold.
 const identity = (item) => (item?.row === null || item?.row === undefined ? null : stableStringify(item.row));
 
-// A field value as By slice groups it (jev/slices.py _value): missing, null or blank is "(none)", text is trimmed,
-// anything else is its JSON with sorted keys and Python's separators.
+// How many items share each identity, counted once per items() list (the surface keeps the same array until the list
+// changes), so filtering and sorting stay linear in the rows.
+const GROUPS = new WeakMap();
+function identityCounts(list) {
+  if (!GROUPS.has(list)) {
+    const counts = new Map();
+    for (const item of list) {
+      const key = identity(item);
+      if (key !== null) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    GROUPS.set(list, counts);
+  }
+  return GROUPS.get(list);
+}
+
+// A field value as By slice groups it (jev/slices.py _value): missing, null or blank is "(none)", text is stripped of
+// what Python's str.strip removes, anything else is Python's json.dumps(sort_keys=True): ", " and ": " separators and
+// every non-ASCII character escaped as \uXXXX (ensure_ascii).
+const PY_SPACE = "[\\s\\x1c-\\x1f\\x85]";
+const PY_STRIP = new RegExp(`^(?:(?!\\ufeff)${PY_SPACE})+|(?:(?!\\ufeff)${PY_SPACE})+$`, "g");
+const pyStrip = (text) => text.replace(PY_STRIP, "");
+const pyString = (text) => JSON.stringify(text).replace(/[\u0080-\uffff]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
 function pyJson(value) {
   if (value === null) return "null";
-  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "string") return pyString(value);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (Array.isArray(value)) return `[${value.map(pyJson).join(", ")}]`;
-  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}: ${pyJson(value[key])}`).join(", ")}}`;
+  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${pyString(key)}: ${pyJson(value[key])}`).join(", ")}}`;
   return "null";
 }
 function sliceValue(row, field) {
   if (!isObject(row) || !Object.prototype.hasOwnProperty.call(row, field) || row[field] === null || row[field] === "") return NONE;
   const value = row[field];
-  return (typeof value === "string" ? value : pyJson(value)).trim() || NONE;
+  return pyStrip(typeof value === "string" ? value : pyJson(value)) || NONE;
 }
 
 function bandOf(signal) {
@@ -146,17 +166,17 @@ export default definePack({
       value: (item, ctx) => {
         const key = identity(item);
         if (key === null) return null;
-        const list = typeof ctx?.items === "function" ? ctx.items() : [];
-        return list.filter((other) => identity(other) === key).length || null;
+        const list = typeof ctx?.items === "function" ? ctx.items() : null;
+        return Array.isArray(list) ? identityCounts(list).get(key) || null : null;
       } },
     { id: "label_is_runner_up", kind: "fact", type: "flag", label: "a label the answer ranked second",
       help: "Wrong rows whose label was the answer's second choice: often a near miss rather than a confused answer.",
       value: (item) => item.correct === false && labelRank(item) === 2 },
     { id: "missing_confidence", kind: "fact", type: "flag", label: "an answer without a confidence field",
-      help: "A Choice, Score or Box answer with no confidence: its confidence signal is how far the top probability sits above an even split.",
+      help: "A Choice or Score answer with no confidence: its confidence signal is how far the top probability sits above an even split.",
       value: (item) => {
         const answer = item.answer;
-        return isObject(answer) && ["choice", "score", "box"].includes(answer.type) && num(answer.confidence) === null;
+        return isObject(answer) && ["choice", "score"].includes(answer.type) && num(answer.confidence) === null;
       } },
     { id: "outcome", kind: "fact", type: "category", label: "route and result",
       help: "Automated or reviewed at the slider's threshold, and right or wrong.",
@@ -219,7 +239,7 @@ export default definePack({
         return `the expected score ${score.toFixed(2)} sits ${Math.abs(score - predicted).toFixed(2)} levels from the most likely level ${item.predicted}: the answer is torn between distant levels`;
       } },
     { id: "box_no_overlap", kind: "diagnostic", severity: "advice", label: "Answered box misses the labeled box",
-      check: (item) => (rowIou(item) === 0 ? "the answered box does not touch the labeled box (overlap 0): check the label, or whether the picture holds the object twice" : null) },
+      check: (item) => (rowIou(item) === 0 ? "the answered box does not overlap the labeled box at all (IoU 0): check the label, or whether the picture holds the object twice" : null) },
     { id: "box_degenerate", kind: "diagnostic", severity: "advice", label: "Answered box is empty or outside the picture",
       check: (item) => {
         if (typeOf(item) !== "box" || !answerOf(item, "box")) return null;

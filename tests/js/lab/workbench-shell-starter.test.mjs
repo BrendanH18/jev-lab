@@ -39,7 +39,6 @@ checkPack(pack, {
   },
   back_tab: { ctx: () => sampleShellCtx(), check: opened("build"), hidden: () => sampleShellCtx({ previousTab: null }) },
   focus_tabs: { ctx: () => sampleShellCtx(), check: (ctx) => assert.deepEqual(ctx.calls, [["focusTabs"]]) },
-  copy_tab_link: { ctx: () => sampleShellCtx({ tab: "toolbox" }), check: (ctx) => assert.deepEqual(ctx.env.copied, ["/workbench#toolbox"]) },
   toggle_guide: {
     ctx: () => sampleShellCtx(),
     check: (ctx) => {
@@ -98,14 +97,30 @@ checkPack(pack, {
       + "- [ ] Inspect and label the data — Inspect before spending\n- [x] Run the selected questions — Current run available\n"
       + "- [ ] Tune a policy and save a check — Policy available\n- [ ] Export a gate and review traffic — Save a check for the review cycle\n",
     filename: "workbench-checklist.md",
+    check: () => {
+      // Before the page loads: workflowSteps({}) — nothing is done and labels, run and policy are not available.
+      const feature = pack.features.find((entry) => entry.id === "guide_checklist");
+      assert.equal(feature.build(notReady()), "# Workbench checklist\n\n- [ ] Define typed questions — Start here\n- [ ] Add representative inputs — Add inputs\n"
+        + "- [ ] Inspect and label the data — Inspect before spending (not available yet)\n- [ ] Run the selected questions — Live call required (not available yet)\n"
+        + "- [ ] Tune a policy and save a check — Needs a current run with a gateable question (not available yet)\n"
+        + "- [ ] Export a gate and review traffic — Save a check for the review cycle\n");
+    },
   },
   workspace_summary: {
     ctx: sampleShellCtx(),
     filename: "workbench-workspace.json",
-    check: (out) => assert.deepEqual(JSON.parse(out.text), {
-      tab: "bulk", counts: { savedTests: 3, examples: 13, datasets: 2, checks: 1 },
-      workspace: { questionCount: 4, rowCount: 12, gateableCount: 4, currentRun: true, healthCurrent: false, hasSavedCheck: false },
-      unsaved: { build: false, bulk: true, labeling: false, review: false, drift: false, datasetEdits: false, agreement: false, any: true },
-    }),
+    check: (out) => {
+      assert.deepEqual(JSON.parse(out.text), {
+        tab: "bulk", counts: { savedTests: 3, examples: 13, datasets: 2, checks: 1 },
+        workspace: { questionCount: 4, rowCount: 12, gateableCount: 4, currentRun: true, healthCurrent: false, hasSavedCheck: false },
+        unsaved: { build: false, bulk: true, labeling: false, review: false, drift: false, datasetEdits: false, agreement: false, any: true },
+      });
+      // Before the page loads, counts and workspace are null rather than made-up zeros.
+      const feature = pack.features.find((entry) => entry.id === "workspace_summary");
+      assert.deepEqual(JSON.parse(feature.build(sampleShellCtx({ ready: false, tab: "toolbox", unsaved: { bulk: false } }))), {
+        tab: "toolbox", counts: null, workspace: null,
+        unsaved: { build: false, bulk: false, labeling: false, review: false, drift: false, datasetEdits: false, agreement: false, any: false },
+      });
+    },
   },
 }, { ctx: () => sampleShellCtx() });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import pack from "../../../static/js/lab/packs/claims/claims-result-insights.js";
+import { runExporter } from "../../../static/js/lab/kit.js";
 import { checkPack, fakeCtx } from "./harness.mjs";
 import { CLAIMS_POLICY, sampleClaimsResult, sampleClaimsResultCtx } from "./fixtures/claims.mjs";
 
@@ -31,12 +32,15 @@ checkPack(pack, {
   instructions: { items: [items[0], items[3], { instructions: "" }], values: [
     "Does `photo` show the item described in `order.items`, or the packaging it was shipped in?", "What kind of damage does `photo` show?", ""] },
   failing_check: { items: [{ check: { id: "damage", ok: false } }, { check: { id: "shows_item", ok: true } }, { check: null }], values: [true, false, false] },
-  close_call: { items, values: [false, false, false, false, true, true] },
 
-  near_cut: { hit: items[4], miss: [items[0], items[1], items[3], items[5]], message: /^value 0\.62 sits 0\.02 from matches_note 0\.60/ },
+  // matches_note 0.62 vs 0.60; a box at confidence 0.57 vs box_confidence 0.60. The shown box (0.52, 0.08 away) is quiet.
+  near_cut: { hit: [items[4], { type: "box", confidence: 0.57, cuts: [{ key: "box_confidence", at: 0.6 }] }], miss: [items[0], items[1], items[3], items[5]],
+    message: /^(value 0\.62 sits 0\.02 from matches_note 0\.60|confidence 0\.57 sits 0\.03 from box_confidence 0\.60); a small slider move/ },
   narrow_lead: { hit: { type: "choice", probabilities: [{ key: "torn_or_open", p: 0.45 }, { key: "spilled_or_leaking", p: 0.4 }] }, miss: [items[2], items[3], items[0]],
     message: /leads by only 0\.05/ },
-  wide_box: { hit: { type: "box", box: { left: 0, top: 0, right: 0.8, bottom: 0.8 } }, miss: [items[5], items[0]], message: /covers 64% of the picture/ },
+  // 0.8 × 0.8 = 64%; edges in the wrong order have no area rather than a positive product of two negatives.
+  wide_box: { hit: { type: "box", box: { left: 0, top: 0, right: 0.8, bottom: 0.8 } },
+    miss: [items[5], items[0], { type: "box", box: { left: 0.9, top: 0.9, right: 0.1, bottom: 0.1 } }], message: /covers 64% of the picture/ },
   kind_vs_damage: { hitList: [{ id: "damage_kind", value: "none_visible" }, { id: "damage_visible", value: 0.8 }], missList: items, ctx: policyCtx,
     message: /none_visible but damage_visible is 0\.80 \(at or above 0\.70\)/ },
   severity_vs_damage: { hitList: [{ id: "severity", value: 1.4 }, { id: "damage_visible", value: 0.2 }],
@@ -46,11 +50,16 @@ checkPack(pack, {
   refund_share: [{ ctx: page, expect: 0.5, empty: empty() },
     { ctx: sampleClaimsResultCtx({ result: withResult((r) => { r.verdict.amount = 64; }) }), expect: 1 },
     { ctx: sampleClaimsResultCtx({ result: withResult((r) => { r.verdict.decision = "reject"; }) }), expect: null }],
-  failing_checks: [{ ctx: page, expect: 1, empty: empty() }],
+  // Only the window check fails; an odd entry in the list is skipped rather than breaking the count.
+  failing_checks: [{ ctx: page, expect: 1, empty: empty() },
+    { ctx: sampleClaimsResultCtx({ result: withResult((r) => { r.verdict.checks = [null, { id: "a", ok: false }, { id: "b", ok: false }, { id: "c", ok: true }]; }) }), expect: 2 }],
   // 0.40 × 0.35 of the picture
   box_area: [{ ctx: page, expect: 0.14, tolerance: 1e-9, empty: empty() }, { ctx: noBox(), expect: null }],
   // 0.40 × 640 = 256 and 0.35 × 480 = 168
-  box_pixels: [{ ctx: page, expect: "256 × 168 px", empty: empty() }, { ctx: noBox(), expect: null }],
+  // Floor/ceil: 0.551 × 640 = 352.64 -> 352, 0.951 × 640 = 608.64 -> 609 (257 px); 0.101 × 480 = 48.48 -> 48,
+  // 0.451 × 480 = 216.48 -> 217 (169 px). Rounding the width (0.4 × 640) would say 256 and disagree with the Box inspector.
+  box_pixels: [{ ctx: page, expect: "256 × 168 px", empty: empty() }, { ctx: noBox(), expect: null },
+    { ctx: sampleClaimsResultCtx({ result: withResult((r) => { r.answers.damage_box.box = { left: 0.551, top: 0.101, right: 0.951, bottom: 0.451 }; }) }), expect: "257 × 169 px" }],
   cost_per_thousand: [{ ctx: page, expect: 0.412, tolerance: 1e-9, empty: empty() }],
   tokens_per_question: [{ ctx: page, expect: 1840 / 6, tolerance: 1e-12, empty: empty() }],
   // approve, retake, review, review when sent
@@ -74,7 +83,14 @@ checkPack(pack, {
       + "- [ok] Matches the customer's description: 62% that the photo shows the problem described\n"
       + "- [ok] Within the automatic limit: $32.00 against a $100.00 limit\n"
       + "Policy in force: damage_yes 0.70, damage_no 0.30, shows_order 0.50, matches_note 0.60, box_confidence 0.60, full_refund_at 1.50, auto_limit_usd 100.00\n",
-    excludes: ["crushed on one corner", "0.94"] },
+    excludes: ["crushed on one corner", "0.94"],
+    // An order id unfit for a file name falls back, and a verdict missing its lists and amount still exports.
+    check: () => {
+      const odd = runExporter(pack.features.find((feature) => feature.id === "decision_summary"),
+        sampleClaimsResultCtx({ input: { order: "../x", note: "", photo: null }, result: withResult((r) => { r.verdict = { decision: "review", remedy: "full_refund" }; }) }));
+      assert.equal(odd.filename, "claim-decision.txt");
+      assert.match(odd.text, /Remedy: Full refund · amount unknown\nReasons:\nChecks \(plain code\):\nPolicy in force:/);
+    } },
   answers_csv: { ctx: sampleClaimsResultCtx({ matches: (item) => item.id === "severity" || item.id === "damage_box" }), filename: "claim-answers.csv",
     text: "\"id\",\"type\",\"value\",\"display\",\"confidence\",\"top_key\",\"top_p\"\r\n"
       + "\"severity\",\"score\",\"1.2\",\"1.20 / 3\",\"0.7\",\"1\",\"0.7\"\r\n"
@@ -102,13 +118,25 @@ checkPack(pack, {
     check: (ctx) => {
       assert.deepEqual(ctx.log, [["setPolicy", { ...CLAIMS_POLICY, matches_note: 0.6, auto_limit_usd: 250 }]]);
       assert.match(ctx.env.toasts[0].message, /\$250/);
+      const when = pack.features.find((feature) => feature.id === "cover_refund").when;
+      assert.equal(when(sampleClaimsResultCtx({ result: withResult((r) => { r.verdict.amount = 249; r.verdict.decision = "reject"; }) })), false);
+      // $100.00 exactly is within the $100 limit; $401 would need a limit past the slider's $400.
+      assert.equal(when(sampleClaimsResultCtx({ result: withResult((r) => { r.verdict.amount = 100; }) })), false);
+      assert.equal(when(sampleClaimsResultCtx({ result: withResult((r) => { r.verdict.amount = 401; }) })), false);
     },
-    hidden: () => sampleClaimsResultCtx() },
+    // Within the limit there is nothing to cover; a rejected claim has no refund to cover.
+    hidden: () => sampleClaimsResultCtx(),
+  },
   focus_damage_slider: { ctx: () => sampleClaimsResultCtx(), check: (ctx) => assert.deepEqual(ctx.log, [["focusPolicy", "damage_yes"]]) },
 
+  // 0.55 × 640 = 352, 0.10 × 480 = 48, 0.95 × 640 = 608, 0.45 × 480 = 216; 0.40 × 0.35 = 0.14.
   box_to_pixels: { values: { left: 0.55, top: 0.1, right: 0.95, bottom: 0.45, width: 640, height: 480 },
-    expect: [["left px", 352], ["top px", 48], ["width px", 256], ["height px", 168], ["share of the picture", 0.14]], tolerance: 1e-9,
-    more: [{ values: { left: 0, top: 0, right: 1, bottom: 1, width: 300, height: 280 }, expect: [["left px", 0], ["top px", 0], ["width px", 300], ["height px", 280], ["share of the picture", 1]] }],
+    expect: [["left px", 352], ["top px", 48], ["right px", 608], ["bottom px", 216], ["width px", 256], ["height px", 168], ["share of the picture", 0.14]], tolerance: 1e-9,
+    more: [{ values: { left: 0, top: 0, right: 1, bottom: 1, width: 300, height: 280 },
+      expect: [["left px", 0], ["top px", 0], ["right px", 300], ["bottom px", 280], ["width px", 300], ["height px", 280], ["share of the picture", 1]] },
+    // 352.64 -> 352, 48.48 -> 48, 608.64 -> 609, 216.48 -> 217
+    { values: { left: 0.551, top: 0.101, right: 0.951, bottom: 0.451, width: 640, height: 480 }, tolerance: 1e-9,
+      expect: [["left px", 352], ["top px", 48], ["right px", 609], ["bottom px", 217], ["width px", 257], ["height px", 169], ["share of the picture", 0.14]] }],
     invalid: [{ left: 0.6, top: 0.1, right: 0.5, bottom: 0.4, width: 640, height: 480 }, { left: 0.1, top: 0.1, right: 0.5, bottom: 0.4, width: 0, height: 480 },
       { left: 0.1, top: 0.1, right: 1.5, bottom: 0.4, width: 640, height: 480 }] },
 }, { ctx: () => sampleClaimsResultCtx() });

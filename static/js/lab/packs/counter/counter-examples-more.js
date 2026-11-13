@@ -43,7 +43,7 @@ export default definePack({
     { id: "expected_replies", kind: "fact", type: "number", label: "turns expected to get a template reply",
       help: "Hand-written expectations that say reply.", value: (item) => { const expect = expectOf(item); return expect.length ? expect.filter((action) => action === "reply").length : null; } },
     { id: "mentions_order", kind: "fact", type: "flag", label: "a customer word about an order, refund, parcel, tracking or delivery",
-      help: "A turn uses one of the words order, refund, parcel, tracking, delivery or delivered (singular or plural, any case).", value: (item) => turnsOf(item).some((turn) => ORDER_WORDS.test(turn)) },
+      help: "A turn uses order(s), refund(s), parcel(s), tracking, delivery or delivered as a word, in any case.", value: (item) => turnsOf(item).some((turn) => ORDER_WORDS.test(turn)) },
     { id: "expect_sequence", kind: "fact", type: "category", label: "expected decision sequence",
       help: "The hand-written expectations in order, such as reply → close.", value: (item) => { const expect = expectOf(item); return expect.length ? expect.join(" → ") : null; } },
 

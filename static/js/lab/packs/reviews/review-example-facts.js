@@ -2,14 +2,17 @@
 // Contract: static/js/lab/surfaces/reviews.js ("reviews.examples"). Items are inputs plus hand-written expectations;
 // nothing here shows an answer, and an expectation is always labeled as what a person would decide.
 import { csvText, definePack } from "../../kit.js";
+import { sentences as sentenceList } from "../../lib/text.js";
 
 const text = (item) => (typeof item?.text === "string" ? item.text : "");
+const subject = (item) => (typeof item?.about === "string" ? item.about.trim() : "");
 const number = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const labelOf = (map, key) => (typeof key === "string" && key ? (map && typeof map[key] === "string" ? map[key] : key) : null);
 
-// Sentences: runs of text ending in ., ! or ? (or the end), counting only runs that hold a letter or digit.
+// Sentences as lib/text.js splits them (a run of . ! or ? followed by a space or the end, so "quickfix.example" and
+// "$3.50" do not split one), counting only those that hold a letter or digit.
 function sentences(value) {
-  return value.split(/[.!?]+/).filter((part) => /[\p{L}\p{N}]/u.test(part)).length;
+  return sentenceList(value).filter((part) => /[\p{L}\p{N}]/u.test(part)).length;
 }
 
 const mean = (values) => (values.length ? values.reduce((total, value) => total + value, 0) / values.length : null);
@@ -31,7 +34,8 @@ export default definePack({
     { id: "stars", kind: "fact", type: "number", label: "star rating", unit: "stars", help: "The stars never reach Jev.", value: (item) => number(item.stars) },
     { id: "chars", kind: "fact", type: "number", label: "length in characters", unit: "characters", value: (item) => number(item.chars) },
     { id: "words", kind: "fact", type: "number", label: "word count", unit: "words", value: (item) => number(item.words) },
-    { id: "sentences", kind: "fact", type: "number", label: "sentence count", unit: "sentences", value: (item) => (typeof item.text === "string" ? sentences(item.text) : null) },
+    { id: "sentences", kind: "fact", type: "number", label: "sentence count", unit: "sentences",
+      help: "A sentence ends at . ! or ? followed by a space or the end, so a web address or a price does not split one.", value: (item) => (typeof item.text === "string" ? sentences(item.text) : null) },
     { id: "triaged", kind: "fact", type: "number", label: "checks this session", unit: "checks", help: "Your own checks of these words since the page loaded.",
       value: (item) => number(item.triaged) },
     { id: "channel", kind: "fact", type: "category", label: "channel", value: (item) => item.channel_label || item.channel || null },
@@ -45,7 +49,8 @@ export default definePack({
     { id: "loaded", kind: "fact", type: "flag", label: "loaded in the form", value: (item) => item.loaded === true },
     { id: "expected_flag", kind: "fact", type: "flag", label: "an expected flag", help: "A hand-written expectation lists a safety, moderation or rating flag.",
       value: (item) => Array.isArray(item.expect?.flags) && item.expect.flags.length > 0 },
-    { id: "money", kind: "fact", type: "flag", label: "a money amount", value: (item) => /[$€£]\s?\d|\b\d+(?:\.\d+)?\s?(?:dollars|USD)\b/i.test(text(item)) },
+    { id: "money", kind: "fact", type: "flag", label: "a money amount", help: "A plain match of a $, € or £ sign or the word dollars or USD next to a number, not Jev's judgment.",
+      value: (item) => /[$€£]\s?\d|\b\d+(?:\.\d+)?\s?(?:dollars|USD)\b/i.test(text(item)) },
     { id: "question", kind: "fact", type: "flag", label: "a question mark", value: (item) => text(item).includes("?") },
 
     { id: "no_expectation", kind: "diagnostic", severity: "info", label: "No hand-written expectation",
@@ -76,9 +81,9 @@ export default definePack({
       build: (ctx) => csvText([["label", "stars", "channel", "about", "text", "expected_action", "expected_team", "expected_flags"],
         ...ctx.shown().map((item) => [item.label, item.stars ?? "", item.channel, item.about, item.text, item.expect?.action || "", item.expect?.team || "",
           (item.expect?.flags || []).join(" ")])]) },
-    { id: "shown_markdown", kind: "exporter", label: "Shown examples as a Markdown list", help: "inputs only: label, stars, channel, subject and words",
+    { id: "shown_markdown", kind: "exporter", label: "Shown examples as a Markdown list", help: "inputs only: label, stars, channel, subject and words (line breaks become spaces); no expectations or answers",
       filename: "review-examples.md", mime: "text/markdown",
-      build: (ctx) => ctx.shown().map((item) => `- **${item.label}** (${item.stars ?? "?"} stars, ${item.channel_label || item.channel || "unknown channel"}${item.about ? `, ${item.about}` : ""}): ${item.text.trim()}`).join("\n") + "\n" },
+      build: (ctx) => ctx.shown().map((item) => `- **${item.label}** (${item.stars ?? "?"} stars, ${item.channel_label || item.channel || "unknown channel"}${subject(item) ? `, ${subject(item)}` : ""}): ${text(item).replace(/\s+/g, " ").trim()}`).join("\n") + "\n" },
 
     { id: "next", kind: "command", title: "Load the next shown example", group: "Reviews", keys: "Alt+Shift+J",
       when: (ctx) => ctx.shown().length > 0 && !ctx.data.running, run: (ctx) => step(ctx, 1) },

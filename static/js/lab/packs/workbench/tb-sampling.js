@@ -6,7 +6,7 @@
 // identity (a JSON object line with its labels and test markers ignored, field order ignored, pictures kept) or the
 // exact text. The planners are exact formulas from the numbers typed; plans are not measurements.
 import { definePack, toNumber } from "../../kit.js";
-import { isPlainObject, omit, stableStringify } from "../../lib/json.js";
+import { isPlainObject, omit, stableStringify, typeName } from "../../lib/json.js";
 import { choose, hypergeometricPmf, logChoose, mulberry32, round, sampleIndexes, shuffled } from "../../lib/math.js";
 import { lines as splitLines, truncate } from "../../lib/text.js";
 
@@ -83,13 +83,14 @@ function parseObject(text) {
   } catch { return null; }
 }
 
+// A pasted line as the Bulk row it stands for: a JSON object line is that object, any other line is {"text": line}
+// (the Workbench treats a text row and {"text": row} as the same row).
+const rowOf = (text) => parseObject(text) ?? { text };
+
 // The identity that keeps lines together: Bulk's input identity, the exact text, or none (every line its own group).
 function identityOf(item, index, mode) {
   if (mode === "none") return `#${index}`;
-  if (mode === "input") {
-    const row = parseObject(item.text);
-    if (row) return `o${stableStringify(omit(row, [LABELS, TEST]))}`;
-  }
+  if (mode === "input") return `o${stableStringify(omit(rowOf(item.text), [LABELS, TEST]))}`;
   return `t${item.text}`;
 }
 
@@ -105,13 +106,13 @@ function groupBy(items, keyOf, nameOf = (item) => item.value) {
   return [...groups.values()];
 }
 
-// A top-level field's value on a Bulk row: { key, name } by its full normalized value, or null when the line is not
-// an object or has no such field.
+// A top-level field's value on a Bulk row: { key, name } by its full normalized value, or null when the row has no
+// such field (a text line is the row {"text": line}).
 function fieldValue(item, field) {
-  const row = parseObject(item.text);
-  if (!row || !Object.prototype.hasOwnProperty.call(row, field)) return null;
+  const row = rowOf(item.text);
+  if (!Object.prototype.hasOwnProperty.call(row, field)) return null;
   const value = row[field];
-  return { key: stableStringify(value), name: typeof value === "string" ? value : stableStringify(value) };
+  return { key: stableStringify(value), name: typeof value === "string" ? value : `${stableStringify(value)} (${typeName(value)})` };
 }
 
 function fieldName(text) {
@@ -170,6 +171,16 @@ function sideTable(items, sideOf) {
 // ln(C(m, k) / C(n, k)): the chance that k given items all avoid n - m chosen ones; null when m < k.
 const logRatio = (m, n, k) => (m < k ? null : logChoose(m, k) - logChoose(n, k));
 const ratio = (m, n, k) => { const value = logRatio(m, n, k); return value === null ? 0 : Math.exp(value); };
+
+// H_n - H_k for k <= n: summed directly when few terms separate them (exact to rounding), else from H_n and H_k.
+function harmonicGap(k, n) {
+  if (n - k <= 1e6) {
+    let total = 0;
+    for (let i = n; i > k; i--) total += 1 / i;
+    return total;
+  }
+  return harmonic(n) - harmonic(k);
+}
 
 function harmonic(n) {
   if (n <= 1e6) {
@@ -233,10 +244,12 @@ export default definePack({
         if (total < 4) fail("A split needs at least 4 lines: two on each side.");
         const groups = groupBy(items, (item, index) => identityOf(item, index, identity));
         const reached = new Map([[0, null]]);   // count -> { group, from } (the last group added and the count before it)
+        const counts = [0];                     // the reached counts in the order they were first reached
         for (const group of shuffled(groups, seed)) {
-          for (const [counted] of [...reached]) {
-            const next = counted + group.members.length;
-            if (next <= total - 2 && !reached.has(next)) reached.set(next, { group, from: counted });
+          if (counts.length === total - 1) break;   // every count from 0 to total - 2 is already reached
+          for (let i = 0, before = counts.length; i < before; i++) {
+            const next = counts[i] + group.members.length;
+            if (next <= total - 2 && !reached.has(next)) { reached.set(next, { group, from: counts[i] }); counts.push(next); }
           }
         }
         const feasible = [...reached.keys()].filter((counted) => counted >= 2);
@@ -270,10 +283,12 @@ export default definePack({
           counts[pick] += group.members.length;
           for (const index of group.members) side[index] = names[pick];
         }
+        const empty = names.filter((name, s) => counts[s] === 0);
         return { rows: names.flatMap((name, s) => [[`${name[0].toUpperCase()}${name.slice(1)} lines`, counts[s]], [`${name[0].toUpperCase()}${name.slice(1)} share`, counts[s] / total]]),
-          table: sideTable(items, side), note: `${plural(total, "line")}; identical lines stay on one side. ${seeded(seed)}` };
+          table: sideTable(items, side),
+          note: `${plural(total, "line")}; identical lines stay on one side.${empty.length ? ` No lines went to ${empty.join(" or ")}: paste more lines or raise its share.` : ""} ${seeded(seed)}` };
       }),
-    tool("kfold_groups", "Fold for each line, keeping identical lines together", "Assigns every line to one of k cross-validation folds the way the Workbench does: groups of identical lines, larger groups first (a seeded order breaks ties), each to the fold with the fewest lines (the lower fold on ties). Lists each fold's size.",
+    tool("kfold_groups", "Fold for each line, keeping identical lines together", "Assigns every line to one of k cross-validation folds as the Workbench's cross-validation does: groups of identical lines, larger groups first, each to the fold with the fewest lines (the lower fold on ties). Groups of the same size go in a seeded order here (the Workbench orders them by an input hash), so folds can differ from the Workbench's. Lists each fold's size.",
       [LINES, FOLDS, SEED, IDENTITY], ({ lines, folds, seed, identity }) => {
         const items = readLines(lines);
         const groups = groupBy(items, (item, index) => identityOf(item, index, identity));
@@ -309,7 +324,7 @@ export default definePack({
         const chosen = range(items.length).filter((index) => index + 1 >= first && (index + 1 - first) % step === 0);
         if (!chosen.length) fail(`There is no line ${first}: paste more lines or choose an earlier start.`);
         return { rows: [["Start", first], ["Lines drawn", chosen.length]], text: textOf(items, chosen),
-          note: `One line in every ${step}, from line ${first}, of ${plural(items.length, "nonblank line")}${start === null ? `, start drawn with seed ${seed}` : ""}.` };
+          note: `${step === 1 ? "Every line" : `One line in every ${step}`}, from line ${first}, of ${plural(items.length, "nonblank line")}${start === null ? `, start drawn with seed ${seed}` : ""}.` };
       }),
     tool("weighted_sample", "Weighted seeded sample", "Draws n different lines with chances in proportion to the weights pasted beside them (Efraimidis and Spirakis' method: each line's key is u^(1/weight) for a seeded random u, and the n largest keys win). A weight of 0 is never drawn.",
       [LINES, WEIGHT_COLUMN, count("n", "Lines to draw", { min: 1 }), SEED], ({ lines, weights, n, seed }) => {
@@ -322,12 +337,12 @@ export default definePack({
         const positive = values.filter((weight) => weight > 0).length;
         if (n > positive) fail(`Cannot draw ${n} lines: only ${plural(positive, "line has", "lines have")} a weight above 0.`);
         const random = mulberry32(seed);
-        const keys = values.map((weight) => { const u = random(); return weight > 0 ? Math.log(u) / weight : -Infinity; });
-        const chosen = range(items.length).sort((a, b) => keys[b] - keys[a] || a - b).slice(0, n);
+        const keys = values.map((weight) => { const u = random(); return weight > 0 ? Math.log(u) / weight : null; });
+        const chosen = range(items.length).filter((index) => keys[index] !== null).sort((a, b) => keys[b] - keys[a] || a - b).slice(0, n);
         const total = values.reduce((a, b) => a + b, 0);
         return { text: textOf(items, chosen), note: `${n} of ${plural(positive, "weighted line")} (total weight ${round(total, 6)}): lines ${lineList(items, chosen)}. ${seeded(seed)}` };
       }),
-    tool("balanced_slices", "Balanced sample across slices", "Draws n Bulk rows spread as evenly as possible across the values of one input field (its full value, so 1 and \"1\" differ; rows without the field form their own slice): every slice gets an equal share, a slice with fewer rows gives all of them and passes the rest on, and leftover rows go to the larger slices first.",
+    tool("balanced_slices", "Balanced sample across slices", "Draws n Bulk rows (a text line is the row {\"text\": line}) spread as evenly as possible across the values of one input field (its full value, so the number 1 and the text \"1\" differ; rows without the field form their own slice): every slice gets an equal share, a slice with fewer rows gives all of them and passes the rest on, and leftover rows go to the larger slices first.",
       [ROWS, FIELD, count("n", "Rows to draw in all", { min: 1 }), SEED], ({ lines, field, n, seed }) => {
         const name = fieldName(field), items = readLines(lines);
         if (n > items.length) fail(`Cannot draw ${n} of ${plural(items.length, "row")}.`);
@@ -415,12 +430,12 @@ export default definePack({
         const once = total === 1 ? (m === 1 ? 1 : 0) : m / total * Math.exp((m - 1) * Math.log1p(-1 / total));
         return [["Expected distinct lines drawn", total * (1 - never)], ["Expected share never drawn", never], ["Chance a given line is drawn twice or more", Math.max(0, 1 - never - once)]];
       }),
-    tool("inclusion_chances", "Inclusion chances without replacement", "For a simple random sample of n from N lines: the chance a given line is drawn (n/N), the chance two given lines both are, the weight each drawn line stands for (N/n), the finite population correction and how many different samples are possible.",
+    tool("inclusion_chances", "Inclusion chances without replacement", "For a simple random sample of n from N lines: the chance a given line is drawn (n/N), the chance two given lines both are, the weight each drawn line stands for (N/n), the finite population correction to a variance ((N − n)/(N − 1)) and how many different samples are possible.",
       [count("total", "Lines (N)", { min: 1 }), count("n", "Sample size (n)", { min: 1 })], ({ total, n }) => {
         if (n > total) fail("The sample cannot be larger than the lines.");
         const possible = choose(total, n);
         return [["Chance a given line is drawn", n / total], ["Chance two given lines are both drawn", total < 2 ? null : n * (n - 1) / (total * (total - 1))],
-          ["Lines each drawn line stands for", total / n], ["Finite population correction", total < 2 ? null : (total - n) / (total - 1)],
+          ["Lines each drawn line stands for", total / n], ["Finite population correction (variance)", total < 2 ? null : (total - n) / (total - 1)],
           ["Possible samples", possible], ["Possible samples (log10)", logChoose(total, n) / Math.LN10]];
       }),
     tool("class_missing", "Chance a class is missing from a sample", "With N lines of which a share belong to a class, drawn without replacement: the chance a sample (or held-out side) of n lines has none of the class, the chance the rest has none, and the chance one side of the split lacks it. Exact hypergeometric; the class count is the share of N rounded.",
@@ -432,7 +447,7 @@ export default definePack({
         return [["Class lines", k], ["Expected class lines in the sample", n * k / total], ["Chance the sample has none", none], ["Chance the rest has none", rest],
           ["Chance one side lacks the class", none + rest]];
       }),
-    tool("fold_class_coverage", "Chance a class is missing from some fold", "With K lines of a class among N split into k folds as evenly as possible: the chance the smallest fold has none, the expected folds without the class, and the chance at least one fold has none (inclusion-exclusion; exact up to rounding).",
+    tool("fold_class_coverage", "Chance a class is missing from some fold", "With K lines of a class among N split at random into k folds as evenly as possible: the chance the smallest fold has none, the expected folds without the class, and the chance at least one fold has none (inclusion-exclusion; exact up to rounding).",
       [count("total", "Lines (N)", { min: 2 }), count("k", "Class lines (K)", { min: 1 }), FOLDS], ({ total, k, folds }) => {
         if (k > total) fail("The class cannot have more lines than there are.");
         if (folds > total) fail("There cannot be more folds than lines.");
@@ -469,7 +484,7 @@ export default definePack({
       }),
     tool("reservoir_check", "Reservoir sample of a stream", "A reservoir of k lines kept while reading a stream of N (each line i > k replaces a random kept line with chance k/i) ends as a simple random sample: each line is kept with chance k/N. Also the expected replacements, k(H_N − H_k), which is the writes beyond the first k.",
       [count("total", "Lines in the stream (N)", { min: 1 }), count("k", "Reservoir size (k)", { min: 1 })], ({ total, k }) => {
-        const replacements = total <= k ? 0 : k * (harmonic(total) - harmonic(k));
+        const replacements = total <= k ? 0 : k * harmonicGap(k, total);
         return [["Chance each line ends in the reservoir", Math.min(1, k / total)], ["Lines kept", Math.min(k, total)], ["Expected replacements", replacements],
           ["Expected writes in all", Math.min(k, total) + replacements]];
       }),
@@ -479,10 +494,10 @@ export default definePack({
         if (high < low) fail("The highest number must be at least the lowest.");
         const width = high - low + 1;
         if (!Number.isSafeInteger(width) || !Number.isSafeInteger(low) || !Number.isSafeInteger(high)) fail("The range is too large.");
+        if (width > 4294967296) fail("The range can hold at most 4294967296 numbers (the seeded generator's 2^32 values).");
         let numbers;
         if (distinct) {
           if (n > width) fail(`There are only ${width} different numbers from ${low} to ${high}.`);
-          if (width > 4294967296) fail("Different numbers need a range of at most 4294967296.");
           numbers = sampleIndexes(width, n, seed).map((offset) => low + offset);
         } else {
           const random = mulberry32(seed);

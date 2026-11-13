@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 
 import pack from "../../../static/js/lab/packs/workbench/compare-panels.js";
-import { checkPack } from "./harness.mjs";
+import { checkPack, fakeCtx } from "./harness.mjs";
 import { COMPARE_REPORTS, COMPARE_RESULT, sampleCompareRowsCtx } from "./fixtures/workbench-compare.mjs";
 
 const ctx = (overrides = {}) => sampleCompareRowsCtx(overrides);
@@ -22,36 +22,18 @@ const field = (t, tree, name) => rowCells(t, tree, "data-field", name).slice(1);
 
 checkPack(pack, {
   scoreboard: { improvements: {
-    table: (t) => {
-      const tree = t.render(ctx());
-      // Shared ids in A's order: rush differs in type and allergy is only A's, so neither is listed.
-      assert.deepEqual(tableRows(t, tree, "scoreboard"), ["department", "urgent", "tone", "drink", "spot"]);
-      assert.deepEqual(rowCells(t, tree, "data-question", "department").slice(0, 4), ["department", "choice", "—", "4/5 (80.0%, 95% 37.6%–96.4%)"]);
-      assert.deepEqual(rowCells(t, tree, "data-question", "urgent").slice(0, 4), ["urgent", "noul", "—", "1/5 (20.0%, 95% 3.6%–62.4%)"]);
-      assert.equal(rowCells(t, tree, "data-question", "drink")[3], "—", "no row both answered");
-      const reordered = { ...COMPARE_RESULT, agreement: COMPARE_RESULT.agreement.map((entry) => (entry.qid === "drink" ? { ...entry, reordered: true } : entry.qid === "urgent" ? { ...entry, perturbed: true } : entry)) };
-      const checks = t.render(ctx({ result: reordered }));
-      assert.equal(rowCells(t, checks, "data-question", "drink")[2], "order check");
-      assert.equal(rowCells(t, checks, "data-question", "urgent")[2], "input check");
-      assert.match(t.textOf(t.render(empty())), /Run both variants first/);
-    },
-    score_button: (t) => {
+    remembered: (t) => {
+      // The Score button asks the page for a local rescoring of another shared question; the one scored now has none.
       const page = ctx();
-      const tree = t.render(page);
-      assert.ok(byAttr(t, tree, "data-current", "department"), "the scored question has no button");
-      assert.equal(byAttr(t, tree, "data-score", "department"), null);
-      t.fire(byAttr(t, tree, "data-score", "urgent"), "click");
+      const first = t.render(page);
+      assert.ok(byAttr(t, first, "data-current", "department"));
+      assert.equal(byAttr(t, first, "data-score", "department"), null);
+      t.fire(byAttr(t, first, "data-score", "urgent"), "click");
       assert.deepEqual(page.log, [["selectQuestion", "urgent"]]);
       const busy = ctx({ running: true });
-      const button = byAttr(t, t.render(busy), "data-score", "tone");
-      assert.equal(button.attrs.disabled, true);
-      t.fire(button, "click");
-      assert.deepEqual(busy.log, []);
-      assert.equal(t.env.toasts.at(-1).kind, "error");
+      t.fire(byAttr(t, t.render(busy), "data-score", "tone"), "click");
+      assert.deepEqual(busy.log, [], "a refused switch reaches no page action");
       assert.match(t.env.toasts.at(-1).message, /Wait for the current Compare run/);
-    },
-    remembered: (t) => {
-      t.render(ctx());
       const tree = t.render(ctx({ qid: "urgent" }));
       // department: 2 of 4 for both (the report's scores); urgent: A 1 of 2, B 2 of 2.
       assert.deepEqual(rowCells(t, tree, "data-question", "department").slice(4, 6), ["2/4 (50.0%)", "2/4 (50.0%)"]);
@@ -72,6 +54,8 @@ checkPack(pack, {
     },
     sort: (t) => {
       const page = ctx();
+      // Question order: shared ids in A's order; rush differs in type and allergy is only A's, so neither is listed.
+      assert.deepEqual(tableRows(t, t.render(page), "scoreboard"), ["department", "urgent", "tone", "drink", "spot"]);
       t.render(ctx({ qid: "urgent" }));
       t.render(ctx({ qid: "tone" }));
       let tree = t.render(page);
@@ -100,19 +84,20 @@ checkPack(pack, {
     },
   } },
   matrices: { improvements: {
-    right_wrong: (t) => {
+    cell_rows: (t) => {
       const count = (tree, key) => t.textOf(byAttr(t, tree, "data-cell", key));
-      const tree = t.render(ctx());
-      assert.deepEqual(["both_right", "a_only", "b_only", "both_wrong"].map((key) => count(tree, key)), ["1", "1", "1", "1"]);
-      assert.match(t.textOf(tree), /4 labeled rows both variants answered\./);
+      // department: #1 A only, #2 B only, #3 both right (agreeing, read locally), #6 both wrong.
+      assert.deepEqual(["both_right", "a_only", "b_only", "both_wrong"].map((key) => count(t.render(ctx()), key)), ["1", "1", "1", "1"]);
       // urgent: #1 both yes with label true (both right), #2 A yes / B no with label false (B only).
       const urgent = t.render(ctx({ qid: "urgent" }));
       assert.deepEqual(["both_right", "a_only", "b_only", "both_wrong"].map((key) => count(urgent, key)), ["1", "0", "1", "0"]);
       assert.doesNotMatch(t.textOf(urgent), /differ from the report/);
       const off = t.render(ctx({ report: { ...COMPARE_REPORTS.department, paired: { ...COMPARE_REPORTS.department.paired, both_right: 2 } } }));
       assert.match(t.textOf(off), /differ from the report's paired table/);
-    },
-    cell_rows: (t) => {
+      // Odd items (no answers, picks or text) render without throwing.
+      const odd = t.fakeCtx({ items: [{ index: 0, number: 1, paired: true, label: "billing", correct: [true, false] }, { index: 1 }],
+        data: { qid: "department", type: "choice", questions: [null, null], scores: null } });
+      assert.match(t.textOf(t.render(odd)), /1 labeled row both variants answered/);
       const page = ctx();
       t.fire(byAttr(t, t.render(page), "data-cell", "a_only"), "click");
       let tree = t.render(page);
@@ -186,6 +171,7 @@ checkPack(pack, {
     },
     reliability: (t) => {
       const tree = t.render(ctx());
+      assert.match(t.textOf(tree), /for Yes\/no it bins P\(yes\) against yes labels/);
       // A: .50 and .52 wrong (mean .51, gap .51), .70 right (gap .30), .80 right (gap .20); weighted (2·.51 + .30 + .20) / 4 = .38.
       assert.deepEqual(rowCells(t, tree, "data-rel-bin", "A|5"), ["0.50–0.60", "2", "0.51", "0.0%", "0.51"]);
       assert.deepEqual(rowCells(t, tree, "data-rel-bin", "A|7"), ["0.70–0.80", "1", "0.70", "100.0%", "0.30"]);
@@ -215,6 +201,22 @@ checkPack(pack, {
       assert.equal(t.textOf(byAttr(t, tree, "data-heading", "row")), "Row #5 of 7 compared rows · label wholesale");
       assert.deepEqual(field(t, tree, "pick"), ["wholesale", "—"]);
       assert.deepEqual(field(t, tree, "result"), ["unscored", "unscored"], "only A answered, so the report does not score it");
+      // The row as written, as each variant was sent, and B's picks in both option orders.
+      t.state.row = 0;
+      tree = t.render(page);
+      assert.deepEqual(field(t, tree, "sent"), ["as written", "My espreso grinder arived cracked, I want a refund today."]);
+      assert.equal(t.textOf(byAttr(t, tree, "data-text", "row")), "My espresso grinder arrived cracked, I want a refund today.");
+      assert.deepEqual(field(t, tree, "option orders"), ["asked once", "as listed shipping · reversed billing"]);
+      t.state.row = 1;
+      tree = t.render(page);
+      assert.deepEqual(field(t, tree, "sent"), ["as written", '{"text":"Where is wholesale ordr HC-2231?","channel":"email","_image":"receipt.png"}']);
+      t.state.row = 2;
+      tree = t.render(page);
+      assert.deepEqual(field(t, tree, "pick"), ["other", "other"], "an agreeing row the page's table never lists");
+      assert.deepEqual(field(t, tree, "result"), ["right", "right"]);
+      assert.deepEqual(field(t, tree, "sent"), ["as written", "as written"]);
+      t.state.row = 5;
+      assert.deepEqual(field(t, t.render(page), "option orders"), ["asked once", "as listed other · reversed billing"]);
     },
     probabilities: (t) => {
       const tree = t.render(ctx());
@@ -223,15 +225,6 @@ checkPack(pack, {
       const noul = t.render(ctx({ qid: "urgent" }));
       assert.deepEqual(rowCells(t, noul, "data-key", "yes"), ["yes", "0.91", "0.88"]);
       assert.deepEqual(rowCells(t, noul, "data-key", "no"), ["no", "0.09", "0.12"]);
-    },
-    sent: (t) => {
-      const page = ctx();
-      let tree = t.render(page);
-      assert.deepEqual(field(t, tree, "sent"), ["as written", "My espreso grinder arived cracked, I want a refund today."]);
-      assert.equal(t.textOf(byAttr(t, tree, "data-text", "row")), "My espresso grinder arrived cracked, I want a refund today.");
-      t.state.row = 1;
-      tree = t.render(page);
-      assert.deepEqual(field(t, tree, "sent"), ["as written", '{"text":"Where is wholesale ordr HC-2231?","channel":"email","_image":"receipt.png"}']);
     },
     measurements: (t) => {
       const page = ctx();
@@ -257,16 +250,11 @@ checkPack(pack, {
       t.state.row = 6;
       assert.equal(byAttr(t, t.render(page), "data-action", "next-row").attrs.disabled, true);
     },
-    orders: (t) => {
-      const page = ctx();
-      assert.deepEqual(field(t, t.render(page), "option orders"), ["asked once", "as listed shipping · reversed billing"]);
-      t.state.row = 5;
-      assert.deepEqual(field(t, t.render(page), "option orders"), ["asked once", "as listed other · reversed billing"]);
-    },
     copy: (t) => {
       t.fire(byAttr(t, t.render(ctx()), "data-action", "copy-row"), "click");
       const text = t.env.copied[0];
-      assert.ok(text.startsWith("# Compare row #1: your Compare run's answers for “department”"));
+      assert.ok(text.startsWith("# Compare row #1: your Compare run's answers and the row's label for “department”"));
+      assert.ok(text.includes("Label: billing"));
       assert.ok(text.includes("| pick | billing | shipping |"));
       assert.ok(text.includes("| billing | 0.70 | 0.30 |"));
       assert.match(text, /Row numbers count the tuning rows the run sent/);
@@ -311,6 +299,8 @@ checkPack(pack, {
     { ctx: ctx(), expect: 0.5, empty: empty() },  // labels billing, shipping, other, shipping: "shipping" 2 of 4
     { ctx: ctx({ qid: "tone" }), expect: 1 },
     { ctx: ctx({ qid: "spot" }), expect: null },
+    // Odd items with no answers: the label cannot be read against an answer, so there is nothing to measure.
+    { ctx: fakeCtx({ items: [{ index: 0, paired: true, label: "billing", correct: [true, false] }, { index: 1, paired: "yes" }, null], data: { type: "choice" } }), expect: null },
   ],
   rewrite_effect: [
     { ctx: ctx(), expect: 1, empty: empty() },  // rewritten #1 #2 #4 #6 all differ (4/4); #3 as written agrees (0/1)

@@ -2,9 +2,10 @@
 // "claims.result"; contract: static/js/lab/surfaces/claims.js). Flip points are plain local arithmetic on the policy in
 // force and the sliders' step grid: advisory, never Jev's answer and never the page's decision (that is data.verdict).
 // Box exports hold the RAW edges Jev returned (not the padded box the page draws) converted to common formats; they
-// hold coordinates only, never the picture's bytes. Pixel formats use one rounding rule: each product of a fraction and
-// the picture's size is rounded to 6 decimals, the left/top edge is floored, the right/bottom edge is ceiled, and both
-// are clamped to the picture.
+// hold coordinates only, never the picture's bytes. "Box edges as JSON" keeps the edges exactly as returned; every other
+// format first clamps them to the picture (0–1). Pixel formats use one rounding rule: each product of a fraction and the
+// picture's size is rounded to 6 decimals, the left/top edge is floored, the right/bottom edge is ceiled, and both are
+// clamped to the picture; pixel edges count from 0.
 import { csvText, definePack } from "../../kit.js";
 
 const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
@@ -55,13 +56,6 @@ function entropyBits(item) {
   return ps.reduce((sum, p) => (p > 0 ? sum - (p / total) * Math.log2(p / total) : sum), 0);
 }
 
-// The largest share one side holds: max(P, 1 - P) for a noul, the top probability otherwise.
-function strongest(item) {
-  if (item?.type === "noul") return num(item.value) === null ? null : Math.max(item.value, 1 - item.value);
-  const ps = probs(item).map((entry) => entry.p);
-  return ps.length ? Math.max(...ps) : null;
-}
-
 // A raw answer's number: P(yes) for a noul, the score for a score.
 const rawNumber = (answer) => (!isObject(answer) ? null : answer.type === "noul" ? num(answer.noul) : answer.type === "score" ? num(answer.score) : null);
 
@@ -84,9 +78,15 @@ const rawBox = (ctx) => {
   return box && ["left", "top", "right", "bottom"].every((edge) => num(box[edge]) !== null) ? box : null;
 };
 
-function requireBox(ctx) {
+function needRawBox(ctx) {
   const box = rawBox(ctx);
   if (!box) throw new Error("There is no Box answer to export: check a claim first, with a model that answers Box questions (Jev 1.14 or later).");
+  return box;
+}
+
+// The raw box clamped to the picture (fractions 0–1); throws when nothing of it lies inside.
+function requireBox(ctx) {
+  const box = needRawBox(ctx);
   const edges = { left: clamp01(box.left), top: clamp01(box.top), right: clamp01(box.right), bottom: clamp01(box.bottom) };
   if (edges.right <= edges.left || edges.bottom <= edges.top) throw new Error("The raw box has no area inside the picture.");
   return edges;
@@ -136,8 +136,6 @@ export default definePack({
         const before = rawNumber(isObject(earlier.answers) ? earlier.answers[item.id] : null);
         return before === null || earlier.answers[item.id].type !== item.type ? null : now - before;
       } },
-    { id: "decisive", kind: "fact", type: "flag", label: "a decisive answer (90% or more one way)",
-      value: (item) => { const share = strongest(item); return share !== null && share >= 0.9 - 1e-9; } },
     { id: "decision_level", kind: "fact", type: "flag", label: "a failing check at the decision's level",
       help: "The plain-code check reading this answer failed at the level the shown decision took.",
       value: (item, ctx) => !!item?.check && item.check.ok === false && !!ctx?.data?.verdict && item.check.level === ctx.data.verdict.decision },
@@ -186,12 +184,6 @@ export default definePack({
         const size = item?.type === "box" ? area(item.box) : null;
         return size !== null && size < 0.01 ? `the raw box covers ${(size * 100).toFixed(1)}% of the picture: make sure it marks the damage, not a speck.` : null;
       } },
-    { id: "box_hidden_by_policy", kind: "diagnostic", scope: "list", label: "Box hidden by the policy", severity: "info",
-      check: (items, ctx) => {
-        const location = ctx?.data?.location, damage = num(ctx?.data?.evidence?.damage), no = num(ctx?.data?.policy?.damage_no);
-        if (!items.length || !location || location.shown !== false || !isObject(location.box)) return null;
-        return `Jev returned a box, but the policy hides it${damage !== null && no !== null ? `: damage_visible ${two(damage)} is below damage_no ${two(no)}` : ""}. Box exports still hold the raw edges.`;
-      } },
     { id: "blank_note", kind: "diagnostic", scope: "list", label: "Note was blank when matches_note was asked", severity: "advice",
       check: (items, ctx) => {
         const note = ctx?.data?.input?.note, matches = byId(items, "matches_note");
@@ -225,12 +217,12 @@ export default definePack({
     { id: "box_overlap_drawn", kind: "metric", label: "overlap of the raw and drawn box (IoU)", format: "percent",
       help: "Intersection over union of the box Jev returned and the box the page draws after padding; unavailable while the policy hides it.",
       compute: (ctx) => {
-        const raw = rawBox(ctx), location = ctx.data.location;
-        if (!raw || !location?.shown || !isObject(location.box)) return null;
-        const drawn = location.box;
+        const raw = rawBox(ctx), boxPlace = ctx.data.location;
+        if (!raw || !boxPlace?.shown || !isObject(boxPlace.box)) return null;
+        const drawn = boxPlace.box;
         const inter = Math.max(0, Math.min(raw.right, drawn.right) - Math.max(raw.left, drawn.left)) * Math.max(0, Math.min(raw.bottom, drawn.bottom) - Math.max(raw.top, drawn.top));
         const union = area(raw) + area(drawn) - inter;
-        return union > 0 ? { value: inter / union, detail: location.padded ? "padded box" : "drawn as returned" } : null;
+        return union > 0 ? { value: inter / union, detail: boxPlace.padded ? "padded box" : "drawn as returned" } : null;
       } },
     { id: "severity_partial_or_worse", kind: "metric", label: "severity level 2 or higher (Partial or worse)", format: "percent",
       help: "The probability the severity answer puts on levels 2 and 3.",
@@ -245,17 +237,19 @@ export default definePack({
         return entries.length ? entries.filter((entry) => entry.key !== "none_visible").reduce((sum, entry) => sum + entry.p, 0) : null;
       } },
 
-    { id: "box_fractions_json", kind: "exporter", label: "Box edges as JSON", help: "the raw edges and confidence Jev returned, and the box the page draws (or why it is hidden); coordinates only",
+    { id: "box_fractions_json", kind: "exporter", label: "Box edges as JSON",
+      help: "the order id, the picture's size, the raw edges and confidence Jev returned (unclamped), and the box the page draws (or why it is hidden); coordinates only",
       filename: boxFile("edges", "json"), mime: "application/json",
       build: (ctx) => {
-        const raw = requireBox(ctx), item = byId(ctx.items(), "damage_box"), location = ctx.data.location || {};
-        const drawn = location.shown && isObject(location.box)
-          ? { shown: true, padded: location.padded === true, tentative: location.tentative === true, ...location.box }
-          : { shown: false, reason: location.reason || null };
+        const box = needRawBox(ctx), item = byId(ctx.items(), "damage_box"), boxPlace = ctx.data.location || {};
+        const raw = { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
+        const drawn = boxPlace.shown && isObject(boxPlace.box)
+          ? { shown: true, padded: boxPlace.padded === true, tentative: boxPlace.tentative === true, ...boxPlace.box }
+          : { shown: false, reason: boxPlace.reason || null };
         return `${JSON.stringify({ order: orderOf(ctx) || null, picture: { width: num(ctx.data.image?.width), height: num(ctx.data.image?.height) },
           raw: { ...raw, confidence: num(item?.confidence) }, drawn }, null, 2)}\n`;
       } },
-    { id: "box_coco", kind: "exporter", label: "Box as COCO JSON", help: "one image and one 'damage' annotation with the raw box in pixels; coordinates only",
+    { id: "box_coco", kind: "exporter", label: "Box as COCO JSON", help: "one image (the picture's name and size) and one 'damage' annotation with the raw box in pixels; coordinates only",
       filename: boxFile("coco", "json"), mime: "application/json",
       build: (ctx) => {
         const px = pixelBox(ctx);
@@ -269,7 +263,7 @@ export default definePack({
         const box = requireBox(ctx);
         return `0 ${[(box.left + box.right) / 2, (box.top + box.bottom) / 2, box.right - box.left, box.bottom - box.top].map(fixed6).join(" ")}\n`;
       } },
-    { id: "box_voc_xml", kind: "exporter", label: "Box as Pascal VOC XML", help: "the picture's name and size and one 'damage' object with the raw box in pixels; coordinates only",
+    { id: "box_voc_xml", kind: "exporter", label: "Box as Pascal VOC XML", help: "the picture's name and size and one 'damage' object with the raw box in pixels counted from 0; coordinates only",
       filename: boxFile("voc", "xml"), mime: "application/xml",
       build: (ctx) => {
         const px = pixelBox(ctx);

@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { shellCtx, shellExamplesCtx, shellToolboxCtx } from "../../../static/js/lab/surfaces/workbench-shell.js";
 import * as builders from "../../../static/js/lab/surfaces/workbench-shell.js";
 import { createLab } from "../../../static/js/lab/host.js";
+import { improvementsOf } from "../../../static/js/lab/kit.js";
 import { exampleBrowserDefaults, renderExamplesBrowser, visibleExamples } from "../../../static/js/examples-browser.js";
 import { renderWorkbenchGuide, tabForKey, workflowSteps } from "../../../static/js/workbench-guide.js";
 import examplesPack from "../../../static/js/lab/packs/workbench/workbench-examples-starter.js";
@@ -348,6 +349,8 @@ test("the shell section renders in the guide with the starter pack, and every st
   const lab = createLab([shellPack], builders);
   const ctx = sampleShellCtx();
   const tree = lab.section(fakeEnv(), "workbench.shell", ctx, { title: "Page tools" });
-  assert.match(textOf(tree), /^Page tools · 28/);
-  assert.equal(lab.commandEntries().length, 20);
+  assert.match(textOf(tree), new RegExp(`^Page tools · ${improvementsOf(shellPack).length}(?!\\d)`));
+  const commands = shellPack.features.filter((feature) => feature.kind === "command");
+  assert.ok(commands.length > 0);
+  assert.deepEqual(lab.commandEntries().map(([key]) => key).sort(), commands.map((command) => `${shellPack.id}/${command.id}`).sort());
 });

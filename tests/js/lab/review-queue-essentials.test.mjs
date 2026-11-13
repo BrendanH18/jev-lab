@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import pack from "../../../static/js/lab/packs/workbench/review-queue-essentials.js";
 import { checkPack } from "./harness.mjs";
@@ -28,17 +29,14 @@ checkPack(pack, {
   disagreements: { items: [R4, R13, R2, R6, R9, R15], values: [1, 1, 0, 0, null, null] },
   verified: { items: [R2, R6], values: [true, false] },
   suggested_only: { items: [SUGG, R4, R13, R2], values: [true, false, false, false], ctx: extra },
-  // Line 9 carries a shortlist in the file but is still blind.
-  has_shortlist: { items: [R2, R13, R9, R4], values: [true, true, false, false] },
   has_picture: { items: [R6, R2], values: [true, false] },
   will_add: { items: [R4, R13, R2], values: [true, false, false] },
   input_text: { items: [R2, R4], values: ["My grinder arrived with a cracked hopper", "Charged twice for the wholesale order"] },
-  queue_reason: { items: [R2, R4, R9, BOTH, SUGG], values: ["held", "broke a rule", "audit sample", "held and broke a rule", "other"] },
+  queue_reason: { items: [R2, R4, R9, BOTH, SUGG, { held: ["urgent"] }], values: ["held", "broke a rule", "audit sample", "held and broke a rule", "other", null] },
 
   confirm_suggestions: { hit: SUGG, miss: [R2, R4, R13], ctx: extra, message: /^Ready only from the gate's suggested labels \(topic, urgent\)/ },
-  unverified_row: { hit: R6, miss: [R2, R9], message: /no provenance/ },
-  disagrees_with_gate: { hit: [R4, R13], miss: [R2, R9, R15], message: /^Your label differs from the gate's answer on (topic|tone)\.$/ },
-  incomplete_audit: { hitList: [R9, R13, R15], missList: [R13, R2], message: /^2 of 3 shown audit rows still need labels/ },
+  // Lines 9 and 15 are not ready; 13 is. A list without unfinished audit rows (or without audit rows) stays quiet.
+  incomplete_audit: { hitList: [R9, R13, R15], missList: [R13, R2, null], message: /^2 of 3 shown audit rows still need labels\. Label the whole random sample before reading the audit\.$/ },
 
   fill_review_blank: { ctx: ctx(), input: [R2, R4, R9], params: { question: "urgent", label: "yes" },
     output: [withLabels(R2, { urgent: true }), withLabels(R4, {}), withLabels(R9, {})],
@@ -82,3 +80,15 @@ checkPack(pack, {
     },
     hidden: () => empty() },
 }, { ctx: () => ctx() });
+
+test("review-queue-essentials: suggestions-only needs a gate and every gated label still suggested", () => {
+  const fact = pack.features.find((feature) => feature.id === "suggested_only").value;
+  const check = pack.features.find((feature) => feature.id === "confirm_suggestions").check;
+  assert.equal(fact(SUGG, extra), true);
+  // With no gate there is nothing a suggestion could have made ready.
+  const ungated = { data: { gates: {} } };
+  assert.equal(fact(SUGG, ungated), false);
+  assert.equal(check(SUGG, ungated), null);
+  for (const odd of [null, {}, { kind: "review", ready: true }]) assert.equal(fact(odd, extra), false);
+  assert.equal(check(SUGG, extra), "Ready only from the gate's suggested labels (topic, urgent). Confirm them before adding.");
+});

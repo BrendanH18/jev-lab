@@ -3,7 +3,10 @@
 import { csvText, definePack } from "../../kit.js";
 
 // A local, advisory rule: two options closer than this are a "close call". It is plain code, not the model's answer.
+// Margins are differences of floats (0.35 - 0.25 is 0.09999999999999998), so compare with a small tolerance.
 const CLOSE = 0.1;
+const EPS = 1e-9;
+const isClose = (item) => { const value = margin(item); return value !== null && value < CLOSE - EPS; };
 
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const probs = (item) => (Array.isArray(item?.probabilities) ? item.probabilities.filter((entry) => finite(entry?.p) !== null) : []);
@@ -54,33 +57,28 @@ export default definePack({
       help: "Top probability minus the second highest.", value: margin },
     { id: "uncertainty", kind: "fact", type: "number", label: "normalized uncertainty", unit: "0 to 1",
       help: "Entropy of the listed probabilities: 0 is certain, 1 is evenly spread.", value: uncertainty },
-    { id: "confidence", kind: "fact", type: "number", label: "reported confidence", unit: "0 to 1", value: (item) => finite(item.confidence) },
+    { id: "confidence", kind: "fact", type: "number", label: "reported confidence", unit: "0 to 1", value: (item) => finite(item?.confidence) },
     { id: "yes_p", kind: "fact", type: "number", label: "yes probability", unit: "0 to 1", help: "Yes/no (Noul) answers only.",
-      value: (item) => (item.type === "noul" ? finite(item.value) : null) },
+      value: (item) => (item?.type === "noul" ? finite(item.value) : null) },
     { id: "score_share", kind: "fact", type: "number", label: "score as a share of its scale", unit: "0 to 1",
-      value: (item) => (item.type === "score" && finite(item.value) !== null && finite(item.scale) ? item.value / item.scale : null) },
-    { id: "question_words", kind: "fact", type: "number", label: "question word count", unit: "words",
-      value: (item) => {
-        const words = String(item.instructions || "").split(/\s+/).filter(Boolean).length;
-        return words || null;
-      } },
+      value: (item) => (item?.type === "score" && finite(item.value) !== null && finite(item.scale) ? item.value / item.scale : null) },
     { id: "close_call", kind: "fact", type: "flag", label: "close call under 10 points",
-      help: "Local rule: the top two probabilities are less than 0.10 apart.", value: (item) => {
-        const value = margin(item);
-        return value !== null && value < CLOSE;
-      } },
+      help: "Local rule: the top two probabilities are less than 0.10 apart.", value: isClose },
     { id: "differs_from_top", kind: "fact", type: "flag", label: "answer that differs from its most likely option",
-      help: "A Choice whose chosen key is not the top probability, or a Score that rounds to another level.", value: (item) => {
-        if (!item.top) return false;
-        if (item.type === "choice") return typeof item.value === "string" && item.value !== item.top.key;
-        if (item.type === "score") return finite(item.value) !== null && String(Math.round(item.value)) !== item.top.key;
-        return false;
+      help: "A Choice whose chosen key has less probability than the top option, or a Score that rounds to a less likely level. A tie with the top is not a difference.",
+      value: (item) => {
+        const top = topP(item);
+        if (top === null) return false;
+        let key = null;
+        if (item?.type === "choice" && typeof item.value === "string") key = item.value;
+        else if (item?.type === "score" && finite(item.value) !== null) key = String(Math.round(item.value));
+        if (key === null) return false;
+        const chosen = probs(item).find((entry) => entry.key === key);
+        return !chosen || chosen.p < top - EPS;
       } },
-    { id: "leans_yes", kind: "fact", type: "flag", label: "yes-leaning answer", help: "Yes/no answers above one half.",
-      value: (item) => item.type === "noul" && finite(item.value) !== null && item.value > 0.5 },
     { id: "missing_value", kind: "fact", type: "flag", label: "missing answer value",
-      value: (item) => item.value === null && !item.box },
-    { id: "type", kind: "fact", type: "category", label: "question type", value: (item) => item.type || null },
+      value: (item) => !!item && item.value === null && !item.box },
+    { id: "type", kind: "fact", type: "category", label: "question type", value: (item) => (typeof item?.type === "string" && item.type ? item.type : null) },
     { id: "band", kind: "fact", type: "category", label: "top probability band", help: "Local bands, not a model judgment.", value: band },
     { id: "chosen_text", kind: "fact", type: "text", label: "chosen option description", value: chosenText },
 
@@ -130,7 +128,7 @@ export default definePack({
       help: "Local rule: top two less than 0.10 apart.",
       compute: (ctx) => {
         const shown = ctx.shown();
-        return shown.length ? shown.filter((item) => { const value = margin(item); return value !== null && value < CLOSE; }).length : null;
+        return shown.length ? shown.filter(isClose).length : null;
       } },
 
     { id: "answers_csv", kind: "exporter", label: "Shown answers as CSV", help: "contains model answers and probabilities from your calls",

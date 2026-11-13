@@ -1,5 +1,7 @@
 // Tests for static/js/lab/packs/workbench/calibrate-row-facts.js. Expected values are worked out by hand from
 // tests/js/lab/fixtures/workbench-analysis.mjs (rows #1-#7 of each question) or from the small items written here.
+import assert from "node:assert/strict";
+
 import pack from "../../../static/js/lab/packs/workbench/calibrate-row-facts.js";
 import { checkPack, fakeCtx } from "./harness.mjs";
 import { sampleCalibrateCtx } from "./fixtures/workbench-analysis.mjs";
@@ -25,13 +27,18 @@ checkPack(pack, {
   // The Answer sets fit (department only) lists two options for #2 and #6.
   set_size: { items: [...dep(), urgent()[0]], values: [1, 2, 1, 1, 1, 2, 1, null] },
   // Field order is ignored; the picture name is kept; a missing row has no identity.
+  // Nested field order is ignored too; a different picture name is a different input.
   same_input_rows: (() => {
-    const items = [{ row: { a: 1, b: "x" } }, { row: { b: "x", a: 1 } }, { row: { a: 1, b: "x", _image: "cup.png" } }, { row: "text" }, { row: null }];
-    return { items, values: [2, 2, 1, 1, null], ctx: fakeCtx({ items }) };
+    const items = [{ row: { a: 1, b: "x" } }, { row: { b: "x", a: 1 } }, { row: { a: 1, b: "x", _image: "cup.png" } }, { row: "text" }, { row: null },
+      { row: { a: 1, b: "x", _image: "mug.png" } }, { row: { n: { y: 2, z: [1] } } }, { row: { n: { z: [1], y: 2 } } }, { row: { n: { z: [1], y: 2 } } }];
+    return { items, values: [2, 2, 1, 1, null, 1, 3, 3, 3], ctx: fakeCtx({ items }) };
   })(),
   label_is_runner_up: { items: dep(), values: [false, true, false, false, false, true, false] },
-  // #6's department answer has no confidence field; a Noul never has one.
-  missing_confidence: { items: [...dep(), urgent()[0]], values: [false, false, false, false, false, true, false, false] },
+  // #6's department answer has no confidence field; tone #1 has one; a Score answer without one counts; a Noul never
+  // has one, and a Box is not a Choice or Score answer.
+  missing_confidence: { items: [...dep(), urgent()[0], tone()[0], { answer: { type: "score", probabilities: { 0: 1 } } }, spot()[0],
+    { answer: { type: "box", box: {} } }],
+    values: [false, false, false, false, false, true, false, false, false, true, false, false] },
   // At 0.15: #2 (.12) is reviewed and wrong, #6 (.20) is automated and wrong, the rest are automated and right.
   outcome: { items: dep(), ctx: sampleCalibrateCtx({ threshold: 0.15 }),
     values: ["automated right", "reviewed wrong", "automated right", "automated right", "automated right", "automated wrong", "automated right"] },
@@ -39,10 +46,15 @@ checkPack(pack, {
   signal_band: { items: [...dep(), { signal: 1 }, { signal: null }],
     values: ["0.7–0.8", "0.1–0.2", "0.8–0.9", "0.9–1.0", "0.6–0.7", "0.2–0.3", "0.8–0.9", "0.9–1.0", null] },
   // The fixture's By slice report is on "channel": #2 email, #5 phone, text rows have none. Non-text values read as
-  // Python's json.dumps(sort_keys=True); blank text is none.
+  // Python's json.dumps(sort_keys=True), which escapes non-ASCII (python3 -c 'import json; print(json.dumps({"city":
+  // "Zürich"}, sort_keys=True))' prints {"city": "Z\u00fcrich"}); text keeps its own characters. Blank text is none,
+  // and Python's strip also removes \x85 and \x1c but keeps \ufeff.
   slice_value: {
-    items: [...dep(), { row: { channel: 3 } }, { row: { channel: { b: true, a: [1, "x"] } } }, { row: { channel: "  " } }],
-    values: ["(none)", "email", "(none)", "(none)", "phone", "(none)", "(none)", "3", '{"a": [1, "x"], "b": true}', "(none)"],
+    items: [...dep(), { row: { channel: 3 } }, { row: { channel: { b: true, a: [1, "x"] } } }, { row: { channel: "  " } },
+      { row: { channel: { city: "Zürich" } } }, { row: { channel: " Zürich\x85" } }, { row: { channel: "\x1c" } }, { row: { channel: "\ufeffweb" } },
+      { row: { channel: false } }, { row: { channel: null } }],
+    values: ["(none)", "email", "(none)", "(none)", "phone", "(none)", "(none)", "3", '{"a": [1, "x"], "b": true}', "(none)",
+      '{"city": "Z\\u00fcrich"}', "Zürich", "(none)", "\ufeffweb", "false", "(none)"],
     ctx: sampleCalibrateCtx(),
   },
 
@@ -68,7 +80,7 @@ checkPack(pack, {
     miss: tone(),
     message: /expected score 2\.10 sits 2\.10 levels from the most likely level 0/,
   },
-  box_no_overlap: { hit: spot()[1], miss: [spot()[0], dep()[0]], message: /does not touch/ },
+  box_no_overlap: { hit: spot()[1], miss: [spot()[0], dep()[0]], message: /does not overlap the labeled box at all \(IoU 0\)/ },
   box_degenerate: {
     hit: [{ type: "box", answer: { type: "box", box: { left: 0.5, top: 0.2, right: 0.4, bottom: 0.6 } } },
       { type: "box", answer: { type: "box", box: { left: 0.5, top: 0.2, right: 1.2, bottom: 0.6 } } },
@@ -78,7 +90,8 @@ checkPack(pack, {
   label_conflict: {
     hitList: [{ number: 2, row: { a: 1 }, label: "billing" }, { number: 5, row: { a: 1 }, label: "shipping" }, { number: 6, row: "z", label: "billing" },
       { number: 8, row: "z", label: "billing" }],
-    missList: dep(),
+    // Copies with the same label, and different inputs with different labels, are no conflict.
+    missList: [{ number: 1, row: { a: 1, b: 2 }, label: "billing" }, { number: 3, row: { b: 2, a: 1 }, label: "billing" }, { number: 4, row: "z", label: "other" }],
     message: /^Rows #2, #5 share one input/,
   },
   // At 0.60, #5 (signal .60) clears 0.60 but not 0.61: 1 of 7 rows (14%). At 0.50 no signal lies in [0.49, 0.51).
@@ -104,6 +117,14 @@ checkPack(pack, {
     message: /“billing” is the answer on 5 of 5 shown rows but the label on 2/,
   },
 }, { ctx: () => sampleCalibrateCtx() });
+
+// The same-input count reads every scored row, not only the shown ones: hiding #2 leaves its twin counting two.
+{
+  const twin = Object.freeze([{ row: { a: 1 } }, { row: { a: 1 } }, { row: "solo" }]);
+  const fact = pack.features.find((f) => f.id === "same_input_rows");
+  const ctx = fakeCtx({ items: twin, shown: [twin[1], twin[2]] });
+  assert.deepEqual([fact.value(twin[1], ctx), fact.value(twin[2], ctx)], [2, 1]);
+}
 
 // A fact never throws on an odd item.
 for (const feature of pack.features.filter((f) => f.kind === "fact")) {

@@ -132,7 +132,7 @@ checkPack(pack, {
     message: /minimum|maximum|IoU|no area/ },
   expectation_ignored_parts: {
     hit: [{ type: "score", score: ["L", "H"], expectation: { choice: "x", min: 1 } }, { type: "box", expectation: { box, min: 0.2 } },
-      { type: "noul", expectation: { iou_min: 0.5 } }],
+      { type: "noul", expectation: { iou_min: 0.5 } }, { type: "box", expectation: { iou_min: 0.7 } }],  // no box: iou_min is ignored too
     miss: [{ type: "choice", expectation: { choice: "x", min: 0.5 } }, { type: "box", expectation: { box, iou_min: 0.5 } },
       { type: "noul", expectation: { min: 0.5 } }, { type: "noul", expectation: null }],
     message: /does not check/ },
@@ -171,7 +171,7 @@ checkPack(pack, {
     message: /^“where is order” has a space/ },
   near_ids: {
     hitList: [{ qid: "intent" }, { qid: "intents" }, { qid: "tone" }],
-    missList: [{ qid: "intent" }, { qid: "Intent" }, { qid: "tone" }, { qid: "" }],
+    missList: [{ qid: "intent" }, { qid: "Intent" }, { qid: "tone" }, { qid: "" }, { qid: "level_1" }, { qid: "level_2" }, { qid: "q9" }, { qid: "q10" }],
     message: /^intent and intents are one character apart/ },
 }, { ctx: () => sampleBuildQuestionsCtx() });
 
@@ -193,4 +193,25 @@ test("build-question-facts: state facts are unavailable for a plain-text state",
     const fact = pack.features.find((feature) => feature.id === id);
     assert.deepEqual(text.items().map((item) => fact.value(item, text)), buildRows().map(() => null), id);
   }
+});
+
+test("build-question-facts: a number substitution outside a numbered series still counts as one edit", () => {
+  const check = pack.features.find((feature) => feature.id === "near_ids").check;
+  // level_1 / level_x: one substitution, but x is not a digit, so it is reported; q9 / q10 differ in length (an insertion).
+  assert.deepEqual(check([{ qid: "level_1" }, { qid: "level_x" }]), ["level_1 and level_x are one character apart; check that they are meant to be different questions."]);
+});
+
+test("build-question-facts: odd pictures and items without a position read as unavailable, never throw", () => {
+  const ctx = sampleBuildQuestionsCtx({ images: [null, { ref: "" }, { ref: "photo-0a1b2c3d4e", sample: "mug" }] });
+  const check = pack.features.find((feature) => feature.id === "unreferenced_picture").check;
+  assert.deepEqual(check(ctx.items(), ctx), []);
+  const wording = pack.features.find((feature) => feature.id === "closest_wording");
+  const plain = [{ instructions: "Is the order late?" }, { instructions: "Is the parcel late?" }];
+  assert.equal(wording.value(plain[0], { items: () => plain }), 0.6);
+});
+
+test("build-question-facts: backticked paths follow Check questions: a path starts with an ASCII letter or underscore", () => {
+  const fact = pack.features.find((feature) => feature.id === "named_fields");
+  const ctx = sampleBuildQuestionsCtx({ stateText: JSON.stringify({ "école": "x", order_total: 3 }) });
+  assert.equal(fact.value({ type: "noul", instructions: "Read `école` and `order_total`." }, ctx), 1);
 });

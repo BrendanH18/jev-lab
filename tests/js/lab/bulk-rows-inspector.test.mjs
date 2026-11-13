@@ -1,4 +1,7 @@
+// Tests for the Bulk rows inspector (static/js/lab/packs/workbench/bulk-rows-inspector.js). Expected values are counted
+// by hand from the eight-row box below (characters and words noted beside each line).
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import pack from "../../../static/js/lab/packs/workbench/bulk-rows-inspector.js";
 import { checkPack } from "./harness.mjs";
@@ -29,7 +32,6 @@ checkPack(pack, {
   has_picture: { items: rows, values: [false, false, true, false, false, false, false, false] },
   held_out: { items: rows, values: [false, false, false, true, false, false, false, false] },
   has_problem: { items: rows, values: [false, false, false, false, false, false, false, true] },
-  unlabeled: { items: rows, values: [true, false, true, false, false, true, true, true] },
   past_cap: { items: [long.items()[0], long.items()[199], long.items()[200]], values: [false, false, true] },
   kind: { items: rows, values: ["text", "text", "object", "text", "text", "text", "text", "text"] },
   text: { items: rows, values: ["Hi there", "  Refund   my order  ", "", "held one", "Write to ana@harbor.example", "[1, 2] as text", '{"broken', "x"] },
@@ -39,7 +41,8 @@ checkPack(pack, {
   unknown_label_ids: { ctx: box(), hit: rows[1], miss: [rows[0], rows[4], rows[3]], message: /Labels for zz,/ },
   bracket_text: { hit: rows[5], miss: [rows[0], rows[6]], message: /Starts with \[/ },
   email_in_text: { hit: rows[4], miss: [rows[0], rows[1]], message: /Holds 1 email address\./ },
-  rows_past_cap: { ctx: long, hitList: long.items(), missList: rows, message: /^1 row past the 200-row cap/ },
+  // The check reads the whole box: row 201 counts even when a filter shows only the first row.
+  rows_past_cap: { ctx: long, hitList: long.items().slice(0, 1), missCtx: box(), missList: rows, message: /^1 row past the 200-row cap/ },
 
   trim_text: { input: [row("  a b  "), held(" kept "), row({ text: " t ", channel: "email" })],
     output: [row("a b"), held(" kept "), row({ text: "t", channel: "email" })], unchanged: [row("tidy"), row({ note: " no text field " })] },
@@ -47,11 +50,12 @@ checkPack(pack, {
   drop_unknown_labels: { ctx: box(), input: [row("a", { labels: { q: true, zz: 1 } }), row("b", { labels: { q: false } }), held("c")],
     output: [row("a", { labels: { q: true } }), row("b", { labels: { q: false } }), held("c")] },
   normalize_noul_labels: { ctx: box({ questions: { ...QUESTIONS, team: { type: "choice", instructions: "Team?", criteria: { yes: "Yes team", no: "No team" } } } }),
-    input: [row("a", { labels: { q: " Yes ", team: "yes" } }), row("b", { labels: { q: "maybe" } }), row("c", { labels: { q: "0" } })],
-    output: [row("a", { labels: { q: true, team: "yes" } }), row("b", { labels: { q: "maybe" } }), row("c", { labels: { q: false } })] },
+    input: [row("a", { labels: { q: " Yes ", team: "yes" } }), row("b", { labels: { q: "maybe" } }), row("c", { labels: { q: "0" } }),
+      row("d", { labels: { q: 1 } }), row("e", { labels: { q: 2 } }), held("f")],
+    output: [row("a", { labels: { q: true, team: "yes" } }), row("b", { labels: { q: "maybe" } }), row("c", { labels: { q: false } }),
+      row("d", { labels: { q: true } }), row("e", { labels: { q: 2 } }), held("f")],
+    unchanged: [row("g", { labels: { q: "constructor" } }), row("h", { labels: { q: true } })] },
   drop_shown: { input: [row("a"), held("h"), row("b"), row("c")], shown: [0, 1, 2], output: [held("h"), row("c")] },
-  sort_by_text: { input: [row("pear"), held("zz"), row({ note: "n" }), row("apple"), row({ text: "Banana", x: 1 })],
-    output: [row("apple"), held("zz"), row({ text: "Banana", x: 1 }), row("pear"), row({ note: "n" })] },
 
   labeled_share: { ctx: box(), expect: 2 / 7, tolerance: 1e-12, empty: sampleBulkRowsCtx({ rowsText: "" }) },
   held_out_share: [{ ctx: box(), expect: 1 / 8, empty: sampleBulkRowsCtx({ rowsText: "" }) },
@@ -74,3 +78,18 @@ checkPack(pack, {
   first_problem: { ctx: () => sampleBulkRowsCtx(), check: (ctx) => assert.deepEqual(ctx.calls, [["focusLine", 8]]),
     hidden: () => sampleBulkRowsCtx({ rowsText: "fine\nalso fine" }) },
 }, { ctx: () => sampleBulkRowsCtx() });
+
+test("bulk-rows-inspector: label CSV escapes text a spreadsheet would run as a formula", () => {
+  const ctx = sampleBulkRowsCtx({ rowsText: '{"text": "a", "_expect": {"q": "=1+1"}}', questions: QUESTIONS });
+  const exporter = pack.features.find((feature) => feature.id === "labels_csv");
+  assert.equal(exporter.build(ctx), '"row","q"\r\n"1","\'=1+1"\r\n');
+});
+
+test("bulk-rows-inspector: odd items give unavailable facts, not exceptions", () => {
+  for (const fact of pack.features.filter((entry) => entry.kind === "fact")) {
+    for (const odd of [{}, { text: 3, labeled: "q", image: 5 }]) {
+      const value = fact.value(odd);
+      assert.ok(value === null || value === false || value === "", `${fact.id} gave ${JSON.stringify(value)}`);
+    }
+  }
+});

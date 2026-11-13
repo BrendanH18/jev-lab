@@ -208,7 +208,7 @@ export default definePack({
         const best = pairs.reduce((top, pair) => (pair.value > top.value ? pair : top), pairs[0]);
         const lowest = Math.min(...pairs.map((pair) => pair.value));
         return { rows: [["Boxes", list.length], ["Mean pairwise IoU", pairs.reduce((total, pair) => total + pair.value, 0) / pairs.length],
-          ["Lowest pairwise IoU", lowest], ["Most overlapping pair", `${best.i + 1} and ${best.j + 1}`]],
+          ["Lowest pairwise IoU", lowest], ["Most overlapping pair", best.value > 0 ? `${best.i + 1} and ${best.j + 1}` : "none"]],
         table: { columns: ["box", ...list.map((_, index) => String(index + 1))], rows: list.map((a, i) => [String(i + 1), ...list.map((b) => iou(a, b))]) } };
       } },
     { id: "expand_box", kind: "tool", group: GROUP, title: "Expand or shrink a box by a margin",

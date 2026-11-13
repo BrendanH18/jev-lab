@@ -20,20 +20,19 @@ const E2 = Math.exp(-2);
 const LATENCIES = Array.from({ length: 20 }, (_, i) => String((i + 1) * 100)).reverse().join("\n");  // 2000 … 100, unsorted on purpose
 
 checkPack(pack, {
-  // 8 in flight / 0.6 s = 800 a minute > 120, so the cap binds; the cap binds from 120 × 600 / 60,000 = 1.2 in flight.
-  throughput_cap: {
-    values: { parallel: 8, latency: 600, cap: 120 },
-    expect: [["Limited by", "the rate cap"], ["Calls per minute", 120], ["Calls per hour", 7200], ["Share of the rate cap used", 1], ["Calls in flight where the cap starts to bind", 1.2]],
-    more: [{ values: { parallel: 1, latency: 1000, cap: 120 },
-      expect: [["Limited by", "latency and calls in flight"], ["Calls per minute", 60], ["Calls per hour", 3600], ["Share of the rate cap used", 0.5], ["Calls in flight where the cap starts to bind", 2]] }],
-    invalid: [{ parallel: 0, latency: 600, cap: 120 }],
-  },
   // 100 a minute × 3 s = 5 in flight; 200 needs 10 > 8 and passes the cap of 120; 30 × 0.6 s = 0.3 → 1.
+  // The cap binds from cap × latency: 120 × 3 s / 60 s = 6 in flight, 20 × 0.6 s / 60 s = 0.2. 8 in flight at 3 s give 160 a minute.
   concurrency_needed: {
     values: { target: 100, latency: 3000 },
-    expect: [["Calls in flight needed", 5], ["Reachable with the calls in flight available", "yes"], ["Within the rate cap", "yes"], ["Highest calls per minute possible", 120]],
-    more: [{ values: { target: 200, latency: 3000 }, expect: [["Calls in flight needed", 10], ["Reachable with the calls in flight available", "no"], ["Within the rate cap", "no"], ["Highest calls per minute possible", 120]] },
-      { values: { target: 30, latency: 600, available: 1, cap: 20 }, expect: [["Calls in flight needed", 1], ["Reachable with the calls in flight available", "yes"], ["Within the rate cap", "no"], ["Highest calls per minute possible", 20]] }],
+    expect: [["Calls in flight needed", 5], ["Reachable with the calls in flight available", "yes"], ["Within the rate cap", "yes"], ["Highest calls per minute possible", 120],
+      ["Calls in flight where the cap starts to bind", 6]],
+    more: [{ values: { target: 200, latency: 3000 }, expect: [["Calls in flight needed", 10], ["Reachable with the calls in flight available", "no"], ["Within the rate cap", "no"],
+      ["Highest calls per minute possible", 120], ["Calls in flight where the cap starts to bind", 6]] },
+    { values: { target: 30, latency: 600, available: 1, cap: 20 }, expect: [["Calls in flight needed", 1], ["Reachable with the calls in flight available", "yes"], ["Within the rate cap", "no"],
+      ["Highest calls per minute possible", 20], ["Calls in flight where the cap starts to bind", 0.2]] },
+    { values: { target: 150, latency: 3000, cap: 200 }, expect: [["Calls in flight needed", 8], ["Reachable with the calls in flight available", "yes"], ["Within the rate cap", "yes"],
+      ["Highest calls per minute possible", 160], ["Calls in flight where the cap starts to bind", 10]] }],
+    invalid: [{ target: 0, latency: 600 }, { target: 10, latency: 600, cap: 0 }],
   },
   // M/M/1, λ 8, μ 10: ρ 0.8, Wq 0.8/2 h = 24 min, W 30 min, Lq 3.2, L 4.
   // M/M/2, λ 15, μ 10: a 1.5, C = 4.5 / (2.5 + 4.5) = 9/14, Wq = (9/14)/5 h = 9/70 h, W = 16/70 h, Lq = 27/14, L = 24/7.
@@ -110,13 +109,18 @@ checkPack(pack, {
       { values: { backlog: 0, arrivals: 60, capacity: 50 }, expect: [["Net rows cleared per hour", -10], ["Hours to clear", 0], ["Duration", "0 s"]] }],
   },
   // Poisson(2): P(N ≤ 3) = (1 + 2 + 2 + 4/3)e⁻² = 19/3 e⁻²; E[(N − 3)+] = λ − 3 + Σₖ≤3 (3 − k)pₖ = −1 + (3 + 4 + 2)e⁻² = 9e⁻² − 1.
+  // Cap 1: P(N ≤ 1) = 3e⁻²; E[(N − 1)+] = λ − 1 + p₀ = 1 + e⁻².
   cap_overflow: {
     values: { mean: 2, cap: 3 },
     expect: [["Chance a minute stays within the cap", 19 / 3 * E2], ["Chance a minute goes over the cap", 1 - 19 / 3 * E2], ["Average calls over the cap per minute", 9 * E2 - 1],
       ["Share of calls over the cap", (9 * E2 - 1) / 2]],
     more: [{ values: { mean: 0, cap: 3 }, expect: [["Chance a minute stays within the cap", 1], ["Chance a minute goes over the cap", 0], ["Average calls over the cap per minute", 0], ["Share of calls over the cap", null]] },
-      { values: { mean: 2, cap: 0 }, expect: [["Chance a minute stays within the cap", E2], ["Chance a minute goes over the cap", 1 - E2], ["Average calls over the cap per minute", 2], ["Share of calls over the cap", 1]] }],
-    invalid: [{ mean: -1, cap: 3 }],
+      { values: { mean: 2, cap: 1 }, expect: [["Chance a minute stays within the cap", 3 * E2], ["Chance a minute goes over the cap", 1 - 3 * E2], ["Average calls over the cap per minute", 1 + E2],
+        ["Share of calls over the cap", (1 + E2) / 2]] },
+      // A mean of a million against a cap of 120: P(N ≤ 120) is below 1e-400000, so all but 120 calls go over.
+      { values: { mean: 1e6, cap: 120 }, expect: [["Chance a minute stays within the cap", 0], ["Chance a minute goes over the cap", 1], ["Average calls over the cap per minute", 999880],
+        ["Share of calls over the cap", 0.99988]] }],
+    invalid: [{ mean: -1, cap: 3 }, { mean: 2, cap: 0 }],
   },
   rate_converter: {
     values: { value: 120 },
@@ -164,13 +168,6 @@ checkPack(pack, {
     more: [{ values: { p: 0.5, from: 0.5, to: 0.1 }, expect: [["Odds multiplier", 1 / 9], ["Probability at the new base rate", 0.1]] },
       { values: { p: 1, from: 0.5, to: 0.1 }, expect: [["Odds multiplier", 1 / 9], ["Probability at the new base rate", 1]] }],
     invalid: [{ p: 0.5, from: 0, to: 0.1 }],
-  },
-  // None fire: 0.5 × 0.8 × 0.9 = 0.36 (× 0.9 leak = 0.324); all fire: 0.5 × 0.2 × 0.1 = 0.01.
-  noisy_or_and: {
-    values: { probs: "0.5\n0.2\n0.1" },
-    expect: [["At least one fires (noisy-OR)", 0.64], ["None fire", 0.36], ["All fire (noisy-AND)", 0.01], ["Strongest single signal", 0.5]],
-    more: [{ values: { probs: "0.5, 0.2, 0.1", leak: 0.1 }, expect: [["At least one fires (noisy-OR)", 0.676], ["None fire", 0.324], ["All fire (noisy-AND)", 0.01], ["Strongest single signal", 0.5]] }],
-    invalid: [{ probs: "0.5 1.5" }, { probs: "" }],
   },
   // 0.9, 0.8, 0.5: P0 = 0.1·0.2·0.5 = 0.01; P1 = 0.09 + 0.04 + 0.01 = 0.14; P3 = 0.36; P2 = 0.36 + 0.09 + 0.04 = 0.49.
   k_of_n: {

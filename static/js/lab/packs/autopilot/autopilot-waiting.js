@@ -6,16 +6,21 @@ import { findUrls, levenshtein, similarity, wordCount } from "../../lib/text.js"
 
 const str = (value) => (typeof value === "string" ? value : "");
 const textOf = (item) => `${str(item.subject)}\n${str(item.body)}`;
-// "$1,980.00", "$249", "$ 12.5": a dollar sign directly before the digits.
-const AMOUNT = /\$\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)/g;
+// jev/dispatch.py AMOUNT_RE: "$1,980.00", "$ 12", "30 dollars", "45 USD".
+const AMOUNT = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?|\b(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?\s?(?:dollars|usd)\b/gi;
 const HOME = "harborcoffee.example";
 
 function amounts(text) {
-  return [...str(text).matchAll(AMOUNT)].map((match) => Number(match[1].replace(/,/g, ""))).filter(Number.isFinite);
+  return [...str(text).matchAll(AMOUNT)].map((match) => Number(`${(match[1] || match[3] || "").replace(/,/g, "")}${match[2] || match[4] || ""}`))
+    .filter((value) => Number.isFinite(value) && value > 0);
 }
 
-// A domain's first label, e.g. "harborcoffee-help" for "harborcoffee-help.example".
-const firstLabel = (domain) => str(domain).trim().toLowerCase().split(".")[0];
+// A domain's name as jev/shield.py's _base reads it: the label before the last dot ("roastwell" for
+// "billing.roastwell.example"), the whole text when there is no dot.
+const baseName = (domain) => { const parts = str(domain).split("."); return parts.length >= 2 ? parts[parts.length - 2] : str(domain); };
+const unhyphen = (text) => str(text).replace(/-/g, "");
+// Shield's code rule: the sender's domain contains the expected domain's name, hyphens ignored.
+const containsName = (sender, expected) => unhyphen(baseName(expected)) !== "" && unhyphen(sender).includes(unhyphen(baseName(expected)));
 
 export default definePack({
   id: "autopilot-waiting",
@@ -27,6 +32,7 @@ export default definePack({
     { id: "body_words", kind: "fact", type: "number", label: "body word count", value: (item) => (typeof item.body === "string" ? wordCount(item.body) : null) },
     { id: "link_count", kind: "fact", type: "number", label: "links in the email", value: (item) => (typeof item.body === "string" ? findUrls(textOf(item)).length : null) },
     { id: "largest_amount", kind: "fact", type: "number", label: "largest dollar amount mentioned",
+      help: "The largest amount in the subject and body, found by the pattern Dispatch's code uses ($1,980.00, 30 dollars, 45 USD).",
       value: (item) => { const found = amounts(textOf(item)); return found.length ? Math.max(...found) : null; } },
     { id: "attachment", kind: "fact", type: "flag", label: "attached photo", value: (item) => Array.isArray(item.attachments) && item.attachments.length > 0 },
     { id: "scenario_attack", kind: "fact", type: "flag", label: "scenario attack label", value: (item) => item.label?.attack === true },
@@ -44,7 +50,7 @@ export default definePack({
     { id: "lookalike_domain", kind: "diagnostic", severity: "advice", label: "Sender domain resembles Harbor Coffee's",
       check: (item) => {
         const domain = str(item.sender_domain);
-        return domain && domain !== HOME && firstLabel(domain).includes(firstLabel(HOME)) ? `${domain} looks like ${HOME} but is not it (plain-code heuristic, not a verdict).` : null;
+        return domain && domain !== HOME && !domain.endsWith(`.${HOME}`) && containsName(domain, HOME) ? `${domain} looks like ${HOME} but is not it (plain-code heuristic, not a verdict).` : null;
       } },
     { id: "credential_words", kind: "diagnostic", severity: "advice", label: "Asks about logins or codes",
       check: (item) => (/\b(?:password|log ?in|login|verification code|the code we text)\b/i.test(textOf(item)) ? "Talks about passwords, logins or codes (plain-code heuristic, not a verdict)." : null) },
@@ -77,14 +83,14 @@ export default definePack({
         ctx.env.toast(`Copied ${senders.length} sender address${senders.length === 1 ? "" : "es"}.`);
       } },
     { id: "domain_distance", kind: "tool", group: "Plain-code checks", title: "Compare two sender domains",
-      help: "Edit distance and similarity of two domains, and whether a plain-code rule would call one a lookalike of the other. No model call.",
+      help: "Edit distance and similarity of two domains, and whether a plain-code rule would call the sender a lookalike of the expected domain. No model call.",
       inputs: [{ name: "a", label: "Expected domain", type: "text", required: true, default: HOME }, { name: "b", label: "Sender domain", type: "text", required: true }],
       compute: ({ a, b }) => {
         const left = a.trim().toLowerCase(), right = b.trim().toLowerCase();
         const distance = levenshtein(left, right);
-        const lookalike = left !== right && (distance <= 2 || firstLabel(right).includes(firstLabel(left)) || firstLabel(left).includes(firstLabel(right)));
+        const lookalike = left !== right && (distance <= 2 || containsName(right, left));
         return { rows: [["Edit distance", distance], ["Similarity", Number(similarity(left, right).toFixed(3))], ["Same domain", left === right ? "yes" : "no"],
-          ["Lookalike (plain-code rule)", lookalike ? "yes" : "no"]], note: "A lookalike differs by at most two characters or contains the other's first label." };
+          ["Lookalike (plain-code rule)", lookalike ? "yes" : "no"]], note: "A lookalike is within two edits of the expected domain, or contains its name (the label before the last dot, hyphens ignored) as Shield's domain check does." };
       } },
   ],
 });

@@ -68,8 +68,11 @@ export default definePack({
     useTheme("dark"),
     { id: "cycle_theme", kind: "command", group: "Theme", title: "Cycle the theme: system, light, dark",
       run: (ctx) => {
-        const next = ctx.actions.cycleTheme();
-        ctx.env.toast(themeMessage(next, true));
+        // The next preference in data.themes order, set through setTheme so the toast can say when the browser did not keep it.
+        const themes = ctx.data.themes;
+        const next = themes[(themes.indexOf(ctx.data.theme) + 1) % themes.length];
+        const kept = ctx.actions.setTheme(next);
+        ctx.env.toast(themeMessage(next, kept));
       } },
     { id: "copy_link", kind: "command", group: "Page", title: "Copy this page's link", when: (ctx) => ctx.data.url !== null,
       run: (ctx) => ctx.actions.copyLink() },
@@ -92,7 +95,9 @@ export default definePack({
       run: (ctx) => {
         const spend = ctx.data.status.spend;
         if (!spend) throw new Error("The spend guard has not reported yet.");
-        if (spend.remaining_usd === null) ctx.env.toast(`No budget is set for this server run. Measured spend so far: ${dollars(spend.spent_usd)}.`);
+        const budget = typeof spend.budget_usd === "number" && spend.budget_usd > 0;
+        if (!budget) ctx.env.toast(`No budget is set for this server run. Measured spend so far: ${dollars(spend.spent_usd)}.`);
+        else if (spend.remaining_usd === null) ctx.env.toast(`Budget for this server run: ${dollars(spend.budget_usd)}. Measured spend has not been reported yet.`);
         else ctx.env.toast(`Budget left this server run: ${dollars(spend.remaining_usd)} of ${dollars(spend.budget_usd)} (measured; calls in flight count as spent).`,
           spend.remaining_usd === 0 ? "error" : "");
       } },

@@ -17,7 +17,7 @@ const applied = (c) => c.log.filter(([name]) => name === "applyPolicy").map(([, 
 //   risk 0.9931189981053575; leave-one-out risk: ai 0.9458188827193508, identity_mismatch 0.982080724232702,
 //   unexpected_reward 0.9930635061545943; one more weight step (Π over the other seven of (1 − c)) × 0.05 × v:
 //   ai 0.002627784188111487, unexpected_reward 6.936493845405706e-06; every weight 1: 0.99999970816384.
-//   packright: risk 0.5025492450267599, every weight 1: 0.81298580032.
+//   packright: risk 0.5025492450267597, every weight 1: 0.81298580032.
 //   Running risk in page order: 0.873, 0.951232, 0.979907584, 0.9889491712, 0.992098657408, 0.992667554074624,
 //   0.9930635061545943, 0.9931189981053575.
 const BEC_RISK = 0.9931189981053575;
@@ -33,10 +33,13 @@ checkPack(pack, {
     values: [0.002627784188111487, 6.936493845405706e-06, null], tolerance: 1e-12 },
   driver: { items: [S.ai_instructions, S.secrecy_or_bypass, S.payment_change], values: [true, false, true] },
   // payment_change 0.98 and packright's link_lure 0.55 reach 0.5; bec's link_lure 0.12 does not; ai_instructions is not an ask.
-  risky_ask: { ctx: base, items: [S.payment_change, S.link_lure, S.ai_instructions, P.link_lure], values: [true, false, false, true] },
+  // 0.5 itself counts (at or above); 0.49 does not.
+  risky_ask: { ctx: base, items: [S.payment_change, S.link_lure, S.ai_instructions, P.link_lure, { ...S.credential_request, value: 0.5 }, { ...S.credential_request, value: 0.49 }],
+    values: [true, false, false, true, true, false] },
   answer_text: { ctx: base, items: [S.ai_instructions, S.pressure, S.identity_mismatch, { ...S.ai_instructions, answer: null }],
     values: ["97.0% yes", "1.90 of 2 (Strong)", "Bean Brokers Ltd (88.0%)", ""] },
-  feeds_rule: { items: [S.ai_instructions, S.identity_mismatch, S.payment_change, S.secrecy_or_bypass], values: ["prompt_injection", "impersonation", "impersonation", null] },
+  feeds_rule: { items: [S.ai_instructions, S.identity_mismatch, S.payment_change, S.secrecy_or_bypass, { ...S.credential_request, rules: ["credential_phish", "impersonation"] }],
+    values: ["prompt_injection", "impersonation", "impersonation", null, "credential_phish + impersonation"] },
 
   rule_ignores_weight: { hit: { ...S.ai_instructions, weight: 0, contribution: 0 }, miss: [S.ai_instructions, S.secrecy_or_bypass],
     message: /^prompt_injection fired from Instructs an AI although its weight is 0: hard rules read the answer, not the weight\.$/ },
@@ -57,9 +60,10 @@ checkPack(pack, {
   // bec: levels 2 and 3 hold 0.1 + 0.9; packright: level 2 holds 0.5; the odd message has no loss answer.
   harm_moderate: [{ ctx: base, expect: 1, tolerance: 1e-12, empty: unopened() }, { ctx: packright(), expect: 0.5, tolerance: 1e-12 },
     { ctx: ctx({ selected: "message-9" }), expect: null }],
-  identity_runner_up: [{ ctx: base, expect: (result) => { assert.equal(result.value, "Other organization"); assert.equal(result.detail, "10.0%"); }, empty: unopened() }],
+  // bec 0.9931189981053575 − 0.6; packright 0.5025492450267597 − 0.6; with quarantine_at moved to 0.95, bec 0.0431189981053575.
   quarantine_gap: [{ ctx: base, expect: BEC_RISK - 0.6, tolerance: 1e-12, empty: unopened() },
-    { ctx: packright(), expect: 0.5025492450267599 - 0.6, tolerance: 1e-12 }],
+    { ctx: ctx({ policy: { ...DEFAULT_POLICY, quarantine_at: 0.95 } }), expect: 0.0431189981053575, tolerance: 1e-12 },
+    { ctx: packright(), expect: -0.0974507549732403, tolerance: 1e-12 }],
 
   request_json: { ctx: base, filename: "shield-request.json",
     includes: ['"subject": "URGENT: updated remittance details for INV-7781"', '"model": "jev-latest"', '"questions": {', '"harm_if_obeyed": {'],

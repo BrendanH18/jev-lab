@@ -218,6 +218,10 @@ and download, Paste to import, Commands, Tools, panels), the Workbench's Toolbox
   hand-written case. Expected values are worked out independently of the feature's code.
 - After adding, removing or renaming a pack or a feature, run `node scripts/lab_inventory.mjs`: it regenerates the
   page indexes (`static/js/lab/pages/*.js`, never edit them) and the numbered inventory in `docs/lab/`.
+- No Lab path calls the model or spends budget, not even by pressing a page's own Run, Ask, Check or Compare
+  button: surface builders never expose such an action (`tests/js/lab/surface-no-model-calls.test.mjs` builds every
+  fixture context and checks), and a pack never reaches a paid endpoint. Plain-code re-decisions (rescore, decide,
+  replan) are fine.
 - Lab state (filters, sorts, drafts, previews, tool inputs) is page-session only. Packs show only what the page holds
   from the current user's own calls; exports state their content and keep every boundary in this file (held-out
   label values, labels and `_test` markers never leave their place, and nothing is sent to the model). The only

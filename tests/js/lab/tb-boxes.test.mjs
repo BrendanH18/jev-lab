@@ -62,7 +62,11 @@ checkPack(pack, {
     expect: [["Horizontal gap (px)", 300], ["Vertical gap (px)", 200], ["Shortest distance (px)", Math.sqrt(130000)], ["Distance between centers (px)", Math.sqrt(355625)]],
     more: [{ values: { ...edges("a_", [0.1, 0.1, 0.5, 0.5]), ...edges("b_", [0.3, 0.2, 0.7, 0.6]), width: 100, height: 100 },
       // Overlapping: no gaps; centers (0.3, 0.3) and (0.5, 0.4) → (20, 10) px, √500.
-      expect: [["Horizontal gap (px)", 0], ["Vertical gap (px)", 0], ["Shortest distance (px)", 0], ["Distance between centers (px)", Math.sqrt(500)]] }],
+      expect: [["Horizontal gap (px)", 0], ["Vertical gap (px)", 0], ["Shortest distance (px)", 0], ["Distance between centers (px)", Math.sqrt(500)]] },
+      // Side by side on 200 × 100: only a horizontal gap of (0.6 − 0.4) × 200 = 40; centers (0.2, 0.5) and (0.8, 0.5) → 120.
+      { values: { ...edges("a_", [0, 0.2, 0.4, 0.8]), ...edges("b_", [0.6, 0.3, 1, 0.7]), width: 200, height: 100 },
+        expect: [["Horizontal gap (px)", 40], ["Vertical gap (px)", 0], ["Shortest distance (px)", 40], ["Distance between centers (px)", 120]] }],
+    invalid: [{ ...edges("a_", [0, 0, 0.2, 0.2]), ...edges("b_", [0.5, 0.6, 0.7, 0.9]), width: 0, height: 500 }],
   },
   // Apart: IoU 0, union 0.08, hull 0..0.6 squared = 0.36, GIoU = −0.28 / 0.36 = −7/9. Overlapping: IoU 0.06 / 0.26 = 3/13,
   // hull 0.1..0.7 × 0.1..0.6 = 0.3, GIoU = 3/13 − 0.04 / 0.3 = 3/13 − 2/15 = 19/195.
@@ -85,7 +89,12 @@ checkPack(pack, {
     values: { ...edges("a_", [0.2, 0.2, 0.4, 0.4]), ...edges("b_", [0.1, 0.1, 0.5, 0.5]) },
     expect: [["Overlap area", 0.04], ["Share of A inside B", 1], ["Share of B inside A", 0.25], ["A lies wholly inside B", "yes"], ["B lies wholly inside A", "no"]],
     more: [{ values: { ...edges("a_", [0.1, 0.1, 0.5, 0.5]), ...edges("b_", [0.3, 0.2, 0.7, 0.6]) },
-      expect: [["Overlap area", 0.06], ["Share of A inside B", 0.375], ["Share of B inside A", 0.375], ["A lies wholly inside B", "no"], ["B lies wholly inside A", "no"]] }],
+      expect: [["Overlap area", 0.06], ["Share of A inside B", 0.375], ["Share of B inside A", 0.375], ["A lies wholly inside B", "no"], ["B lies wholly inside A", "no"]] },
+      // Disjoint boxes share nothing; identical boxes each lie wholly inside the other.
+      { values: { ...edges("a_", [0, 0, 0.2, 0.2]), ...edges("b_", [0.5, 0.5, 0.9, 0.9]) },
+        expect: [["Overlap area", 0], ["Share of A inside B", 0], ["Share of B inside A", 0], ["A lies wholly inside B", "no"], ["B lies wholly inside A", "no"]] },
+      { values: { ...edges("a_", [0.1, 0.2, 0.3, 0.4]), ...edges("b_", [0.1, 0.2, 0.3, 0.4]) },
+        expect: [["Overlap area", 0.04], ["Share of A inside B", 1], ["Share of B inside A", 1], ["A lies wholly inside B", "yes"], ["B lies wholly inside A", "yes"]] }],
   },
   // 1 and 2 share 0.25 of a 0.5 union → 0.5; 3 only touches the others → 0. Mean (0.5 + 0 + 0) / 3.
   iou_matrix: {
@@ -94,6 +103,9 @@ checkPack(pack, {
       rowsLike(result, [["Boxes", 3], ["Mean pairwise IoU", 1 / 6], ["Lowest pairwise IoU", 0], ["Most overlapping pair", "1 and 2"]]);
       tableLike(result, ["box", "1", "2", "3"], [["1", 1, 0.5, 0], ["2", 0.5, 1, 0], ["3", 0, 0, 1]]);
     },
+    // Two boxes that do not overlap: no pair to name.
+    more: [{ values: { boxes: "0, 0, 0.2, 0.2\n0.5, 0.5, 0.9, 0.9" },
+      expect: [["Boxes", 2], ["Mean pairwise IoU", 0], ["Lowest pairwise IoU", 0], ["Most overlapping pair", "none"]] }],
     invalid: [{ boxes: "0, 0, 0.5, 0.5" }, { boxes: "0, 0, 0.5\n0, 0, 1, 1" }, { boxes: "0, 0, 0.5, 0.5\n{\"left\": 0}" }],
   },
   // Box 0.4 × 0.2, margin 0.25 of it: 0.1 and 0.05 each side. Picture margin 0.1: 0.05 − 0.1 → 0, 0.95 + 0.1 → 1.
@@ -125,6 +137,7 @@ checkPack(pack, {
     values: { ...edges("", [0.1, 0.2, 0.4, 0.7]), flip: "horizontal" },
     expect: edgeRows([0.6, 0.2, 0.9, 0.7]),
     more: [{ values: { ...edges("", [0.1, 0.2, 0.4, 0.7]), flip: "vertical" }, expect: edgeRows([0.1, 0.3, 0.4, 0.8]) }],
+    invalid: [{ ...edges("", [0.4, 0.2, 0.1, 0.7]), flip: "horizontal" }, { ...edges("", [0.1, 0.2, 0.4, 0.7]), flip: "diagonal" }],
   },
   // Crop 0.2..0.6 × 0.2..0.7 (0.4 × 0.5). In: (0.3 − 0.2) / 0.4 = 0.25, (0.4 − 0.2) / 0.5 = 0.4, 0.75, 0.8.
   // A box sticking out on the left keeps 0.2..0.4 of 0.1..0.4: (0, 0.2, 0.5, 0.6) and 2/3 of its area. Out reverses.
@@ -208,6 +221,20 @@ checkPack(pack, {
       expect: (result) => {
         assert.deepEqual(result.rows, [["Center cell", "row 2, column 1"], ["Center region", null], ["Cells the box touches", 2]]);
         tableLike(result, ["cell", "share of the box"], [["row 1, column 1", 0.5], ["row 2, column 1", 0.5]]);
+      } },
+    // 2 × 2: center (0.7, 0.2) is in the top row, right column; the box lies wholly in that cell.
+    { values: { ...edges("", [0.5, 0, 0.9, 0.4]), rows: 2, cols: 2 },
+      expect: (result) => {
+        assert.deepEqual(result.rows, [["Center cell", "row 1, column 2"], ["Center region", "top right"], ["Cells the box touches", 1]]);
+        tableLike(result, ["cell", "share of the box"], [["row 1, column 2", 1]]);
+      } },
+    // 3 × 3: center (0.5, 0.5) is the middle cell; the box 0.2..0.8 spans all nine cells, the middle one (wholly inside
+    // it) holding (1/9) / 0.36 = 25/81 of it; corners (2/15)² / 0.36 = 4/81, sides 10/81: 4·4 + 4·10 + 25 = 81.
+    { values: { ...edges("", [0.2, 0.2, 0.8, 0.8]), rows: 3, cols: 3 },
+      expect: (result) => {
+        assert.deepEqual(result.rows, [["Center cell", "row 2, column 2"], ["Center region", "middle center"], ["Cells the box touches", 9]]);
+        tableLike(result, ["cell", "share of the box"], [1, 2, 3].flatMap((r) => [1, 2, 3].map((c) => [`row ${r}, column ${c}`,
+          r === 2 && c === 2 ? 25 / 81 : r === 2 || c === 2 ? 10 / 81 : 4 / 81])));
       } }],
     invalid: [{ ...edges("", [0, 0, 0.5, 0.5]), rows: 0, cols: 2 }],
   },

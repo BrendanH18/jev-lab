@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
+import { improvementsOf } from "../../../static/js/lab/kit.js";
 import { counterExamplesCtx, counterTurnsCtx } from "../../../static/js/lab/surfaces/counter.js";
 import turnPack from "../../../static/js/lab/packs/counter/counter-turn-insights.js";
 import examplePack from "../../../static/js/lab/packs/counter/counter-example-guide.js";
@@ -393,7 +394,7 @@ test("Lab filters hide chat turns, a Lab sort reorders them, and the note's rese
 test("Lab filters hide example chips but never the New chat chip", () => {
   const p = page();
   const view = p.LAB.view("counter.examples");
-  view.filters = [{ key: "counter-example-guide/ends_in_handoff", op: "with" }];
+  view.filters = [{ key: "counter-example-guide/expects_close", op: "without" }];
   p.renderSamples();
   assert.deepEqual(p.samples().map(textOf), ["Frustration builds", "A person, please", "Missing the point", "New chat"]);
   assert.equal(p.classes.get("#samples-note"), false);
@@ -454,5 +455,7 @@ test("both sections render with the starter packs", () => {
     assert.ok(!textOf(tree).includes("could not be shown"));
   }
   const LAB = createLab([turnPack, examplePack]);
-  assert.deepEqual([LAB.count("counter.turns"), LAB.count("counter.examples")], [50, 36]);
+  const improvements = (id) => [turnPack, examplePack].filter((pack) => pack.surface === id).reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
+  assert.ok(improvements("counter.turns") > 0 && improvements("counter.examples") > 0);
+  assert.deepEqual([LAB.count("counter.turns"), LAB.count("counter.examples")], [improvements("counter.turns"), improvements("counter.examples")]);
 });

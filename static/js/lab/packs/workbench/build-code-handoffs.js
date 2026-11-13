@@ -25,7 +25,9 @@ const short = (value) => String(round(value, 6));
 const wellFormed = (text) => String(text).replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd");
 const jsonStr = (text) => JSON.stringify(wellFormed(text));
 const jsStr = (text) => jsonStr(text).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-const pyStr = jsonStr;  // a JSON string is a valid Python, Go, C# and Java literal
+const pyStr = jsonStr;  // a JSON string is a valid Python, Go and Java literal
+// C# also ends a line at U+0085, U+2028 and U+2029, which may not stand raw in a string literal.
+const csStr = (text) => jsonStr(text).replace(/[\u0085\u2028\u2029]/g, hex4);
 const hex4 = (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`;
 const ktStr = (text) => `"${wellFormed(text).replace(/[\\"$]/g, (char) => `\\${char}`).replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")
   .replace(/[\u0000-\u001f\u007f]/g, hex4)}"`;
@@ -50,13 +52,14 @@ const upper = (text) => leading(asciiWords(text).map((word) => word.toUpperCase(
 
 // A name giver: each call returns an unused name, adding sep + 2, 3, ... when the base is taken; fix() rewrites a
 // reserved word first.
-function namer(reserved = [], sep = "", fix = (name) => name) {
-  const taken = new Set(reserved);
+// same(name) is the identity two names must not share (SQLite compares identifiers without ASCII case).
+function namer(reserved = [], sep = "", fix = (name) => name, same = (name) => name) {
+  const taken = new Set(reserved.map(same));
   return (base) => {
     const start = fix(base);
     let name = start;
-    for (let n = 2; taken.has(name); n++) name = `${start}${sep}${n}`;
-    taken.add(name);
+    for (let n = 2; taken.has(same(name)); n++) name = `${start}${sep}${n}`;
+    taken.add(same(name));
     return name;
   };
 }
@@ -257,7 +260,8 @@ function pythonEnums(ctx) {
   return `${blocks.join("\n\n\n")}\n`;
 }
 
-const goTag = (id) => id !== "" && !/["\\,`\u0000-\u001f\u007f]/.test(id);
+// encoding/json's isValidTag: letters, digits, spaces and these marks only; any other tag name is silently ignored.
+const goTag = (id) => /^[\p{L}\p{Nd}!#$%&()*+\-./:;<=>?@[\]^_{|}~ ]+$/u.test(id);
 
 function goStructs(ctx) {
   const schema = schemaOf(ctx);
@@ -302,7 +306,7 @@ function goStructs(ctx) {
 function csharpClasses(ctx) {
   const schema = schemaOf(ctx), bases = basesOf(schema);
   const blocks = [header("//", ctx), "using System.Collections.Generic;\nusing System.Text.Json.Serialization;", "namespace Jev.Generated;"];
-  const prop = (json, type, name, init = "") => `    [JsonPropertyName(${jsonStr(json)})] public ${type} ${name} { get; init; }${init}`;
+  const prop = (json, type, name, init = "") => `    [JsonPropertyName(${csStr(json)})] public ${type} ${name} { get; init; }${init}`;
   const klass = (name, props) => [`public sealed class ${name}`, "{", ...props, "}"].join("\n");
   const typeProp = prop("type", "string", "Type", ' = "";');
   const tail = [prop("probabilities", "Dictionary<string, double>?", "Probabilities"), prop("confidence", "double?", "Confidence")];
@@ -312,7 +316,7 @@ function csharpClasses(ctx) {
     if (q.type === "choice") {
       if (q.keys.length) {
         const member = namer([`${base}Options`]);
-        blocks.push([`public static class ${base}Options`, "{", ...q.keys.map((key) => `    public const string ${member(pascal(key, "Option"))} = ${jsonStr(key)};`), "}"].join("\n"));
+        blocks.push([`public static class ${base}Options`, "{", ...q.keys.map((key) => `    public const string ${member(pascal(key, "Option"))} = ${csStr(key)};`), "}"].join("\n"));
       }
       blocks.push(klass(`${base}Answer`, [typeProp, prop("choice", "string", "Choice", ' = "";'), ...tail]));
     } else if (q.type === "score") {
@@ -424,7 +428,7 @@ function jsdocTypedefs(ctx) {
 
 // The SQL columns for the Run's questions: [{ name, type, check, value(item), question }], in request order.
 function sqlColumns(schema) {
-  const give = namer(["model"], "_");
+  const give = namer(["model"], "_", undefined, (name) => name.replace(/[A-Z]/g, (char) => char.toLowerCase()));
   const between = (top) => (name) => `CHECK (${sqlName(name)} BETWEEN 0 AND ${top})`;
   const unitCheck = between(1);
   const confidence = (q) => ({ name: give(`${q.id}_confidence`), type: "REAL", check: unitCheck, value: (item) => finite(item?.confidence) });
@@ -599,7 +603,8 @@ const ASSERTS = "Asserts for the human expectations the Build editor holds now, 
 const ASSERTS_HOLD = "Holds those expectations (written by a person) and question ids only: no state, instructions or answers.";
 
 // The checks check_expectation would make for each question of the Run that has a human expectation:
-// [{ id, type, choice?, min?, max?, box?, iouMin? }]. Bounds that are not finite numbers are left out.
+// [{ id, type, choice?, min?, max?, box?, iouMin? }]. Bounds are read as numbers the way check_expectation's float()
+// reads them ("0.5" counts); a bound that is not a number is left out, and so is a Box whose box or floor is not.
 function expectationPlan(ctx) {
   const expect = ctx.data.expect;
   const plan = [];
@@ -607,14 +612,15 @@ function expectationPlan(ctx) {
     if (!hasOwn(expect, q.id) || !isObject(expect[q.id])) continue;
     const e = expect[q.id], one = { id: q.id, type: q.type };
     if (q.type === "box") {
-      const box = isObject(e.box) && EDGES.every((edge) => finite(e.box[edge]) !== null) ? e.box : null;
-      if (!box) continue;
+      const box = isObject(e.box) && EDGES.every((edge) => toNumber(e.box[edge]) !== null) ? Object.fromEntries(EDGES.map((edge) => [edge, toNumber(e.box[edge])])) : null;
+      const floor = hasOwn(e, "iou_min") ? toNumber(e.iou_min) : 0.5;
+      if (!box || floor === null) continue;
       one.box = box;
-      one.iouMin = hasOwn(e, "iou_min") ? finite(e.iou_min) ?? 0.5 : 0.5;
+      one.iouMin = floor;
     } else {
       if (q.type === "choice" && typeof e.choice === "string") one.choice = e.choice;
-      if (finite(e.min) !== null) one.min = e.min;
-      if (finite(e.max) !== null) one.max = e.max;
+      if (toNumber(e.min) !== null) one.min = toNumber(e.min);
+      if (toNumber(e.max) !== null) one.max = toNumber(e.max);
       if (one.choice === undefined && one.min === undefined && one.max === undefined) continue;
     }
     plan.push(one);
@@ -805,13 +811,6 @@ export default definePack({
         const values = {};
         for (const item of shownOrRefuse(ctx)) setOwn(values, item.id, item.type === "box" ? item.box : item.value);
         return `${JSON.stringify(values, null, 2)}\n`;
-      } },
-    { id: "request_json", kind: "exporter", label: "The Run's request as JSON", help: "state, model and questions exactly as that Run sent them, pictures as references; no answers",
-      filename: "jev-build-run-request.json", mime: "application/json",
-      build: (ctx) => {
-        const request = ctx.data.request;
-        if (!request) throw new Error(NO_RUN);
-        return `${JSON.stringify({ state: request.state, model: request.model, questions: request.questions }, null, 2)}\n`;
       } },
     { id: "probabilities_csv", kind: "exporter", label: "Shown answer probabilities as CSV", help: "includes answers: every listed option, level or Noul side with its probability; no state",
       filename: "jev-build-probabilities.csv", mime: "text/csv",

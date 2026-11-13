@@ -2,7 +2,7 @@
 // static/js/lab/surfaces/workbench-build.js). Every value reads the user's own Run in this page session; expectation
 // checks mirror jev/workbench.py check_expectation and iou in local code, and every threshold here is a local,
 // advisory rule. Nothing is stored and nothing calls the model.
-import { definePack } from "../../kit.js";
+import { definePack, toNumber } from "../../kit.js";
 
 const RUN_NOTE = "From your latest Run in this page session.";
 const EDGES = ["left", "top", "right", "bottom"];
@@ -18,15 +18,11 @@ const fixed2 = (value) => value.toFixed(2);
 // Probabilities from most to least likely; ties keep the response order.
 const ranked = (item) => probsOf(item).map((entry, index) => ({ ...entry, index })).sort((a, b) => b.p - a.p || a.index - b.index);
 
-function margin(item) {
-  const list = ranked(item);
-  return list.length >= 2 ? list[0].p - list[1].p : null;
-}
-
-// Edges of a box as numbers, or null when one is missing or not finite.
-function edgesOf(box) {
+// Edges of a box as numbers, or null when one is missing or not finite. read: finite for an answer, toNumber for a
+// human expectation (check_expectation reads those with float(), so "0.5" counts).
+function edgesOf(box, read = finite) {
   if (!isObject(box)) return null;
-  const edges = EDGES.map((edge) => finite(box[edge]));
+  const edges = EDGES.map((edge) => read(box[edge]));
   return edges.includes(null) ? null : { left: edges[0], top: edges[1], right: edges[2], bottom: edges[3] };
 }
 
@@ -56,16 +52,17 @@ function headroom(item) {
   const expect = item.expectation;
   if (!isObject(expect)) return null;
   if (item.type === "box") {
-    const answer = edgesOf(item.box), wanted = hasOwn(expect, "box") ? edgesOf(expect.box) : null;
+    const answer = edgesOf(item.box), wanted = hasOwn(expect, "box") ? edgesOf(expect.box, toNumber) : null;
     if (!answer || !wanted) return null;
-    const floor = hasOwn(expect, "iou_min") ? finite(expect.iou_min) : 0.5;
+    const floor = hasOwn(expect, "iou_min") ? toNumber(expect.iou_min) : 0.5;
     return floor === null ? null : iou(answer, wanted) - floor;
   }
   const target = targetOf(item);
   if (target === null) return null;
   const gaps = [];
-  if (hasOwn(expect, "min")) gaps.push(finite(expect.min) === null ? null : target - expect.min);
-  if (hasOwn(expect, "max")) gaps.push(finite(expect.max) === null ? null : expect.max - target);
+  const min = toNumber(expect.min), max = toNumber(expect.max);
+  if (hasOwn(expect, "min")) gaps.push(min === null ? null : target - min);
+  if (hasOwn(expect, "max")) gaps.push(max === null ? null : max - target);
   return gaps.length && !gaps.includes(null) ? Math.min(...gaps) : null;
 }
 
@@ -103,15 +100,6 @@ function criterionText(item, key) {
 }
 
 const keyWords = (key) => String(key).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-
-function minimumOf(items, read) {
-  let best = null;
-  for (const item of items) {
-    const value = read(item);
-    if (value !== null && (best === null || value < best.value)) best = { value, id: item.id };
-  }
-  return best;
-}
 
 export default definePack({
   id: "build-answer-facts",
@@ -161,7 +149,7 @@ export default definePack({
       help: "Intersection over union of a Box answer and the box your human expectation holds (local code mirroring the Tests tab).",
       value: (item) => {
         const answer = item.type === "box" ? edgesOf(item.box) : null;
-        const wanted = answer && hasOwn(item.expectation, "box") ? edgesOf(item.expectation.box) : null;
+        const wanted = answer && hasOwn(item.expectation, "box") ? edgesOf(item.expectation.box, toNumber) : null;
         return wanted ? iou(answer, wanted) : null;
       } },
     { id: "expectation_headroom", kind: "fact", type: "number", label: "expectation headroom",
@@ -263,18 +251,6 @@ export default definePack({
       } },
 
     // ---------- metrics ----------
-    { id: "lowest_confidence", kind: "metric", format: "percent", label: "Lowest confidence among the shown answers",
-      help: `Noul answers carry no confidence. ${RUN_NOTE}`,
-      compute: (ctx) => {
-        const low = minimumOf(ctx.shown(), (item) => finite(item.confidence));
-        return low && { value: low.value, detail: low.id };
-      } },
-    { id: "smallest_margin", kind: "metric", format: "percent", label: "Smallest top-two margin among the shown answers",
-      help: `Top probability minus the runner-up; the detail names the question. ${RUN_NOTE}`,
-      compute: (ctx) => {
-        const low = minimumOf(ctx.shown(), margin);
-        return low && { value: low.value, detail: low.id };
-      } },
     { id: "cost_per_question", kind: "metric", format: "usd", label: "Measured cost per question",
       help: "The Run's measured cost divided by its question count; a measurement of this Run, not an estimate.",
       compute: (ctx) => {

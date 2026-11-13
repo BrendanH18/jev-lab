@@ -61,8 +61,8 @@ export default definePack({
         const band = AGE_BANDS.find(([limit]) => days < limit);
         return band ? band[1] : "3 months or more";
       } },
-    { id: "saved_after_split", kind: "fact", type: "flag", label: "saved again after its test split was drawn",
-      help: "The last save is later than the split's draw time, so rows or labels may have been added or changed since the split.",
+    { id: "saved_after_split", kind: "fact", type: "flag", label: "a save after its test split was drawn",
+      help: "The last save (a bundle import counts) is later than the split's draw time, so rows or labels may have been added or changed since the split.",
       value: (item) => {
         const saved = finite(item?.saved_ms), locked = stampMs(item?.test?.locked_at);
         return !!item?.test && saved !== null && locked !== null && saved > locked;
@@ -125,7 +125,7 @@ export default definePack({
     { id: "agreement_ready", kind: "fact", type: "flag", label: "ready for label agreement",
       help: "Saved questions and labeled rows, so a second person can label a blind sample.",
       value: (item) => item?.agreement_ready === true },
-    { id: "agreement_open", kind: "fact", type: "flag", label: "label agreement open",
+    { id: "agreement_open", kind: "fact", type: "flag", label: "an open label agreement panel",
       help: "Its Label agreement panel is open in this page session; filtering never closes it.",
       value: (item) => item?.agreement_open === true },
 
@@ -153,7 +153,8 @@ export default definePack({
         for (let i = 0; i < named.length; i++) {
           for (let j = i + 1; j < named.length; j++) {
             const a = nameKey(named[i].name), b = nameKey(named[j].name);
-            if (a !== b && levenshtein(a, b) <= 2) out.push(`${named[i].id} and ${named[j].id} have nearly the same name; check they are not two copies of one dataset.`);
+            // Two edits cannot bridge a length gap over 2, so skip the distance for those pairs.
+            if (a !== b && Math.abs(codePoints(a) - codePoints(b)) <= 2 && levenshtein(a, b) <= 2) out.push(`${named[i].id} and ${named[j].id} have nearly the same name; check they are not two copies of one dataset.`);
           }
         }
         return out;

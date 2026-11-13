@@ -4,7 +4,7 @@ import { test } from "node:test";
 import pack from "../../../static/js/lab/packs/play/play-history-insights.js";
 import { runExporter } from "../../../static/js/lab/kit.js";
 import { checkPack } from "./harness.mjs";
-import { GAMES, samplePlayHistoryCtx, turnsByN } from "./fixtures/play.mjs";
+import { GAMES, rawTurn, samplePlayHistoryCtx, turnsByN } from "./fixtures/play.mjs";
 
 const ctx = (overrides) => samplePlayHistoryCtx(overrides);
 const P = turnsByN(ctx());                              // the running food game, turns 1-7
@@ -14,6 +14,14 @@ const repeatsCtx = ctx({ game: GAMES.repeats });
 const R = turnsByN(repeatsCtx);
 const fresh = () => ctx({ game: GAMES.fresh });
 const feature = (id) => pack.features.find((entry) => entry.id === id);
+// A running game whose answers sit exactly 5 points from a cut-off (0.55 from 60%, 0.8 from 85%; in floating point
+// both differences are 0.04999999999999993) or just inside (0.56 is 4 points from 60%, 0.14 one point from 15%).
+const EDGE = turnsByN(ctx({ game: { category: "food", over: false, won: false, turns_left: 16, turns: [
+  rawTurn(1, "Is it hot?", [0.55, 0.97, 0.02, 0.1], "answer", "Hard to say"),
+  rawTurn(2, "Is it cold?", [0.8, 0.97, 0.02, 0.1], "answer", "Probably"),
+  rawTurn(3, "Is it sweet?", [0.56, 0.97, 0.02, 0.1], "answer", "Hard to say"),
+  rawTurn(4, "Is it bitter?", [0.14, 0.97, 0.02, 0.1], "answer", "No"),
+] } }));
 
 checkPack(pack, {
   // The odd turn 2 sends P(yes) as the text "0.3", which is not a number.
@@ -26,12 +34,16 @@ checkPack(pack, {
   // "Would I find it at Harbor Coffee Co.?" is eight words; odd turn 1 is blank.
   words: { items: [P[1], P[4], O[1]], values: [3, 8, null] },
   // 0.04 is 0.11 from 15%, 0.88 is 0.03 from 85%, 0.58 is 0.02 from 60%; an invalid turn and a guess have none.
-  cutoff_margin: { items: [P[1], P[4], P[6], P[3], P[5]], values: [0.11, 0.03, 0.02, null, null], tolerance: 1e-9 },
-  borderline: { items: [P[4], P[6], P[1], P[5]], values: [true, true, false, false] },
+  // Edge turns: 0.05, 0.05, 0.04, 0.01; the winning guess #8 has none.
+  cutoff_margin: { items: [P[1], P[4], P[6], P[3], P[5], EDGE[1], EDGE[2], EDGE[3], EDGE[4], W[8]], values: [0.11, 0.03, 0.02, null, null, 0.05, 0.05, 0.04, 0.01, null], tolerance: 1e-9 },
+  // Exactly 5 points away (edge #1, #2) is not "within 5 points".
+  borderline: { items: [P[4], P[6], P[1], P[5], EDGE[1], EDGE[2], EDGE[3], EDGE[4]], values: [true, true, false, false, false, false, true, true] },
   question_mark: { items: [P[1], P[6], O[1]], values: [true, false, false] },
   // #3 "is it SWEET" and #4 repeat #1; #2 is new; and #1 is the first time.
   repeat: { ctx: repeatsCtx, items: [R[1], R[2], R[3], R[4]], values: [false, false, true, true] },
-  kind: { items: [P[1], P[3], P[5], W[8], O[1]], values: ["answered question", "not a yes/no question", "wrong or close guess", "winning guess", null] },
+  // A kind the page does not know, even one that names an object property, is unavailable.
+  kind: { items: [P[1], P[3], P[5], W[8], O[1], { n: 9, text: "Is it a mug?", kind: "toString", probs: {}, meta: {} }],
+    values: ["answered question", "not a yes/no question", "wrong or close guess", "winning guess", null, null] },
   answer: { items: [P[1], P[2], P[6], P[3], P[7]], values: ["No", "Probably", "Hard to say", null, null] },
   question_text: { items: [P[1], P[4], O[1]], values: ["Is it alive?", "Would I find it at Harbor Coffee Co.?", "  "] },
 

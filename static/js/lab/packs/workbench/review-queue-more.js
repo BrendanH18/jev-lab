@@ -26,7 +26,7 @@ export default definePack({
   about: "Progress and reason facts, checks on the audit sample (its size and the worst-case margin it gives) and the queue's state, progress metrics, exports and navigation for a check's Review queue. Blind audit rows stay blind, nothing here measures accuracy or automation, and the exports hold no inputs, labels or answers.",
   features: [
     { id: "open_questions", kind: "fact", type: "number", label: "questions to decide", unit: "questions",
-      help: "Held and rule-read questions on review rows; every question on audit rows.", value: (item) => (Array.isArray(item?.open) ? item.open.length : null) },
+      help: "On review rows, the held, rule-read and unsuggested gated questions when the queue was read; every question on audit rows.", value: (item) => (Array.isArray(item?.open) ? item.open.length : null) },
     { id: "labels_set", kind: "fact", type: "number", label: "labels set", unit: "labels",
       help: "Questions with a label now: yours, and on review rows the gate's starting suggestions.",
       value: (item) => (isObject(item?.labels) ? Object.values(item.labels).filter(has).length : null) },
@@ -53,12 +53,10 @@ export default definePack({
       value: (item) => item?.kind === "review" && list(item.edited).length > 0 && list(item.suggested).length > 0 },
     { id: "picture_not_loaded", kind: "fact", type: "flag", label: "a picture this page has not loaded",
       value: (item) => typeof item?.image === "string" && item.picture_loaded !== true },
-    { id: "held_set", kind: "fact", type: "category", label: "held questions", help: "Review rows only; \"none\" when only a rule sent the row to review.",
+    { id: "held_set", kind: "fact", type: "category", label: "set of held questions", help: "Review rows only; \"none\" when only a rule sent the row to review.",
       value: (item) => (item?.kind === "review" ? (list(item.held).join(", ") || "none") : null) },
     { id: "missing_set", kind: "fact", type: "category", label: "missing gated questions",
       value: (item) => (Array.isArray(item?.missing) ? (item.missing.join(", ") || "none") : null) },
-    { id: "kind_status", kind: "fact", type: "category", label: "row kind and status",
-      value: (item) => (item?.kind && item.status ? `${item.kind}, ${item.status}` : null) },
     { id: "rule_text", kind: "fact", type: "text", label: "broken rule text", help: "The rules the row broke, as the gate printed them.",
       value: (item) => list(item?.rules).join("; ") },
 
@@ -72,7 +70,9 @@ export default definePack({
       check: (item) => (item?.kind === "audit" && item.ready !== true && isObject(item.labels) && Object.values(item.labels).some(has)
         ? `${list(item.missing).join(", ")} still ${list(item.missing).length === 1 ? "needs" : "need"} a label. Add skips this audit row, and it stays blind until then.` : null) },
     { id: "no_audit_sample", kind: "diagnostic", severity: "advice", scope: "list", label: "No audit sample",
+      help: "Only when no audit sample was asked for; \"Fewer audit rows than asked\" covers a sample that came up short.",
       check: (_items, ctx) => (ctx.data.read && ctx.data.counts.auto > 0 && ctx.data.counts.audit === 0
+        && !(Number.isInteger(ctx.data.audit_requested) && ctx.data.audit_requested > 0)
         ? `The queue holds no audit rows from the ${plural(ctx.data.counts.auto, "automated decision")}, so Add cannot check the rows the gate automated. Read the file again with an audit sample size above 0.` : null) },
     { id: "wide_audit_margin", kind: "diagnostic", severity: "info", scope: "list", label: "Small audit sample",
       help: "Worst-case (50%) half-width of a 95% normal-approximation interval: 0.98 / √n.",
@@ -86,7 +86,7 @@ export default definePack({
       check: (_items, ctx) => {
         const asked = ctx.data.audit_requested, got = ctx.data.counts.audit;
         return ctx.data.read && Number.isInteger(asked) && got < asked
-          ? `You asked for ${plural(asked, "audit row")}; the queue holds ${got}. The file had fewer automated decisions that could be sampled.` : null;
+          ? `You asked for ${plural(asked, "audit row")}; the queue holds ${got}. Only automated decisions with this gate's provenance that are new to the dataset and not repeated can be sampled.` : null;
       } },
     { id: "current_hidden", kind: "diagnostic", severity: "info", scope: "list", label: "Current row hidden",
       check: (items, ctx) => (Number.isInteger(ctx.data.next_line) && !items.some((item) => item.line === ctx.data.next_line)
@@ -103,7 +103,7 @@ export default definePack({
         return margin === null ? null : { value: margin, detail: `±${points(margin)} points at most for ${plural(n, "audit row")}` };
       } },
     { id: "audit_sampling_share", kind: "metric", format: "percent", label: "Automated decisions drawn for audit",
-      help: "Audit rows queued over the decisions the gate automated in the file. A sampling fraction, not an automation rate.",
+      help: "Audit rows queued over every decision the gate automated in the file, including ones that could not be sampled (no provenance, already in the dataset, repeated). A sampling fraction, not an automation rate.",
       compute: (ctx) => (ctx.data.read && ctx.data.counts.auto > 0
         ? { value: ctx.data.counts.audit / ctx.data.counts.auto, detail: `${ctx.data.counts.audit} of ${plural(ctx.data.counts.auto, "automated decision")}` } : null) },
     { id: "review_progress", kind: "metric", format: "percent", label: "Review rows ready",
@@ -132,12 +132,6 @@ export default definePack({
       help: "Ready rows past the room the dataset has left; they stay in the queue with their labels after Add.",
       compute: (ctx) => (ctx.data.read ? { value: Math.max(0, ctx.data.ready - ctx.data.room), detail: `${ctx.data.ready} ready, room for ${ctx.data.room}` } : null) },
 
-    { id: "todo_markdown", kind: "exporter", label: "Shown rows as a Markdown checklist (no inputs, labels or answers)", filename: "jev-review-checklist.md", mime: "text/markdown",
-      help: "Each shown row's line and kind, ticked when ready, with the gated questions it still needs.",
-      build: (ctx) => {
-        const rows = ctx.shown().map((item) => `- [${item.ready ? "x" : " "}] line ${item.line} (${item.kind})${item.missing.length ? `: needs ${item.missing.join(", ")}` : ""}`);
-        return [`# Review queue: ${ctx.data.dataset.name || ctx.data.dataset.id || "check"}`, "", ...(rows.length ? rows : ["No rows shown."])].join("\n") + "\n";
-      } },
     { id: "question_progress_csv", kind: "exporter", label: "Per-question progress as CSV (counts only)", filename: "jev-review-questions.csv", mime: "text/csv",
       help: "For each queue question over the whole queue: whether it is gated, its threshold, and how many rows are labeled, missing, edited by you, or still on the gate's suggestion. No label values.",
       build: (ctx) => {

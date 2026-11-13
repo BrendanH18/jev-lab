@@ -51,18 +51,14 @@ export default definePack({
     { id: "first_handoff", kind: "fact", type: "number", label: "turn where a handoff is expected",
       help: "The first turn whose hand-written expectation is a handoff.",
       value: (item) => { const at = expectOf(item).indexOf("handoff"); return at < 0 ? null : at + 1; } },
-    { id: "sent", kind: "fact", type: "number", label: "turns sent in the current chat",
-      help: "Only the example the current chat started from has a value.", value: (item) => (item?.active ? item.sent : null) },
     { id: "final_expect", kind: "fact", type: "category", label: "expected final decision",
       value: (item) => { const expect = expectOf(item); return expect.length ? expect[expect.length - 1] : null; } },
-    { id: "ends_in_handoff", kind: "fact", type: "flag", label: "an expected handoff at the end",
-      value: (item) => { const expect = expectOf(item); return expect[expect.length - 1] === "handoff"; } },
     { id: "expects_close", kind: "fact", type: "flag", label: "an expected close", value: (item) => expectOf(item).includes("close") },
     { id: "active", kind: "fact", type: "flag", label: "the example the current chat started from", value: (item) => item?.active === true },
     { id: "label", kind: "fact", type: "text", label: "example name", value: (item) => item?.label ?? "" },
     { id: "turn_text", kind: "fact", type: "text", label: "customer turn text", value: (item) => turnsOf(item).join(" / ") },
     { id: "on_track", kind: "fact", type: "flag", label: "your chat matching the expectation so far",
-      help: "The current chat follows this example and every sent turn's current decision equals its expectation.",
+      help: "The current chat follows this example and every sent turn's current decision, under the policy now in force, equals its hand-written expectation.",
       value: (item, ctx) => {
         if (!item?.active) return false;
         const result = agreement(ctx);
@@ -91,7 +87,7 @@ export default definePack({
         for (const item of items) {
           for (const turn of new Set(turnsOf(item).map((text) => text.trim().toLowerCase()).filter(Boolean))) {
             if (!seen.has(turn)) seen.set(turn, []);
-            seen.get(turn).push(item.label);
+            seen.get(turn).push(String(item?.label ?? "an unnamed example"));
           }
         }
         return [...seen].filter(([, labels]) => labels.length > 1).map(([turn, labels]) => `“${turn}” appears in ${labels.join(" and ")}.`);
@@ -110,13 +106,6 @@ export default definePack({
         if (!result) return null;
         const policy = ctx.data.defaults_in_force ? "default policy in force" : "policy changed from the defaults";
         return { value: result.agree / result.compared, detail: `${result.agree} of ${plural(result.compared, "sent turn")}; ${policy}` };
-      } },
-    { id: "handoff_share", kind: "metric", format: "percent", label: "Shown examples expected to end in a handoff",
-      compute: (ctx) => {
-        const shown = ctx.shown();
-        if (!shown.length) return null;
-        const handoffs = shown.filter((item) => { const expect = expectOf(item); return expect[expect.length - 1] === "handoff"; }).length;
-        return { value: handoffs / shown.length, detail: `${handoffs} of ${shown.length}` };
       } },
 
     { id: "examples_md", kind: "exporter", label: "Shown examples as Markdown",

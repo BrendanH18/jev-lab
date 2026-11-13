@@ -28,6 +28,13 @@ function moreWaiting() {
   return records;
 }
 
+// Worlds where Dispatch alone holds the $42 refund twice (a multiset difference keeps the extra copy).
+function repeatedRefund() {
+  const worlds = sampleWorlds();
+  worlds.naive.activity.push({ kind: "refund", text: "Refunded $42.00 for B-2051 (damaged)", amount: 42, via: "autopilot" });
+  return worlds;
+}
+
 // Worlds whose orders, invoices and meetings differ in known ways.
 function customWorlds() {
   const worlds = sampleWorlds();
@@ -47,24 +54,16 @@ function customWorlds() {
 const empty = emptyRecordsCtx();
 
 checkPack(pack, {
-  decisions_waiting: [{ ctx: sampleRecordsCtx(), expect: 1, empty },
-    { ctx: sampleRecordsCtx({ records: moreWaiting(), matches: (item) => item.id === "dana-damaged" }), expect: 3 }],
   decided_share: { ctx: sampleRecordsCtx(), empty, expect: (result) => {
     // sent to you: sampler-refund (waiting), tasting-move (approved), fan-repair (dismissed) -> 2 of 3
     assert.ok(Math.abs(result.value - 2 / 3) < 1e-12);
     assert.equal(result.detail, "2 of 3 decided");
   } },
-  shield_caught_share: [{ ctx: sampleRecordsCtx(), empty, expect: (result) => {
-    // vendor-redirect stopped by Shield's quarantine, sampler-refund by a sender check
-    assert.equal(result.value, 0.5);
-    assert.equal(result.detail, "1 of 2 stopped attacks");
-  } }, { ctx: sampleRecordsCtx({ matches: (item) => item.id !== "vendor-redirect" }), expect: 0 }],
-  naive_only_activity: { ctx: sampleRecordsCtx(), expect: 2, empty },   // the $54 refund and the payment to the new account
-  integrated_only_activity: { ctx: sampleRecordsCtx(), expect: 1, empty },   // the payment to the account on file
-  new_account_dollars: [{ ctx: sampleRecordsCtx(), empty, expect: (result) => {
-    assert.equal(result.value, 1980);
-    assert.equal(result.detail, "Dispatch alone $1,980.00 · Autopilot $0.00");
-  } }, { ctx: sampleRecordsCtx({ worlds: null }), expect: null }],
+  // the $54 refund and the payment to the new account; with the $42 refund twice in Dispatch alone's world, one copy is extra
+  naive_only_activity: [{ ctx: sampleRecordsCtx(), expect: 2, empty }, { ctx: sampleRecordsCtx({ worlds: repeatedRefund() }), expect: 3 },
+    { ctx: emptyRecordsCtx({ worlds: sampleWorlds() }), expect: null }, { ctx: sampleRecordsCtx({ worlds: null }), expect: null }],
+  integrated_only_activity: [{ ctx: sampleRecordsCtx(), expect: 1, empty },   // the payment to the account on file
+    { ctx: sampleRecordsCtx({ worlds: repeatedRefund() }), expect: 1 }],
 
   outcome_matrix: { improvements: {
     matrix: (t) => {
@@ -132,6 +131,10 @@ checkPack(pack, {
       const filtered = t.render(sampleRecordsCtx({ matches: (item) => item.id !== "vendor-redirect" }));
       assert.deepEqual(t.findAll(filtered, has("data-attack")).map((row) => row.attrs["data-attack"]), ["sampler-refund"]);
       assert.match(t.textOf(t.render(sampleRecordsCtx({ matches: (item) => !item.label?.attack }))), /No shown email is an attack/);
+      // an attack Autopilot ran anyway is listed as not stopped
+      const ran = t.find(t.render(sampleRecordsCtx({ records: samplerRan() })), attr("data-attack", "sampler-refund"));
+      assert.equal(ran.attrs["data-status"], "not stopped");
+      assert.equal(t.textOf(t.find(ran, has("data-layer"))), "nothing: Autopilot ran it");
     },
     evidence: (t) => {
       const root = t.render(sampleRecordsCtx());
@@ -139,27 +142,17 @@ checkPack(pack, {
       assert.equal(evidence("vendor-redirect"), "Claims to be Roastwell Imports but sends from roastwell-payments.example");
       assert.equal(evidence("sampler-refund"), "Sender is the customer on the order: Order belongs to another customer");
     },
-    not_stopped: (t) => {
-      assert.equal(t.find(t.render(sampleRecordsCtx()), has("data-not-stopped")), null);
-      const root = t.render(sampleRecordsCtx({ records: samplerRan() }));
-      assert.equal(t.textOf(t.find(root, has("data-not-stopped"))), "Autopilot acted on 1 attack: #5 R. Stone");
-      assert.equal(t.find(root, attr("data-attack", "sampler-refund")).attrs["data-status"], "not stopped");
-    },
     dollars: (t) => {
       const root = t.render(sampleRecordsCtx());
       assert.deepEqual(t.findAll(root, has("data-layer-dollars")).map(t.textOf),
         ["Shield quarantine: $1,980.00 kept (1 attack)", "Sender check: $54.00 kept (1 attack)"]);
+      // once Autopilot ran the sampler refund, the sender check kept nothing
+      assert.deepEqual(t.findAll(t.render(sampleRecordsCtx({ records: samplerRan() })), has("data-layer-dollars")).map(t.textOf), ["Shield quarantine: $1,980.00 kept (1 attack)"]);
     },
     inspect: (t) => {
       const ctx = sampleRecordsCtx();
       t.fire(t.find(t.render(ctx), attr("data-inspect", "sampler-refund")), "click");
       assert.deepEqual(ctx.calls, [["inspect", "sampler-refund"]]);
-    },
-    copy: (t) => {
-      t.fire(t.find(t.render(sampleRecordsCtx()), attr("data-copy", "layers")), "click");
-      assert.deepEqual(t.env.copied, ["What stopped each attack (attacks per the scenario labels; outcomes from your own calls in this server run):\n"
-        + "#2 Roastwell Imports - Billing: stopped by Shield quarantine (Claims to be Roastwell Imports but sends from roastwell-payments.example)\n"
-        + "#5 R. Stone: stopped by Sender check (Sender is the customer on the order: Order belongs to another customer)\n"]);
     },
   } },
 
@@ -167,8 +160,8 @@ checkPack(pack, {
     counts: (t) => {
       const root = t.render(sampleRecordsCtx());
       const row = (title) => t.findAll(t.find(root, attr("data-count", title)), (node) => node.tag === "td").map(t.textOf);
-      assert.deepEqual(row("Balance"), ["$16,334.00", "$16,324.00", "-$10.00"]);
-      assert.deepEqual(row("Activity entries"), ["3", "4", "1"]);
+      assert.deepEqual(row("Balance"), ["$16,334.00", "$16,324.00", "$10.00"]);   // Autopilot minus Dispatch alone
+      assert.deepEqual(row("Activity entries"), ["3", "4", "-1"]);
       assert.deepEqual(row("Payments"), ["0", "0", "0"]);
       assert.match(t.textOf(t.render(sampleRecordsCtx({ worlds: null }))), /load with the inbox/);
     },
@@ -176,6 +169,10 @@ checkPack(pack, {
       const root = t.render(sampleRecordsCtx());
       assert.deepEqual(t.findAll(t.find(root, has("data-only-naive")), (node) => node.tag === "li").map(t.textOf),
         ["refund: Refunded $54.00 for B-2053 (not_delivered)", "payment: Paid $1,980.00 to Roastwell Imports (RW-4410) (to the new account from the email)"]);
+      const repeated = t.render(sampleRecordsCtx({ worlds: repeatedRefund() }));   // repeats count: one of the two $42 refunds is extra
+      assert.deepEqual(t.findAll(t.find(repeated, has("data-only-naive")), (node) => node.tag === "li").map(t.textOf),
+        ["refund: Refunded $54.00 for B-2053 (not_delivered)", "payment: Paid $1,980.00 to Roastwell Imports (RW-4410) (to the new account from the email)",
+          "refund: Refunded $42.00 for B-2051 (damaged)"]);
     },
     only_integrated: (t) => {
       const root = t.render(sampleRecordsCtx());
@@ -186,13 +183,6 @@ checkPack(pack, {
       const root = t.render(sampleRecordsCtx());
       assert.deepEqual(t.findAll(root, has("data-kind")).map((row) => [row.attrs["data-kind"], ...t.findAll(row, (node) => node.tag === "td").map(t.textOf)]),
         [["calendar", "1", "1"], ["payment", "1", "1"], ["refund", "1", "2"]]);
-    },
-    new_account: (t) => {
-      assert.equal(t.textOf(t.find(t.render(sampleRecordsCtx()), has("data-new-account"))),
-        "Sent to an account named in an email: Dispatch alone: Paid $1,980.00 to Roastwell Imports (RW-4410)");
-      const worlds = sampleWorlds();
-      worlds.naive.activity = worlds.naive.activity.filter((entry) => entry.kind !== "payment");
-      assert.equal(t.find(t.render(sampleRecordsCtx({ worlds })), has("data-new-account")), null);
     },
     orders: (t) => {
       const root = t.render(sampleRecordsCtx({ worlds: customWorlds() }));
@@ -344,6 +334,9 @@ checkPack(pack, {
       const root = t.render(sampleRecordsCtx({ records }));
       assert.deepEqual(t.findAll(root, has("data-arg")).map((row) => t.findAll(row, (node) => node.tag === "td").map(t.textOf)),
         [["order", "B-2051", "97%"], ["reason", "damaged", "81%"]]);
+      records["dana-damaged"].integrated.plan.args = { items: { value: ["kenya-aa", 2], prob: 0.6 }, note: { value: null } };
+      assert.deepEqual(t.findAll(t.render(sampleRecordsCtx({ records })), has("data-arg")).map((row) => t.findAll(row, (node) => node.tag === "td").map(t.textOf)),
+        [["items", '["kenya-aa",2]', "60%"], ["note", "—", "—"]]);
     },
     photo: (t) => {
       const ctx = sampleRecordsCtx();

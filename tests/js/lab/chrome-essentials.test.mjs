@@ -73,6 +73,11 @@ checkPack(pack, {
     await feature("cycle_theme").run(ctx);
     assert.deepEqual(ctx.calls.map((entry) => entry[1]), ["system", "light"]);
     assert.deepEqual(ctx.env.toasts.map((toast) => toast.message), ["Theme: System (follows your device)", "Theme: Light"]);
+    const blocked = sampleChromeCtx({ theme: "light", storageBlocked: true });
+    await feature("cycle_theme").run(blocked);
+    assert.deepEqual(blocked.calls, [["setTheme", "dark"]]);
+    assert.deepEqual(blocked.env.toasts.map((toast) => toast.message), ["Theme: Dark. This browser did not keep the choice, so it lasts for this page only."],
+      "a browser that refuses to remember the choice is reported, as for the direct theme commands");
   } },
   copy_link: { ctx: () => sampleChromeCtx({ path: "/workbench", url: "http://127.0.0.1:8321/workbench#build" }),
     hidden: () => sampleChromeCtx({ url: "file:///home/harbor/notes.txt" }),
@@ -114,6 +119,10 @@ checkPack(pack, {
     const unlimited = sampleChromeCtx({ status: STATUS.noBudget });
     await feature("budget_left").run(unlimited);
     assert.deepEqual(unlimited.env.toasts.map((toast) => toast.message), ["No budget is set for this server run. Measured spend so far: $0.3100."]);
+    const unreported = sampleChromeCtx({ status: { ...STATUS.connected, spend: { budget_usd: 2, rpm: 120 } } });
+    await feature("budget_left").run(unreported);
+    assert.deepEqual(unreported.env.toasts.map((toast) => toast.message), ["Budget for this server run: $2.00. Measured spend has not been reported yet."],
+      "a set budget with no measured spend is not called \"no budget\"");
   } },
 
   skip_link: { check: () => {

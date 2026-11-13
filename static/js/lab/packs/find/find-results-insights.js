@@ -3,6 +3,8 @@
 // document or copy a line. Rules such as "close call" or "disagrees" are plain local code, labeled as such.
 import { csvText, definePack } from "../../kit.js";
 
+const CLOSE = 0.1;      // local rule: a lead under 10 points is a close call
+const EPSILON = 1e-9;
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const points = (value) => (value * 100).toFixed(1);
@@ -66,7 +68,6 @@ export default definePack({
       value: (item) => (item?.top ? item.top.section || "no section" : null) },
     { id: "query_text", kind: "fact", type: "text", label: "question text", value: (item) => item?.query ?? "" },
     { id: "top_text", kind: "fact", type: "text", label: "top line text", value: (item) => item?.top?.text ?? "" },
-    { id: "strong_top", kind: "fact", type: "flag", label: "top line at 50% or more", value: (item) => (finite(item?.top_prob) ?? 0) >= 0.5 },
     { id: "disagrees", kind: "fact", type: "flag", label: "verdict and top line disagree",
       help: "Local rule: absent with a top line of 50% or more, or answered with a top line under 20%.", value: disagrees },
     { id: "top_heading", kind: "fact", type: "flag", label: "top line is a section heading", value: (item) => item?.top?.heading === true },
@@ -76,15 +77,10 @@ export default definePack({
     { id: "close_call", kind: "diagnostic", severity: "advice", label: "Top two lines are close",
       check: (item) => {
         const lead = leadOf(item);
-        if (lead === null || lead >= 0.1) return null;
-        return `The top line leads the second by only ${points(lead)} points (${hitsOf(item)[0].id} vs ${hitsOf(item)[1].id}). Read both before trusting either (local rule: under 10 points).`;
-      } },
-    { id: "partial", kind: "diagnostic", severity: "info", label: "Partial verdict",
-      check: (item, ctx) => {
-        if (item?.verdict !== "partial") return null;
-        const t = ctx?.data?.thresholds || { found: 0.7, absent: 0.35 };
-        const exists = finite(item.exists);
-        return `exists is ${exists === null ? "between the thresholds" : percent(exists)}, between absent (< ${percent(t.absent)}) and answered (≥ ${percent(t.found)}). Check the top line by hand.`;
+        // EPSILON: 0.5 - 0.4 is 0.09999999999999998 in floating point, a lead of exactly 10 points.
+        if (lead === null || lead >= CLOSE - EPSILON) return null;
+        const [first, second] = hitsOf(item);
+        return `The top line leads the second by only ${points(lead)} points (${first?.id || "rank 1"} vs ${second?.id || "rank 2"}). Read both before trusting either (local rule: under 10 points).`;
       } },
     { id: "shared_top", kind: "diagnostic", severity: "advice", scope: "list", label: "Several questions share a top line",
       check: (items) => {
@@ -106,11 +102,6 @@ export default definePack({
         if (!shown.length) return null;
         const answered = shown.filter((item) => item.verdict === "answered").length;
         return { value: answered / shown.length, detail: `${answered} of ${shown.length}` };
-      } },
-    { id: "mean_top", kind: "metric", format: "percent", label: "Mean top line probability of the shown questions",
-      compute: (ctx) => {
-        const values = ctx.shown().map((item) => finite(item.top_prob)).filter((value) => value !== null);
-        return values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
       } },
     { id: "cost_per_question", kind: "metric", format: "usd", label: "Measured search cost per question",
       help: "The one call's measured cost divided by its questions: arithmetic on measured spend, not a separate charge.",
@@ -136,12 +127,12 @@ export default definePack({
       help: "The searched questions in their original order, to reuse in another search.",
       build: (ctx) => (ctx.items().length ? ctx.items().map((item) => item.query).join("\n") + "\n" : "") },
 
-    { id: "next_question", kind: "command", group: "Find", title: "Focus the next shown question", keys: "Alt+Shift+ArrowDown",
+    { id: "next_question", kind: "command", group: "Find", title: "Focus the next shown question", keys: "Alt+Shift+N",
       when: (ctx) => ctx.shown().length > 0, run: (ctx) => step(ctx, 1) },
-    { id: "previous_question", kind: "command", group: "Find", title: "Focus the previous shown question", keys: "Alt+Shift+ArrowUp",
+    { id: "previous_question", kind: "command", group: "Find", title: "Focus the previous shown question", keys: "Alt+Shift+P",
       when: (ctx) => ctx.shown().length > 0, run: (ctx) => step(ctx, -1) },
     { id: "show_top", kind: "command", group: "Find", title: "Scroll to the focused question's top line",
-      when: (ctx) => !!focusedItem(ctx)?.top, run: (ctx) => ctx.actions.showHit(ctx.data.focus, 1) },
+      when: (ctx) => !ctx.data.editing && !!focusedItem(ctx)?.top, run: (ctx) => ctx.actions.showHit(ctx.data.focus, 1) },
     { id: "copy_top", kind: "command", group: "Find", title: "Copy the focused question's top line",
       when: (ctx) => !!focusedItem(ctx)?.top,
       run: (ctx) => {

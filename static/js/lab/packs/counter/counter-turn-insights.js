@@ -7,7 +7,10 @@ import { csvText, definePack } from "../../kit.js";
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
-const turnOrder = (items) => items.slice().sort((a, b) => a.n - b.n);
+const turnOrder = (items) => items.filter((item) => Number.isInteger(item?.n)).sort((a, b) => a.n - b.n);
+// Probabilities arrive as binary floats (0.45 - 0.5 is -0.04999…, 0.55 - 0.5 is 0.05000…), so comparisons with a
+// margin allow this much slack to treat both sides of a cut alike.
+const EPSILON = 1e-9;
 const intentName = (key) => String(key ?? "").replace(/_/g, " ");
 
 // The two most likely intents of a turn, highest first, or null when fewer than two have a probability.
@@ -21,7 +24,8 @@ const intentMargin = (item) => { const two = topTwo(item); return two ? two[0][1
 // The policy the shown decisions use; the sliders' policy while no decision exists yet.
 const policyOf = (ctx) => ctx?.data?.decided_with || ctx?.data?.policy || null;
 
-// Local advisory rule: the evidence sits within 5% of a cut's range (0.05 for probabilities, 0.2 for frustration).
+// Local advisory rule: the evidence sits 0.05 or less from a probability cut, or 0.2 or less (5% of the 0 to 4 scale)
+// from the frustration cut.
 const CUTS = [["asks_for_person", "person_at", 0.05], ["missed", "missed_at", 0.05], ["resolved", "resolved_at", 0.05],
   ["intent_prob", "intent_min", 0.05], ["frustration", "frustration_at", 0.2]];
 function nearCut(item, ctx) {
@@ -29,7 +33,7 @@ function nearCut(item, ctx) {
   if (!policy) return false;
   return CUTS.some(([field, key, margin]) => {
     const value = finite(item?.evidence?.[field]), cut = finite(policy[key]);
-    return value !== null && cut !== null && Math.abs(value - cut) < margin;
+    return value !== null && cut !== null && Math.abs(value - cut) <= margin + EPSILON;
   });
 }
 
@@ -40,7 +44,7 @@ function median(values) {
   const middle = sorted.length >> 1;
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
-const newest = (ctx) => ctx.items().reduce((best, item) => (!best || item.n > best.n ? item : best), null);
+const newest = (ctx) => turnOrder(ctx.items()).at(-1) || null;
 const samePolicy = (a, b) => !!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((key) => a[key] === b[key]);
 
 export default definePack({
@@ -66,8 +70,9 @@ export default definePack({
     { id: "choice_differs", kind: "fact", type: "flag", label: "model choice that differs from the top probability",
       help: "The intent's choice field names another intent than the highest probability, which decide() uses.",
       value: (item) => typeof item?.intent_choice === "string" && typeof item?.evidence?.intent === "string" && item.intent_choice !== item.evidence.intent },
-    { id: "near_cut", kind: "fact", type: "flag", label: "evidence within 5% of a policy cut",
-      help: "Local advisory rule: a probability within 0.05 of its cut, or frustration within 0.2, under the policy of the shown decisions.", value: nearCut },
+    { id: "near_cut", kind: "fact", type: "flag", label: "evidence near a policy cut",
+      help: "Local advisory rule, not the decision: a probability 0.05 or less from its cut, or frustration 0.2 or less from its cut, "
+        + "under the policy of the shown decisions.", value: nearCut },
     { id: "action_now", kind: "fact", type: "category", label: "current decision", value: (item) => item?.decision?.action || null },
     { id: "action_sent", kind: "fact", type: "category", label: "decision the reply was sent under", value: (item) => item?.sent?.action || null },
     { id: "intent", kind: "fact", type: "category", label: "top intent", value: (item) => (item?.evidence?.intent ? intentName(item.evidence.intent) : null) },
@@ -76,12 +81,12 @@ export default definePack({
     { id: "close_intents", kind: "diagnostic", severity: "advice", label: "Two intents almost tied",
       check: (item) => {
         const two = topTwo(item);
-        if (!two || two[0][1] - two[1][1] >= 0.1) return null;
+        if (!two || two[0][1] - two[1][1] >= 0.1 - EPSILON) return null;
         return `The top intents ${intentName(two[0][0])} (${percent(two[0][1])}) and ${intentName(two[1][0])} (${percent(two[1][1])}) are less than 10 points apart, so a slightly different reading would pick another template.`;
       } },
     { id: "frustration_rising", kind: "diagnostic", severity: "advice", scope: "list", label: "Frustration rising turn after turn",
       check: (items) => {
-        const ordered = turnOrder(items).filter((item) => finite(item.evidence?.frustration) !== null);
+        const ordered = turnOrder(items).filter((item) => finite(item?.evidence?.frustration) !== null);
         const out = [];
         let start = 0;
         for (let i = 1; i <= ordered.length; i++) {
@@ -98,7 +103,7 @@ export default definePack({
 
     { id: "peak_frustration", kind: "metric", format: "number", label: "Highest frustration score of the shown turns",
       compute: (ctx) => {
-        const values = ctx.shown().map((item) => finite(item.evidence?.frustration)).filter((value) => value !== null);
+        const values = ctx.shown().map((item) => finite(item?.evidence?.frustration)).filter((value) => value !== null);
         return values.length ? Math.max(...values) : null;
       } },
     { id: "changed_count", kind: "metric", format: "integer", label: "Turns decided differently under the current policy",
@@ -106,16 +111,16 @@ export default definePack({
       compute: (ctx) => {
         const items = ctx.items();
         if (!items.length) return null;
-        const changed = items.filter((item) => item.changed).length;
+        const changed = items.filter((item) => item?.changed === true).length;
         return { value: changed, detail: `of ${plural(items.length, "turn")}` };
       } },
     { id: "median_latency", kind: "metric", format: "ms", label: "Median measured latency of the shown turns",
-      compute: (ctx) => median(ctx.shown().map((item) => finite(item.meta?.latency_ms)).filter((value) => value !== null)) },
+      compute: (ctx) => median(ctx.shown().map((item) => finite(item?.meta?.latency_ms)).filter((value) => value !== null)) },
     { id: "thousand_chats", kind: "metric", format: "usd", label: "Estimated cost of 1,000 chats like this one",
       help: "Mean measured cost per call times this chat's turns times 1,000. An estimate, not spend.",
       compute: (ctx) => {
         const items = ctx.items();
-        const costs = items.map((item) => finite(item.meta?.cost_usd)).filter((value) => value !== null);
+        const costs = items.map((item) => finite(item?.meta?.cost_usd)).filter((value) => value !== null);
         if (!costs.length) return null;
         return { value: (sum(costs) / costs.length) * items.length * 1000, detail: `estimate from ${plural(costs.length, "measured call")}` };
       } },

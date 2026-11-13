@@ -43,14 +43,11 @@ function questionInventory(items) {
 const labeledAtShare = (rows, target) => Math.ceil(Math.round(target * rows * 1e6) / 1e8);
 
 // The held-out labeled rows nearest share% of the labeled rows with at least 2 on each side, ties to the larger count,
-// as jev/testsplit.py picks when no duplicate inputs force a different count.
+// as jev/testsplit.py picks when no duplicate inputs force a different count. Constant time: the nearest whole number
+// with ties up is floor(target + 0.5), and clamping it into [2, labeled - 2] keeps it nearest. null under 4 rows.
 function heldOutFor(labeled, share) {
-  const target = labeled * share / 100;
-  let best = null;
-  for (let k = 2; k <= labeled - 2; k++) {
-    if (best === null || Math.abs(k - target) < Math.abs(best - target) || (Math.abs(k - target) === Math.abs(best - target) && k > best)) best = k;
-  }
-  return best;
+  if (labeled < 4) return null;
+  return Math.min(labeled - 2, Math.max(2, Math.floor(labeled * share / 100 + 0.5)));
 }
 
 const tsv = (rows) => rows.map((row) => row.map((cell) => oneLine(cell).replace(/\t/g, " ")).join("\t")).join("\n");
@@ -133,11 +130,6 @@ export default definePack({
       build: (ctx) => csvText([["dataset", "held_out_rows", "held_out_labeled", "tuning_labeled", "held_out_share", "test_looks", "drawn_at"],
         ...shownOf(ctx).filter((item) => item.test).map((item) => [item.id, item.held_out, item.held_out_labeled, item.tuning_labeled,
           finite(item.test.share) === null ? "" : Math.round(item.test.share * 1e4) / 1e4, count(item.test.looks), item.test.locked_at || ""])]) },
-    { id: "status_lines", kind: "exporter", label: "One status line per shown dataset (plain text)", filename: "jev-datasets-status.txt",
-      help: "ID, labeled and total rows, questions, held-out rows with test looks, and whether a check is saved. No notes, inputs, label values or check configuration.",
-      build: (ctx) => shownOf(ctx).map((item) => [`${item.id}: ${item.labeled}/${item.rows} rows labeled`, plural(item.questions, "question"),
-        item.test ? `${item.held_out} held out, ${plural(count(item.test.looks), "test look")}` : "no split", item.has_check ? "saved check" : "no check"].join(" · "))
-        .join("\n") + "\n" },
 
     // ---------- commands ----------
     { id: "load_next", kind: "command", title: "Load the next shown dataset", group: "Datasets",

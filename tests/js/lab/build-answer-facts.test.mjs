@@ -38,11 +38,18 @@ checkPack(pack, {
   box_height: { items: [mugBox, { box: { left: 0, top: 0, right: 0.1, bottom: 0.5 } }, intent], values: [0.4, 0.5, null], ctx },
   expected_probability: { items: [...withCalm.items(), { type: "choice", value: "a", probabilities: probs([["a", 1]]), expectation: { choice: "zzz" } }],
     values: [0.82, null, null, null, null, 0.48, null], ctx: withCalm },
-  expectation_iou: { items: [mugBox, { type: "box", box: { left: 0, top: 0, right: 0.5, bottom: 0.5 }, expectation: { box: { left: 0, top: 0, right: 0.5, bottom: 0.5 } } }, intent],
-    values: [7 / 11, 1, null], ctx },
+  // A box far from its expected box overlaps 0; a box without every expected edge is unavailable.
+  expectation_iou: { items: [mugBox, { type: "box", box: { left: 0, top: 0, right: 0.5, bottom: 0.5 }, expectation: { box: { left: 0, top: 0, right: 0.5, bottom: 0.5 } } }, intent,
+    { type: "box", box: { left: 0, top: 0, right: 0.2, bottom: 0.2 }, expectation: { box: { left: 0.5, top: 0.5, right: 1, bottom: 1 } } },
+    { type: "box", box: { left: 0, top: 0, right: 0.2, bottom: 0.2 }, expectation: { box: { left: 0.5, top: 0.5, right: 1 } } }],
+    values: [7 / 11, 1, null, 0, null], ctx },
   expectation_headroom: { items: [...items, { type: "score", value: 1.35, expectation: { min: 1, max: 1.5 } }, { type: "noul", value: 0.5, expectation: { min: "x" } },
-    { type: "choice", value: "refund", probabilities: probs([["refund", 0.82]]), expectation: { min: 0.7 } }],
-  values: [null, null, -0.14, 3 / 22, null, null, 0.15, null, 0.12], ctx },
+    { type: "choice", value: "refund", probabilities: probs([["refund", 0.82]]), expectation: { min: 0.7 } },
+    // check_expectation reads bounds with float(), so text numbers count: 0.7 − 0.5 = 0.2; a Choice whose chosen option is
+    // not listed is measured at 0, so min 0.25 gives −0.25; IoU of [0, 0.5]² inside [0, 1]² is 0.25, floor "0.2" → 0.05.
+    { type: "noul", value: 0.7, expectation: { min: "0.5" } }, { type: "choice", value: "zzz", probabilities: probs([["a", 1]]), expectation: { min: 0.25 } },
+    { type: "box", box: { left: 0, top: 0, right: 0.5, bottom: 0.5 }, expectation: { box: { left: "0", top: 0, right: 1, bottom: "1" }, iou_min: "0.2" } }],
+  values: [null, null, -0.14, 3 / 22, null, null, 0.15, null, 0.12, 0.2, -0.25, 0.05], ctx },
   chosen_description: { items, values: ["Wants money back", "Soon", "Uses angry or threatening words", "", "", "Upset"], ctx },
   runner_up: { items, values: ["where_is_order", "2", "", "", "", "calm"], ctx },
   chosen_answer: { items, values: ["refund", "level 1", "yes", null, "no", "upset"], ctx },
@@ -65,14 +72,6 @@ checkPack(pack, {
     miss: [angry, intent, mugBox, { type: "noul", value: 0.49, expectation: { min: 0.5 } }], message: /^Passes its expectation by 0\.02 / },
   unanswered: { hitList: extraCtx.items(), missList: items, ctx: extraCtx, missCtx: ctx, message: /^The Run sent 1 question that got no answer: extra\.$/ },
 
-  lowest_confidence: [
-    { ctx, expect: (result) => { assert.equal(result.value, 0.45); assert.equal(result.detail, "urgency"); }, empty: empty() },
-    { ctx: sampleBuildResultCtx({ hide: ["urgency"] }), expect: 0.52 },
-  ],
-  smallest_margin: [
-    { ctx, expect: (result) => { assert.equal(result.value, 0); assert.equal(result.detail, "urgency"); }, empty: empty() },
-    { ctx: sampleBuildResultCtx({ hide: ["urgency"] }), expect: 0.04, tolerance: 1e-9 },
-  ],
   cost_per_question: [{ ctx, expect: 0.000412 / 6, empty: empty() }, { ctx: sampleBuildResultCtx({ result: buildOddResult() }), expect: null }],
   answering_model: [
     { ctx, expect: (result) => { assert.equal(result.value, "jev-1.14"); assert.equal(result.detail, ""); }, empty: empty() },

@@ -129,6 +129,8 @@ checkPack(pack, {
   auc_rows: {
     values: { auc: "0.85", ratio: "3", half: "0.05", level: "0.95" },
     expect: [["Positives needed", 99], ["Negatives needed", 297], ["Rows in total", 396], ["Half-width at that size", 0.049950294896946204]],
+    // With 0.001 negatives per positive the half-width cannot reach 0.000003 below the search limit: every value is unavailable.
+    more: [{ values: { auc: "0.85", ratio: "0.001", half: "0.000003", level: "0.99" }, expect: [["Positives needed", null], ["Negatives needed", null], ["Rows in total", null], ["Half-width at that size", null]] }],
     invalid: [{ auc: "1", ratio: "3", half: "0.05", level: "0.95" }, { auc: "0.4", ratio: "3", half: "0.05", level: "0.95" }, { auc: "0.85", ratio: "3", half: "0", level: "0.95" }],
   },
   correlation_rows: {
@@ -141,13 +143,14 @@ checkPack(pack, {
   difference_margin_rows: {
     values: { p1: "0.85", p2: "0.9", margin: "0.05", level: "0.95" },
     expect: [["Rows per variant", 335], ["Rows in total", 670]],
-    invalid: [{ p1: "0.85", p2: "0.9", margin: "0", level: "0.95" }],
+    invalid: [{ p1: "0.85", p2: "0.9", margin: "0", level: "0.95" }, { p1: "0", p2: "1", margin: "0.05", level: "0.95" }],
   },
   // 1.96² · 0.95 · 0.05 / 0.03² = 202.7 -> 203 automated; 203 / 0.7 = 290 labeled; coverage margin 1.96 √(0.21 / 290).
   gate_label_rows: {
     values: { coverage: "0.7", accuracy: "0.95", margin: "0.03", level: "0.95" },
     expect: [["Automated rows needed", 203], ["Rows to label in all", 290], ["Coverage margin at that size", 0.05274226049925815]],
-    invalid: [{ coverage: "0", accuracy: "0.95", margin: "0.03", level: "0.95" }, { coverage: "0.7", accuracy: "0.95", margin: "0", level: "0.95" }],
+    invalid: [{ coverage: "0", accuracy: "0.95", margin: "0.03", level: "0.95" }, { coverage: "0.7", accuracy: "0.95", margin: "0", level: "0.95" },
+      { coverage: "0.7", accuracy: "1", margin: "0.03", level: "0.95" }, { coverage: "0.7", accuracy: "0", margin: "0.03", level: "0.95" }],
   },
 }, { ctx: () => fakeCtx({}) });
 

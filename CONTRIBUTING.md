@@ -61,6 +61,21 @@ For interface changes, also inspect the affected pages in a browser at desktop a
 Check keyboard navigation, empty and error states, and the request inspector where relevant.
 Syntax checks do not replace browser testing.
 
+### Adding a Lab pack
+
+Most small improvements belong in a Lab pack rather than in a page's own code. A pack is one new
+module under `static/js/lab/packs/<page>/` (or `jev/lab/packs/` for question checks, dataset health
+findings and offline `scripts/lab.py` commands) with its own test that runs the shared harness. Read
+the contract in `static/js/lab/kit.js` or `jev/lab/kit.py`, and the header of the surface you extend
+in `static/js/lab/surfaces/`. Then regenerate the page indexes and the numbered inventory:
+
+```sh
+node scripts/lab_inventory.mjs
+```
+
+Packs never call the model, touch the DOM or storage, or reach the network; the registry tests in
+`tests/js/lab/registry.test.mjs` and `tests/test_lab_registry.py` enforce it.
+
 ### Changes to model questions and policies
 
 Offline tests verify composition and policy logic; they cannot establish the quality of a model's

@@ -1,11 +1,12 @@
 // Starter pack for drift's "Label new traffic" queue ("workbench.drift.queue"; contract in
-// static/js/lab/surfaces/workbench-checks.js): labeling-progress and input-shape facts, advisory checks, two
+// static/js/lab/surfaces/workbench-checks.js): labeling-progress and input-shape facts, two advisory checks, two
 // explicit label edits, progress metrics, two exports and two commands. This queue is a targeted sample, not a random
 // audit: nothing here measures accuracy, and there are no model answers to show. Labels change only to values the user
 // types into an edit's parameters.
 import { csvText, definePack } from "../../kit.js";
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+const list = (value) => (Array.isArray(value) ? value : []);
 const textOf = (item) => (isObject(item?.row) && typeof item.row.text === "string" ? item.row.text : null);
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -34,18 +35,16 @@ export default definePack({
     { id: "has_picture", kind: "fact", type: "flag", label: "a picture", value: (item) => typeof item?.image === "string" },
     { id: "picture_not_loaded", kind: "fact", type: "flag", label: "a picture this page has not loaded", value: (item) => typeof item?.image === "string" && item.picture_loaded !== true },
     { id: "will_add", kind: "fact", type: "flag", label: "a place in the next Add", help: "Ready, and within the room the dataset has left.", value: (item) => item?.will_add === true },
-    { id: "status", kind: "fact", type: "category", label: "labeling status", value: (item) => item?.status || null },
+    { id: "status", kind: "fact", type: "category", label: "labeling status", value: (item) => (item?.status === "ready" || item?.status === "incomplete" ? item.status : null) },
     { id: "input_text", kind: "fact", type: "text", label: "input text", value: (item) => textOf(item) },
 
     { id: "blank_text", kind: "diagnostic", severity: "advice", label: "Blank input text",
       check: (item) => (textOf(item) !== null && !textOf(item).trim() ? "The input text is blank; label it from its other fields or picture." : null) },
     { id: "partly_labeled", kind: "diagnostic", severity: "advice", label: "Partly labeled",
-      check: (item) => (item?.labeled?.length && !item.ready ? `${item.missing.join(", ")} still ${item.missing.length === 1 ? "needs" : "need"} a label, so Add skips this row.` : null) },
-    { id: "over_room", kind: "diagnostic", severity: "advice", scope: "list", label: "More ready rows than room",
-      check: (items, ctx) => {
-        const ready = items.filter((item) => item.ready).length, room = ctx?.data?.room;
-        return Number.isInteger(room) && ready > room
-          ? `${plural(ready, "shown row")} ${ready === 1 ? "is" : "are"} ready but the dataset has room for ${room} more; Add takes the first ${room} in queue order and the rest stay here.` : null;
+      check: (item) => {
+        const missing = list(item?.missing);
+        return list(item?.labeled).length && item.ready !== true && missing.length
+          ? `${missing.join(", ")} still ${missing.length === 1 ? "needs" : "need"} a label, so Add skips this row.` : null;
       } },
 
     { id: "fill_blank_label", kind: "transform", label: "Set a label you choose where it is blank",
@@ -55,14 +54,14 @@ export default definePack({
         const question = questionOf(ctx, params.question);
         const option = question.options.find((entry) => entry.text === params.label.trim());
         if (!option) throw new Error(`“${params.label.trim()}” is not an option of ${question.id} (${question.options.map((entry) => entry.text).join(", ")}).`);
-        if (item.labels[question.id] !== null && item.labels[question.id] !== undefined) return null;
+        if (!isObject(item.labels) || (item.labels[question.id] !== null && item.labels[question.id] !== undefined)) return null;
         return { ...item, labels: { ...item.labels, [question.id]: option.value } };
       } },
     { id: "clear_question", kind: "transform", label: "Clear one question's labels", help: "On the shown rows only.",
       params: [QUESTION_PARAM],
       each: (item, params, ctx) => {
         const question = questionOf(ctx, params.question);
-        if (item.labels[question.id] === null || item.labels[question.id] === undefined) return null;
+        if (!isObject(item.labels) || item.labels[question.id] === null || item.labels[question.id] === undefined) return null;
         return { ...item, labels: { ...item.labels, [question.id]: null } };
       } },
 

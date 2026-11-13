@@ -34,7 +34,7 @@ export default definePack({
   id: "wb-policy-rows",
   surface: "workbench.policy",
   title: "Policy rows",
-  about: "Filters, sorts, checks, metrics and exports for the rows Policy scores at the current gates, plus Policy's checks as commands. Row exports hold your own run's answers and labels, numbered as Bulk's #; gate exports hold configuration and counts only.",
+  about: "Filters, sorts, checks, metrics and exports for the rows Policy scores at the current gates, plus Policy's checks as commands. The row export holds your own run's answers and labels, numbered as Bulk's #, never input text; gate exports hold configuration and counts only.",
   features: [
     { id: "min_margin", kind: "fact", type: "number", label: "smallest margin above a gate's threshold",
       help: "For each checked gate, signal minus threshold; the smallest. Negative: a gate holds the row.",
@@ -49,8 +49,6 @@ export default definePack({
         const signals = gated(item, ctx).map(([, s]) => s);
         return signals.length ? signals.reduce((total, s) => total + s, 0) / signals.length : null;
       } },
-    { id: "held_by_rule", kind: "fact", type: "flag", label: "held by a rule", help: "Its answers break a rule (or a rule cannot be checked), so Policy sends it to review.",
-      value: (item) => list(item.rules).length > 0 },
     { id: "held_alone", kind: "fact", type: "flag", label: "held by one gate alone", help: "Lowering that one gate's threshold would automate it.",
       value: (item) => list(item.held).length === 1 && list(item.rules).length === 0 },
     { id: "near_miss", kind: "fact", type: "flag", label: "a gate just below its threshold", help: `A held gate's signal is within ${NEAR} of its threshold.`,
@@ -80,14 +78,14 @@ export default definePack({
           ? `every gated signal is ${SURE} or more, yet ${list(item.wrong).join(", ") || "an answer"} is wrong: no threshold below ${SURE} would hold it` : null;
       } },
 
-    { id: "rule_share", kind: "metric", format: "percent", label: "share of shown rows a rule holds",
+    { id: "rule_share", kind: "metric", format: "percent", label: "Share of shown rows a rule holds",
       compute: (ctx) => {
         const rows = ctx.shown();
         if (!rows.length) return null;
         const held = rows.filter((item) => list(item.rules).length > 0).length;
         return { value: held / rows.length, detail: `${held} of ${rows.length}` };
       } },
-    { id: "near_misses", kind: "metric", format: "integer", label: "review rows a 0.05 lower threshold on each holding gate would automate",
+    { id: "near_misses", kind: "metric", format: "integer", label: "Reviews a 0.05 lower threshold on each holding gate would automate",
       help: "Rows held only by gates (no rule) whose every held signal is within 0.05 of its threshold. A what-if on these rows, not a recommendation.",
       compute: (ctx) => {
         const rows = ctx.shown();
@@ -96,7 +94,7 @@ export default definePack({
         return rows.filter((item) => item.outcome === "review" && !list(item.rules).length && list(item.held).length
           && list(item.held).every((qid) => signalOf(item, qid) !== null && num(active[qid]) !== null && nearMiss(signalOf(item, qid), active[qid]))).length;
       } },
-    { id: "automated_accuracy", kind: "metric", format: "percent", label: "accuracy of the shown automated rows",
+    { id: "automated_accuracy", kind: "metric", format: "percent", label: "Accuracy of the shown automated rows",
       help: "Automated shown rows whose gated answers are all right, with a 95% Wilson interval.",
       compute: (ctx) => {
         const auto = ctx.shown().filter((item) => item.outcome === "right" || item.outcome === "wrong");
@@ -106,11 +104,11 @@ export default definePack({
         return { value: right / auto.length, detail: `${right} of ${auto.length}; 95% interval ${percent(low)}–${percent(high)}` };
       } },
 
-    { id: "rows_csv", kind: "exporter", label: "Shown rows with their routes as CSV", mime: "text/csv", filename: "policy-rows.csv",
-      help: "Your run's gated answers, labels and signals for the shown rows, numbered as Bulk's #, with what holds each one. No input text.",
+    { id: "rows_csv", kind: "exporter", label: "Shown rows' routes, answers and labels as CSV", mime: "text/csv", filename: "policy-rows.csv",
+      help: "Your run's gated answers, labels and signals for the shown rows, numbered as Bulk's #, with the outcome, the gates and rule lines that hold each one and its wrong questions. No input text.",
       build: (ctx) => {
         const qids = Object.keys(activeOf(ctx));
-        return csvText([["#", "outcome", "held by", "rules", "wrong", ...qids.flatMap((q) => [`${q} answer`, `${q} label`, `${q} signal`])],
+        return csvText([["Bulk #", "outcome", "held by", "rules", "wrong", ...qids.flatMap((q) => [`${q} answer`, `${q} label`, `${q} signal`])],
           ...ctx.shown().map((item) => [item.number, item.outcome, list(item.held).join(" "), list(item.rules).join(" "), list(item.wrong).join(" "),
             ...qids.flatMap((q) => {
               const entry = item.answers?.[q];
@@ -122,7 +120,7 @@ export default definePack({
       build: (ctx) => {
         const questions = ctx.data.report?.questions;
         if (!Array.isArray(questions) || !questions.length) throw new Error("There is no Policy report yet: check a gate and label some rows.");
-        return csvText([["question", "type", "threshold", "right, every row", "accuracy", "low", "high", "holds for review", "holds alone", "wrong while automated"],
+        return csvText([["question", "type", "threshold", "right on every scored row", "accuracy", "low", "high", "holds for review", "holds alone", "wrong while automated"],
           ...questions.map((q) => [q.qid, q.type, fixed(q.threshold), q.correct, fixed(q.accuracy, 4), fixed(q.accuracy_low, 4), fixed(q.accuracy_high, 4),
             q.holds, q.only, q.wrong_automated])]);
       } },

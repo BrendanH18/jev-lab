@@ -277,7 +277,7 @@ export default definePack({
         const limit = readThreshold(raw);
         if (limit === null) return h("div", {}, input, h("p", { class: "faint", "data-close-error": "true" }, "Enter a threshold from 0 to 1."));
         const shown = shownOf(ctx);
-        const close = shown.map((item) => ({ item, gap: margin(item), list: ranked(item) })).filter((entry) => entry.gap !== null && entry.gap < limit)
+        const close = shown.map((item) => ({ item, gap: margin(item), list: ranked(item) })).filter((entry) => entry.gap !== null && entry.gap < limit - EPS)
           .sort((a, b) => a.gap - b.gap);
         return h("div", {}, h("label", {}, "Top two closer than ", input),
           !shown.length ? h("p", { class: "faint" }, "No answers are shown.")
@@ -299,7 +299,7 @@ export default definePack({
         })), h("p", { class: "faint" }, "Call numbers of your own calls in this page load; no answers are shown here."));
       } },
 
-    { id: "copy_text", kind: "command", title: "Copy the text of the shown answers", group: "Playground",
+    { id: "copy_text", kind: "command", title: "Copy the text these answers were made for", group: "Playground",
       when: (ctx) => typeof ctx.data?.text === "string" && ctx.data.text !== "",
       run: (ctx) => { ctx.env.copy(ctx.data.text); ctx.env.toast?.("Copied the text the shown answers were made for."); } },
     { id: "draft_previous", kind: "command", title: "Put the previous call's text in the box without asking", group: "Playground",

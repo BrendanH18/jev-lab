@@ -109,12 +109,15 @@ checkPack(pack, {
   more: [
     { values: { rows: C, target: "1" }, expect: (result) => { approx(result.rows[0][1], 5 / 9); approx(result.rows[2][1], 0.9); approx(result.rows[3][1], 3 / 9); approx(result.table.rows[2][2], 0.9); } },
     { values: { rows: "a\tb\t0.9\nb\tb\t0.8", target: "0.9" }, expect: both(near([["Coverage with these thresholds", 0], ["Accuracy with these thresholds", null], ["One shared threshold for the target", null],
-      ["Coverage with the shared threshold", 0], ["Accuracy with the shared threshold", null]]), tableIs(["Choice", "Rows given", "Threshold (confidence ≥)", "Automated", "Accuracy there"], [["b", 2, "none reaches the target", 0, "—"]])) },
+      ["Coverage with the shared threshold", 0], ["Accuracy with the shared threshold", null]]), tableIs(["Choice", "Rows given", "Threshold (confidence ≥)", "Automated", "Accuracy there"], [["b", 2, "none reaches the target", 0, null]])) },
   ],
   invalid: BAD_CHOICE },
   // At 0.6 six rows are automated: refund ×4 as answered (3 right), exchange ×2 (both right).
   per_class_at_threshold: { values: { rows: C, threshold: "0.6" }, expect: both(near([["Coverage", 6 / 9], ["Accuracy of automated rows", 5 / 6]]),
-    tableIs(["Class", "Rows labeled", "Automated as this answer", "Right among those", "Labeled rows automated correctly"], [["exchange", 4, 2, 1, 0.5], ["other", 1, 0, "—", 0], ["refund", 4, 4, 0.75, 0.75]])),
+    tableIs(["Class", "Rows labeled", "Automated as this answer", "Accuracy of those", "Share of labeled rows automated correctly"], [["exchange", 4, 2, 1, 0.5], ["other", 1, 0, null, 0], ["refund", 4, 4, 0.75, 0.75]])),
+  // at 0.85 only refund 0.95, refund 0.9 and exchange 0.9 are automated; nothing is labeled or answered "other" above it
+  more: [{ values: { rows: C, threshold: "0.85" }, expect: both(near([["Coverage", 3 / 9], ["Accuracy of automated rows", 1]]),
+    tableIs(["Class", "Rows labeled", "Automated as this answer", "Accuracy of those", "Share of labeled rows automated correctly"], [["exchange", 4, 1, 1, 0.25], ["other", 1, 0, null, 0], ["refund", 4, 2, 1, 0.5]])) }],
   invalid: BAD_CHOICE },
   automated_mistakes: { values: { rows: `${C}\nexchange,refund,0.65`, threshold: "0.45" }, expect: both(near([["Rows automated", 10], ["Automated mistakes", 4], ["Accuracy of automated rows", 0.6]]),
     tableIs(["Right label", "Answer given", "Mistakes", "Share of mistakes", "Highest confidence"], [["exchange", "refund", 2, 0.5, 0.8], ["exchange", "other", 1, 0.25, 0.45], ["refund", "exchange", 1, 0.25, 0.55]])),

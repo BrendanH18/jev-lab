@@ -6,11 +6,12 @@ import * as s0 from "../surfaces/claims.js";
 import p0 from "../packs/claims/claims-example-facts.js";
 import p1 from "../packs/claims/claims-order-desk.js";
 import p2 from "../packs/claims/claims-orders-more.js";
-import p3 from "../packs/claims/claims-result-insights.js";
-import p4 from "../packs/claims/claims-result-more.js";
-import p5 from "../packs/chrome/chrome-essentials.js";
-import p6 from "../packs/chrome/chrome-navigation.js";
-import p7 from "../packs/chrome/chrome-readouts.js";
+import p3 from "../packs/claims/claims-panels.js";
+import p4 from "../packs/claims/claims-result-insights.js";
+import p5 from "../packs/claims/claims-result-more.js";
+import p6 from "../packs/chrome/chrome-essentials.js";
+import p7 from "../packs/chrome/chrome-navigation.js";
+import p8 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7];
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7, p8];
 export const LAB = createLab(PACKS, { ...s0 });

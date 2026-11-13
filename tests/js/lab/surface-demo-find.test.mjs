@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { applyTransform, previewTransform, undoTransform } from "../../../static/js/lab/kit.js";
+import { applyTransform, improvementsOf, previewTransform, undoTransform } from "../../../static/js/lab/kit.js";
 import { createLab } from "../../../static/js/lab/host.js";
 import { FIND_RULES, findDocumentCtx, findDocumentLines, findLineItems, findResultsCtx } from "../../../static/js/lab/surfaces/find.js";
 import resultsPack from "../../../static/js/lab/packs/find/find-results-insights.js";
@@ -530,12 +530,14 @@ test("both starter packs render with the real ctx and every block open", () => {
     assert.equal(!!find(tree, (node) => node.attrs?.["data-lab-block"] === "transforms"), editable, `${id}: edits only on the document`);
     assert.equal(!!find(tree, (node) => node.attrs?.["data-lab-block"] === "imports"), editable, `${id}: imports only on the document`);
   }
-  assert.equal(LAB.count("find.results"), 47);
-  assert.equal(LAB.count("find.document"), 39);
+  const improvements = (id) => [resultsPack, documentPack].filter((pack) => pack.surface === id).reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
+  assert.ok(improvements("find.results") > 0 && improvements("find.document") > 0);
+  assert.equal(LAB.count("find.results"), improvements("find.results"));
+  assert.equal(LAB.count("find.document"), improvements("find.document"));
   // Commands reach the page through the mounted ctx.
   const ctx = sampleFindResultsCtx();
   LAB.mount("find.results", ctx);
-  const key = LAB.handleKey({ key: "ArrowDown", altKey: true, shiftKey: true, target: { tagName: "INPUT" } });
+  const key = LAB.handleKey({ key: "N", altKey: true, shiftKey: true, target: { tagName: "INPUT" } }); // Alt+Shift+N, even while typing
   assert.equal(key, "find-results-insights/next_question");
   assert.deepEqual(ctx.log, [["focusResult", 1]]);
 });

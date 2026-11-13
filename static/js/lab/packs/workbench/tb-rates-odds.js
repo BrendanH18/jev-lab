@@ -19,6 +19,17 @@ const need = (condition, message) => { if (!condition) throw new Error(message);
 const ceilSafe = (x) => Math.ceil(x - EPS);
 const odds = (p) => p / (1 - p);
 const fromOdds = (o) => o / (1 + o);
+// A number that overflowed or is undefined shows as unavailable (null), never as Infinity or NaN.
+const finite = (value) => (typeof value === "number" && !Number.isFinite(value) ? null : value);
+const finiteRows = (rows) => (Array.isArray(rows) ? rows.map((row) => (Array.isArray(row) ? row.map(finite) : row)) : rows);
+function finiteResult(result) {
+  if (Array.isArray(result)) return finiteRows(result);
+  if (!result || typeof result !== "object") return result;
+  const out = { ...result, rows: finiteRows(result.rows) };
+  if (result.table) out.table = { ...result.table, rows: finiteRows(result.table.rows) };
+  return out;
+}
+const finiteTool = (feature) => ({ ...feature, compute: (params) => finiteResult(feature.compute(params)) });
 const open = (p, label) => need(p > 0 && p < 1, `${label} must be between 0 and 1, not equal to either.`);
 
 // A duration in seconds as "1 h 30 min", "8 min 20 s", "45 s" or "250 ms".
@@ -114,24 +125,17 @@ export default definePack({
   id: "tb-rates-odds",
   surface: "workbench.toolbox",
   title: "Rate, queue and probability tools",
-  about: "Calculators for throughput under the rate cap, retries, backoff, latency percentiles and review queues, and for updating, combining and converting probabilities and odds. They compute from what you type only and never call the model.",
+  about: "Calculators for calls in flight under the rate cap, retries, backoff, latency percentiles and review queues, and for updating, combining and converting probabilities and odds. They compute from what you type only and never call the model.",
   features: [
     // ---------- Time and rate limits ----------
-    { id: "throughput_cap", kind: "tool", group: TIME, title: "Throughput with concurrency and a rate cap",
-      help: "Calls finish at the smaller of calls in flight ÷ latency and the per-minute cap. Shows which one binds, how much of the cap is used and how many calls in flight reach the cap.",
-      inputs: [COUNT("parallel", "Calls in flight at once", { min: 1, default: 8 }), LATENCY, CAP],
-      compute: ({ parallel, latency, cap }) => {
-        const byLatency = parallel * 60000 / latency, rate = Math.min(byLatency, cap);
-        return [["Limited by", cap <= byLatency ? "the rate cap" : "latency and calls in flight"], ["Calls per minute", rate], ["Calls per hour", rate * 60],
-          ["Share of the rate cap used", rate / cap], ["Calls in flight where the cap starts to bind", cap * latency / 60000]];
-      } },
     { id: "concurrency_needed", kind: "tool", group: TIME, title: "Calls in flight for a target throughput",
-      help: "How many calls must be in flight to finish a target number per minute at a latency, and whether the calls in flight you have (Bulk keeps eight) and the rate cap allow it.",
+      help: "How many calls must be in flight to finish a target number per minute at a latency (Little's law), whether the calls in flight you have (Bulk keeps eight) and the rate cap allow it, and from how many calls in flight the cap binds. Calls over the local cap are refused, not slowed down.",
       inputs: [NUM("target", "Target calls per minute", { min: 0.001 }), LATENCY, COUNT("available", "Calls in flight available", { min: 1, default: 8 }), CAP],
       compute: ({ target, latency, available, cap }) => {
         const needed = ceilSafe(target * latency / 60000);
         return [["Calls in flight needed", needed], ["Reachable with the calls in flight available", needed <= available ? "yes" : "no"],
-          ["Within the rate cap", target <= cap + EPS ? "yes" : "no"], ["Highest calls per minute possible", Math.min(available * 60000 / latency, cap)]];
+          ["Within the rate cap", target <= cap + EPS ? "yes" : "no"], ["Highest calls per minute possible", Math.min(available * 60000 / latency, cap)],
+          ["Calls in flight where the cap starts to bind", cap * latency / 60000]];
       } },
     { id: "review_queue", kind: "tool", group: TIME, title: "Review queue wait (M/M/1 or M/M/c)",
       help: "Rows sent to review arrive at random at an average rate and each reviewer clears them at an average rate (exponential times). Gives the chance a row waits, the average wait and the queue length; with one reviewer this is M/M/1.",
@@ -222,10 +226,13 @@ export default definePack({
         return [["Net rows cleared per hour", net], ["Hours to clear", hours], ["Duration", readable(hours * 3600)]];
       } },
     { id: "cap_overflow", kind: "tool", group: TIME, title: "Chance a minute's calls pass the rate cap",
-      help: "With calls arriving at random (Poisson) at an average rate, the chance a minute brings more calls than the cap and how many calls go over it on average. The server's window slides, so treat whole minutes as a guide.",
-      inputs: [NUM("mean", "Average calls per minute"), COUNT("cap", "Live calls allowed per minute", { default: 120 })],
+      help: "With calls arriving at random (Poisson) at an average rate, the chance a minute brings more calls than the cap and how many calls go over it on average; the server refuses those with a local rate-limit error. The server's window slides, so treat whole minutes as a guide.",
+      inputs: [NUM("mean", "Average calls per minute"), CAP],
       compute: ({ mean, cap }) => {
         const atLeastCap = poissonSf(cap, mean), over = poissonSf(cap + 1, mean);
+        if (atLeastCap === null || over === null) return [["Chance a minute stays within the cap", null], ["Chance a minute goes over the cap", null],
+          ["Average calls over the cap per minute", null], ["Share of calls over the cap", null]];
+        // E[(N − c)+] = Σ over k > c of (k − c)·pₖ = λ·P(N ≥ c) − c·P(N ≥ c + 1), since k·pₖ = λ·pₖ₋₁.
         const excess = Math.max(0, mean * atLeastCap - cap * over);
         return [["Chance a minute stays within the cap", 1 - over], ["Chance a minute goes over the cap", over], ["Average calls over the cap per minute", excess],
           ["Share of calls over the cap", mean > 0 ? excess / mean : null]];
@@ -282,14 +289,6 @@ export default definePack({
         open(from, "The old base rate"); open(to, "The new base rate");
         const factor = odds(to) / odds(from);
         return [["Odds multiplier", factor], ["Probability at the new base rate", p * factor / (p * factor + 1 - p)]];
-      } },
-    { id: "noisy_or_and", kind: "tool", group: ODDS, title: "Noisy-OR and noisy-AND of independent signals",
-      help: "For independent signals, each firing with its own probability: the chance at least one fires (noisy-OR, with an optional leak for causes not listed), none fire, or all fire (noisy-AND).",
-      inputs: [PROBS("Signal probabilities", "0.5\n0.2\n0.1"), SHARE("leak", "Leak: chance it fires with no listed cause", { default: 0 })],
-      compute: ({ probs, leak }) => {
-        const values = probabilityList(probs);
-        const none = (1 - leak) * values.reduce((product, p) => product * (1 - p), 1);
-        return [["At least one fires (noisy-OR)", 1 - none], ["None fire", none], ["All fire (noisy-AND)", values.reduce((product, p) => product * p, 1)], ["Strongest single signal", Math.max(...values)]];
       } },
     { id: "k_of_n", kind: "tool", group: ODDS, title: "Chance that at least k of n independent gates pass",
       help: "Each gate passes independently with its own probability. Gives the full distribution of how many pass, and the chance at least k, exactly k and all of them pass.",
@@ -367,5 +366,5 @@ export default definePack({
         return { rows: [["Most likely after the update", best[0]], ["Its probability", best[3]], ["Chance of the evidence", evidence]],
           table: { columns: ["Outcome", "Prior", "Likelihood", "Posterior"], rows } };
       } },
-  ],
+  ].map(finiteTool),
 });

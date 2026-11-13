@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import { runExporter } from "../../../static/js/lab/kit.js";
 import pack from "../../../static/js/lab/packs/claims/claims-orders-more.js";
 import { checkPack } from "./harness.mjs";
-import { sampleClaimsHistory, sampleClaimsOrdersCtx } from "./fixtures/claims.mjs";
+import { CLAIMS_POLICY, sampleClaimsHistory, sampleClaimsOrdersCtx } from "./fixtures/claims.mjs";
 
 // The fixture's seven orders: A-1041 ($38, delivered 3 days ago), A-1042 ($249, 12 days), A-1043 ($54, in transit),
 // A-1044 ($64, 41 days, selected), A-1045 ($310, processing), A-1046 ($72.50, 30 days, refunded), A-1047 (no total,
@@ -38,10 +39,12 @@ checkPack(pack, {
 
   stale_record: { hit: stale.items()[3], miss: [stale.items()[0], stale.items()[2]], ctx: stale,
     message: /^your check #4 saw refunded yes; the picker's record, loaded with the page, says refunded no\. / },
-  window_closing: { hit: [{ delivered: true, refunded: false, within_window: true, days_since_delivery: 28 }, { delivered: true, refunded: false, within_window: true, days_since_delivery: 30 }],
-    miss: [items[0], items[5], items[3], items[2]], message: /^the 30-day refund window closes (in 2 days|today) \(delivered (28|30) days ago\)\.$/ },
+  // 30 - 27 = 3 days left is the last day that warns; 30 - 26 = 4 does not.
+  window_closing: { hit: [{ delivered: true, refunded: false, within_window: true, days_since_delivery: 28 }, { delivered: true, refunded: false, within_window: true, days_since_delivery: 30 },
+    { delivered: true, refunded: false, within_window: true, days_since_delivery: 27 }],
+  miss: [items[0], items[5], items[3], items[2], { delivered: true, refunded: false, within_window: true, days_since_delivery: 26 }],
+  message: /^the 30-day refund window closes (in 2 days|today|in 3 days) \(delivered (28|30|27) days ago\)\.$/ },
   incomplete_record: { hit: items[6], miss: [items[0], items[2]], message: /^the record has no total or customer: refund amounts cannot be worked out\.$/ },
-  checked_repeatedly: { hit: items[0], miss: [items[1], items[2]], message: /^checked 2 times this session; each check is one paid call\.$/ },
   checked_unclaimable: { hit: [{ checked: 1, refunded: false, status: "in transit", delivered: false }, { checked: 2, refunded: true, status: "delivered", delivered: true }],
     miss: [items[2], items[0], items[5]], message: /^(1 paid check this session on an order that is in transit|2 paid checks this session on an order that is already refunded)/ },
   // Without A-1041 no shown order is left that could be approved automatically.
@@ -69,3 +72,18 @@ checkPack(pack, {
       assert.throws(() => runExporter(exporter("selected_order_text"), sampleClaimsOrdersCtx({ setup: null })), /No order is selected/);
     } },
 }, { ctx: () => sampleClaimsOrdersCtx() });
+
+// The readiness facts follow the sliders now: at a $15 limit A-1041's $19 credit is over it, at $0 every total is.
+test("claims-orders-more: headroom, credit and best case follow the automatic limit in the sliders", () => {
+  const low = sampleClaimsOrdersCtx({ settings: { ...CLAIMS_POLICY, auto_limit_usd: 15 } });
+  const fact = (id) => pack.features.find((feature) => feature.id === id);
+  const a1041 = low.items()[0];
+  assert.equal(fact("limit_headroom").value(a1041, low), -23);
+  assert.equal(fact("credit_within_limit").value(a1041, low), false);
+  assert.equal(fact("best_case").value(a1041, low), "review at best");
+  // Before the setup has loaded there are no sliders: nothing is worked out.
+  const before = sampleClaimsOrdersCtx({ setup: null });
+  assert.equal(fact("limit_headroom").value(items[0], before), null);
+  assert.equal(fact("best_case").value(items[0], before), null);
+  assert.equal(fact("credit_within_limit").value(items[0], before), false);
+});

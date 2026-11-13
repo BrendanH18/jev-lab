@@ -15,17 +15,27 @@ checkPack(pack, {
   signal_a: { items: rows(), values: [0.6, 0.3, 0.7, 0.85, 0.6, 0.36, 0.35] },
   signal_b: { items: rows(), values: [0.45, 0.7, 0.85, 0.4, null, 0.33, null] },
   signal_gap: { items: rows(), values: [0.15, 0.4, 0.15, 0.45, null, 0.03, null] },
-  row_chars: { items: [{ text: "Do you ship to Norway?" }, { text: "café ☕" }, { text: "" }], values: [22, 6, 0] },
-  // B's latency minus A's: 560-400, 500-380, 470-390, 610-420, 90-450 (the failed call's meta), 530-410, none for a skip.
-  latency_gap: { items: rows(), values: [160, 120, 80, 190, -360, 120, null] },
+  // "Do you ship to Norway?" is 22 characters; "café ☕" 6 code points (é precomposed); a row without text is unavailable.
+  row_chars: { items: [rows()[5], { text: "café ☕" }, { text: "" }, {}], values: [22, 6, 0, null] },
+  // B's latency minus A's from the fixture's meta: 560-400, 500-380, 470-390, 610-420, none for #5 (B's call failed, so
+  // its 90 ms is not an answer time), 530-410, none for a skip; a made-up row where B is faster: 350-500.
+  latency_gap: {
+    items: [...rows(), { meta: [{ latency_ms: 500 }, { latency_ms: 350 }], errors: [null, null], skipped: [false, false] }],
+    values: [160, 120, 80, 190, null, 120, null, -150],
+  },
   labeled: { items: rows(), values: [true, true, true, false, true, true, false] },
   rewritten: { items: rows(), values: [true, true, false, true, false, true, false] },
   confident_split: {
     items: [{ differs: true, signals: [0.85, 0.9] }, { differs: true, signals: [0.85, 0.4] }, { differs: false, signals: [0.9, 0.9] }, { differs: true, signals: [0.8, null] }],
     values: [true, false, false, false],
   },
-  orders_split: { items: rows(), values: [true, false, false, false, false, true, false] },
-  verdict: { items: rows(), values: ["only A right", "only B right", null, "no label", null, "both wrong", null] },
+  // B's orders: #1 shipping/billing, #6 other/billing split; an order with no readable pick is not a split.
+  orders_split: { items: [...rows(), { orders: [null, [null, "billing"]] }], values: [true, false, false, false, false, true, false, false] },
+  // The last item is a differing row whose label the report left out (verdict null although labeled).
+  verdict: {
+    items: [...rows(), { differs: true, verdict: null, label: "refund" }],
+    values: ["only A right", "only B right", null, "no label", null, "both wrong", null, "label not scored"],
+  },
   transition: { items: rows(), values: ["billing → shipping", "wholesale → shipping", "other → other", "billing → shipping", null, "billing → other", null] },
   row_text: {
     items: [rows()[0], rows()[2], rows()[5]],
@@ -82,6 +92,21 @@ checkPack(pack, {
     hidden: () => sampleCompareRowsCtx({ result: null }),
   },
 }, { ctx: () => sampleCompareRowsCtx() });
+
+test("wb-compare-rows: few labeled disagreements stays quiet when nothing is shown", () => {
+  const check = pack.features.find((feature) => feature.id === "small_sample").check;
+  assert.equal(check([]), null);
+  assert.equal(check(sampleCompareRowsCtx({ hide: [0, 1, 5] }).shown()), "Only 0 labeled disagreements are shown. With fewer than 10, which variant is ahead is rarely conclusive.");
+});
+
+test("wb-compare-rows: odd items give unavailable facts, not exceptions", () => {
+  for (const feature of pack.features.filter((entry) => entry.kind === "fact")) {
+    for (const odd of [{}, { signals: "x", picks: null, meta: 3, orders: {} }]) {
+      const value = feature.value(odd);
+      assert.ok(value === null || value === false || value === "", `${feature.id} gave ${JSON.stringify(value)}`);
+    }
+  }
+});
 
 test("wb-compare-rows: next question wraps from the last shared id to the first", () => {
   const ctx = sampleCompareRowsCtx({ qid: "spot" });

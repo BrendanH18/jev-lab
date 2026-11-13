@@ -126,7 +126,8 @@ function weightedKappa(ctx, power) {
   const entries = levelRows(ctx);
   if (!entries) return null;
   const levels = new Set(entries.flatMap((entry) => [entry.label, entry.predicted]));
-  for (const key of ctx?.data?.report?.classes || []) if (toNumber(key) !== null) levels.add(toNumber(key));
+  const reported = ctx?.data?.report?.classes;
+  if (Array.isArray(reported)) for (const key of reported) if (toNumber(key) !== null) levels.add(toNumber(key));
   const sorted = [...levels].sort((a, b) => a - b), k = sorted.length, n = entries.length;
   if (k < 2) return null;
   const at = new Map(sorted.map((level, i) => [level, i]));
@@ -343,15 +344,6 @@ const METRICS = [
       const [key, count] = [...pairs].reduce((best, entry) => (entry[1] > best[1] ? entry : best));
       return { value: key, detail: `${count} of ${plural(wrong, "wrong shown row")} (${percent(count / wrong)})` };
     } },
-  { id: "over_given", kind: "metric", format: "text", label: "Answer given most often beyond its labels",
-    help: "The option whose answer count exceeds its label count by the most rows (ties: the report's option order).",
-    compute: (ctx) => {
-      const t = tally(ctx);
-      if (!t) return null;
-      const best = t.list.reduce((top, s) => (s.answered - s.labeled > top.answered - top.labeled ? s : top), t.list[0]);
-      if (best.answered - best.labeled <= 0) return { value: null, detail: `every option is answered as often as it is labeled on ${shownRows(t.n)}` };
-      return { value: best.key, detail: `answered ${best.answered}, labeled ${best.labeled} of ${shownRows(t.n)} (${((best.answered - best.labeled) / t.n * 100).toFixed(1)} points more)` };
-    } },
 
   // Noul
   { id: "sensitivity", kind: "metric", format: "percent", label: "Sensitivity (yes rows answered yes)",
@@ -547,8 +539,8 @@ const METRICS = [
       const both = bothKinds(ctx);
       if (!both) return null;
       const low = Math.min(...both.right), high = Math.max(...both.wrong);
-      if (low > high) return { value: 0, detail: `every right row's signal is above every wrong row's (${high.toFixed(2)} < ${low.toFixed(2)})` };
-      return { value: both.pairs.filter((pair) => pair.s >= low && pair.s <= high).length, detail: `signals ${low.toFixed(2)}–${high.toFixed(2)} of ${shownRows(both.pairs.length)}` };
+      if (low > high) return { value: 0, detail: `every right row's signal is above every wrong row's (${high.toFixed(2)} < ${low.toFixed(2)}); signal: ${signalName(ctx)}` };
+      return { value: both.pairs.filter((pair) => pair.s >= low && pair.s <= high).length, detail: `signals ${low.toFixed(2)}–${high.toFixed(2)} of ${shownRows(both.pairs.length)}; signal: ${signalName(ctx)}` };
     } },
   { id: "accuracy_at_half", kind: "metric", format: "percent", label: "Accuracy when automating half the rows",
     help: "Accuracy of the automated rows at the highest 0.01 threshold that automates at least 50% of the shown rows. Tuned on these rows; check on unseen rows.",
@@ -604,18 +596,6 @@ const EXPORTS = [
         ...t.list.map((s) => [s.key, s.labeled, s.answered, s.tp, s.fp, s.fn, s.answered ? fixed(s.tp / s.answered) : "", s.labeled ? fixed(s.tp / s.labeled) : "",
           s.labeled || s.answered ? fixed((2 * s.tp) / (2 * s.tp + s.fp + s.fn)) : ""])]);
     } },
-  { id: "confusion_shares_csv", kind: "exporter", label: "Confusion matrix as shares of each label as CSV", mime: "text/csv",
-    help: "Aggregates of every scored row from the page's confusion matrix: each label row divided by its total, so a row reads as where that label's rows went.",
-    filename: (ctx) => `calibrate-${fileQid(ctx)}-confusion-shares.csv`,
-    build: (ctx) => {
-      const report = needReport(ctx);
-      if (!Array.isArray(report.classes) || !report.classes.length || !Array.isArray(report.confusion)) throw new Error("This question has no confusion matrix (a Box).");
-      return csvText([["label \\ answer", ...report.classes, "rows"], ...report.classes.map((key, i) => {
-        const counts = Array.isArray(report.confusion[i]) ? report.confusion[i].map((value) => num(value) ?? 0) : [];
-        const total = counts.reduce((sum, value) => sum + value, 0);
-        return [key, ...report.classes.map((_, j) => (total ? fixed((counts[j] || 0) / total) : "")), total];
-      })]);
-    } },
   { id: "reliability_csv", kind: "exporter", label: "Reliability bins with intervals as CSV", mime: "text/csv",
     help: "Aggregates of every scored row from the page's reliability table, with each bin's gap (stated − observed) and a 95% Wilson interval for its observed rate.",
     filename: (ctx) => `calibrate-${fileQid(ctx)}-reliability.csv`,
@@ -653,15 +633,6 @@ const EXPORTS = [
         rows.push([g + 1, fixed(part[0].s, 2), fixed(part[part.length - 1].s, 2), part.length, right, fixed(right / part.length), fixed(low), fixed(high)]);
       }
       return csvText([["group", "lowest signal", "highest signal", "rows", "right", "accuracy", "low", "high"], ...rows]);
-    } },
-  { id: "risk_coverage_csv", kind: "exporter", label: "Risk–coverage curve as CSV", mime: "text/csv",
-    help: "Aggregates over the shown rows: at each distinct signal from the highest down, the rows a threshold there automates, their share, the wrong ones and the share wrong.",
-    filename: (ctx) => `calibrate-${fileQid(ctx)}-risk-coverage.csv`,
-    build: (ctx) => {
-      const pairs = signalPairs(ctx);
-      if (!pairs.length) throw new Error("There are no shown rows to measure.");
-      return csvText([["threshold", "automated", "share", "wrong", "share wrong"],
-        ...riskSteps(pairs).map((step) => [fixed(step.s, 2), step.automated, fixed(step.automated / pairs.length), step.wrong, fixed(step.wrong / step.automated)])]);
     } },
   { id: "summary_markdown", kind: "exporter", label: "Calibrate summary as Markdown", mime: "text/markdown",
     help: "Aggregates only: question, basis, accuracy, the page's ECE, the slider's threshold and the targets. No inputs, answers or row numbers.",

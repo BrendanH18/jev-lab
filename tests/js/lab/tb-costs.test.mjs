@@ -17,21 +17,24 @@ const tableLike = (result, columns, expected) => {
 };
 
 checkPack(pack, {
-  // A: 100 × 500 × 0.05 / 1e6 = 0.0025; B: 100 × 800 × 0.05 / 1e6 = 0.004 (or 0.008 at 0.1).
+  // A: 100 × 500 × 0.05 / 1e6 = 0.0025; B: 100 × 800 × 0.05 / 1e6 = 0.004. With 20 of 120 rows held out and B averaging
+  // both option orders at 0.1: 100 rows, 100 + 200 calls, B = 200 × 800 × 0.1 / 1e6 = 0.016.
   compare_cost: {
     values: { rows: 100, tokensA: 500, tokensB: 800, priceA: 0.05 },
-    expect: [["Calls", 200], ["Variant A cost (USD)", 0.0025], ["Variant B cost (USD)", 0.004], ["Total cost (USD)", 0.0065], ["Extra cost of B over A (USD)", 0.0015]],
-    more: [{ values: { rows: 100, tokensA: 500, tokensB: 800, priceA: 0.05, priceB: 0.1 },
-      expect: [["Calls", 200], ["Variant A cost (USD)", 0.0025], ["Variant B cost (USD)", 0.008], ["Total cost (USD)", 0.0105], ["Extra cost of B over A (USD)", 0.0055]] }],
-    invalid: [{ rows: 0, tokensA: 1, tokensB: 1, priceA: 1 }, { rows: 1, tokensB: 1, priceA: 1 }],
+    expect: [["Rows compared", 100], ["Calls", 200], ["Variant A cost (USD)", 0.0025], ["Variant B cost (USD)", 0.004], ["Total cost (USD)", 0.0065], ["Extra cost of B over A (USD)", 0.0015]],
+    more: [{ values: { rows: 120, heldOut: 20, tokensA: 500, tokensB: 800, priceA: 0.05, priceB: 0.1, averageB: true },
+      expect: [["Rows compared", 100], ["Calls", 300], ["Variant A cost (USD)", 0.0025], ["Variant B cost (USD)", 0.016], ["Total cost (USD)", 0.0185], ["Extra cost of B over A (USD)", 0.0135]] },
+    { values: { rows: 100, tokensA: 500, tokensB: 500, priceA: 0.05, averageA: true },
+      expect: [["Rows compared", 100], ["Calls", 300], ["Variant A cost (USD)", 0.005], ["Variant B cost (USD)", 0.0025], ["Total cost (USD)", 0.0075], ["Extra cost of B over A (USD)", -0.0025]] }],
+    invalid: [{ rows: 0, tokensA: 1, tokensB: 1, priceA: 1 }, { rows: 1, tokensB: 1, priceA: 1 }, { rows: 10, heldOut: 10, tokensA: 1, tokensB: 1, priceA: 1 }],
   },
   // 120 − 20 = 100 calls × 400 × 0.05 / 1e6 = 0.002 per rerun; 0.05 / 0.002 = 25, 0.0499 / 0.002 = 24.95 → 24.
   check_rerun_cost: {
-    values: { labeled: 120, heldOut: 20, tokens: 400, price: 0.05, budget: 0.05 },
+    values: { rows: 120, heldOut: 20, tokens: 400, price: 0.05, budget: 0.05 },
     expect: [["Calls per rerun", 100], ["Cost per rerun (USD)", 0.002], ["Reruns the budget covers", 25]],
-    more: [{ values: { labeled: 120, heldOut: 20, tokens: 400, price: 0.05, budget: 0.0499 }, expect: [["Calls per rerun", 100], ["Cost per rerun (USD)", 0.002], ["Reruns the budget covers", 24]] },
-      { values: { labeled: 10, tokens: 400, price: 0.05 }, expect: [["Calls per rerun", 10], ["Cost per rerun (USD)", 0.0002], ["Reruns the budget covers", null]] }],
-    invalid: [{ labeled: 120, heldOut: 120, tokens: 400, price: 0.05 }],
+    more: [{ values: { rows: 120, heldOut: 20, tokens: 400, price: 0.05, budget: 0.0499 }, expect: [["Calls per rerun", 100], ["Cost per rerun (USD)", 0.002], ["Reruns the budget covers", 24]] },
+      { values: { rows: 10, tokens: 400, price: 0.05 }, expect: [["Calls per rerun", 10], ["Cost per rerun (USD)", 0.0002], ["Reruns the budget covers", null]] }],
+    invalid: [{ rows: 120, heldOut: 120, tokens: 400, price: 0.05 }, { heldOut: 0, tokens: 400, price: 0.05 }],
   },
   // A per call 300 × 0.05e-6 = 1.5e-5 → 0.015 for 1000 rows; B per call 900 × 0.05e-6 = 4.5e-5, escalated 250 rows → 0.01125;
   // B every row 0.045. At a B price of 0.1: 9e-5 per call, 250 → 0.0225, every row 0.09.
@@ -65,14 +68,6 @@ checkPack(pack, {
     expect: [["Calls separately", 300], ["Calls merged", 100], ["Input tokens separately", 111000], ["Input tokens merged", 47000], ["Tokens saved by merging", 64000],
       ["Share of tokens saved", 64000 / 111000], ["Cost separately (USD)", 0.00555], ["Cost merged (USD)", 0.00235], ["Saving (USD)", 0.0032]],
     invalid: [{ rows: 1, questions: 0, state: 1, question: 1, overhead: 0, price: 1 }],
-  },
-  // 120 × 50,000 = 6,000,000 tokens a month × 0.05 / 1e6 = 0.30; 12 months 3.60; 120 / 600 = 0.2.
-  shorter_request_saving: {
-    values: { removed: 120, perMonth: 50000, price: 0.05, current: 600 },
-    expect: [["Tokens saved per month", 6000000], ["Saving per month (USD)", 0.3], ["Saving over 12 months (USD)", 3.6], ["Share of each call removed", 0.2]],
-    more: [{ values: { removed: 120, perMonth: 50000, price: 0.05, months: 6 },
-      expect: [["Tokens saved per month", 6000000], ["Saving per month (USD)", 0.3], ["Saving over 6 months (USD)", 1.8], ["Share of each call removed", null]] }],
-    invalid: [{ removed: 120, perMonth: 1, price: 1, current: 100 }],
   },
   // 10,000 × 1.5 / 60 = 250 h ($7,500); with 60% automated 100 h ($3,000) + 10,000 × $0.0002 = $3,002.
   automation_savings: {
@@ -150,11 +145,15 @@ checkPack(pack, {
     more: [{ values: { build: 1500, before: 0.75, after: 0.75 }, expect: [["Saving per row (USD)", 0], ["Rows to break even", null], ["Months to break even", null]] }],
   },
   // 100 + 110 + 121 = 331; flat 12 × 100 = 1200; shrinking by half 100 + 50 = 150.
+  // At 1e-12 a month, exact fractions give Σₖ<₁₂ 100(1 + 1e-12)ᵏ = 1200 + 6.6e-9 (Math.pow(1 + g, n) − 1 would be 0.11 off).
+  // 11⁶⁰⁰ overflows a double, so the total and last month are unavailable (null), not Infinity.
   growth_cost: {
     values: { first: 100, growth: 0.1, months: 3 },
     expect: [["Total cost (USD)", 331], ["Cost of the last month (USD)", 121], ["Average per month (USD)", 331 / 3]],
     more: [{ values: { first: 100 }, expect: [["Total cost (USD)", 1200], ["Cost of the last month (USD)", 100], ["Average per month (USD)", 100]] },
-      { values: { first: 100, growth: -0.5, months: 2 }, expect: [["Total cost (USD)", 150], ["Cost of the last month (USD)", 50], ["Average per month (USD)", 75]] }],
+      { values: { first: 100, growth: -0.5, months: 2 }, expect: [["Total cost (USD)", 150], ["Cost of the last month (USD)", 50], ["Average per month (USD)", 75]] },
+      { values: { first: 100, growth: 1e-12, months: 12 }, expect: [["Total cost (USD)", 1200.0000000066], ["Cost of the last month (USD)", 100.0000000011], ["Average per month (USD)", 100.00000000055]], tolerance: 1e-14 },
+      { values: { first: 100, growth: 10, months: 600 }, expect: [["Total cost (USD)", null], ["Cost of the last month (USD)", null], ["Average per month (USD)", null]] }],
     invalid: [{ first: 100, growth: -1 }],
   },
   // At 0.9: 0.99, 0.95, 0.9 automated (expected mistakes 0.01 + 0.05 + 0.1 = 0.16), 0.7 and 0.5 reviewed.

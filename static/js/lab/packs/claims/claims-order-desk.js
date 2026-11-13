@@ -8,7 +8,7 @@ const windowDays = (ctx) => (Number.isFinite(ctx?.data?.rules?.window_days) ? ct
 const autoLimit = (ctx) => (Number.isFinite(ctx?.data?.settings?.auto_limit_usd) ? ctx.data.settings.auto_limit_usd : null);
 const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const money = (value) => `$${value.toFixed(2)}`;
-// Half the total rounded to cents, as jev/claims.py computes the 50% credit.
+// Half the total rounded to cents, as jev/claims.py computes the 50% credit (an exact half cent may round the other way there).
 const credit = (item) => (num(item?.total) === null ? null : Math.round(item.total * 50) / 100);
 const open = (item) => item?.delivered === true && item.refunded !== true;
 const shownOf = (ctx) => (ctx.shown ? ctx.shown() : ctx.items());
@@ -46,22 +46,21 @@ export default definePack({
     { id: "customer", kind: "fact", type: "text", label: "customer", value: (item) => item.customer },
     { id: "items", kind: "fact", type: "text", label: "items ordered", value: (item) => item.items },
     { id: "refunded", kind: "fact", type: "flag", label: "already refunded", value: (item) => item.refunded === true },
-    { id: "delivered", kind: "fact", type: "flag", label: "delivered", value: (item) => item.delivered === true },
     { id: "open_to_claim", kind: "fact", type: "flag", label: "open to a claim (delivered, not refunded)", value: (item) => open(item) },
-    { id: "inside_window", kind: "fact", type: "flag", label: "delivery inside the refund window", value: (item) => item.within_window === true },
-    { id: "full_over_limit", kind: "fact", type: "flag", label: "a full refund above the automatic limit",
-      value: (item, ctx) => autoLimit(ctx) !== null && num(item.total) !== null && item.total > autoLimit(ctx) },
 
     { id: "refunded_check", kind: "diagnostic", label: "Already refunded", severity: "advice",
       check: (item) => (item.refunded === true ? "a claim on this order is rejected (plain-code rule)." : null) },
     { id: "not_delivered_check", kind: "diagnostic", label: "Not delivered yet", severity: "advice",
       check: (item) => (item.status && item.delivered !== true ? `the order is ${item.status}; damage claims start after delivery.` : null) },
     { id: "outside_window_check", kind: "diagnostic", label: "Outside the refund window", severity: "advice",
-      check: (item, ctx) => (item.within_window === false ? `delivered ${item.days_since_delivery} days ago, past the ${windowDays(ctx)}-day window: a claim goes to a person.` : null) },
+      check: (item, ctx) => (item.within_window === false && item.refunded !== true && num(item.days_since_delivery) !== null
+        ? `delivered ${item.days_since_delivery} days ago, past the ${windowDays(ctx)}-day window: the window rule keeps a claim from automatic approval (plain-code rule, advisory).` : null) },
     { id: "credit_over_limit_check", kind: "diagnostic", label: "Even a 50% credit is above the automatic limit", severity: "advice",
       check: (item, ctx) => {
+        if (!open(item)) return null;
         const limit = autoLimit(ctx), half = credit(item);
-        return limit !== null && half !== null && half > limit ? `${money(half)} against a ${money(limit)} limit: any claim on it goes to a person.` : null;
+        return limit !== null && half !== null && half > limit
+          ? `${money(half)} against a ${money(limit)} limit: neither remedy fits the automatic limit, so no claim on it is approved automatically (plain arithmetic, advisory).` : null;
       } },
 
     { id: "open_count", kind: "metric", label: "shown orders open to a claim", format: "integer",

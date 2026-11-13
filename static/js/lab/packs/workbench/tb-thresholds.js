@@ -112,7 +112,6 @@ function thresholdsList(text) {
 
 const clears = (confidence, threshold) => confidence + SLACK >= threshold;
 const ratio = (top, bottom) => (bottom > 0 ? top / bottom : null);
-const dash = (value) => (value === null || value === undefined ? "—" : value);
 const zFor = (level) => normalQuantile(1 - (1 - Number(level)) / 2);
 
 function wilsonLow(successes, n, z) {
@@ -290,7 +289,7 @@ export default definePack({
           const mine = rows.filter((row) => row.choice === choice);
           const hit = lowestForTarget(sweep(mine.map((row) => row.c), mine.map((row) => row.right)), params.target);
           if (hit) { automated += hit.automated; correct += hit.correct; }
-          return [choice, mine.length, hit ? hit.threshold : "none reaches the target", hit ? hit.automated : 0, dash(hit ? hit.correct / hit.automated : null)];
+          return [choice, mine.length, hit ? hit.threshold : "none reaches the target", hit ? hit.automated : 0, hit ? hit.correct / hit.automated : null];
         });
         const shared = lowestForTarget(sweep(rows.map((row) => row.c), rows.map((row) => row.right)), params.target);
         return { rows: [["Coverage with these thresholds", automated / rows.length], ["Accuracy with these thresholds", ratio(correct, automated)], ["One shared threshold for the target", shared ? shared.threshold : null],
@@ -298,17 +297,17 @@ export default definePack({
         table: { columns: ["Choice", "Rows given", "Threshold (confidence ≥)", "Automated", "Accuracy there"], rows: table } };
       }),
     tool("per_class_at_threshold", "Per-class coverage and accuracy at a threshold",
-      `For a Choice question at one threshold, per class (every label and answer given): rows labeled with it, automated rows that answered it and how many were right, and the share of its labeled rows the gate automates correctly. ${CHOICE_FORMAT}`,
+      `For a Choice question at one threshold, per class (every label and answer given): rows labeled with it, automated rows that answered it and the share of those that were right, and the share of its labeled rows the gate automates correctly. ${CHOICE_FORMAT}`,
       [CHOICE_ROWS, THRESHOLD], (params) => {
         const rows = parseChoiceRows(params.rows);
         const classes = [...new Set(rows.flatMap((row) => [row.label, row.choice]))].sort(compareText);
         const auto = rows.filter((row) => clears(row.c, params.threshold));
         const right = auto.reduce((total, row) => total + row.right, 0);
         return { rows: [["Coverage", auto.length / rows.length], ["Accuracy of automated rows", ratio(right, auto.length)]],
-          table: { columns: ["Class", "Rows labeled", "Automated as this answer", "Right among those", "Labeled rows automated correctly"], rows: classes.map((name) => {
+          table: { columns: ["Class", "Rows labeled", "Automated as this answer", "Accuracy of those", "Share of labeled rows automated correctly"], rows: classes.map((name) => {
             const labeled = rows.filter((row) => row.label === name).length;
             const given = auto.filter((row) => row.choice === name), good = given.filter((row) => row.right).length;
-            return [name, labeled, given.length, dash(ratio(good, given.length)), dash(ratio(good, labeled))];
+            return [name, labeled, given.length, ratio(good, given.length), ratio(good, labeled)];
           }) } };
       }),
     tool("automated_mistakes", "Automated mistakes by label and answer",
@@ -372,7 +371,7 @@ export default definePack({
           table: { columns: ["Question", "Threshold", "Rows it blocks", "Rows only it blocks", "Coverage without it", "Accuracy without it"], rows: thresholds.map((threshold, q) => {
             const without = summary(q);
             return [q + 1, threshold, passes.filter((pass) => !pass[q]).length, passes.filter((pass) => !pass[q] && pass.every((ok, other) => ok || other === q)).length,
-              without.automated / rows.length, dash(ratio(without.correct, without.automated))];
+              without.automated / rows.length, ratio(without.correct, without.automated)];
           }) } };
       }),
     tool("two_question_search", "Two-question thresholds for a target accuracy",

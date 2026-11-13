@@ -27,13 +27,12 @@ checkPack(pack, {
   picture_not_loaded: { items: [D11, D8, D3], values: [true, false, false] },
   // Room for 1: new row 3 takes it, new row 11 is ready but waits.
   will_add: { items: [D3, D11, D5], values: [true, false, false] },
-  status: { items: [D3, D5, D11], values: ["ready", "incomplete", "ready"] },
+  status: { items: [D3, D5, D11, { status: "maybe" }], values: ["ready", "incomplete", "ready", null] },
   input_text: { items: [D3, D5, D12, NOTEXT], values: ["Two bags of Harbor House arrived crushed", "Can I pay by invoice for the cafe order?", "", ""] },
 
   blank_text: { hit: D12, miss: [D3, NOTEXT], message: /blank/ },
-  partly_labeled: { hit: [D5, D12], miss: [D3, D8, D11], message: /^(urgent|topic) still needs a label, so Add skips this row\.$/ },
-  over_room: { hitList: [D3, D11], missList: [D3, D5], ctx: ctx(),
-    message: /^2 shown rows are ready but the dataset has room for 1 more; Add takes the first 1 in queue order/ },
+  // New row 5 lacks urgent, new row 12 lacks topic; 8 has no label at all, 3 and 11 are ready.
+  partly_labeled: { hit: [D5, D12], miss: [D3, D8, D11, { labeled: ["tone"], ready: false }, {}], message: /^(urgent|topic) still needs a label, so Add skips this row\.$/ },
 
   fill_blank_label: { ctx: ctx(), input: [D3, D5, D8], params: { question: "urgent", label: "no" },
     output: [withLabels(D3, {}), withLabels(D5, { urgent: false }), withLabels(D8, { urgent: false })],

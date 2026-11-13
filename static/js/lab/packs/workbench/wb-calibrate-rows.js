@@ -65,23 +65,17 @@ export default definePack({
   id: "wb-calibrate-rows",
   surface: "workbench.calibrate",
   title: "Calibrate rows",
-  about: "Filters, sorts, checks, metrics and exports for the labeled rows Calibrate scores, plus threshold commands. Row exports hold your own run's answers and labels, numbered as Bulk's #, never input text or held-out rows.",
+  about: "Filters, sorts, checks, metrics and exports for the labeled rows Calibrate scores, plus threshold commands. The row export holds your own run's answers and labels, numbered as Bulk's #, never input text or held-out rows; the sweep and confusion exports hold counts and rates only.",
   features: [
     { id: "signal", kind: "fact", type: "number", label: "gating signal", help: "The value the threshold is compared with (0 to 1).", value: (item) => num(item.signal) },
     { id: "margin", kind: "fact", type: "number", label: "margin between the top two options",
       help: "The most likely option's probability minus the runner-up's; for a Noul |2p − 1|. Not available for a Box.", value: margin },
-    { id: "threshold_distance", kind: "fact", type: "number", label: "distance above the threshold",
-      help: "Signal minus the slider's threshold: negative rows go to review.", value: (item, ctx) => (num(item.signal) === null ? null : item.signal - thresholdOf(ctx)) },
     { id: "label_probability", kind: "fact", type: "number", label: "probability given to the label",
       help: "What the answer gave the human label (a Noul label of no gets 1 − P(yes)). Not available for a Box.", value: labelProbability },
-    { id: "automated", kind: "fact", type: "flag", label: "automated at the threshold", value: (item, ctx) => automated(item, ctx) },
-    { id: "wrong_automated", kind: "fact", type: "flag", label: "wrong but automated", value: (item, ctx) => item.correct === false && automated(item, ctx) },
     { id: "confident_mistake", kind: "fact", type: "flag", label: "a confident mistake", help: `Wrong while stating ${SURE} or more for its answer.`,
       value: (item) => item.correct === false && num(item.top) !== null && item.top >= SURE },
     { id: "close_call", kind: "fact", type: "flag", label: "a close call at the threshold", help: `The signal is within ${CLOSE} of the threshold.`,
       value: (item, ctx) => num(item.signal) !== null && Math.abs(item.signal - thresholdOf(ctx)) <= CLOSE + EPS },
-    { id: "short_list", kind: "fact", type: "flag", label: "a short list of two or more answers", help: "From the Answer sets fit for this question.",
-      value: (item) => !!item.set && item.set.size >= 2 },
     { id: "label_outside_set", kind: "fact", type: "flag", label: "a label the reviewer's list misses",
       help: "The list a reviewer would see does not hold the label.", value: (item) => !!item.set && item.set.covered === false },
     { id: "result", kind: "fact", type: "category", label: "result", value: (item) => (item.correct === true ? "right" : item.correct === false ? "wrong" : null) },
@@ -99,10 +93,11 @@ export default definePack({
       check: (rows) => {
         if (!rows.length) return null;
         const wrong = rows.filter((item) => item.correct === false).length;
+        if (wrong === 0) return `No shown row is wrong: the ${rows.length} shown rows cannot show where the signal fails, so any threshold looks safe on them.`;
         return wrong < 3 ? `Only ${wrong} wrong row${wrong === 1 ? "" : "s"} among the shown rows: a threshold that avoids them rests on very few mistakes.` : null;
       } },
 
-    { id: "auroc", kind: "metric", format: "number", label: "how well the signal ranks right rows above wrong ones (AUROC)",
+    { id: "auroc", kind: "metric", format: "number", label: "Signal AUROC: right rows ranked above wrong ones",
       help: "The chance a shown right row has a higher signal than a shown wrong row (ties count half). 0.5 is no better than chance; measured on these rows only.",
       compute: (ctx) => {
         const rows = ctx.shown().filter((item) => num(item.signal) !== null);
@@ -120,7 +115,7 @@ export default definePack({
         if (!rows.length) return null;
         return { value: rows.reduce((total, item) => total + (item.top - (item.correct ? 1 : 0)) ** 2, 0) / rows.length, detail: `${rows.length} rows` };
       } },
-    { id: "shown_accuracy", kind: "metric", format: "percent", label: "accuracy of the shown rows",
+    { id: "shown_accuracy", kind: "metric", format: "percent", label: "Accuracy of the shown rows",
       help: "Right shown rows over shown rows, whatever the threshold, with a 95% Wilson interval.",
       compute: (ctx) => {
         const rows = ctx.shown().filter((item) => typeof item.correct === "boolean");
@@ -129,7 +124,7 @@ export default definePack({
         const [low, high] = wilson(right, rows.length);
         return { value: right / rows.length, detail: `${right} of ${rows.length}; 95% interval ${percent(low)}–${percent(high)}` };
       } },
-    { id: "safe_threshold", kind: "metric", format: "number", label: "lowest threshold that automates no shown mistake",
+    { id: "safe_threshold", kind: "metric", format: "number", label: "Lowest threshold that automates no shown mistake",
       help: "On the 0.01 grid. Tuned on these rows, so optimistic until checked on unseen rows.",
       compute: (ctx) => {
         const rows = ctx.shown();
@@ -139,10 +134,10 @@ export default definePack({
           : { value: t, detail: `automates ${rows.filter((item) => num(item.signal) !== null && item.signal + EPS >= t).length} of ${rows.length} shown rows` };
       } },
 
-    { id: "rows_csv", kind: "exporter", label: "Shown rows as CSV", mime: "text/csv",
-      help: "Your run's answers and labels for the shown rows, numbered as Bulk's #, with the route at the slider's threshold. No input text.",
+    { id: "rows_csv", kind: "exporter", label: "Shown rows' answers and labels as CSV", mime: "text/csv",
+      help: "Your run's answers and labels for the shown rows, numbered as Bulk's #, with the signal, stated probability and the route at the slider's threshold. No input text.",
       filename: (ctx) => `calibrate-${fileQid(ctx)}-rows.csv`,
-      build: (ctx) => csvText([["#", "label", "answer", "right", "signal", "stated probability", "route"],
+      build: (ctx) => csvText([["Bulk #", "label", "answer", "right", "signal", "stated probability", "route"],
         ...ctx.shown().map((item) => [item.number, item.label, item.predicted, item.correct ? "yes" : "no", fixed(item.signal), fixed(item.top),
           automated(item, ctx) ? "auto" : "review"])]) },
     { id: "sweep_csv", kind: "exporter", label: "Threshold sweep at every 0.01 step as CSV", mime: "text/csv",
@@ -159,8 +154,12 @@ export default definePack({
       filename: (ctx) => `calibrate-${fileQid(ctx)}-confusion.csv`,
       build: (ctx) => {
         const rep = ctx.data.report;
-        if (!rep || !Array.isArray(rep.classes) || !rep.classes.length) throw new Error("This question has no confusion matrix (a Box, or no labels yet).");
-        return csvText([["label \\ answer", ...rep.classes], ...rep.classes.map((key, i) => [key, ...rep.confusion[i]])]);
+        const classes = Array.isArray(rep?.classes) ? rep.classes : [];
+        const matrix = Array.isArray(rep?.confusion) ? rep.confusion : [];
+        if (!classes.length || matrix.length !== classes.length || !matrix.every((row) => Array.isArray(row) && row.length === classes.length)) {
+          throw new Error("This question has no confusion matrix (a Box, or no labels yet).");
+        }
+        return csvText([["label \\ answer", ...classes], ...classes.map((key, i) => [key, ...matrix[i]])]);
       } },
 
     { id: "set_safe_threshold", kind: "command", title: "Set the threshold above every shown mistake", group: "Calibrate",

@@ -19,27 +19,38 @@ const three = { hide: ["mug_box", "refund_amount_ok", "tone"] };
 const p = (...values) => ({ probabilities: values.map((value, index) => ({ key: String(index), p: value })) });
 
 checkPack(pack, {
-  margin: { items, values: [0.71, 0, 0.28, null, 0.76, 0.04], ctx },
+  // Top two: 0.82 - 0.11, 0.45 - 0.45, Noul 0.64 - 0.36, no probabilities on a Box, 0.88 - 0.12, 0.52 - 0.48.
+  margin: { items: [...items, { probabilities: [null, { key: "a", p: 0.3 }, { key: "b", p: "0.9" }] }], values: [0.71, 0, 0.28, null, 0.76, 0.04, null], ctx },
   confidence: { items, values: [0.82, 0.45, null, 0.71, null, 0.52], ctx },
   top_probability: { items, values: [0.82, 0.45, 0.64, null, 0.88, 0.52], ctx },
-  expectation_check: { items, values: ["met", null, "missed", "met", null, null], ctx },
+  // intent = refund (met); angry 0.64 > max 0.5 (missed); mug box IoU 0.14 / 0.22 = 7/11 ≥ 0.5 (met). The extra items:
+  // a Score of 1.2 against a text bound "1.5" (float() reads it: missed), a Choice whose chosen option has p 0.6 against
+  // min 0.7 (missed even though the choice matches), and a bound that is not a number (nothing checked).
+  expectation_check: { items: [...items,
+    { type: "score", value: 1.2, expectation: { min: "1.5" }, answer: { type: "score", score: 1.2 } },
+    { type: "choice", value: "a", expectation: { choice: "a", min: 0.7 }, answer: { type: "choice", choice: "a", probabilities: { a: 0.6, b: 0.4 } } },
+    { type: "noul", value: 0.9, expectation: { min: "high" }, answer: { type: "noul", noul: 0.9 } },
+    // The same mug box against a stricter floor written as text: IoU 7/11 = 0.636 < 0.7 (missed); an expected box with a
+    // missing edge checks nothing.
+    { type: "box", box: { left: 0.25, top: 0.3, right: 0.65, bottom: 0.7 }, expectation: { box: { left: 0.2, top: 0.3, right: 0.6, bottom: 0.8 }, iou_min: "0.7" } },
+    { type: "box", box: { left: 0.25, top: 0.3, right: 0.65, bottom: 0.7 }, expectation: { box: { left: 0.2, top: 0.3, right: 0.6 } } }],
+  values: ["met", null, "missed", "met", null, null, "missed", "missed", null, "missed", null], ctx },
   answer_type: { items, values: ["choice", "score", "noul", "box", "noul", "choice"], ctx },
-  shown_answer: { items, values: ["refund", "1.35 / 2", "64.0%", "40% × 40%", "12.0%", "upset"], ctx },
-  box_area: { items: [{ box: { left: 0, top: 0, right: 0.5, bottom: 0.5 } }, { box: { left: 0.25, top: 0.3, right: 0.65, bottom: 0.7 } }, { box: null }],
-    values: [0.25, 0.16, null] },
+  box_area: { items: [{ box: { left: 0, top: 0, right: 0.5, bottom: 0.5 } }, { box: { left: 0.25, top: 0.3, right: 0.65, bottom: 0.7 } }, { box: null },
+    { box: { left: 0.6, top: 0.2, right: 0.4, bottom: 0.5 } }, { box: { left: 0.1, top: 0.1, right: 0.3 } }],
+  values: [0.25, 0.16, null, 0, null], tolerance: 1e-12 },
   question_gone: (() => {
     const gone = sampleBuildResultCtx({ rows: buildRows().slice(0, 6) });
     return { items: gone.items(), values: [false, false, false, false, false, true], ctx: gone };
   })(),
-  entropy: { items: [p(0.5, 0.5), p(1, 0), p(0.25, 0.25, 0.25, 0.25), p(1), p(0.5, 0.25, 0.25)], values: [1, 0, 1, null, 0.946395], tolerance: 1e-5 },
+  // (0.5, 0.25, 0.25): (0.5 ln 2 + 0.5 ln 4) / ln 3 = 1.5 ln 2 / ln 3 = 0.9463946...; (0.2, 0.2) rescales to (0.5, 0.5).
+  entropy: { items: [p(0.5, 0.5), p(1, 0), p(0.25, 0.25, 0.25, 0.25), p(1), p(0.5, 0.25, 0.25), p(0.2, 0.2), p(0, 0)],
+    values: [1, 0, 1, null, 1.5 * Math.LN2 / Math.log(3), 1, null], tolerance: 1e-12 },
 
   close_call: { hit: [tone, urgency], miss: [intent, mugBox], message: /^The top two answers are within (4\.0|0\.0) points/ },
-  between_levels: { hit: urgency, miss: [{ type: "score", value: 1.9 }, { type: "choice", value: "refund" }], message: /^Score 1\.35 sits between level 1 and level 2\.$/ },
+  between_levels: { hit: [urgency, { type: "score", value: 0.5 }], miss: [{ type: "score", value: 1.9 }, { type: "score", value: 1.3 }, { type: "choice", value: "refund" }],
+    message: /^Score (1\.35|0\.50) sits between level (1 and level 2|0 and level 1) \(local rule/ },
   missed_expectation: { hit: angry, miss: [intent, urgency], message: /misses the human expectation/ },
-  outdated_answers: (() => {
-    const stale = sampleBuildResultCtx({ stale: true });
-    return { hitList: stale.items(), missList: [], ctx: stale, message: /previous request/ };
-  })(),
 
   mean_confidence: [{ ctx, expect: 0.625, empty: empty() }, { ctx: sampleBuildResultCtx({ hide: ["intent"] }), expect: 0.56 }],
   latency_per_question: { ctx, expect: 412 / 6, empty: empty() },

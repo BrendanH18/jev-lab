@@ -39,7 +39,7 @@ export default definePack({
   id: "shield-signal-insights",
   surface: "shield.result",
   title: "Signal insights",
-  about: "Filters, checks, local what-if estimates, exports and a mute command for the weighted signals of the message you opened, "
+  about: "Filters, checks, local what-if estimates, exports, calculators and a mute command for the weighted signals of the message you opened, "
     + "from your own screen of it. The estimates are local arithmetic, never a new verdict; the CSV holds that message's answers.",
   features: [
     { id: "value", kind: "fact", type: "number", label: "signal value", unit: "0 to 1",
@@ -48,13 +48,6 @@ export default definePack({
     { id: "weight", kind: "fact", type: "number", label: "weight", unit: "0 to 1", value: (item) => finite(item?.weight) },
     { id: "contribution", kind: "fact", type: "number", label: "contribution", unit: "0 to 1", help: "min(1, weight × value).",
       value: (item) => finite(item?.contribution) },
-    { id: "share", kind: "fact", type: "number", label: "share of all contributions", unit: "0 to 1",
-      help: "This row's contribution divided by the sum over all eight signals.",
-      value: (item, ctx) => {
-        const own = finite(item?.contribution);
-        const total = contributionsOf(ctx.items()).reduce((a, b) => a + b, 0);
-        return own === null || total <= 0 ? null : own / total;
-      } },
     { id: "weight_change", kind: "fact", type: "number", label: "weight change from default", unit: "−1 to 1", value: weightChange },
 
     { id: "source", kind: "fact", type: "category", label: "signal source", value: (item) => SOURCE_WORDS[item?.source] || null },
@@ -74,20 +67,22 @@ export default definePack({
         return `${item.name} is ${percent(value)}, but its weight ${weight.toFixed(2)} lets it add only ${percent(finite(item.contribution) ?? 0)} to the risk.`;
       } },
     { id: "near_hard_rule", kind: "diagnostic", severity: "advice", label: "Just under a hard rule",
+      help: "AI instructions or credential ask less than 10 points under the hard-rule threshold now set on its slider.",
       check: (item, ctx) => {
         const rule = HARD_RULE_SIGNALS[item?.id];
         const cut = finite(ctx?.data?.policy?.hard_rule_at);
         const value = finite(item?.value);
-        if (!rule || cut === null || value === null || value >= cut || cut - value >= 0.1) return null;
+        if (!rule || cut === null || value === null || value >= cut || cut - value >= 0.1 - 1e-9) return null;
         return `${item.name} is ${percent(value)}, ${((cut - value) * 100).toFixed(1)} points under the hard-rule cut (${percent(cut)}) for ${rule}.`;
       } },
     { id: "single_driver", kind: "diagnostic", severity: "info", scope: "list", label: "One signal carries the risk",
+      help: "One shown signal holds at least 75% of the shown signals' summed contributions.",
       check: (items) => {
         const contributions = contributionsOf(items);
         const total = contributions.reduce((a, b) => a + b, 0);
-        const top = items.find((item) => finite(item.contribution) === Math.max(...contributions));
+        const top = items.find((item) => finite(item?.contribution) === Math.max(...contributions));
         if (!top || total <= 0 || top.contribution / total < 0.75) return null;
-        return `${top.name} holds ${percent(top.contribution / total)} of all contributions: a change to its weight decides this verdict.`;
+        return `${top.name} holds ${percent(top.contribution / total)} of the shown signals' summed contributions: the risk rests mostly on its weight, though hard rules can still decide the level.`;
       } },
 
     { id: "risk_without_top", kind: "metric", format: "percent", label: "Risk without the strongest signal (local estimate)",
@@ -116,7 +111,8 @@ export default definePack({
       help: "this message's signal values (its answers), weights and contributions; no message text",
       filename: "shield-signals.csv", mime: "text/csv",
       build: (ctx) => csvText([["signal", "name", "source", "value", "weight", "default_weight", "contribution", "hard_rules"],
-        ...ctx.shown().map((item) => [item.id, item.name, item.source, item.value ?? "", item.weight ?? "", item.default_weight ?? "", item.contribution ?? "", item.rules.join(" ")])]) },
+        ...ctx.shown().map((item) => [item.id, item.name, item.source, item.value ?? "", item.weight ?? "", item.default_weight ?? "", item.contribution ?? "",
+          (Array.isArray(item.rules) ? item.rules : []).join(" ")])]) },
     { id: "policy_json", kind: "exporter", label: "Weights and thresholds as JSON",
       help: "the slider settings only; no messages and no answers", filename: "shield-policy.json", mime: "application/json",
       build: (ctx) => {
@@ -141,13 +137,16 @@ export default definePack({
         return [["combined risk", noisyOr(values)], ["strongest alone", Math.max(...values)], ["signals", values.length]];
       } },
     { id: "weight_for", kind: "tool", title: "Weight for a contribution", group: "Shield",
-      help: "The weight that makes one signal with this probability contribute the target amount (capped at 1).",
+      help: "The weight that makes one signal with this probability contribute the target amount (capped at 1), and the lowest slider step (0.05) that reaches it.",
       inputs: [{ name: "probability", label: "Signal probability", type: "number", min: 0, max: 1, default: 0.8 },
         { name: "target", label: "Target contribution", type: "number", min: 0, max: 1, default: 0.4 }],
       compute: ({ probability, target }) => {
         if (probability === 0) throw new Error("A signal with probability 0 contributes nothing at any weight.");
         const weight = target / probability;
-        return weight > 1 ? { rows: [["weight needed", 1]], note: `Even weight 1 gives only ${probability}.` } : [["weight needed", weight]];
+        if (weight > 1 + 1e-12) return { rows: [["weight needed", 1]], note: `Even weight 1 gives only ${probability}.` };
+        // The slider moves in steps of 0.05: the first step at or above the exact weight (1e-9 absorbs float noise).
+        const step = Math.min(1, Number((Math.ceil(weight * 20 - 1e-9) / 20).toFixed(2)));
+        return [["weight needed", weight], ["lowest slider step that reaches it", step]];
       } },
   ],
 });

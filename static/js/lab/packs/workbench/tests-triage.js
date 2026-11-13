@@ -7,17 +7,23 @@ import { definePack } from "../../kit.js";
 const DAY_MS = 86400000;
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const questionsOf = (item) => (Array.isArray(item?.questions) ? item.questions : []);
+const questionsOf = (item) => (Array.isArray(item?.questions) ? item.questions.filter(isObject) : []);
 const checksOf = (item) => (item?.result && Array.isArray(item.result.checks) ? item.result.checks : []);
-const typeCount = (type) => (item) => questionsOf(item).filter((question) => question.type === type).length;
+const typeCount = (type) => (item) => (Array.isArray(item?.questions) ? item.questions.filter((question) => question?.type === type).length : null);
 // Verdict facts need a successful call: null before a run and after a call error.
 const answered = (item) => !!item?.result && !item.result.error;
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+const TYPES = ["noul", "choice", "score", "box"];
+// A question type from the fixed vocabulary; any other string a file holds reads "other", so no authored text leaks.
+const typeName = (type) => (TYPES.includes(type) ? type : "other");
+const criteriaOf = (question) => (Array.isArray(question?.criteria) ? question.criteria : []);
+// Min and max bound the answer for Noul, Choice and Score; the run ignores them on a Box.
+const bounded = (question) => ["noul", "choice", "score"].includes(question?.type);
 
 // Range bounds an expectation may hold for a question: probabilities for Noul and Choice, levels for a Score.
 function boundRange(question) {
   if (question.type === "noul" || question.type === "choice") return [0, 1];
-  if (question.type === "score" && question.criteria.length) return [0, question.criteria.length - 1];
+  if (question.type === "score" && criteriaOf(question).length) return [0, criteriaOf(question).length - 1];
   return null;
 }
 
@@ -66,7 +72,7 @@ export default definePack({
         const values = checksOf(item).map((check) => finite(check.confidence)).filter((value) => value !== null);
         return values.length ? Math.min(...values) : null;
       } },
-    { id: "age_days", kind: "fact", type: "number", label: "days since last saved", unit: "days", help: "Whole UTC days since saved_at; unknown when the file has none.",
+    { id: "age_days", kind: "fact", type: "number", label: "days since last saved", unit: "days", help: "Whole 24-hour days from saved_at to now; unknown when the file has none or the time cannot be read, and 0 for a save time after the clock.",
       value: (item, ctx) => {
         const saved = finite(item?.saved_ms), now = finite(ctx?.data?.now);
         return saved === null || now === null ? null : Math.max(0, Math.floor((now - saved) / DAY_MS));
@@ -75,20 +81,22 @@ export default definePack({
       value: (item) => questionsOf(item).some((question) => isObject(question.expect) && !Object.keys(question.expect).length) },
     { id: "unreachable_choice", kind: "fact", type: "flag", label: "an expected option that is not offered", help: "Such a test can never pass.",
       value: (item) => questionsOf(item).some((question) => question.type === "choice" && typeof question.expect?.choice === "string"
-        && !question.criteria.some((criterion) => criterion.key === question.expect.choice)) },
+        && !criteriaOf(question).some((criterion) => criterion?.key === question.expect.choice)) },
     { id: "answer_model", kind: "fact", type: "category", label: "answering model", value: (item) => item?.result?.meta?.model || null },
     { id: "type_mix", kind: "fact", type: "category", label: "question type mix",
+      help: "The distinct question types the test asks, such as \"choice + noul\"; a type outside noul, choice, score and box reads \"other\".",
       value: (item) => {
-        const types = [...new Set(questionsOf(item).map((question) => question.type || "unknown"))].sort();
+        const types = [...new Set(questionsOf(item).map((question) => typeName(question?.type)))].sort();
         return types.length ? types.join(" + ") : null;
       } },
 
     { id: "min_above_max", kind: "diagnostic", severity: "problem", label: "Empty expectation range",
-      check: (item) => questionsOf(item).filter((question) => finite(question.expect?.min) !== null && finite(question.expect?.max) !== null && question.expect.min > question.expect.max)
+      help: "A Noul, Choice or Score expectation whose min is above its max (the run ignores min and max on a Box).",
+      check: (item) => questionsOf(item).filter((question) => bounded(question) && finite(question.expect?.min) !== null && finite(question.expect?.max) !== null && question.expect.min > question.expect.max)
         .map((question) => `${question.id}: min is above max, so this check can never pass.`) },
     { id: "choice_on_non_choice", kind: "diagnostic", severity: "advice", label: "Expected option on a question without options",
       check: (item) => questionsOf(item).filter((question) => question.type !== "choice" && isObject(question.expect) && Object.hasOwn(question.expect, "choice"))
-        .map((question) => `${question.id}: a ${question.type || "question"} has no options, so "choice" is ignored.`) },
+        .map((question) => `${question.id}: a ${TYPES.includes(question.type) ? question.type : "question of this type"} has no options, so "choice" is ignored.`) },
     { id: "bound_out_of_range", kind: "diagnostic", severity: "problem", label: "Expectation bound outside the answer's range",
       check: (item) => questionsOf(item).flatMap((question) => {
         const range = boundRange(question);
@@ -100,7 +108,7 @@ export default definePack({
       check: (items) => {
         const groups = new Map();
         for (const item of items) {
-          const key = String(item.name || "").trim().replace(/\s+/g, " ").toLowerCase();
+          const key = String(item?.name || "").trim().replace(/\s+/g, " ").toLowerCase();
           if (key) groups.set(key, [...(groups.get(key) || []), item.id]);
         }
         return [...groups.values()].filter((ids) => ids.length > 1).map((ids) => `${ids.join(", ")} share a name.`);
@@ -117,14 +125,8 @@ export default definePack({
     { id: "median_latency", kind: "metric", format: "ms", label: "Median measured latency",
       help: "Latest call of each shown test that has one. Not wall time.",
       compute: (ctx) => {
-        const values = ctx.shown().map((item) => finite(item.result?.meta?.latency_ms)).filter((value) => value !== null);
+        const values = ctx.shown().map((item) => finite(item?.result?.meta?.latency_ms)).filter((value) => value !== null);
         return values.length ? { value: median(values), detail: plural(values.length, "call") } : null;
-      } },
-    { id: "input_tokens_total", kind: "metric", format: "integer", label: "Measured input tokens",
-      help: "Sum over the latest call of each shown test that has one.",
-      compute: (ctx) => {
-        const values = ctx.shown().map((item) => finite(item.result?.meta?.input_tokens)).filter((value) => value !== null);
-        return values.length ? { value: values.reduce((sum, value) => sum + value, 0), detail: plural(values.length, "call") } : null;
       } },
 
     { id: "results_markdown", kind: "exporter", label: "Shown results as a Markdown table", filename: "jev-test-results.md", mime: "text/markdown",

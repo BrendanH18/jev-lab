@@ -446,13 +446,22 @@ export function parseKeys(keys) {
     alt: flags.includes("Alt"), shift: flags.includes("Shift"), bare: !flags.some((flag) => flag !== "Shift") };
 }
 
+// The letter or digit of the physical key ("KeyN" -> "n", "Digit2" -> "2"), or null.
+function physicalKey(event) {
+  const code = String(event.code || "");
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  return null;
+}
+
 // Whether a keydown event is exactly this chord. A one-character symbol such as "?" matches whatever Shift state
-// the keyboard layout needs to type it.
+// the keyboard layout needs to type it. With Alt (Option on a Mac) held, macOS types a composed character such as
+// "˜" for Option+Shift+N, so a letter or digit chord with Alt also matches its physical key.
 export function keysMatch(event, keys) {
   const chord = typeof keys === "string" ? parseKeys(keys) : keys;
   if (!chord || !event || typeof event.key !== "string") return false;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  if (key !== chord.key) return false;
+  if (key !== chord.key && !(chord.alt && /^[a-z0-9]$/.test(chord.key) && physicalKey(event) === chord.key)) return false;
   const ctrl = !!event.ctrlKey, meta = !!event.metaKey;
   if (chord.mod ? !(ctrl || meta) : (ctrl !== chord.ctrl || meta !== chord.meta)) return false;
   if (!!event.altKey !== chord.alt) return false;

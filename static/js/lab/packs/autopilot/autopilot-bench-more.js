@@ -68,19 +68,6 @@ function gapVerdict(stat) {
   return "no clear difference";
 }
 
-function statsText(ctx) {
-  const list = sameModel(ctx), model = modelName(latest(ctx)?.model);
-  const time = interval(knownOf(list, saved)), gap = interval(knownOf(list, parallelGap)), tokens = pooledShare(list, "input_tokens");
-  const lines = [`Autopilot benchmark, ${plural(list.length, "run")} on ${model} in this page load (measured; latency varies from run to run):`];
-  lines.push(`- Wall time saved by merging vs calls in turn: ${time ? `${ms(time.mean)} on average, ${intervalText(time)}` : "not measured"}`);
-  lines.push(`- Merged minus parallel wall time: ${gap ? `${signedMs(gap.mean)} on average, ${intervalText(gap)} (${gapVerdict(gap)})` : "not measured"}`);
-  lines.push(`- Input tokens saved: ${tokens === null ? "not measured" : pct(tokens)}`);
-  return `${lines.join("\n")}\n`;
-}
-
-const RUN_COLUMNS = ["run", "model", ...MODES.flatMap(([mode]) => [`${mode} wall ms`, `${mode} input tokens`])];
-const runRow = (run) => [run.run, modelName(run.model), ...MODES.flatMap(([mode]) => [field(run, mode, "wall_ms") ?? "", field(run, mode, "input_tokens") ?? ""])];
-
 const MEASURES = [["wall_ms", "Wall time", (value) => ms(value)], ["input_tokens", "Input tokens", (value) => Math.round(value).toLocaleString("en-US")],
   ["cost_usd", "Cost", (value) => `$${Number(value.toPrecision(3))}`]];
 const BAR = 20;
@@ -122,8 +109,6 @@ export default definePack({
         const a = field(latest(ctx), "sequential", "wall_ms"), b = field(latest(ctx), "parallel", "wall_ms");
         return a !== null && b !== null && b > 0 ? a / b : null;
       } },
-    { id: "pooled_token_share", kind: "metric", format: "percent", label: "input tokens saved, pooled over the latest model's runs",
-      compute: (ctx) => pooledShare(sameModel(ctx), "input_tokens") },
     { id: "pooled_cost_share", kind: "metric", format: "percent", label: "measured cost saved, pooled over the latest model's runs",
       compute: (ctx) => pooledShare(sameModel(ctx), "cost_usd") },
     { id: "merged_spread", kind: "metric", format: "ms", label: "spread of merged wall time, latest model",
@@ -133,7 +118,7 @@ export default definePack({
       help: "The latest merged wall time minus the median of earlier runs on the same model; positive means slower this time.",
       compute: (ctx) => {
         const last = latest(ctx), now = field(last, "merged", "wall_ms");
-        const earlier = knownOf(sameModel(ctx).filter((run) => run !== last), (run) => field(run, "merged", "wall_ms"));
+        const earlier = knownOf(sameModel(ctx).filter((run) => run.run !== last.run), (run) => field(run, "merged", "wall_ms"));
         return now === null || !earlier.length ? null : { value: now - median(earlier), detail: `against the median of ${plural(earlier.length, "earlier run")}` };
       } },
     { id: "merged_vs_slower_call", kind: "metric", format: "ms", label: "merged call minus the slower separate call",
@@ -187,23 +172,6 @@ export default definePack({
         ...runs(ctx).map((run) => [run.run, modelName(run.model), perCall(run, "shield") ?? "", perCall(run, "dispatch") ?? "", perCall(run, "merged") ?? "",
           field(run, "sequential", "wall_ms") ?? "", field(run, "merged", "wall_ms") ?? ""])], ",") },
 
-    // ---------- commands ----------
-    { id: "copy_stats", kind: "command", title: "Copy merge statistics with intervals", group: "Autopilot",
-      when: (ctx) => sameModel(ctx).length > 0,
-      run: (ctx) => {
-        if (!sameModel(ctx).length) throw new Error("Run the benchmark first.");
-        ctx.env.copy(statsText(ctx));
-        ctx.env.toast("Copied the merge statistics.");
-      } },
-    { id: "copy_runs_tsv", kind: "command", title: "Copy benchmark runs as tab-separated rows", group: "Autopilot",
-      when: (ctx) => runs(ctx).length > 0,
-      run: (ctx) => {
-        const list = runs(ctx);
-        if (!list.length) throw new Error("Run the benchmark first.");
-        ctx.env.copy(`${[RUN_COLUMNS, ...list.map(runRow)].map((row) => row.join("\t")).join("\n")}\n`);
-        ctx.env.toast(`Copied ${plural(list.length, "benchmark run")}.`);
-      } },
-
     // ---------- panels ----------
     { id: "savings_by_model", kind: "panel", title: "Merge savings by model",
       improvements: [{ id: "by_model", title: "Group this page load's benchmark runs by model in a savings table" },
@@ -211,9 +179,8 @@ export default definePack({
         { id: "parallel_interval", title: "Show a 95% interval for merged minus parallel wall time" },
         { id: "verdict", title: "Say whether the merged call was reliably faster than parallel calls" },
         { id: "more_runs", title: "Say when a model needs another run before an interval can be shown" },
-        { id: "shares", title: "Show each model's pooled token and cost saving shares" },
-        { id: "copy", title: "Copy the savings table as tab-separated text" }],
-      render: (h, ctx, api) => {
+        { id: "shares", title: "Show each model's pooled token and cost saving shares" }],
+      render: (h, ctx) => {
         const groups = byModel(runs(ctx));
         if (!groups.length) return h("p", { class: "faint" }, "No benchmark run yet in this page load.");
         const range = (stat) => (!stat ? "—" : stat.low === null ? "needs 2 runs" : `${ms(stat.low)} to ${ms(stat.high)}`);
@@ -226,8 +193,7 @@ export default definePack({
         return h("div", {}, h("p", { class: "faint" }, "Measured by your own runs in this page load; models are never pooled. Intervals are 95% t-intervals over runs, so latency noise widens them."),
           h("div", { class: "scroll" }, h("table", { class: "table lab-table" }, h("thead", {}, h("tr", {}, columns.map((title) => h("th", {}, title)))),
             h("tbody", {}, rows.map((row, index) => h("tr", { "data-model": groups[index].model }, row.map((value, at) => h("td", { "data-col": KEYS[at] }, value))))))),
-          short.length ? h("ul", { "data-more-runs": "" }, short.map((group) => h("li", {}, `Run the benchmark once more on ${group.model} for an interval.`))) : null,
-          h("button", { class: "btn sm ghost", "data-copy": "savings", onclick: () => { api.copy(`${[columns, ...rows].map((row) => row.join("\t")).join("\n")}\n`); api.toast("Copied the savings table."); } }, "Copy table"));
+          short.length ? h("ul", { "data-more-runs": "" }, short.map((group) => h("li", {}, `Run the benchmark once more on ${group.model} for an interval.`))) : null);
       } },
     { id: "run_compare", kind: "panel", title: "Compare two benchmark runs",
       improvements: [{ id: "pick", title: "Pick any two benchmark runs of this page load to compare" },

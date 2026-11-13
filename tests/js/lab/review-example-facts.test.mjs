@@ -17,9 +17,11 @@ checkPack(pack, {
   stars: { items: [{ stars: 5 }, { stars: 2 }, { stars: null }], values: [5, 2, null] },
   chars: { items: [{ chars: 89 }, { chars: 9 }, { chars: "x" }], values: [89, 9, null] },
   words: { items: [{ words: 16 }, { words: 0 }, {}], values: [16, 0, null] },
-  // "No..." is one break, and the empty run after the last "!" is not a sentence.
-  sentences: { items: [{ text: "Best flat white. Great croissant!" }, { text: "Fine." }, { text: "Is it fresh? No... It was not!" }, { text: "" }, {}],
-    values: [2, 1, 3, 0, null] },
+  // "No..." is one break; a dot inside quickfix.example or $3.50 is not followed by a space, so it ends no sentence;
+  // a run of marks alone ("?!") holds no letter or digit and is not a sentence.
+  sentences: { items: [{ text: "Best flat white. Great croissant!" }, { text: "Fine." }, { text: "Is it fresh? No... It was not!" }, { text: "" }, {},
+    { text: "Cracked screen? Quickfix Phones on Elm Road fixes it while you wait at quickfix.example!" }, { text: "Paid $3.50 for a flat white. ?!" }],
+  values: [2, 1, 3, 0, null, 2, 1] },
   triaged: { items: [{ triaged: 2 }, { triaged: 0 }, {}], values: [2, 0, null] },
   channel: { items: [{ channel_label: "Map listing", channel: "maps" }, { channel_label: "", channel: "fax" }, { channel_label: "", channel: "" }],
     values: ["Map listing", "fax", null] },
@@ -30,8 +32,9 @@ checkPack(pack, {
   has_subject: { items: [{ about: "Pier Street café" }, { about: "   " }, {}], values: [true, false, false] },
   loaded: { items: [{ loaded: true }, { loaded: false }], values: [true, false] },
   expected_flag: { items: [{ expect: { flags: ["safety"] } }, { expect: { flags: [] } }, { expect: null }], values: [true, false, false] },
-  money: { items: [{ text: "Total waste of $180." }, { text: "It cost 24 dollars" }, { text: "Three months old" }, { text: "Order 12 arrived" }],
-    values: [true, true, false, false] },
+  money: { items: [{ text: "Total waste of $180." }, { text: "It cost 24 dollars" }, { text: "Three months old" }, { text: "Order 12 arrived" },
+    { text: "A €9.50 refund" }, { text: "£ 4 off" }, { text: "Paid 3.5 USD" }, { text: "Costs dollars" }, { text: "$ signs everywhere" }, {}],
+  values: [true, true, false, false, true, true, true, false, false, false] },
   question: { items: [{ text: "Could you send a fresh bag?" }, { text: "Fine." }], values: [true, false] },
 
   no_expectation: { hit: { label: "Example 6", expect: null }, miss: { label: "Flat beans", expect: { action: "reply", team: "roasting", flags: [] } }, message: /no expected decision/ },
@@ -69,6 +72,14 @@ checkPack(pack, {
     filename: "review-examples.md",
     text: "- **Phone repair ad** (5 stars, Map listing): Cracked screen? Quickfix Phones on Elm Road fixes it while you wait at quickfix.example!\n"
       + "- **Example 6** (? stars, fax): Fine.\n",
+    excludes: ["moderate", "not_about_us"],
+    // A line break inside the words stays inside one list item, and a blank subject adds no comma.
+    check: () => {
+      const setup = sampleReviewsSetup();
+      setup.examples = [{ label: "Two lines", stars: 4, channel: "app", about: "  ", text: "Good beans.\nSlow   courier." }];
+      const out = pack.features.find((feature) => feature.id === "shown_markdown").build(sampleReviewsExamplesCtx({ setup }));
+      assert.equal(out, "- **Two lines** (4 stars, App store review): Good beans. Slow courier.\n");
+    },
   },
 
   // From Flat beans (index 1), with Scalded wrist (index 2) hidden by a filter, the next shown is index 3.

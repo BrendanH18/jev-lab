@@ -35,14 +35,21 @@ checkPack(pack, {
   // Turn 2 chose return_policy while order_status had the highest probability; odd turn 1 chose order_status in a tie
   // that the first intent in order (brewing_guide) wins.
   choice_differs: { items: [F[2], F[1], O[1], O[2]], values: [true, false, true, false] },
-  // Odd turn 1: missed 0.5 sits exactly on missed_at 0.5. F3's nearest is intent 0.66 against 0.6 (0.06 away).
-  near_cut: { ctx: oddCtx, items: [O[1], F[1], F[3]], values: [true, false, false] },
+  // Default cuts: person 0.5, missed 0.5, resolved 0.7, intent 0.6, frustration 2.5. Odd turn 1: missed 0.5 sits exactly on
+  // its cut. F3's nearest is intent 0.66 against 0.6 (0.06 away). 0.45 and 0.55 are both exactly 0.05 from 0.5 and must
+  // read alike although binary floats put them at 0.04999… and 0.05000…; 2.7 is exactly 0.2 above 2.5, 2.71 is 0.21.
+  near_cut: { ctx: oddCtx, items: [O[1], F[1], F[3], { evidence: { missed: 0.45 } }, { evidence: { missed: 0.55 } }, { evidence: { asks_for_person: 0.56 } },
+    { evidence: { frustration: 2.7 } }, { evidence: { frustration: 2.71 } }, { evidence: { intent_prob: 0.65 } }, { evidence: { resolved: 0.64 } }, {}],
+  values: [true, false, false, true, true, false, true, false, true, false, false] },
   action_now: { items: [F[1], F[2], F[3], R[3], O[2]], values: ["reply", "clarify", "handoff", "reply", null] },
   action_sent: { items: [R[3], R[1], O[2]], values: ["handoff", "reply", null] },
   intent: { items: [F[1], S[1], T[1], O[1], O[2]], values: ["order status", "shipping times", "other", "brewing guide", null] },
   message: { items: [F[1], O[2]], values: ["Where is my order?", "Hello?"] },
 
-  close_intents: { hit: [F[2], O[1]], miss: [F[1], F[3], O[2]], message: /\(\d+\.\d%\) and .+ \(\d+\.\d%\) are less than 10 points apart/ },
+  // 0.5 against 0.4 is exactly 10 points (0.09999… in binary floats) and must not count; 0.5 against 0.41 is 9 points.
+  close_intents: { hit: [F[2], O[1], { intents: { order_status: 0.5, return_policy: 0.41 } }],
+    miss: [F[1], F[3], O[2], { intents: { order_status: 0.5, return_policy: 0.4 } }, { intents: { order_status: 1 } }, {}],
+    message: /\(\d+\.\d%\) and .+ \(\d+\.\d%\) are less than 10 points apart/ },
   frustration_rising: { hitList: ctx().items(), missList: ctx({ chat: "shipping" }).items(),
     message: /^Frustration rose on every turn from turn 1 to turn 3 \(1\.1 to 3\.8 of 4\)\.$/ },
 
@@ -109,4 +116,20 @@ test("draft_next_sample refuses to overwrite a typed draft, and the policy comma
   assert.deepEqual(c.log, []);
   assert.equal(feature("restore_sent_policy").when(empty()), false);
   assert.equal(feature("draft_next_sample").when(ctx({ chat: "odd", running: true })), false);
+});
+
+test("near_cut has no policy to compare with before the setup loads, and frustration_rising skips odd items", () => {
+  assert.equal(feature("near_cut").value(F[3], { data: {} }), false);
+  assert.equal(feature("near_cut").value({ evidence: { missed: 0.5 } }, { data: { policy: { missed_at: 0.5 } } }), true);
+  const items = [null, { n: "2" }, ...ctx().items()];
+  const found = runDiagnostics([["k", feature("frustration_rising")]], items, ctx());
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /turn 1 to turn 3/);
+});
+
+test("inspect_newest picks the highest turn number even when the list order differs", () => {
+  const c = ctx({ chat: "shipping" });
+  const reversed = { ...c, items: () => c.items().slice().reverse() };
+  feature("inspect_newest").run(reversed);
+  assert.deepEqual(c.log, [["inspect", 2]]);
 });

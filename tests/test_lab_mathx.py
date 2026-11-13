@@ -897,9 +897,13 @@ class ReferenceTableTests(Close, unittest.TestCase):
     def test_exact_rows_are_the_correctly_rounded_exact_values(self):
         """A check on the table: rows that come from exact rational arithmetic are recomputed with Fraction here."""
         def binomial(n, p, low, high):
-            p = Fraction(p)
-            return sum((Fraction(math.comb(n, j)) * p ** j * (1 - p) ** (n - j) for j in range(max(0, low), min(n, high) + 1)),
-                       Fraction(0))
+            """sum over j in [low, high] of C(n, j) p^j (1 - p)^(n - j), in integers over the common denominator."""
+            ratio = Fraction(p)
+            top, bottom = ratio.numerator, ratio.denominator
+            total = 0
+            for j in range(max(0, low), min(n, high) + 1):
+                total += math.comb(n, j) * top ** j * (bottom - top) ** (n - j)
+            return Fraction(total, bottom ** n)
 
         checked = 0
         for name, args, expected, _tolerance in REFERENCE["values"]:
@@ -911,7 +915,7 @@ class ReferenceTableTests(Close, unittest.TestCase):
             elif name == "hypergeometricPmf" and isinstance(expected, float) and args[1] <= 10 ** 6:
                 k, population, successes, draws = args
                 exact = Fraction(math.comb(successes, k) * math.comb(population - successes, draws - k), math.comb(population, draws))
-            elif name == "incompleteBeta" and all(isinstance(value, int) for value in args[1:]) and 0 < args[0] < 1:
+            elif name == "incompleteBeta" and isinstance(expected, float) and all(isinstance(v, int) for v in args[1:]) and 0 < args[0] < 1:
                 x, a, b = args
                 exact = binomial(a + b - 1, x, a, a + b - 1)
             elif name == "choose" and expected is not None:
@@ -924,7 +928,8 @@ class ReferenceTableTests(Close, unittest.TestCase):
         with localcontext() as context:
             context.prec = 50
             for name, args, expected, tolerance in REFERENCE["values"]:
-                if name == "chiSquareSf" and isinstance(args[1], int) and args[1] % 2 == 0 and 0 < args[0] <= 1000:
+                if name == "chiSquareSf" and isinstance(expected, float) and isinstance(args[1], int) and args[1] > 0 and args[1] % 2 == 0 \
+                        and 0 < args[0] <= 1000:
                     half = Decimal(args[0]) / 2
                     term, total = Decimal(1), Decimal(1)
                     for j in range(1, args[1] // 2):
@@ -964,12 +969,14 @@ class DomainTests(unittest.TestCase):
                 1.7976931348623157e308]
         values = edge + [-value for value in edge if value != 0]
         few = values[::3]
-        slow_shapes = {"beta_quantile", "chi_square_quantile", "incomplete_beta"}   # huge shapes run 500,000 loop steps
+        # Huge shapes run their loops up to 500,000 steps, which takes a while in pure Python; the quantile functions
+        # repeat that per Newton step, so they get a shorter grid (the JavaScript test runs the full one).
+        slow = {"beta_quantile": 1e100, "incomplete_beta": 1e100, "chi_square_quantile": 1e6}
         for name, args in VALID.items():
             function = getattr(mathx, name)
             grid = values if len(args) <= 2 else few
-            if name in slow_shapes:
-                grid = [value for value in grid if abs(value) < 1e100]
+            if name in slow:
+                grid = [value for value in grid if abs(value) < slow[name]]
             for call in itertools.product(grid, repeat=len(args)):
                 result = function(*call)
                 if name.startswith("is_"):
@@ -983,7 +990,7 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(mathx.choose(10, 3.0), 120.0)
         self.assertIsInstance(mathx.choose(10, 3), float)
         self.assertEqual(mathx.choose(10 ** 15, 1), 1e15)
-        self.assertEqual(mathx.binomial_pmf(3.0, 3, 0.5), 0.125)
+        self.assertLess(abs(mathx.binomial_pmf(3.0, 3, 0.5) - 0.125), 1e-16, "an integral float is an integer")
         self.assertIsNone(mathx.binomial_pmf(3.5, 3, 0.5))
         self.assertEqual(mathx.erf(10 ** 20), 1.0)
         self.assertIsNone(mathx.erf(10 ** 400), "an int too large for a float is not a number here")
@@ -1017,8 +1024,11 @@ class StandardLibraryTests(Close, unittest.TestCase):
         self.assertNear(mathx.normal_quantile(0.975), 1.959963984540054, 1e-15, "the published 97.5% point")
 
     def test_log_gamma_and_binomial_coefficients(self):
+        # math.lgamma differs between builds by a few units in the last place, and near the zeros at 1 and 2 only
+        # absolutely, so the comparison is relative to max(1, |ln gamma|)
         for x in (1e-8, 0.1, 0.5, 0.75, 1.25, 3.0, 4.5, 9.99, 10.01, 57.3, 1000.5, 1e7):
-            self.assertNear(mathx.log_gamma(x), math.lgamma(x), 5e-15, "log_gamma(%r)" % x)
+            expected = math.lgamma(x)
+            self.assertLessEqual(abs(mathx.log_gamma(x) - expected), 5e-15 * max(1.0, abs(expected)), "log_gamma(%r)" % x)
         self.assertEqual(mathx.log_gamma(1), 0.0)
         self.assertEqual(mathx.log_gamma(2), 0.0)
         for n in range(0, 200):
@@ -1081,6 +1091,7 @@ class ClosedFormTests(Close, unittest.TestCase):
         for x in (1e-10, 0.3, 4.0, 50.0):
             self.assertNear(mathx.chi_square_cdf(x, 2), -math.expm1(-x / 2), 4e-15, "chi_square_cdf(%r, 2)" % x)
         self.assertEqual(mathx.incomplete_gamma_p(5e-324, 1), 1.0)
+        self.assertEqual(mathx.incomplete_gamma_p(5e-324, 0.9), 1.0, "x^a e^-x / gamma(a) underflows, P does not")
 
     def test_quantiles_published_and_closed_form(self):
         self.assertNear(mathx.student_t_quantile(0.975, 10), 2.2281388519649385, 1e-11, "as tables print it")

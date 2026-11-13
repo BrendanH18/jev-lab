@@ -26,6 +26,12 @@ checkPack(pack, {
       { values: { k: 0, n: 10 }, expect: [["Proportion", 0], ["Lower bound", 0], ["Upper bound", 1 - Math.pow(0.025, 1 / 10)]], tolerance: 1e-9 },
       { values: { k: 10, n: 10 }, expect: [["Proportion", 1], ["Lower bound", Math.pow(0.025, 1 / 10)], ["Upper bound", 1]], tolerance: 1e-9 },
       { values: { k: 3, n: 20, level: "0.99" }, expect: [["Proportion", 0.15], ["Lower bound", 0.017642637954194573], ["Upper bound", 0.449465406739486]], tolerance: 1e-8 },
+      // k = 1 of n = 100,000 at 99%: the lower bound has the closed form 1 − (1 − 0.005)^(1/n) = 5.0125e-8; the upper bound
+      // is the chi-square (4 df, 0.995) quantile 14.860259 ÷ 2n = 7.42990e-5 (large-n Poisson limit, so a looser check).
+      { values: { k: 1, n: 100000, level: "0.99" }, expect: (result) => {
+        assert.ok(Math.abs(result.rows[1][1] - (1 - Math.pow(0.995, 1e-5))) < 1e-15);
+        assert.ok(Math.abs(result.rows[2][1] - 14.860259 / 2e5) < 1e-8);
+      } },
     ],
     invalid: [{ k: 4, n: 3 }, { k: 1, n: 100001 }],
   },
@@ -33,6 +39,9 @@ checkPack(pack, {
     values: { n: 100 },
     expect: [["Error rate is at most", 0.029513049607039932], ["Accuracy is at least", 0.9704869503929601], ["Shortcut: −ln(1 − confidence) ÷ n", 0.029957322735539908]],
     tolerance: 1e-12,
+    // 99%, 50 rows: 1 − 0.01^(1/50) and ln(100) ÷ 50 (Python's math module).
+    more: [{ values: { n: 50, level: "0.99" }, expect: [["Error rate is at most", 0.08798916064409024], ["Accuracy is at least", 1 - 0.08798916064409024],
+      ["Shortcut: −ln(1 − confidence) ÷ n", 0.09210340371976182]], tolerance: 1e-12 }],
     invalid: [{ n: 0 }],
   },
   newcombe_difference: {
@@ -51,14 +60,18 @@ checkPack(pack, {
   rows_for_margin: {
     values: { margin: 0.05, population: 1000 },
     expect: [["Rows needed", 385], ["With the population correction", 278]],
-    more: [{ values: { margin: 0.03, p: 0.2, level: "0.9" }, expect: [["Rows needed", 481], ["With the population correction", null]] }],
+    more: [{ values: { margin: 0.03, p: 0.2, level: "0.9" }, expect: [["Rows needed", 481], ["With the population correction", null]] },
+      // 2.5758293^2 × 0.25 ÷ 0.01 = 165.87 → 166; with 200 people: 165.87 ÷ (1 + 164.87 ÷ 200) = 90.92 → 91.
+      { values: { margin: 0.1, level: "0.99", population: 200 }, expect: [["Rows needed", 166], ["With the population correction", 91]] }],
     invalid: [{ margin: 0 }, { margin: 0.05, p: 1.5 }],
   },
   margin_for_rows: {
     values: { n: 400, population: 2000 },
     expect: [["Margin of error", 0.04899909961350135], ["With the population correction", 0.0438370876709984]],
     tolerance: 1e-12,
-    more: [{ values: { n: 400 }, expect: [["Margin of error", 0.04899909961350135], ["With the population correction", null]], tolerance: 1e-12 }],
+    more: [{ values: { n: 400 }, expect: [["Margin of error", 0.04899909961350135], ["With the population correction", null]], tolerance: 1e-12 },
+      // 1.6448536 × √(0.9 × 0.1 ÷ 100) = 0.0493456.
+      { values: { n: 100, p: 0.9, level: "0.9" }, expect: [["Margin of error", 0.04934560880854415], ["With the population correction", null]], tolerance: 1e-12 }],
     invalid: [{ n: 400, population: 100 }],
   },
   rows_with_no_errors: {
@@ -75,7 +88,12 @@ checkPack(pack, {
   },
   run_cost: {
     values: { rows: 1000, tokens: 500 },
-    expect: [["Input tokens", 500000], ["Estimated cost (USD)", 0.021], ["Estimated cost per 1,000 rows (USD)", 0.021]],
+    expect: (result) => {
+      assert.deepEqual(result.rows.map(([label]) => label), ["Input tokens", "Estimated cost (USD)", "Estimated cost per 1,000 rows (USD)"]);
+      assert.equal(result.rows[0][1], 500000);
+      assert.ok(Math.abs(result.rows[1][1] - 0.021) < 1e-15 && Math.abs(result.rows[2][1] - 0.021) < 1e-15);
+      assert.equal(result.note, "An estimate, not measured spend.");
+    },
     more: [{ values: { rows: 250, tokens: 400, calls: 2, price: 0.1 }, expect: [["Input tokens", 200000], ["Estimated cost (USD)", 0.02], ["Estimated cost per 1,000 rows (USD)", 0.08]] }],
     invalid: [{ rows: 0, tokens: 500 }, { rows: 10 }],
   },

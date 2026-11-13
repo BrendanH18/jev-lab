@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
+import { improvementsOf } from "../../../static/js/lab/kit.js";
 import { reviewsExamplesCtx, reviewsResultCtx } from "../../../static/js/lab/surfaces/reviews.js";
 import exampleFacts from "../../../static/js/lab/packs/reviews/review-example-facts.js";
 import resultInsights from "../../../static/js/lab/packs/reviews/review-result-insights.js";
@@ -263,12 +264,16 @@ test("a Lab filter and sort reach shown(); active() counts them and reset() clea
   assert.deepEqual(examples.shown().map((item) => item.label), setup.examples.map((example, index) => example.label || `Example ${index + 1}`));
 
   const result = sampleReviewsResultCtx({ matches: (item, ctx) => lab.matches("reviews.result", item, ctx), arrange: (list, ctx) => lab.arrange("reviews.result", list, ctx) });
-  lab.view("reviews.result").filters = [{ key: "review-result-insights/has_cut", op: "with" }];
+  // A minimum of 0 keeps exactly the answers a policy cut reads: the others have no distance and fail any bound.
+  lab.view("reviews.result").filters = [{ key: "review-result-insights/cut_distance", op: "min", value: "0" }];
   lab.view("reviews.result").sort = { key: "review-result-insights/cut_distance", dir: "asc" };
   // Distances: severity 0.38, tone 1.95, safety 0.48, wants_reply 0.33, about_us 0.48 (ties keep page order).
   assert.deepEqual(result.shown().map((item) => item.id), ["wants_reply", "severity", "safety", "about_us", "tone"]);
   const section = lab.section(fakeEnv(), "reviews.result", result);
-  assert.match(textOf(section), /Lab tools · 42/);
+  assert.equal(lab.active("reviews.result"), 2);
+  assert.match(textOf(section), new RegExp(`Lab tools · ${improvementsOf(resultInsights).length}(?!\\d)`));
+  lab.reset("reviews.result");
+  assert.deepEqual(result.shown().map((item) => item.id), result.items().map((item) => item.id), "reset() gives back the page's list");
 });
 
 // Rebuilds a page function from static/js/reviews.js with stand-ins for what it reads.

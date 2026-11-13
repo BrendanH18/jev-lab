@@ -1,15 +1,16 @@
 // Starter pack for the answers of the Build tab's latest Run (surface workbench.build.result, contract in
 // static/js/lab/surfaces/workbench-build.js). Every value comes from the user's own Run in this page session; rules
 // applied to it (margins, expectation checks) are local, advisory code and say so.
-import { csvText, definePack } from "../../kit.js";
+import { csvText, definePack, toNumber } from "../../kit.js";
 
 const hasOwn = (object, key) => !!object && typeof object === "object" && Object.prototype.hasOwnProperty.call(object, key);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const RUN_NOTE = "From your latest Run in this page session.";
+const probsOf = (item) => (Array.isArray(item?.probabilities) ? item.probabilities.map((entry) => finite(entry?.p)).filter((p) => p !== null) : []);
 
 // Top probability minus the runner-up; null with fewer than two probabilities.
 function margin(item) {
-  const sorted = (item.probabilities || []).map((entry) => entry.p).sort((a, b) => b - a);
+  const sorted = probsOf(item).sort((a, b) => b - a);
   return sorted.length >= 2 ? sorted[0] - sorted[1] : null;
 }
 
@@ -29,8 +30,13 @@ function expectationCheck(item) {
   const answer = item.answer || {};
   if (!expect) return null;
   if (item.type === "box") {
-    if (!hasOwn(expect, "box") || !item.box) return null;
-    return iou(item.box, expect.box) >= (finite(expect.iou_min) ?? 0.5) ? "met" : "missed";
+    if (!hasOwn(expect, "box") || !item.box || !expect.box || typeof expect.box !== "object") return null;
+    // float() in check_expectation reads "0.5" as 0.5; an edge or floor that is not a number checks nothing.
+    const edges = ["left", "top", "right", "bottom"].map((edge) => toNumber(expect.box[edge]));
+    const floor = hasOwn(expect, "iou_min") ? toNumber(expect.iou_min) : 0.5;
+    if (edges.includes(null) || floor === null) return null;
+    const wanted = { left: edges[0], top: edges[1], right: edges[2], bottom: edges[3] };
+    return iou(item.box, wanted) >= floor ? "met" : "missed";
   }
   let checked = false, ok = true, target;
   if (item.type === "choice") {
@@ -39,8 +45,14 @@ function expectationCheck(item) {
   } else if (item.type === "score" || item.type === "noul") target = finite(item.value);
   else return null;
   if (target === null) return null;
-  if (hasOwn(expect, "min")) { checked = true; ok = ok && target >= expect.min; }
-  if (hasOwn(expect, "max")) { checked = true; ok = ok && target <= expect.max; }
+  // check_expectation reads bounds with float(), so "0.5" counts; a bound that is not a number checks nothing.
+  for (const [name, passes] of [["min", (bound) => target >= bound], ["max", (bound) => target <= bound]]) {
+    if (!hasOwn(expect, name)) continue;
+    const bound = toNumber(expect[name]);
+    if (bound === null) return null;
+    checked = true;
+    ok = ok && passes(bound);
+  }
   return checked ? (ok ? "met" : "missed") : null;
 }
 
@@ -57,7 +69,7 @@ export default definePack({
   id: "wb-build-answer-insights",
   surface: "workbench.build.result",
   title: "Answer insights",
-  about: "Margins, confidence, local expectation checks, measured per-question cost and latency, and answer exports for the Build tab's latest Run. Everything reads your own Run in this page session; exports say they contain answers.",
+  about: "Margins, confidence, entropy, local expectation checks, measured per-question latency and tokens, and answer exports for the Build tab's latest Run. Everything reads your own Run in this page session; exports say they contain answers and mark them outdated when the request changed since.",
   features: [
     // ---------- facts ----------
     { id: "margin", kind: "fact", type: "number", label: "top-two margin",
@@ -69,17 +81,22 @@ export default definePack({
       help: "met or missed against the human expectation the editor holds now, by local code that mirrors the Tests tab; unavailable without an expectation.",
       value: (item) => expectationCheck(item) },
     { id: "answer_type", kind: "fact", type: "category", label: "answer type", value: (item) => item.type || null },
-    { id: "shown_answer", kind: "fact", type: "text", label: "answer as shown", help: "What the answer card prints.", value: (item) => item.display },
-    { id: "box_area", kind: "fact", type: "number", label: "box area share", help: "Width × height of a Box answer as a share of the picture.",
-      value: (item) => (item.box ? (item.box.right - item.box.left) * (item.box.bottom - item.box.top) : null) },
-    { id: "question_gone", kind: "fact", type: "flag", label: "a question renamed or removed since the run",
-      value: (item, ctx) => !ctx.data.currentIds.includes(item.id) },
-    { id: "entropy", kind: "fact", type: "number", label: "normalized entropy",
-      help: "Spread of the probabilities from 0 (all on one answer) to 1 (even); unavailable with fewer than two.",
+    { id: "box_area", kind: "fact", type: "number", label: "box area share",
+      help: "Width × height of a Box answer as a share of the picture; a box with its edges out of order has no area.",
       value: (item) => {
-        const list = (item.probabilities || []).map((entry) => entry.p);
-        if (list.length < 2) return null;
-        return list.reduce((sum, p) => sum - (p > 0 ? p * Math.log(p) : 0), 0) / Math.log(list.length);
+        const box = item.box && typeof item.box === "object" ? item.box : null;
+        const edges = box ? [box.left, box.top, box.right, box.bottom].map(finite) : [null];
+        return edges.includes(null) ? null : Math.max(0, edges[2] - edges[0]) * Math.max(0, edges[3] - edges[1]);
+      } },
+    { id: "question_gone", kind: "fact", type: "flag", label: "a question renamed or removed since the run",
+      value: (item, ctx) => Array.isArray(ctx?.data?.currentIds) && !ctx.data.currentIds.includes(item.id) },
+    { id: "entropy", kind: "fact", type: "number", label: "normalized entropy",
+      help: "Shannon entropy of the probabilities (rescaled to add up to 1) divided by ln(number of options): 0 is all on one answer, 1 is even. Unavailable with fewer than two.",
+      value: (item) => {
+        const list = probsOf(item);
+        const total = list.reduce((sum, p) => sum + p, 0);
+        if (list.length < 2 || !(total > 0)) return null;
+        return list.reduce((sum, p) => sum - (p > 0 ? (p / total) * Math.log(p / total) : 0), 0) / Math.log(list.length);
       } },
 
     // ---------- checks ----------
@@ -93,12 +110,11 @@ export default definePack({
         const score = item.type === "score" ? finite(item.value) : null;
         if (score === null) return null;
         const low = Math.floor(score);
-        return Math.abs(score - Math.round(score)) > 0.3 ? `Score ${score.toFixed(2)} sits between level ${low} and level ${low + 1}.` : null;
+        // The epsilon keeps a score exactly 0.3 from a level (1.3, whose difference reads 0.30000000000000004) quiet.
+        return Math.abs(score - Math.round(score)) > 0.3 + 1e-9 ? `Score ${score.toFixed(2)} sits between level ${low} and level ${low + 1} (local rule: more than 0.3 from the nearest level).` : null;
       } },
     { id: "missed_expectation", kind: "diagnostic", severity: "advice", label: "Misses its human expectation",
       check: (item) => (expectationCheck(item) === "missed" ? "This answer misses the human expectation the editor holds (local check; the Tests tab is the reference)." : null) },
-    { id: "outdated_answers", kind: "diagnostic", scope: "list", severity: "info", label: "Outdated answers",
-      check: (items, ctx) => (items.length && ctx.data.stale ? "These answers are from the previous request: the inputs or questions changed since this Run." : null) },
 
     // ---------- metrics ----------
     { id: "mean_confidence", kind: "metric", format: "percent", label: "Mean confidence of the shown answers", help: `Noul answers carry no confidence. ${RUN_NOTE}`,

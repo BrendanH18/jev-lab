@@ -28,7 +28,22 @@ function lead(item) {
   return ps.length >= 2 ? ps[0] - ps[1] : null;
 }
 
-const boxArea = (box) => (box ? (box.right - box.left) * (box.bottom - box.top) : null);
+const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+const boxArea = (box) => (isObject(box) && ["left", "top", "right", "bottom"].every((edge) => num(box[edge]) !== null)
+  ? Math.max(0, box.right - box.left) * Math.max(0, box.bottom - box.top) : null);
+
+// A fraction of the picture to a pixel edge, with the rule the page's other Box tools use: the product rounded to 6
+// decimals, left/top floored, right/bottom ceiled, clamped to the picture.
+const pixelEdge = (fraction, size, low) => {
+  const at = Number((fraction * size).toFixed(6));
+  return Math.min(size, Math.max(0, low ? Math.floor(at) : Math.ceil(at)));
+};
+const pixelsOf = (box, width, height) => {
+  const left = pixelEdge(box.left, width, true), top = pixelEdge(box.top, height, true);
+  const right = pixelEdge(box.right, width, false), bottom = pixelEdge(box.bottom, height, false);
+  return { left, top, right, bottom, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+};
+const safeName = (text) => (/^[A-Za-z0-9-]+$/.test(text || "") ? text : null);
 const byId = (items, id) => items.find((item) => item?.id === id) || null;
 const policyOf = (ctx) => ctx?.data?.policy || null;
 const result = (ctx) => (ctx.data.verdict ? ctx.data : null);
@@ -48,12 +63,11 @@ export default definePack({
     { id: "confidence", kind: "fact", type: "number", label: "answer confidence", value: (item) => num(item.confidence) },
     { id: "top_probability", kind: "fact", type: "number", label: "top probability", value: (item) => num(item.top?.p) },
     { id: "cut_distance", kind: "fact", type: "number", label: "distance to the nearest policy cut",
-      help: "Plain arithmetic on the policy in force; the Box cut compares with its confidence.", value: (item) => nearestCut(item)?.distance ?? null },
+      help: "Plain arithmetic on the policy in force, in the answer's own units (probability, or score points for severity); the Box cut compares with its confidence.",
+      value: (item) => nearestCut(item)?.distance ?? null },
     { id: "runner_up_lead", kind: "fact", type: "number", label: "lead over the runner-up", value: (item) => lead(item) },
     { id: "instructions", kind: "fact", type: "text", label: "question text", value: (item) => item.instructions },
     { id: "failing_check", kind: "fact", type: "flag", label: "a failing plain-code check", value: (item) => !!item.check && item.check.ok === false },
-    { id: "close_call", kind: "fact", type: "flag", label: "a close call (within 0.10 of a cut)",
-      value: (item) => { const cut = nearestCut(item); return !!cut && cut.distance <= 0.1 + 1e-9; } },
 
     { id: "near_cut", kind: "diagnostic", label: "Within 0.05 of a policy cut", severity: "advice",
       check: (item) => {
@@ -64,7 +78,7 @@ export default definePack({
     { id: "narrow_lead", kind: "diagnostic", label: "Runner-up close behind", severity: "advice",
       check: (item) => { const gap = lead(item); return gap !== null && gap < 0.15 ? `the top answer leads by only ${two(gap)}.` : null; } },
     { id: "wide_box", kind: "diagnostic", label: "Box covers more than half of the photo", severity: "info",
-      check: (item) => { const area = boxArea(item.box); return area !== null && area > 0.5 ? `the raw box covers ${Math.round(area * 100)}% of the picture.` : null; } },
+      check: (item) => { const area = item?.type === "box" ? boxArea(item.box) : null; return area !== null && area > 0.5 ? `the raw box covers ${Math.round(area * 100)}% of the picture.` : null; } },
     { id: "kind_vs_damage", kind: "diagnostic", scope: "list", label: "Kind says none visible while damage reads visible", severity: "advice",
       check: (items, ctx) => {
         const kind = byId(items, "damage_kind"), damage = byId(items, "damage_visible"), yes = num(policyOf(ctx)?.damage_yes);
@@ -84,13 +98,16 @@ export default definePack({
         return r && r.verdict.decision !== "reject" && total && amount !== null ? amount / total : null;
       } },
     { id: "failing_checks", kind: "metric", label: "failing plain-code checks", format: "integer",
-      compute: (ctx) => (result(ctx) && Array.isArray(ctx.data.verdict.checks) ? ctx.data.verdict.checks.filter((check) => !check.ok).length : null) },
+      compute: (ctx) => (result(ctx) && Array.isArray(ctx.data.verdict.checks) ? ctx.data.verdict.checks.filter((check) => isObject(check) && check.ok !== true).length : null) },
     { id: "box_area", kind: "metric", label: "raw box area as a share of the photo", format: "percent", help: "The edges Jev returned, before the policy hides or pads them.",
       compute: (ctx) => boxArea(byId(ctx.items(), "damage_box")?.box || null) },
     { id: "box_pixels", kind: "metric", label: "raw box size in pixels", format: "text",
+      help: "Width × height of the raw box in pixels of the picture the server sent: left and top floored, right and bottom ceiled.",
       compute: (ctx) => {
         const box = byId(ctx.items(), "damage_box")?.box, width = num(ctx.data.image?.width), height = num(ctx.data.image?.height);
-        return box && width && height ? `${Math.round((box.right - box.left) * width)} × ${Math.round((box.bottom - box.top) * height)} px` : null;
+        if (boxArea(box) === null || !(width > 0) || !(height > 0)) return null;
+        const px = pixelsOf(box, width, height);
+        return `${px.width} × ${px.height} px`;
       } },
     { id: "cost_per_thousand", kind: "metric", label: "cost per 1,000 checks at this call's measured cost", format: "usd",
       help: "Projection: arithmetic on one measured call, not spend.",
@@ -108,7 +125,7 @@ export default definePack({
           detail: `${history.filter((entry) => entry.decided?.decision === "approve").length} of ${history.length}` } : null;
       } },
     { id: "settings_changed", kind: "metric", label: "policy settings changed from the defaults", format: "integer",
-      compute: (ctx) => (ctx.data.settings ? ctx.data.changed.length : null) },
+      compute: (ctx) => (ctx.data.settings && Array.isArray(ctx.data.changed) ? ctx.data.changed.length : null) },
     { id: "session_cost", kind: "metric", label: "measured cost of this session's checks", format: "usd",
       compute: (ctx) => {
         const costs = (ctx.data.history || []).map((entry) => num(entry.meta?.cost_usd)).filter((value) => value !== null);
@@ -116,22 +133,24 @@ export default definePack({
       } },
 
     { id: "decision_summary", kind: "exporter", label: "Decision summary", help: "order, photo name, decision, reasons, checks and the policy in force; no note and no raw answers",
-      filename: (ctx) => `claim-${ctx.data.input?.order || "decision"}.txt`,
+      filename: (ctx) => `claim-${safeName(ctx.data.input?.order) || "decision"}.txt`,
       build: (ctx) => {
         requireResult(ctx);
-        const { verdict, input, policy, labels } = ctx.data;
+        const { verdict, input, policy } = ctx.data;
+        const labels = ctx.data.labels || {};
         const photo = input?.photo ? `${input.photo.source} ${input.photo.name}` : "unknown";
+        const amount = num(verdict.amount);
         return [
           `Claim decision for order ${input?.order || ctx.data.facts?.order || "?"} (your own check)`,
           `Photo: ${photo}`,
-          `Decision: ${labels.decisions[verdict.decision] || verdict.decision} (${verdict.decision})`,
-          verdict.decision === "reject" ? null : `Remedy: ${labels.remedies[verdict.remedy] || verdict.remedy} · $${two(verdict.amount)}`,
-          "Reasons:", ...verdict.reasons.map((reason) => `- ${reason}`),
-          "Checks (plain code):", ...verdict.checks.map((check) => `- [${check.level}] ${check.label}: ${check.detail}`),
-          `Policy in force: ${Object.entries(policy || {}).map(([key, value]) => `${key} ${two(value)}`).join(", ")}`,
+          `Decision: ${labels.decisions?.[verdict.decision] || verdict.decision} (${verdict.decision})`,
+          verdict.decision === "reject" ? null : `Remedy: ${labels.remedies?.[verdict.remedy] || verdict.remedy} · ${amount === null ? "amount unknown" : `$${two(amount)}`}`,
+          "Reasons:", ...(Array.isArray(verdict.reasons) ? verdict.reasons : []).map((reason) => `- ${reason}`),
+          "Checks (plain code):", ...(Array.isArray(verdict.checks) ? verdict.checks : []).filter(isObject).map((check) => `- [${check.level}] ${check.label}: ${check.detail}`),
+          `Policy in force: ${Object.entries(policy || {}).filter(([, value]) => num(value) !== null).map(([key, value]) => `${key} ${two(value)}`).join(", ")}`,
         ].filter((line) => line !== null).join("\n") + "\n";
       } },
-    { id: "answers_csv", kind: "exporter", label: "Answers as CSV", help: "the answers and top probabilities of your own check",
+    { id: "answers_csv", kind: "exporter", label: "Shown answers as CSV", help: "the shown answers of your own check: value, confidence and top probability per answer",
       filename: "claim-answers.csv", mime: "text/csv",
       build: (ctx) => csvText([["id", "type", "value", "display", "confidence", "top_key", "top_p"],
         ...ctx.shown().map((item) => [item.id, item.type, item.value ?? "", item.display, item.confidence ?? "", item.top?.key ?? "", item.top?.p ?? ""])]) },
@@ -155,17 +174,18 @@ export default definePack({
     { id: "cover_refund", kind: "command", title: "Raise the automatic limit to cover this refund", group: "Claims policy",
       when: (ctx) => {
         const amount = num(ctx.data.verdict?.amount), limit = num(ctx.data.settings?.auto_limit_usd);
-        return amount !== null && limit !== null && amount > limit && Math.ceil(amount / 5) * 5 <= 400;
+        return ctx.data.verdict?.decision !== "reject" && amount !== null && limit !== null && amount > limit && Math.ceil(amount / 5 - 1e-9) * 5 <= 400;
       },
       run: (ctx) => {
-        const next = Math.ceil(ctx.data.verdict.amount / 5) * 5;
+        const next = Math.ceil(ctx.data.verdict.amount / 5 - 1e-9) * 5;
         ctx.actions.setPolicy({ auto_limit_usd: next });
         ctx.env?.toast?.(`Automatic approval limit set to $${next}. The decision is re-made by plain code, with no Jev call.`);
       } },
     { id: "focus_damage_slider", kind: "command", title: "Focus the damage threshold slider", group: "Claims policy",
       run: (ctx) => ctx.actions.focusPolicy("damage_yes") },
 
-    { id: "box_to_pixels", kind: "tool", title: "Box edges to pixels", group: "Claims", help: "Turns a Box's edge fractions into pixel positions for a picture of the size you give.",
+    { id: "box_to_pixels", kind: "tool", title: "Box edges to pixels", group: "Claims",
+      help: "Turns a Box's edge fractions into pixel edges for a picture of the size you give: left and top floored, right and bottom ceiled, as the page's Box inspector and exports do.",
       inputs: [
         { name: "left", label: "Left edge (0–1)", type: "number", min: 0, max: 1 },
         { name: "top", label: "Top edge (0–1)", type: "number", min: 0, max: 1 },
@@ -176,8 +196,9 @@ export default definePack({
       ],
       compute: ({ left, top, right, bottom, width, height }) => {
         if (right <= left || bottom <= top) throw new Error("The right and bottom edges must be past the left and top edges.");
-        return [["left px", Math.round(left * width)], ["top px", Math.round(top * height)], ["width px", Math.round((right - left) * width)],
-          ["height px", Math.round((bottom - top) * height)], ["share of the picture", (right - left) * (bottom - top)]];
+        const px = pixelsOf({ left, top, right, bottom }, width, height);
+        return [["left px", px.left], ["top px", px.top], ["right px", px.right], ["bottom px", px.bottom], ["width px", px.width],
+          ["height px", px.height], ["share of the picture", (right - left) * (bottom - top)]];
       } },
   ],
 });

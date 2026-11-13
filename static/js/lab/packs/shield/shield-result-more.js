@@ -17,7 +17,7 @@ const onStep = (value) => Number((Math.round(value / STEP) * STEP).toFixed(2));
 // Noisy-OR: 1 − Π(1 − c) over contributions, each clamped to 0..1.
 const noisyOr = (contributions) => 1 - contributions.reduce((survive, c) => survive * (1 - clamp01(c)), 1);
 const ruleValue = (ctx, key, fallback) => finite(ctx?.data?.rules?.[key]) ?? fallback;
-const others = (item, ctx) => ctx.items().filter((other) => other.id !== item?.id).map((other) => finite(other.contribution)).filter((value) => value !== null);
+const others = (item, ctx) => ctx.items().filter((other) => other?.id !== item?.id).map((other) => finite(other?.contribution)).filter((value) => value !== null);
 const survivalOf = (contributions) => contributions.reduce((survive, c) => survive * (1 - clamp01(c)), 1);
 
 // One answer printed for its row: a Noul as P(yes), a Score with its level word, a Choice with the chosen option's probability.
@@ -124,14 +124,14 @@ export default definePack({
     { id: "drivers_capped", kind: "diagnostic", severity: "info", scope: "list", label: "Hot signals beyond the three drivers",
       check: (items, ctx) => {
         const cap = ruleValue(ctx, "max_drivers", 3);
-        const unnamed = items.filter((item) => item.hot && !item.driver);
+        const unnamed = items.filter((item) => item?.hot === true && item.driver !== true);
         if (!unnamed.length || (ctx?.data?.verdict?.drivers || []).length < cap) return null;
         return `The verdict names at most ${cap} drivers, so ${unnamed.map((item) => item.name).join(", ")} also ${unnamed.length === 1 ? "adds" : "add"} 0.15 or more without being named.`;
       } },
     { id: "lure_from_vendor", kind: "diagnostic", severity: "advice", scope: "list", label: "Link lure from a matching sender",
       check: (items, ctx) => {
         const fact = ctx?.data?.fact;
-        const lure = items.find((item) => item.id === "link_lure" && finite(item.value) !== null && item.value >= ruleValue(ctx, "risky_ask", 0.5));
+        const lure = items.find((item) => item?.id === "link_lure" && finite(item.value) !== null && item.value >= ruleValue(ctx, "risky_ask", 0.5));
         if (!lure || fact?.domain_matches !== true) return null;
         return `${lure.name} is ${percent(lure.value)} and the sender's domain matches ${fact.claimed_label || "the claimed sender"} (${fact.sender_domain}): a genuine sender's link is still worth checking before anyone clicks it.`;
       } },
@@ -158,14 +158,6 @@ export default definePack({
         const entries = Object.entries(ctx.data?.answers?.harm_if_obeyed?.probabilities || {}).filter(([key, p]) => /^\d+$/.test(key) && finite(p) !== null);
         const total = entries.reduce((sum, [, p]) => sum + p, 0);
         return total > 0 ? entries.filter(([key]) => Number(key) >= 2).reduce((sum, [, p]) => sum + p, 0) / total : null;
-      } },
-    { id: "identity_runner_up", kind: "metric", format: "text", label: "Claimed sender's runner-up",
-      help: "The second most probable sender in the claimed-identity answer, with its probability.",
-      compute: (ctx) => {
-        const ranked = Object.entries(ctx.data?.answers?.claimed_identity?.probabilities || {}).filter(([, p]) => finite(p) !== null).sort((a, b) => b[1] - a[1]);
-        if (ranked.length < 2) return null;
-        const [key, p] = ranked[1];
-        return { value: ctx.data?.identity_labels?.[key] || key.replace(/_/g, " "), detail: percent(p) };
       } },
     { id: "quarantine_gap", kind: "metric", format: "percent", label: "Risk minus the quarantine threshold",
       help: "The verdict's risk minus quarantine_at on the sliders now: negative means under it.",

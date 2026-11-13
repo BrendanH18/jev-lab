@@ -77,18 +77,21 @@ export default definePack({
       help: "Answered questions only: how far P(yes) sat from 15%, 40%, 60% or 85%.", value: cutoffMargin },
     { id: "borderline", kind: "fact", type: "flag", label: "reply within 5 points of a cut-off",
       help: "Local rule: an answered question whose P(yes) was less than 0.05 from a reply cut-off.",
-      value: (item, ctx) => { const margin = cutoffMargin(item, ctx); return margin !== null && margin < 0.05; } },
+      // 0.6 - 0.55 is 0.04999999999999993 in floating point, so exactly 5 points away must not count: compare with a tolerance.
+      value: (item, ctx) => { const margin = cutoffMargin(item, ctx); return margin !== null && margin < 0.05 - 1e-9; } },
     { id: "question_mark", kind: "fact", type: "flag", label: "question mark at the end",
       value: (item) => /\?\s*$/.test(String(item?.text ?? "")) },
     { id: "repeat", kind: "fact", type: "flag", label: "repeat of an earlier question",
       help: "The same words as an earlier turn of this game, ignoring case and punctuation.",
       value: (item, ctx) => {
         const key = normalized(item?.text);
-        return !!key && ctx.items().some((other) => other.n < item.n && normalized(other.text) === key);
+        return !!key && Number.isInteger(item?.n) && ctx.items().some((other) => other?.n < item.n && normalized(other.text) === key);
       } },
-    { id: "kind", kind: "fact", type: "category", label: "turn kind", value: (item) => KIND_LABELS[item?.kind] || null },
-    { id: "answer", kind: "fact", type: "category", label: "answer given", help: "Answered yes/no questions only.", value: (item) => item?.answer || null },
-    { id: "question_text", kind: "fact", type: "text", label: "question text", value: (item) => item?.text ?? "" },
+    { id: "kind", kind: "fact", type: "category", label: "turn kind",
+      value: (item) => (typeof item?.kind === "string" && Object.hasOwn(KIND_LABELS, item.kind) ? KIND_LABELS[item.kind] : null) },
+    { id: "answer", kind: "fact", type: "category", label: "answer given", help: "Answered yes/no questions only.",
+      value: (item) => (typeof item?.answer === "string" && item.answer ? item.answer : null) },
+    { id: "question_text", kind: "fact", type: "text", label: "question text", value: (item) => (typeof item?.text === "string" ? item.text : "") },
 
     { id: "not_a_question", kind: "diagnostic", severity: "advice", label: "Not read as a yes/no question",
       check: (item) => {

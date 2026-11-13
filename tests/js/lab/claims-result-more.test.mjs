@@ -45,22 +45,38 @@ const hiddenCtx = sampleClaimsResultCtx({ result: withResult((r) => {
 const blankNoteCtx = sampleClaimsResultCtx({ input: crushedInput("   ") });
 const otherOrderCtx = sampleClaimsResultCtx({ input: crushedInput("Same problem as A-1042 had: A-1044's box came crushed.") });
 
-// Reference entropies, computed here directly from the probabilities listed above.
+// Reference entropies, computed here directly from the probabilities listed above (checked against Python's
+// math.log2: 0.327445, 0.701471, 1.256780, 1.482580, 0.958042 bits), plus exact cases: 1 bit for 50/50, 2 bits for
+// four equal levels.
 const bits = (...ps) => -ps.reduce((sum, p) => sum + p * Math.log2(p), 0);
 const repeat = repeatCtx();
+// A box partly outside the picture, off the pixel grid: 0.1234 × 640 = 78.976 -> 78, 0.2345 × 480 = 112.56 -> 112,
+// 0.5678 × 640 = 363.392 -> 364, bottom 1.02 clamped to 1 -> 480 (exact fractions in Python).
+const oddBox = () => sampleClaimsResultCtx({ result: withResult((r) => { r.answers.damage_box.box = { left: 0.1234, top: 0.2345, right: 0.5678, bottom: 1.02 }; }) });
+// Edge items for the flip point, each with the cuts of the policy in force (the slider grids come from ctx.data.limits).
+const flipEdges = [
+  { type: "noul", value: 1, cuts: [{ key: "shows_order", at: 0.5 }] },
+  { type: "noul", value: 0.5, cuts: [{ key: "matches_note", at: 0.5 }] },
+  { type: "noul", value: 0.29, cuts: [{ key: "damage_no", at: 0.3 }, { key: "damage_yes", at: 0.7 }] },
+  { type: "noul", value: 0.95, cuts: [{ key: "shows_order", at: 0.5 }] },
+  { type: "box", value: null, confidence: 0.6, cuts: [{ key: "box_confidence", at: 0.6 }] },
+];
 
 checkPack(pack, {
-  entropy_bits: { items, values: [bits(0.94, 0.06), bits(0.81, 0.19), bits(0.05, 0.7, 0.2, 0.05), bits(0.66, 0.18, 0.09, 0.02, 0.05), bits(0.62, 0.38), null],
-    tolerance: 1e-9 },
+  entropy_bits: { items: [...items, { type: "noul", value: 0.5, probabilities: [{ key: "yes", p: 0.5 }, { key: "no", p: 0.5 }] },
+    { type: "score", probabilities: ["0", "1", "2", "3"].map((key) => ({ key, p: 0.25 })) }],
+  values: [bits(0.94, 0.06), bits(0.81, 0.19), bits(0.05, 0.7, 0.2, 0.05), bits(0.66, 0.18, 0.09, 0.02, 0.05), bits(0.62, 0.38), null, 1, 2],
+  tolerance: 1e-9 },
   // shows 0.94 passes 0.50: first step above is 0.95. damage 0.81 passes 0.70 (3 steps to 0.85) and 0.30 (11 steps): 0.85.
   // severity 1.20 is below 1.50: lowering to 1.20 flips it (3 steps of 0.1). matches 0.62 passes 0.60: 0.65, one step.
   // Box confidence 0.52 is below 0.60: lowering to 0.50 stops the padding (2 steps).
-  flip_point: { items, values: [0.95, 0.85, 1.2, null, 0.65, 0.5], ctx: page },
-  steps_to_flip: { items, values: [9, 3, 3, null, 1, 2], ctx: page },
+  // Edges: 1.00 passes 0.50 and no step above 1 exists; 0.50 passes 0.50 exactly, so 0.55 is the first failing step;
+  // 0.29 fails damage_no 0.30 and passes again at 0.25 (one step), closer than damage_yes (9 steps from 0.70 to 0.25);
+  // 0.95 on the grid still passes, so the flip is at 1.00 (10 steps); the Box rule reads confidence 0.60, not the value.
+  flip_point: { items: [...items, ...flipEdges], values: [0.95, 0.85, 1.2, null, 0.65, 0.5, null, 0.55, 0.25, 1, 0.65], ctx: page },
+  steps_to_flip: { items: [...items, ...flipEdges], values: [9, 3, 3, null, 1, 2, null, 1, 1, 10, 1], ctx: page },
   // 0.94 - 0.90, 0.81 - 0.75, 1.20 - 1.00, -, 0.62 - 0.70, -
   repeat_change: { items: repeat.items(), values: [0.04, 0.06, 0.2, null, -0.08, null], ctx: repeat, tolerance: 1e-9 },
-  // Only shows_item (0.94) reaches 90% on one side.
-  decisive: { items: [...items, { type: "noul", value: 0.05 }], values: [true, false, false, false, false, false, true] },
   // The shown decision is "review".
   decision_level: { items: [{ check: { ok: false, level: "review" } }, { check: { ok: false, level: "retake" } }, { check: { ok: true, level: "ok" } }, { check: null }],
     values: [true, false, false, false], ctx: page },
@@ -78,8 +94,6 @@ checkPack(pack, {
     miss: [items[5], items[0]], message: /reaches the (right edge|left and top edges) \(within 1%\)/ },
   // 0.05 × 0.10 = 0.5% of the picture
   box_tiny: { hit: { type: "box", box: { left: 0.5, top: 0.5, right: 0.55, bottom: 0.6 } }, miss: [items[5], items[1]], message: /covers 0\.5% of the picture/ },
-  box_hidden_by_policy: { hitList: hiddenCtx.items(), missList: items, ctx: hiddenCtx, missCtx: page,
-    message: /policy hides it: damage_visible 0\.25 is below damage_no 0\.30/ },
   blank_note: { hitList: blankNoteCtx.items(), missList: items, ctx: blankNoteCtx, missCtx: page, message: /blank, so matches_note \(0\.62\) compared/ },
   note_names_other_order: { hitList: otherOrderCtx.items(), missList: items, ctx: otherOrderCtx, missCtx: page,
     message: /^the note mentions A-1042, but this check was filed against A-1044\.$/ },
@@ -109,16 +123,24 @@ checkPack(pack, {
         drawn: { shown: true, padded: true, tentative: false, left: 0.5, top: 0.05, right: 1, bottom: 0.5 } });
       assert.deepEqual(JSON.parse(runExporter(pack.features.find((f) => f.id === "box_fractions_json"), hiddenCtx).text).drawn,
         { shown: false, reason: "Hidden: the photo shows no damage, so there is nothing to locate." });
+      // The JSON keeps the edges exactly as returned, even past the picture's edge.
+      assert.deepEqual(JSON.parse(runExporter(pack.features.find((f) => f.id === "box_fractions_json"), oddBox()).text).raw,
+        { left: 0.1234, top: 0.2345, right: 0.5678, bottom: 1.02, confidence: 0.52 });
+      assert.throws(() => runExporter(pack.features.find((f) => f.id === "box_fractions_json"), noBox()), /no Box answer/);
     } },
   // Pixels: 0.55 × 640 = 352, 0.10 × 480 = 48, 0.95 × 640 = 608, 0.45 × 480 = 216, so 256 × 168 (area 43,008).
   box_coco: { ctx: page, filename: "claim-box-A-1044-coco.json",
     check: (out) => {
       assert.deepEqual(JSON.parse(out.text), { images: [{ id: 1, file_name: "crushed-box", width: 640, height: 480 }],
         annotations: [{ id: 1, image_id: 1, category_id: 1, bbox: [352, 48, 256, 168], area: 43008, iscrowd: 0 }], categories: [{ id: 1, name: "damage" }] });
+      assert.deepEqual(JSON.parse(runExporter(pack.features.find((f) => f.id === "box_coco"), oddBox()).text).annotations[0].bbox, [78, 112, 286, 368]);
+      assert.equal(JSON.parse(runExporter(pack.features.find((f) => f.id === "box_coco"), oddBox()).text).annotations[0].area, 286 * 368);
       assert.throws(() => runExporter(pack.features.find((f) => f.id === "box_coco"), noBox()), /no Box answer/);
       assert.throws(() => runExporter(pack.features.find((f) => f.id === "box_coco"), sampleClaimsResultCtx({ result: withResult((r) => { r.image = {}; }) })), /size is unknown/);
     } },
-  box_yolo: { ctx: page, text: "0 0.750000 0.275000 0.400000 0.350000\n", filename: "claim-box-A-1044-yolo.txt" },
+  // centre (0.55 + 0.95) / 2, (0.10 + 0.45) / 2; size 0.40 × 0.35. The odd box is clamped first: bottom 1.02 -> 1.
+  box_yolo: { ctx: page, text: "0 0.750000 0.275000 0.400000 0.350000\n", filename: "claim-box-A-1044-yolo.txt",
+    check: () => assert.equal(runExporter(pack.features.find((f) => f.id === "box_yolo"), oddBox()).text, "0 0.345600 0.617250 0.444400 0.765500\n") },
   box_voc_xml: { ctx: sampleClaimsResultCtx({ input: { order: "A-1044", note: "x", photo: { source: "upload", name: "crack <1> & dent.jpg", about: "" } } }),
     text: "<annotation>\n  <filename>crack &lt;1&gt; &amp; dent.jpg</filename>\n  <size><width>640</width><height>480</height></size>\n  <object>\n    <name>damage</name>\n"
       + "    <bndbox><xmin>352</xmin><ymin>48</ymin><xmax>608</xmax><ymax>216</ymax></bndbox>\n  </object>\n</annotation>\n", filename: "claim-box-A-1044-voc.xml" },

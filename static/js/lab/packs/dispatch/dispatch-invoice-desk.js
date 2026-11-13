@@ -27,8 +27,6 @@ export default definePack({
       value: (item, ctx) => open(item) && amountOf(item) !== null && balanceOf(ctx) !== null && amountOf(item) <= balanceOf(ctx) },
     { id: "vendor_open_count", kind: "fact", type: "number", label: "open invoices from the same vendor",
       value: (item, ctx) => (item.vendor_id ? ctx.items().filter((other) => other.vendor_id === item.vendor_id && open(other)).length : null) },
-    { id: "prefix", kind: "fact", type: "category", label: "invoice number prefix",
-      value: (item) => (typeof item.id === "string" && /^[A-Za-z]+-/.test(item.id) ? item.id.slice(0, item.id.indexOf("-")).toUpperCase() : null) },
     { id: "amount_band", kind: "fact", type: "category", label: "amount band",
       value: (item) => {
         const amount = amountOf(item);
@@ -64,8 +62,6 @@ export default definePack({
         const amounts = ctx.shown().filter(open).map(amountOf).filter((value) => value !== null);
         return amounts.length ? Math.max(...amounts) : null;
       } },
-    { id: "open_count", kind: "metric", format: "integer", label: "Open invoices shown",
-      compute: (ctx) => (ctx.shown().length ? ctx.shown().filter(open).length : null) },
 
     { id: "invoices_csv", kind: "exporter", label: "Shown invoices as CSV", help: "simulation data: invoice, vendor, amount, status",
       filename: "harbor-invoices.csv", mime: "text/csv",

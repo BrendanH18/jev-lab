@@ -93,6 +93,8 @@ checkPack(pack, {
   probability_above_target: {
     values: { k: "188", n: "200", target: "0.9", a: "1", b: "1" },
     expect: [["Posterior mean accuracy", 189 / 202], ["Chance the accuracy is above the target", 0.9694791707657539], ["Chance it is at or below the target", 0.030520829234246184]],
+    // Jeffreys prior: Beta(188.5, 12.5), I_0.1(12.5, 188.5) from the all-positive power series of the incomplete beta.
+    more: [{ values: { k: "188", n: "200", target: "0.9", a: "0.5", b: "0.5" }, expect: (result) => { near(result.rows[0][1], 188.5 / 201); near(result.rows[1][1], 0.9765653355684991, 1e-12); } }],
     invalid: [{ k: "188", n: "200", target: "1", a: "1", b: "1" }, { k: "201", n: "200", target: "0.9", a: "1", b: "1" }],
   },
   // A Beta(9, 3), B Beta(10, 2): P(pB > pA) = 94/133 exactly.
@@ -164,7 +166,10 @@ checkPack(pack, {
     expect: [["Error rate in the sample", 2 / 60], ["Estimated errors in the batch", 1000 / 60], ["Fewest errors in the batch", 3], ["Most errors in the batch", 55],
       ["Most errors as a share of the batch", 0.11], ["One-sided upper bound on errors", 48], ["Rows not audited", 440]],
     more: [{ values: { size: "20", audited: "5", k: "0", level: "0.95" }, expect: [["Error rate in the sample", 0], ["Estimated errors in the batch", 0], ["Fewest errors in the batch", 0],
-      ["Most errors in the batch", 9], ["Most errors as a share of the batch", 0.45], ["One-sided upper bound on errors", 8], ["Rows not audited", 15]] }],
+      ["Most errors in the batch", 9], ["Most errors as a share of the batch", 0.45], ["One-sided upper bound on errors", 8], ["Rows not audited", 15]] },
+      // A larger batch, against untruncated exact sums (Python integers) at every error count: 95% and 90%.
+      { values: { size: "3000", audited: "400", k: "12", level: "0.95" }, expect: (result) => assert.deepEqual([2, 3, 5].map((i) => result.rows[i][1]), [50, 150, 140]) },
+      { values: { size: "3000", audited: "400", k: "12", level: "0.9" }, expect: (result) => assert.deepEqual([2, 3, 5].map((i) => result.rows[i][1]), [55, 140, 129]) }],
     invalid: [{ size: "20", audited: "21", k: "0", level: "0.95" }, { size: "20", audited: "5", k: "6", level: "0.95" }],
   },
   // Weights 0.8 and 0.2: 0.8 · 0.95 + 0.2 · 0.8 = 23/25; variance Σ W² (1 − n/N) p(1 − p) / (n − 1).
@@ -214,6 +219,11 @@ checkPack(pack, {
     invalid: [{ r: "1", n: "50", level: "0.95" }, { r: "0.4", n: "3", level: "0.95" }],
   },
 }, { ctx: () => fakeCtx({}) });
+
+test("tb-intervals: the next-batch prior counts errors, not successes", () => {
+  const labels = pack.features.find((feature) => feature.id === "next_batch_errors").inputs.map((input) => input.label);
+  assert.ok(labels.includes("Prior errors + 1 (Beta a)") && labels.includes("Prior correct rows + 1 (Beta b)"));
+});
 
 test("tb-intervals: every tool is in the Proportions and intervals group", () => {
   for (const feature of pack.features) assert.equal(feature.group, "Proportions and intervals");

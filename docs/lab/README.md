@@ -1,4 +1,4 @@
-# Lab: 4,332 improvements
+# Lab: 5,279 improvements
 
 Lab is the extension layer of Jev Lab. Small, self-contained **packs** declare features (filters and sorts over a
 list, advisory checks, previewed edits, metrics, copy and download formats, paste importers, commands with
@@ -30,38 +30,39 @@ command, tool, command-line subcommand or option, and behavior one. `tests/js/la
 
 ## Inventory
 
-4,332 improvements in 119 packs.
+5,279 improvements in 156 packs.
 
 | Improvements | Area | Count | Packs | Inventory |
 | --- | --- | ---: | ---: | --- |
-| 1–294 | Autopilot | 294 | 7 | [autopilot.md](autopilot.md) |
-| 295–369 | Every page | 75 | 3 | [chrome.md](chrome.md) |
-| 370–543 | Claims | 174 | 5 | [claims.md](claims.md) |
-| 544–690 | Counter | 147 | 4 | [counter.md](counter.md) |
-| 691–932 | Dispatch | 242 | 7 | [dispatch.md](dispatch.md) |
-| 933–1,083 | Find | 151 | 4 | [find.md](find.md) |
-| 1,084–1,217 | Overview | 134 | 4 | [index.md](index.md) |
-| 1,218–1,320 | Play | 103 | 3 | [play.md](play.md) |
-| 1,321–1,617 | Command line | 297 | 8 | [python-cli.md](python-cli.md) |
-| 1,618–1,695 | Dataset health | 78 | 3 | [python-health.md](python-health.md) |
-| 1,696–1,816 | Question checks | 121 | 3 | [python-lint.md](python-lint.md) |
-| 1,817–1,984 | Reviews | 168 | 4 | [reviews.md](reviews.md) |
-| 1,985–2,162 | Shield | 178 | 4 | [shield.md](shield.md) |
-| 2,163–2,382 | Workbench · Build | 220 | 5 | [workbench-build.md](workbench-build.md) |
-| 2,383–2,463 | Workbench · Bulk | 81 | 2 | [workbench-bulk.md](workbench-bulk.md) |
-| 2,464–2,601 | Workbench · Calibrate | 138 | 3 | [workbench-calibrate.md](workbench-calibrate.md) |
-| 2,602–2,643 | Workbench · Checks | 42 | 1 | [workbench-checks.md](workbench-checks.md) |
-| 2,644–2,880 | Workbench · Compare | 237 | 6 | [workbench-compare.md](workbench-compare.md) |
-| 2,881–2,954 | Workbench · Costs | 74 | 2 | [workbench-costs.md](workbench-costs.md) |
-| 2,955–3,227 | Workbench · Datasets | 273 | 7 | [workbench-datasets.md](workbench-datasets.md) |
-| 3,228–3,258 | Workbench · Drift | 31 | 1 | [workbench-drift.md](workbench-drift.md) |
-| 3,259–3,357 | Workbench · Examples | 99 | 2 | [workbench-examples.md](workbench-examples.md) |
-| 3,358–3,475 | Workbench · Labeling | 118 | 3 | [workbench-labeling.md](workbench-labeling.md) |
-| 3,476–3,562 | Workbench · Policy | 87 | 2 | [workbench-policy.md](workbench-policy.md) |
-| 3,563–3,652 | Workbench · Review | 90 | 2 | [workbench-review.md](workbench-review.md) |
-| 3,653–3,693 | Workbench · Page | 41 | 2 | [workbench-shell.md](workbench-shell.md) |
-| 3,694–3,965 | Workbench · Tests | 272 | 7 | [workbench-tests.md](workbench-tests.md) |
-| 3,966–4,332 | Workbench · Toolbox | 367 | 15 | [workbench-toolbox.md](workbench-toolbox.md) |
+| 1–313 | Autopilot | 313 | 8 | [autopilot.md](autopilot.md) |
+| 314–388 | Every page | 75 | 3 | [chrome.md](chrome.md) |
+| 389–593 | Claims | 205 | 6 | [claims.md](claims.md) |
+| 594–740 | Counter | 147 | 5 | [counter.md](counter.md) |
+| 741–1,042 | Dispatch | 302 | 9 | [dispatch.md](dispatch.md) |
+| 1,043–1,212 | Find | 170 | 5 | [find.md](find.md) |
+| 1,213–1,362 | Overview | 150 | 5 | [index.md](index.md) |
+| 1,363–1,480 | Play | 118 | 4 | [play.md](play.md) |
+| 1,481–1,907 | Command line | 427 | 12 | [python-cli.md](python-cli.md) |
+| 1,908–1,927 | Row formats | 20 | 1 | [python-formats.md](python-formats.md) |
+| 1,928–2,037 | Dataset health | 110 | 5 | [python-health.md](python-health.md) |
+| 2,038–2,181 | Question checks | 144 | 4 | [python-lint.md](python-lint.md) |
+| 2,182–2,347 | Reviews | 166 | 4 | [reviews.md](reviews.md) |
+| 2,348–2,555 | Shield | 208 | 5 | [shield.md](shield.md) |
+| 2,556–2,861 | Workbench · Build | 306 | 8 | [workbench-build.md](workbench-build.md) |
+| 2,862–3,147 | Workbench · Bulk | 286 | 7 | [workbench-bulk.md](workbench-bulk.md) |
+| 3,148–3,276 | Workbench · Calibrate | 129 | 3 | [workbench-calibrate.md](workbench-calibrate.md) |
+| 3,277–3,353 | Workbench · Checks | 77 | 2 | [workbench-checks.md](workbench-checks.md) |
+| 3,354–3,643 | Workbench · Compare | 290 | 8 | [workbench-compare.md](workbench-compare.md) |
+| 3,644–3,712 | Workbench · Costs | 69 | 2 | [workbench-costs.md](workbench-costs.md) |
+| 3,713–3,993 | Workbench · Datasets | 281 | 8 | [workbench-datasets.md](workbench-datasets.md) |
+| 3,994–4,023 | Workbench · Drift | 30 | 1 | [workbench-drift.md](workbench-drift.md) |
+| 4,024–4,121 | Workbench · Examples | 98 | 2 | [workbench-examples.md](workbench-examples.md) |
+| 4,122–4,238 | Workbench · Labeling | 117 | 3 | [workbench-labeling.md](workbench-labeling.md) |
+| 4,239–4,321 | Workbench · Policy | 83 | 2 | [workbench-policy.md](workbench-policy.md) |
+| 4,322–4,437 | Workbench · Review | 116 | 3 | [workbench-review.md](workbench-review.md) |
+| 4,438–4,477 | Workbench · Page | 40 | 2 | [workbench-shell.md](workbench-shell.md) |
+| 4,478–4,778 | Workbench · Tests | 301 | 8 | [workbench-tests.md](workbench-tests.md) |
+| 4,779–5,279 | Workbench · Toolbox | 501 | 21 | [workbench-toolbox.md](workbench-toolbox.md) |
 
 ## Adding a pack
 
