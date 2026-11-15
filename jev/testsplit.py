@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import decisions, policy, workbench
 from .calibrate import CalibrationError
@@ -40,12 +40,11 @@ def test_indexes(dataset: dict) -> List[int]:
     return [i for i, row in enumerate(dataset["rows"]) if isinstance(row, dict) and row.get(TEST_KEY) is True]
 
 
-@workbench.dataset_update()
-def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None) -> dict:
-    """Hold out whole input groups nearest `share` of labeled rows. seed: tests; None draws at random."""
+def choose(dataset: dict, share: Any = DEFAULT_SHARE, seed: Optional[int] = None) -> Tuple[List[int], List[List[int]]]:
+    """(positions of the labeled rows, the exact-input groups to hold out) for a new split, without writing anything.
+    lock() holds out what this returns; `lab.py splits plan` previews it. seed: None draws at random."""
     if isinstance(share, bool) or not isinstance(share, (int, float)) or not MIN_SHARE <= share <= MAX_SHARE:
         raise WorkbenchError("share must be a number from %g to %g" % (MIN_SHARE, MAX_SHARE))
-    dataset = workbench.load_dataset(dataset_id)
     if test_indexes(dataset):
         raise WorkbenchError("The dataset already has test rows. Remove the split first to draw a new one.")
     labeled = [i for i, row in enumerate(dataset["rows"]) if _labeled(row)]
@@ -61,7 +60,7 @@ def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
     candidates = list(groups.values())
     rng.shuffle(candidates)
     # At most MAX_BULK_ROWS labeled rows: retain one randomly ordered subset per reachable count.
-    subsets = {0: []}
+    subsets: Dict[int, List[List[int]]] = {0: []}
     for positions in candidates:
         weight = sum(_labeled(dataset["rows"][i]) for i in positions)
         if not weight:
@@ -77,7 +76,15 @@ def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
                              % MIN_ROWS)
     # Compare with the requested share before rounding; exact ties round up as before.
     count = min(feasible, key=lambda count: (abs(count - share * len(labeled)), -count))
-    for positions in subsets[count]:
+    return labeled, subsets[count]
+
+
+@workbench.dataset_update()
+def lock(dataset_id: str, share: Any = DEFAULT_SHARE, seed: Optional[int] = None) -> dict:
+    """Hold out whole input groups nearest `share` of labeled rows. seed: tests; None draws at random."""
+    dataset = workbench.load_dataset(dataset_id)
+    _labeled_rows, chosen = choose(dataset, share, seed)
+    for positions in chosen:
         for i in positions:
             row = dataset["rows"][i]
             state = row if isinstance(row, dict) else {"text": row}

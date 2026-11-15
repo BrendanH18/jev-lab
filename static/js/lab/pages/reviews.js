@@ -8,8 +8,9 @@ import p1 from "../packs/reviews/review-result-insights.js";
 import p2 from "../packs/reviews/reviews-example-more.js";
 import p3 from "../packs/reviews/reviews-result-more.js";
 import p4 from "../packs/chrome/chrome-essentials.js";
-import p5 from "../packs/chrome/chrome-navigation.js";
-import p6 from "../packs/chrome/chrome-readouts.js";
+import p5 from "../packs/chrome/chrome-keymap.js";
+import p6 from "../packs/chrome/chrome-navigation.js";
+import p7 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [p0, p1, p2, p3, p4, p5, p6];
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7];
 export const LAB = createLab(PACKS, { ...s0 });

@@ -13,8 +13,9 @@ import p6 from "../packs/dispatch/dispatch-plan-review.js";
 import p7 from "../packs/dispatch/dispatch-week-planner.js";
 import p8 from "../packs/dispatch/dispatch-world-facts.js";
 import p9 from "../packs/chrome/chrome-essentials.js";
-import p10 from "../packs/chrome/chrome-navigation.js";
-import p11 from "../packs/chrome/chrome-readouts.js";
+import p10 from "../packs/chrome/chrome-keymap.js";
+import p11 from "../packs/chrome/chrome-navigation.js";
+import p12 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11];
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12];
 export const LAB = createLab(PACKS, { ...s0 });
