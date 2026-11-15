@@ -51,7 +51,7 @@ CASES = {
     "stray_negative_numbers": {
         "hit": ([{"amount": value} for value in [12, 8, 5, 20, 7, 9, 11, 14, 6, 10, -12]], {}),
         "miss": ([{"amount": value} for value in [12, -8, 5, -20, 7]], {}),
-        "rows": [11], "message": re.compile(r"^Field `amount` is negative on 1 row and positive on the other 10; check the sign\.$")},
+        "rows": [11], "message": re.compile(r"^Field `amount` is negative on 1 row and zero or positive on the other 10; check the sign\.$")},
     "scientific_notation_numbers": {
         "hit": ([{"phone": "4.15555E+09"}, {"phone": "415-555-0100"}], {}),
         "miss": ([{"ratio": "1.5E+3"}, {"phone": "415-555-0100"}], {}),
@@ -97,6 +97,14 @@ CASES = {
 
 
 class HealthValuesTests(pack_tests(health_values.PACK, CASES)):
+    def test_zeros_count_toward_the_sign_share(self):
+        # 40 zeros, 4 positives and 1 negative: 1 of 45 numbers is negative (2%, under the 10% share), so it is stray.
+        # Leaving zeros out would make it 1 of 5 (20%) and hide it.
+        rows = [{"amount": 0}] * 40 + [{"amount": value} for value in (3, 4, 5, 6, -2)]
+        self.assertEqual(health_values.stray_negative_numbers(rows, {}),
+                         [{"rows": [45], "message": "Field `amount` is negative on 1 row and zero or positive on the other 44; "
+                                                    "check the sign."}])
+
     def test_findings_reach_the_health_report(self):
         rows = [{"text": T(1), "channel": "email"}, {"text": T(2), "channel": "email"}, {"text": T(3), "channel": "Email"},
                 {"text": T(4), "channel": "chat"}]

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import pack from "../../../static/js/lab/packs/workbench/review-queue-copies.js";
 import { checkPack } from "./harness.mjs";
@@ -69,3 +70,18 @@ checkPack(pack, {
     hidden: () => copies({ nextLine: 2 }) },
   go_first_exposed: { ctx: () => copies(), check: (ctx) => assert.deepEqual(lastGoTo(ctx), ["goTo", 9]), hidden: base },
 }, { ctx: () => copies() });
+
+test("a blind audit row is never compared with its copies, so no label value or difference reaches it", () => {
+  // Blind audit line 9 labels urgent yes by hand; its revealed copy, review line 20, has urgent no by hand.
+  const raws = [...sampleReviewItemsRaw(), ...JSON.parse(JSON.stringify(extra))];
+  raws.find((raw) => raw.line === 9).labels = { topic: null, urgent: true, tone: null };
+  const ctx = copies({ items: raws, edits: { ...sampleReviewEdits(), 9: { urgent: true }, 20: { urgent: false }, 22: { topic: "wholesale", urgent: true } } });
+  const rows = Object.fromEntries(ctx.items().map((item) => [item.line, item]));
+  assert.equal(rows[9].revealed === true, false, "line 9 must still be blind");
+  const fact = pack.features.find((entry) => entry.id === "copy_conflict");
+  const check = pack.features.find((entry) => entry.id === "copy_conflict_check");
+  for (const line of [9, 20]) {
+    assert.equal(fact.value(rows[line], ctx), false, `line ${line}`);
+    assert.deepEqual(check.check(rows[line], ctx), [], `line ${line}`);
+  }
+});

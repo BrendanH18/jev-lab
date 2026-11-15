@@ -52,7 +52,10 @@ checkPack(pack, {
   coverage_lowered: [{ ctx: base, expect: 4 / 7, tolerance: 1e-12, empty: empty() }, { ctx: samplePolicyCtx({ hide: [0] }), expect: 0.5 }],
   accuracy_lowered: [{ ctx: base, expect: 0.75, empty: empty() }, { ctx: samplePolicyCtx({ hide: [3] }), expect: 1 }],
   // At 0.80 / 0.45 rows 2 and 6 automate, both right; at 0.75 / 0.40 rows 0 and 3 join, and row 3 is wrong.
-  mistakes_added_lowered: [{ ctx: base, expect: 0, empty: empty() }, { ctx: samplePolicyCtx({ gates: gates(0.8, 0.45) }), expect: 1 }],
+  // A typed urgent threshold of 0.4049 holds row 3 (urgent .40, wrong) now, as Policy applies it unrounded; 0.3549 automates
+  // it. Rounding the "now" baseline to 0.40 would count row 3 as automated already and report 0.
+  mistakes_added_lowered: [{ ctx: base, expect: 0, empty: empty() }, { ctx: samplePolicyCtx({ gates: gates(0.8, 0.45) }), expect: 1 },
+    { ctx: samplePolicyCtx({ gates: gates(0.5, 0.4049) }), expect: 1 }],
   // Automated rows' weakest margins .26, .37, .10, .34: median (.26 + .34) / 2; without row 3, .34.
   median_automated_margin: [{ ctx: base, expect: 0.3, tolerance: 1e-9, empty: empty() }, { ctx: samplePolicyCtx({ hide: [3] }), expect: 0.34, tolerance: 1e-9 }],
 

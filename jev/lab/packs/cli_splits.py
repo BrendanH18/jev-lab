@@ -12,8 +12,7 @@ Held-out rows are counted, never shown with an input or a label. Nothing calls t
 from __future__ import annotations
 
 import json
-import random
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from jev import decisions, holdout, testsplit, workbench
 from jev.lab import kit
@@ -37,40 +36,8 @@ def _configure_plan(parser: Any) -> None:
 
 
 def plan(dataset: dict, share: float, seed: Optional[int]) -> Tuple[List[int], List[List[int]]]:
-    """(positions of labeled rows, the exact-input groups to hold out) as testsplit.lock chooses them, read-only."""
-    if not testsplit.MIN_SHARE <= share <= testsplit.MAX_SHARE:
-        raise kit.CliError("--share must be a number from %g to %g" % (testsplit.MIN_SHARE, testsplit.MAX_SHARE))
-    rows = dataset["rows"]
-    if testsplit.test_indexes(dataset):
-        raise kit.CliError("dataset %r already has test rows; a new split is drawn only after the current one is removed"
-                           % dataset["id"])
-    labeled = [i for i, row in enumerate(rows) if testsplit._labeled(row)]
-    n = int(share * len(labeled) + 0.5)
-    if len(labeled) < 2 * testsplit.MIN_ROWS:
-        raise kit.CliError("label more rows first: a test split needs at least %d labeled rows on each side, and %d of %d "
-                           "labeled rows would leave %d and %d" % (testsplit.MIN_ROWS, round(share * 100), len(labeled), n,
-                                                                  len(labeled) - n))
-    rng = random.Random(seed) if seed is not None else random.SystemRandom()
-    groups: Dict[str, List[int]] = {}
-    for i, row in enumerate(rows):
-        groups.setdefault(decisions._key(row), []).append(i)
-    candidates = list(groups.values())
-    rng.shuffle(candidates)
-    subsets: Dict[int, List[List[int]]] = {0: []}
-    for positions in candidates:
-        weight = sum(testsplit._labeled(rows[i]) for i in positions)
-        if not weight:
-            continue
-        for count, chosen in list(subsets.items()):
-            total = count + weight
-            if total <= len(labeled) - testsplit.MIN_ROWS and total not in subsets:
-                subsets[total] = chosen + [positions]
-    feasible = [count for count in subsets if count >= testsplit.MIN_ROWS]
-    if not feasible:
-        raise kit.CliError("exact duplicate inputs must stay together: no split leaves at least %d labeled rows on each side"
-                           % testsplit.MIN_ROWS)
-    count = min(feasible, key=lambda c: (abs(c - share * len(labeled)), -c))
-    return labeled, subsets[count]
+    """(positions of labeled rows, the exact-input groups to hold out): testsplit.choose, the draw lock() makes."""
+    return testsplit.choose(dataset, share, seed)
 
 
 def run_plan(args: Any) -> int:

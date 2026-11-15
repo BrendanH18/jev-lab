@@ -20,7 +20,9 @@ const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const fixed = (value, digits = 2) => (num(value) === null ? "" : value.toFixed(digits));
 const rowsWord = (n) => `${n} shown row${n === 1 ? "" : "s"}`;
 const clears = (signal, t) => signal + EPS >= t;
-const moveTo = (t, offset) => Math.min(1, Math.max(0, round(t + offset, 2)));
+// A threshold moved by offset, clamped to 0..1. Rounded only to clear float noise (0.7 + 0.05), never to the slider's
+// two decimals: Policy applies a typed 0.875 as 0.875, so the "now" baseline must too.
+const moveTo = (t, offset) => (offset === 0 ? t : Math.min(1, Math.max(0, round(t + offset, 9))));
 
 // The gated questions of a row in gate order as [qid, signal, threshold], for the checked gates it answered.
 function gated(item, ctx) {

@@ -47,11 +47,25 @@ function binsOf(rows) {
   });
 }
 
+// Every scored row's bins, built once per ctx for one synchronous pass: ctx.items() builds a new list on each call,
+// so the Refine bar asking four facts of 200 rows would otherwise rebuild and rebin the run 800 times. The entry is
+// dropped at the next microtask, before the page can change the run under the same ctx.
+const binCache = new WeakMap();
+function allBins(ctx) {
+  let bins = binCache.get(ctx);
+  if (!bins) {
+    bins = binsOf(ctx.items());
+    binCache.set(ctx, bins);
+    queueMicrotask(() => binCache.delete(ctx));
+  }
+  return bins;
+}
+
 // The bin of one row among every scored row, or null.
 function binFor(item, ctx) {
   if (num(item?.top) === null || item.top < 0 || item.top > 1 || typeof ctx?.items !== "function") return null;
   const k = binOf(item.top);
-  return binsOf(ctx.items()).find((bin) => bin.k === k) || null;
+  return allBins(ctx).find((bin) => bin.k === k) || null;
 }
 
 const said = (bin) => `Rows stating ${bin.band} say ${percent(bin.stated)} on average but ${bin.hits} of ${bin.count} are right (95% interval ${percent(bin.low)}–${percent(bin.high)})`;

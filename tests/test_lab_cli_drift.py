@@ -190,3 +190,25 @@ class CliDriftTests(pack_tests(cli_drift.PACK, CASES)):
         for argv in (["drift", "fields", "no-such", NEW_FILE], ["drift", "fields", "cafe-tickets", DIR / "missing.jsonl"],
                      ["drift", "summary", "cafe-tickets", NEW_FILE, "--ratio", "1"], ["drift", "values", "cafe-tickets", NEW_FILE]):
             self.assertEqual(run_cli(argv, save)[0], 2, argv)
+
+    def test_new_only_applies_before_top(self):
+        # web is the only new channel and the least common value; --top 1 must not cut it away first.
+        code, out, _err = run_cli(["drift", "values", "cafe-tickets", NEW_FILE, "--field", "channel", "--new-only", "--top", "1"], save)
+        self.assertEqual((code, out), (1, table(VALUES, [V_WEB])))
+
+    def test_text_rows_have_no_slice_value(self):
+        # By slice reads a plain-text row as having no fields, so its text is "(none)", never its own value.
+        code, out, _err = run_cli(["drift", "values", "cafe-tickets", NEW_FILE, "--field", "text", "--format", "json"], save)
+        self.assertEqual(code, 0)
+        values = {row["value"]: row["reference rows"] for row in json.loads(out)}
+        self.assertNotIn("Grinder squeals", values)
+        self.assertEqual(values["(none)"], 1)
+
+    def test_new_rows_checked_as_the_drift_panel_checks_them(self):
+        bad_marker, too_many = DIR / "bad-marker.jsonl", DIR / "too-many.jsonl"
+        bad_marker.write_text(jsonl([{"text": "Bag torn", "_test": "true"}]))
+        too_many.write_text(jsonl([{"text": "Ticket %d" % n} for n in range(workbench.MAX_BULK_ROWS + 1)]))
+        for path in (bad_marker, too_many):
+            for command in ("fields", "overlap"):
+                code, _out, err = run_cli(["drift", command, "cafe-tickets", path], save)
+                self.assertEqual(code, 2, (command, path.name, err))

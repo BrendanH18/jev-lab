@@ -228,12 +228,14 @@ def numeric_outliers(rows, questions):
 def stray_negative_numbers(rows, questions):
     out = []
     for name, found in _field_values(rows).items():
-        numbers = [(n, _number(value)) for n, value, _entry in found if _number(value)]
+        # Zeros count among the field's numbers (a 0 is a real value, and leaving it out would shrink the base the
+        # share is measured on); only values below zero are negative.
+        numbers = [(n, _number(value)) for n, value, _entry in found if _number(value) is not None]
         negative = [n for n, value in numbers if value < 0]
         if len(numbers) < SIGN_MIN_ROWS or not negative or len(negative) > SIGN_MAX_SHARE * len(numbers):
             continue
-        out.append({"rows": negative, "message": "Field `%s` is negative on %s and positive on the other %d; check the "
-                    "sign." % (name, inputs._plural(len(negative), "row"), len(numbers) - len(negative))})
+        out.append({"rows": negative, "message": "Field `%s` is negative on %s and zero or positive on the other %d; "
+                    "check the sign." % (name, inputs._plural(len(negative), "row"), len(numbers) - len(negative))})
     return out
 
 

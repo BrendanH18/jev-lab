@@ -39,10 +39,14 @@ function groupsOf(ctx) {
 const copiesOf = (item, ctx) => list(groupsOf(ctx).get(item?.identity)).filter((other) => other.line !== item.line);
 
 // [{ question, line, mine, theirs }] for every question this row and one of its copies both labeled by hand, differently.
+// A blind audit row takes no part on either side until it is revealed: even "differs" would tell its labeler the copy's
+// label on a yes/no question, and a value shown on a revealed copy invites changing the audit row after the fact.
 function conflictsOf(item, ctx) {
+  if (blind(item)) return [];
   const mine = humanLabels(item);
   const out = [];
   for (const other of copiesOf(item, ctx)) {
+    if (blind(other)) continue;
     const theirs = new Map(humanLabels(other));
     for (const [qid, value] of mine) {
       if (theirs.has(qid) && JSON.stringify(theirs.get(qid)) !== JSON.stringify(value)) out.push({ question: qid, line: other.line, mine: value, theirs: theirs.get(qid) });
@@ -86,14 +90,14 @@ export default definePack({
         return group.length > 1 ? kindsOf(group) : "no copy";
       } },
     { id: "copy_conflict", kind: "fact", type: "flag", label: "a copy with a different label of yours",
-      help: "An identical input elsewhere in the queue carries a different human label for a question both rows labeled. The gate's untouched suggestions do not count.",
+      help: "An identical input elsewhere in the queue carries a different human label for a question both rows labeled. The gate's untouched suggestions do not count, and blind audit rows are left out until they are revealed.",
       value: (item, ctx) => conflictsOf(item, ctx).length > 0 },
     { id: "blind_exposed", kind: "fact", type: "flag", label: "a blind audit row with a revealed copy",
       help: "A blind audit row whose identical input is shown with the gate's answers on another row. Says nothing about those answers.",
       value: (item, ctx) => exposingCopies(item, ctx).length > 0 },
 
     { id: "copy_conflict_check", kind: "diagnostic", severity: "problem", label: "Identical inputs with different labels of yours",
-      help: "Two rows with the same input should get the same human label. Only labels you set are compared.",
+      help: "Two rows with the same input should get the same human label. Only labels you set are compared; a blind audit row is compared only once it is revealed, so it stays independent.",
       check: (item, ctx) => conflictsOf(item, ctx).map((entry) => `Line ${item.line} has ${entry.question} = ${labelText(entry.mine)}, but line ${entry.line} has the same input with ${entry.question} = ${labelText(entry.theirs)}.`) },
     { id: "blind_copy_exposed", kind: "diagnostic", severity: "advice", label: "Blind audit row with a revealed copy",
       help: "The audit stays independent only if you label the audit row before reading the gate's answers on its copy.",

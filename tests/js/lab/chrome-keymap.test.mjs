@@ -36,14 +36,22 @@ checkPack(pack, {
     const clean = sampleChromeCtx();
     feature("check_shortcut_clashes").run(clean);
     assert.deepEqual(toast(clean), { message: "No two shortcuts on this page press the same keys.", kind: "" });
-    // Mod is Cmd on a Mac, so it clashes with Meta there and with Ctrl elsewhere.
+    // The palette fires Mod on Ctrl or Cmd held, on every keyboard (kit.js keysMatch), so Mod+O clashes with Meta+O and
+    // with Ctrl+O everywhere. A Mac names Mod and Meta alike; elsewhere both chords are named.
     const pair = [command("One", "Mod+O"), command("Two", "Meta+O")];
     const mac = sampleChromeCtx({ commands: pair, mac: true });
     feature("check_shortcut_clashes").run(mac);
     assert.equal(toast(mac).message, "1 shortcut shared: Cmd + O by One and Two.");
     const pc = sampleChromeCtx({ commands: pair });
     feature("check_shortcut_clashes").run(pc);
-    assert.equal(toast(pc).kind, "");
+    assert.equal(toast(pc).message, "1 shortcut shared: Ctrl + O / Meta + O by One and Two.");
+    const ctrlOnMac = sampleChromeCtx({ commands: [command("Palette too", "Ctrl+K")], mac: true });
+    feature("check_shortcut_clashes").run(ctrlOnMac);
+    assert.equal(toast(ctrlOnMac).message, "1 shortcut shared: Cmd + K / Ctrl + K by Open or close the command palette and Palette too.");
+    // Exact chords clash only when they hold the same keys; Ctrl+O and Meta+O never fire together.
+    const exact = sampleChromeCtx({ commands: [command("Three", "Ctrl+O"), command("Four", "Meta+O")] });
+    feature("check_shortcut_clashes").run(exact);
+    assert.equal(toast(exact).kind, "");
   } },
   check_single_keys: { ctx: () => sampleChromeCtx(), check: (ctx) => {
     assert.equal(toast(ctx).message, "2 shortcuts are single character keys without Ctrl, Cmd or Alt: ? (Show keyboard shortcuts), j (Select the next message). Speech input can press these by accident.");

@@ -32,19 +32,39 @@ export function chordId(keys, mac) {
   return [ctrl && "Ctrl", meta && "Meta", chord.alt && "Alt", chord.shift && "Shift", chord.key].filter(Boolean).join("+");
 }
 
-// Groups of two or more entries (commands with a shortcut plus the reserved chords) that press the same chord.
+// Whether one key press can fire both chords, as kit.js's keysMatch reads them: Mod matches Ctrl or Cmd (Meta) held on
+// any platform, so Mod+O clashes with Ctrl+O and with Meta+O on every keyboard; a symbol key ignores Shift.
+export function chordsOverlap(a, b) {
+  const x = parseKeys(a), y = parseKeys(b);
+  if (!x || !y || x.key !== y.key || x.alt !== y.alt) return false;
+  const symbol = x.key.length === 1 && !/[a-z0-9]/.test(x.key);
+  if (!symbol && x.shift !== y.shift) return false;
+  if (x.mod && y.mod) return true;
+  if (x.mod) return y.ctrl || y.meta;
+  if (y.mod) return x.ctrl || x.meta;
+  return x.ctrl === y.ctrl && x.meta === y.meta;
+}
+
+// Groups of two or more entries (commands with a shortcut plus the reserved chords) that one key press can fire
+// together, joined through any overlapping pair. labels: each distinct chord in the group as this keyboard names it.
 export function clashes(ctx) {
   const mac = ctx.data.mac;
-  const byChord = new Map();
-  const add = (keys, title) => {
-    const id = chordId(keys, mac);
-    if (!id) return;
-    if (!byChord.has(id)) byChord.set(id, { keys, titles: [] });
-    byChord.get(id).titles.push(flat(title));
-  };
-  for (const [keys, title] of RESERVED) add(keys, title);
-  for (const row of ctx.data.commands) if (row.keys) add(row.keys, row.title);
-  return [...byChord.values()].filter((entry) => entry.titles.length > 1);
+  const entries = [...RESERVED.map(([keys, title]) => ({ keys, title })), ...ctx.data.commands.filter((row) => row.keys)]
+    .filter((entry) => parseKeys(entry.keys)).map((entry) => ({ keys: entry.keys, title: flat(entry.title) }));
+  const group = entries.map((_entry, i) => i);
+  const root = (i) => (group[i] === i ? i : (group[i] = root(group[i])));
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) if (chordsOverlap(entries[i].keys, entries[j].keys)) group[root(j)] = root(i);
+  }
+  const byRoot = new Map();
+  entries.forEach((entry, i) => {
+    const r = root(i);
+    if (!byRoot.has(r)) byRoot.set(r, { keys: entry.keys, labels: [], ids: new Set(), titles: [] });
+    const found = byRoot.get(r), id = chordId(entry.keys, mac);
+    if (!found.ids.has(id)) { found.ids.add(id); found.labels.push(keysLabel(entry.keys, mac)); }
+    found.titles.push(entry.title);
+  });
+  return [...byRoot.values()].filter((entry) => entry.titles.length > 1).map(({ keys, labels, titles }) => ({ keys, labels, titles }));
 }
 
 // Commands whose shortcut is one character key with no Ctrl, Cmd or Alt (Shift allowed): WCAG 2.1.4 asks that such
@@ -119,9 +139,9 @@ export default definePack({
         ctx.env.download(`jev-lab-keyboard-${pageSlug(ctx.data.path)}.json`, `${JSON.stringify({ page: ctx.data.path, shortcuts: rows }, null, 2)}\n`, "application/json");
       } },
     { id: "check_shortcut_clashes", kind: "command", group: "Accessibility", title: "Check the shortcuts on this page for clashes",
-      help: "Two commands, or a command and Ctrl/Cmd+K or Escape, that press the same keys: only one of them can work.",
+      help: "Two commands, or a command and Ctrl/Cmd+K or Escape, that one key press fires together (Mod counts as Ctrl or Cmd on every keyboard): only one of them can work.",
       run: (ctx) => report(ctx, clashes(ctx), "No two shortcuts on this page press the same keys.",
-        (found) => `${plural(found.length, "shortcut")} shared: ${found.map((entry) => `${keysLabel(entry.keys, ctx.data.mac)} by ${entry.titles.join(" and ")}`).join("; ")}.`) },
+        (found) => `${plural(found.length, "shortcut")} shared: ${found.map((entry) => `${entry.labels.join(" / ")} by ${entry.titles.join(" and ")}`).join("; ")}.`) },
     { id: "check_single_keys", kind: "command", group: "Accessibility", title: "Check for single-character shortcuts",
       help: "Shortcuts that are one letter, digit or symbol without Ctrl, Cmd or Alt. Speech input can press them by accident (WCAG 2.1.4). Advisory.",
       run: (ctx) => {

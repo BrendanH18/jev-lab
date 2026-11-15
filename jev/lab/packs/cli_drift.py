@@ -46,9 +46,7 @@ def _sides(args: Any) -> Tuple[dict, List[Any], List[Any], dict]:
     reference = workbench.tuning_rows(dataset)
     held = {driftsession.input_key(row) for row in dataset["rows"] if _held_out(row)}
     fresh, marked, copies = [], 0, 0
-    for row in cli_rows.load(args.file, args.source):
-        if row in (None, ""):
-            continue
+    for row in _new_rows(args):
         if _held_out(row):
             marked += 1
         elif driftsession.input_key(row) in held:
@@ -62,8 +60,14 @@ def _sides(args: Any) -> Tuple[dict, List[Any], List[Any], dict]:
     return dataset, reference, fresh, left
 
 
+def _new_rows(args: Any) -> List[Any]:
+    """The new rows as the Drift panel takes them: drift.new_rows enforces the row cap, row types and valid states."""
+    return driftlib.new_rows(cli_rows.load(args.file, args.source))
+
+
 def _held_out(row: Any) -> bool:
-    return isinstance(row, dict) and row.get(workbench.TEST_KEY) is True
+    """A test row, by the same strict rule as the Workbench: a marker other than true is an error."""
+    return workbench.row_test(row)
 
 
 def _blank(value: Any) -> bool:
@@ -173,7 +177,7 @@ def _configure_values(parser: Any) -> None:
 def _counts(rows: List[Any], field: str) -> Dict[str, int]:
     out: Dict[str, int] = {}
     for row in rows:
-        value = slices._value(_inputs(row), field)
+        value = slices._value(row, field)  # the raw row, as By slice reads it: a text row has no fields
         out[value] = out.get(value, 0) + 1
     return out
 
@@ -182,13 +186,13 @@ def run_values(args: Any) -> int:
     _dataset, reference, fresh, _left = _sides(args)
     ref, new = _counts(reference, args.field), _counts(fresh, args.field)
     values = sorted(set(ref) | set(new), key=lambda v: (-(ref.get(v, 0) + new.get(v, 0)), v))
+    if args.new_only:  # before --top, so a rare new value is never cut away
+        values = [value for value in values if not ref.get(value)]
     if args.top is not None:
         values = values[:max(args.top, 0)]
     rows = []
     for value in values:
         r, n = ref.get(value, 0), new.get(value, 0)
-        if args.new_only and r:
-            continue
         status = "new" if n and not r else "gone" if r and not n else ""
         rows.append([slices._shown(value), r, _share(r, len(reference)), n, _share(n, len(fresh)), status])
     _emit(args, ["value", "reference rows", "reference share", "new rows", "new share", "status"], rows,
@@ -248,7 +252,7 @@ def run_overlap(args: Any) -> int:
                                    "repeats an earlier new row": [], "new input": []}
     seen = set()
     fresh: List[Any] = []
-    for number, row in enumerate([r for r in cli_rows.load(args.file, args.source) if r not in (None, "")], 1):
+    for number, row in enumerate(_new_rows(args), 1):
         key = driftsession.input_key(row)
         if _held_out(row):
             kind = "marked as a test row"
