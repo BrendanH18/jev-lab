@@ -137,3 +137,11 @@ test("policy-threshold-sensitivity: moving gates never reaches past 0 or 1, and 
     feature.value({ answers: null, held: "x" }, base);
   }
 });
+
+test("the sensitivity CSV routes and prints a typed threshold as Policy applies it, unrounded", () => {
+  // Department 0.8749 holds row 2 (.87); rounding to 0.87 would clear it. Only row 3 (.93, urgent wrong) is automated.
+  const csv = pack.features.find((f) => f.id === "sensitivity_csv").build(samplePolicyCtx({ gates: gates(0.8749, 0.3) }));
+  assert.ok(csv.includes("\"department\",\"0.8749\",\"current\",\"0.8749\",\"1\",\"0.1429\",\"0.0000\",\"1\"\r\n"), csv);
+  // 0.8749 - 0.05 = 0.8249: rows 2 (.87), 3 and 6 (.84) are automated.
+  assert.ok(csv.includes("\"department\",\"0.8749\",\"0.05 lower\",\"0.8249\",\"3\",\"0.4286\",\"0.6667\",\"1\"\r\n"), csv);
+});

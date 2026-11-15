@@ -42,7 +42,7 @@ const driftLines = (id) => [`# ${id}: upper bound on calls and cost, no model ca
   `# ${id}: live comparison (spends budget; exits 1 on a shift)`, `uv run scripts/check.py ${id} --drift new-rows.jsonl`];
 
 checkPack(pack, {
-  slice_no_automation: { hit: ODD, miss: [H, WL], message: /^channel = email has an automation target of 0%, so it passes even when the gate automates nothing in that slice\.$/ },
+  slice_no_automation: { hit: ODD, miss: [H, WL], message: /^channel = email has an automation target of 0%, so it adds no automation minimum for that slice; its accuracy target still needs automated rows there, so a slice the gate automates nothing in still fails\.$/ },
   slice_perfect_accuracy: { hit: ODD, miss: [H, WL], message: /^channel = email asks 100% accuracy/ },
   // bean-reviews also asks 100%, but on the lower bound, which the starter pack's unreachable-target check covers.
   perfect_accuracy_estimate: { hit: ODD, miss: [B, H] },

@@ -39,8 +39,17 @@ def _configure_merge(parser: Any) -> None:
     parser.add_argument("--force", action="store_true", help="let --out replace an existing file")
 
 
+def _canonical(question: dict) -> str:
+    """A question as text for comparison: field order ignored, but a Choice's option order kept, since it is
+    configuration (decision provenance records it)."""
+    def ordered(key: str, value: Any) -> Any:
+        choice = key == "criteria" and question.get("type") == "choice" and isinstance(value, dict)
+        return [list(pair) for pair in value.items()] if choice else value
+    return json.dumps({key: ordered(key, value) for key, value in question.items()}, sort_keys=True)
+
+
 def _same(a: dict, b: dict) -> bool:
-    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+    return _canonical(a) == _canonical(b)
 
 
 def run_merge(args: Any) -> int:

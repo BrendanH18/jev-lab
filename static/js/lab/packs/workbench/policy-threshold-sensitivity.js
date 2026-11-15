@@ -18,6 +18,8 @@ const isObject = (value) => !!value && typeof value === "object" && !Array.isArr
 const activeOf = (ctx) => (isObject(ctx?.data?.active) ? ctx.data.active : {});
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const fixed = (value, digits = 2) => (num(value) === null ? "" : value.toFixed(digits));
+// A threshold as Policy applies it: two decimals when that is exact, otherwise every digit it has (a typed 0.875).
+const exact = (value) => (num(value) === null ? "" : Math.abs(value - round(value, 2)) < 1e-12 ? value.toFixed(2) : String(round(value, 9)));
 const rowsWord = (n) => `${n} shown row${n === 1 ? "" : "s"}`;
 const clears = (signal, t) => signal + EPS >= t;
 // A threshold moved by offset, clamped to 0..1. Rounded only to clear float noise (0.7 + 0.05), never to the slider's
@@ -216,11 +218,11 @@ export default definePack({
         const out = [["question", "threshold", "move", "tried threshold", "automated", "share", "accuracy", "automated mistakes"]];
         for (const [qid, t] of Object.entries(active)) {
           for (const [offset, name] of OFFSETS) {
-            const tried = round(t + offset, 2);
+            const tried = offset === 0 ? t : round(t + offset, 9);
             if (tried < -EPS || tried > 1 + EPS) continue;
             const auto = rows.filter((item) => automatedAt(item, ctx, (q, current) => (q === qid ? tried : current)));
             const wrong = auto.filter((item) => item.correct === false).length;
-            out.push([qid, fixed(t), name, fixed(tried), auto.length, fixed(auto.length / rows.length, 4), auto.length ? fixed((auto.length - wrong) / auto.length, 4) : "", wrong]);
+            out.push([qid, exact(t), name, exact(tried), auto.length, fixed(auto.length / rows.length, 4), auto.length ? fixed((auto.length - wrong) / auto.length, 4) : "", wrong]);
           }
         }
         return csvText(out);

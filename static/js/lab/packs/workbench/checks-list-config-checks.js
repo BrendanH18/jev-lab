@@ -46,7 +46,7 @@ export default definePack({
   features: [
     { id: "slice_no_automation", kind: "diagnostic", severity: "advice", label: "Required slice with a 0% automation target",
       check: (item) => slices(item).filter((slice) => finite(slice.min_coverage) === 0)
-        .map((slice) => `${sliceName(slice)} has an automation target of 0%, so it passes even when the gate automates nothing in that slice.`) },
+        .map((slice) => `${sliceName(slice)} has an automation target of 0%, so it adds no automation minimum for that slice; its accuracy target still needs automated rows there, so a slice the gate automates nothing in still fails.`) },
     { id: "slice_perfect_accuracy", kind: "diagnostic", severity: "advice", label: "Required slice with a 100% accuracy target",
       check: (item) => slices(item).filter((slice) => finite(slice.min_accuracy) !== null && slice.min_accuracy >= 1)
         .map((slice) => `${sliceName(slice)} asks 100% accuracy, so one automated mistake in that slice fails the check.`) },

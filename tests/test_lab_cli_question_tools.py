@@ -109,6 +109,17 @@ class CliQuestionToolsTests(pack_tests(cli_question_tools.PACK, CASES)):
         self.assertEqual(out, "conflict: urgent is defined differently in %s and a later file\n" % FILES["q1"])
         self.assertFalse(target.exists())
 
+    def test_merge_compares_choice_option_order_but_not_field_order(self):
+        reversed_options = DIR / "reversed.json"
+        reversed_options.write_text(json.dumps({"department": dict(DEPARTMENT, criteria=dict(reversed(list(DEPARTMENT["criteria"].items()))))}))
+        code, out, _err = run_cli(["questions", "merge", FILES["q1"], reversed_options])
+        self.assertEqual((code, out), (1, "conflict: department is defined differently in %s and a later file\n" % FILES["q1"]))
+        reordered_fields = DIR / "reordered.json"
+        reordered_fields.write_text(json.dumps({"department": dict(reversed(list(DEPARTMENT.items())))}))
+        code, out, _err = run_cli(["questions", "merge", FILES["q1"], reordered_fields])
+        self.assertEqual(code, 0)
+        self.assertEqual(list(json.loads(out)["department"]["criteria"]), ["billing", "shipping"])
+
     def test_schema_accepts_a_labeled_row(self):
         properties = cli_question_tools.schema({"urgent": URGENT, "mood": MOOD})["properties"]
         self.assertEqual(properties["mood"]["anyOf"][0], {"type": "integer", "minimum": 0, "maximum": 2})
