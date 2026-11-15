@@ -60,7 +60,9 @@ _BARE_HOST = re.compile(r"\bwww\.([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)", re.I)
 _RESERVED_TLDS = (".example", ".test", ".invalid", ".localhost", ".local")
 _RESERVED_HOSTS = ("example.com", "example.net", "example.org", "localhost")
 _TOKEN = re.compile(r"[A-Za-z0-9+/=_-]{%d,}" % TOKEN_MIN_CHARS)
-_ANY_URL = re.compile(r"\S+://\S+")
+# A URL to skip: a bounded scheme (RFC 3986 letters, digits, + - .) before ://, so a long run without :// is scanned in
+# linear time; an unbounded \S+ prefix retried at every start makes the scan quadratic on long tokens.
+_ANY_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]{0,31}://\S+")
 _WORDISH = re.compile(r"[A-Za-z]{%d,}" % TOKEN_MIN_CHARS)
 
 

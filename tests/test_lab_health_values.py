@@ -2,6 +2,7 @@
 
 import re
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -97,6 +98,13 @@ CASES = {
 
 
 class HealthValuesTests(pack_tests(health_values.PACK, CASES)):
+    def test_long_tokens_scan_in_linear_time(self):
+        # A 120,000-character run without :// took about half a minute with an unbounded URL prefix; it now takes
+        # milliseconds. The bound is generous so a slow machine never fails it.
+        started = time.monotonic()
+        self.assertFalse(health_values._long_token("a" * 120000))
+        self.assertLess(time.monotonic() - started, 2.0)
+
     def test_zeros_count_toward_the_sign_share(self):
         # 40 zeros, 4 positives and 1 negative: 1 of 45 numbers is negative (2%, under the 10% share), so it is stray.
         # Leaving zeros out would make it 1 of 5 (20%) and hide it.
