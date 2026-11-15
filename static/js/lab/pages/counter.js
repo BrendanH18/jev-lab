@@ -4,13 +4,16 @@
 import { createLab } from "../host.js";
 import * as s0 from "../surfaces/counter.js";
 import p0 from "../packs/counter/counter-example-guide.js";
-import p1 from "../packs/counter/counter-examples-more.js";
-import p2 from "../packs/counter/counter-panels.js";
-import p3 from "../packs/counter/counter-turn-insights.js";
-import p4 from "../packs/counter/counter-turns-more.js";
-import p5 from "../packs/chrome/chrome-essentials.js";
-import p6 from "../packs/chrome/chrome-navigation.js";
-import p7 from "../packs/chrome/chrome-readouts.js";
+import p1 from "../packs/counter/counter-examples-extra.js";
+import p2 from "../packs/counter/counter-examples-more.js";
+import p3 from "../packs/counter/counter-panels.js";
+import p4 from "../packs/counter/counter-turn-insights.js";
+import p5 from "../packs/counter/counter-turns-extra.js";
+import p6 from "../packs/counter/counter-turns-more.js";
+import p7 from "../packs/chrome/chrome-essentials.js";
+import p8 from "../packs/chrome/chrome-keymap.js";
+import p9 from "../packs/chrome/chrome-navigation.js";
+import p10 from "../packs/chrome/chrome-readouts.js";
 
-export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7];
+export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10];
 export const LAB = createLab(PACKS, { ...s0 });
