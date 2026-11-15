@@ -48,6 +48,18 @@ class HealthViewsTests(pack_tests(health_views.PACK, CASES)):
         self.assertEqual(health_views.same_view_different_labels(rows, WHOLE), [])
         self.assertEqual(health_views.same_view_across_split(rows, WHOLE), [])
 
+    def test_a_question_reading_the_picture_sees_different_pictures_as_different(self):
+        damage = {"damage": {"type": "choice", "instructions": "Is the bag in `photo` damaged? The note says `text`.",
+                             "criteria": {"torn": "Torn or split", "intact": "Undamaged"}}}
+        torn = dict(row("Bag arrived", "T-1"), _image="torn-bag", _expect={"damage": "torn"})
+        intact = dict(row("Bag arrived", "T-2"), _image="intact-bag", _expect={"damage": "intact"})
+        self.assertEqual(health_views.same_view_different_labels([torn, intact], damage), [])
+        held = dict(row("Bag arrived", "T-3", test=True), _image="intact-bag")
+        self.assertEqual(health_views.same_view_across_split([torn, held], damage), [])
+        # The same picture and note on both sides is still one case for the question.
+        same = dict(row("Bag arrived", "T-4", test=True), _image="torn-bag")
+        self.assertEqual(health_views.same_view_across_split([torn, same], damage)[0]["rows"], [1, 2])
+
     def test_findings_reach_the_health_report(self):
         rows = [row("Bag torn badly", "T-1", "shipping"), row("Bag torn badly", "T-2", "billing")]
         codes = {item["code"] for item in health.analyze(rows, TEAM)["lab"]}

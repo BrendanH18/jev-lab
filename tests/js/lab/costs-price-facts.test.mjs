@@ -83,3 +83,12 @@ test("costs-price-facts: a free reverse counts as lopsided, and an exported JSON
   const tsv = pack.features.find((f) => f.id === "prices_tsv").build(base);
   assert.deepEqual(runImporter(pack.features.find((f) => f.id === "tsv"), tsv, base).items, [m1, m2, m3]);
 });
+
+test("price edits keep sub-cent prices, which Costs accepts", () => {
+  const feature = (id) => pack.features.find((f) => f.id === id);
+  // A $0.001 review times 2 is $0.002, not a free mistake.
+  const cheap = sampleCostsCtx({ costs: { ...COSTS, review: "0.001" } });
+  assert.equal(feature("review_multiple").each(m1, { multiple: 2 }, cheap).cost, "0.002");
+  // A typed $0.005 cap writes $0.005, never a rounded $0.01 above the cap.
+  assert.equal(feature("cap_prices").each({ ...m1, cost: "0.009" }, { cap: 0.005 }, base).cost, "0.005");
+});

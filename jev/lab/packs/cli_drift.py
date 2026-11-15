@@ -117,8 +117,15 @@ def _ratio(new: Optional[float], ref: Optional[float]) -> Optional[float]:
     return new / ref if new is not None and ref else None
 
 
-def _shifted(ratio: Optional[float], limit: float) -> bool:
-    return ratio is not None and (ratio >= limit or (ratio > 0 and ratio <= 1 / limit))
+def _shifted(new: Optional[float], ref: Optional[float], limit: float) -> bool:
+    """Whether a median length moved by a factor of limit or more. Text that vanishes (a median of 0 after a positive
+    one) or appears (positive after 0) moved by more than any factor."""
+    if new is None or ref is None or (new == 0 and ref == 0):
+        return False
+    if new == 0 or ref == 0:
+        return True
+    ratio = new / ref
+    return ratio >= limit or ratio <= 1 / limit
 
 
 def _common(parser: Any) -> None:
@@ -184,7 +191,8 @@ def _counts(rows: List[Any], field: str) -> Dict[str, int]:
 
 def run_values(args: Any) -> int:
     _dataset, reference, fresh, _left = _sides(args)
-    ref, new = _counts(reference, args.field), _counts(fresh, args.field)
+    field = cli_rows._input_field(args.field, "--field")  # never labels or test markers
+    ref, new = _counts(reference, field), _counts(fresh, field)
     values = sorted(set(ref) | set(new), key=lambda v: (-(ref.get(v, 0) + new.get(v, 0)), v))
     if args.new_only:  # before --top, so a rare new value is never cut away
         values = [value for value in values if not ref.get(value)]
@@ -221,7 +229,7 @@ def run_lengths(args: Any) -> int:
         if not ref and not new:
             continue
         ratio = _ratio(_median(new), _median(ref))
-        if args.min_ratio is not None and not _shifted(ratio, args.min_ratio):
+        if args.min_ratio is not None and not _shifted(_median(new), _median(ref), args.min_ratio):
             continue
         p = driftlib.mann_whitney(ref, new)
         rows.append([name, len(ref), _median(ref), _p90(ref), len(new), _median(new), _p90(new),
@@ -411,7 +419,7 @@ def run_summary(args: Any) -> int:
         if 2 <= len(ref) <= slices.MAX_VALUES and len(ref) < len(reference) and any(value not in ref for value in _counts(fresh, name)):
             new_values.append(name)
     lengths = [name for name in _fields(reference, fresh)
-               if _shifted(_ratio(_median(_lengths(fresh, name)), _median(_lengths(reference, name))), args.ratio)]
+               if _shifted(_median(_lengths(fresh, name)), _median(_lengths(reference, name)), args.ratio)]
     types = [name for name in _fields(reference, fresh)
              if _mix(reference, name) and _mix(fresh, name) and set(_mix(reference, name)) != set(_mix(fresh, name))]
     facts = {

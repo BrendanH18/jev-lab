@@ -236,7 +236,11 @@ def _configure_fits(parser: Any) -> None:
 def _wording(question: Any) -> str:
     if not isinstance(question, dict):
         return ""
-    return json.dumps({k: question.get(k) for k in ("type", "instructions", "criteria")}, sort_keys=True, ensure_ascii=False)
+    criteria = question.get("criteria")
+    if question.get("type") == "choice" and isinstance(criteria, dict):
+        criteria = [list(pair) for pair in criteria.items()]  # a Choice's option order is configuration: keep it
+    return json.dumps({"type": question.get("type"), "instructions": question.get("instructions"), "criteria": criteria},
+                      sort_keys=True, ensure_ascii=False)
 
 
 def _question_file(path: str) -> Dict[str, dict]:

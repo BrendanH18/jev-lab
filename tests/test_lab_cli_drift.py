@@ -212,3 +212,19 @@ class CliDriftTests(pack_tests(cli_drift.PACK, CASES)):
             for command in ("fields", "overlap"):
                 code, _out, err = run_cli(["drift", command, "cafe-tickets", path], save)
                 self.assertEqual(code, 2, (command, path.name, err))
+
+    def test_values_never_reads_labels_or_test_markers(self):
+        for field in ("_expect", "_test"):
+            code, out, err = run_cli(["drift", "values", "cafe-tickets", NEW_FILE, "--field", field], save)
+            self.assertEqual(code, 2, field)
+            self.assertNotIn("billing", out + err)
+
+    def test_text_that_vanishes_or_appears_is_a_length_shift(self):
+        emptied = DIR / "emptied.jsonl"
+        emptied.write_text(jsonl([{"text": ""}, {"text": ""}]))
+        code, out, _err = run_cli(["drift", "lengths", "cafe-tickets", emptied, "--field", "text", "--min-ratio", "2", "--format", "json"], save)
+        self.assertEqual(code, 1)
+        self.assertEqual([row["field"] for row in json.loads(out)], ["text"])
+        self.assertTrue(cli_drift._shifted(12.0, 0.0, 2))
+        self.assertFalse(cli_drift._shifted(0.0, 0.0, 2))
+        self.assertFalse(cli_drift._shifted(15.0, 10.0, 2))

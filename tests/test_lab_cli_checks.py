@@ -204,6 +204,18 @@ CASES = {
 
 
 class CliChecksTests(pack_tests(cli_checks.PACK, CASES)):
+    def test_fits_notes_a_reordered_choice_but_not_reordered_fields(self):
+        department = QUESTIONS["department"]
+        reordered = DIR / "reordered-options.json"
+        reordered.write_text(json.dumps(dict(QUESTIONS, department=dict(department, criteria=dict(reversed(list(department["criteria"].items())))))))
+        code, out, _err = run_cli(["checks", "fits", "support-tickets", "--questions", reordered, "--strict"], save_all)
+        self.assertEqual(code, 1)
+        self.assertIn("note: department is worded differently there", out)
+        same = DIR / "reordered-fields.json"
+        same.write_text(json.dumps(dict(QUESTIONS, department=dict(reversed(list(department.items()))))))
+        code, out, _err = run_cli(["checks", "fits", "support-tickets", "--questions", same, "--strict"], save_all)
+        self.assertNotIn("department is worded differently", out)
+
     def test_empty_data_directory(self):
         self.assertEqual(run_cli(["checks", "list"]), (0, "no saved dataset holds a check\n", ""))
         self.assertEqual(run_cli(["checks", "stale"])[0:2], (0, "every check was saved after its dataset's rows\n"))

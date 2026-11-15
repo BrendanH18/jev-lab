@@ -20,7 +20,9 @@ const price = (item) => {
 const reviewPrice = (ctx) => toNumber(ctx?.data?.review);
 const defaultPrice = (ctx) => toNumber(ctx?.data?.error);
 const money = (value) => `$${value.toFixed(2)}`;
-const cents = (value) => String(round(value, 2));
+// A price as written into a Costs input: every digit it has (Costs takes sub-cent prices), rounded only to clear float
+// noise such as 0.1 + 0.2. Displays round separately, through money().
+const priceText = (value) => String(round(value, 9));
 const keyOf = (item) => JSON.stringify([item.question, item.label, item.answer]);
 const reverseKey = (item) => JSON.stringify([item.question, item.answer, item.label]);
 const questionOf = (ctx, qid) => list(ctx?.data?.questions).find((q) => q.qid === qid) || null;
@@ -155,7 +157,7 @@ export default definePack({
           const j = next.findIndex((other) => keyOf(other) === reverseKey(next[i]));
           const p = price(next[i]), q = j < 0 ? null : price(next[j]);
           if (p === null || q === null || Math.abs(p - q) <= EPS) continue;
-          next[i].cost = next[j].cost = cents(Math.max(p, q));
+          next[i].cost = next[j].cost = priceText(Math.max(p, q));
         }
         return next;
       } },
@@ -163,7 +165,7 @@ export default definePack({
       params: [{ name: "cap", label: "Highest price", type: "number", min: 0, max: MAX_PRICE, default: 1000 }],
       each: (item, { cap }) => {
         const p = price(item);
-        return p === null || p <= cap + EPS ? null : { ...item, cost: cents(cap) };
+        return p === null || p <= cap + EPS ? null : { ...item, cost: priceText(cap) };
       } },
     { id: "score_monotone", kind: "transform", label: "Raise shown Score prices to at least their nearer mistakes'",
       help: "For each Score question and label, an answer further off on the same side is raised to the highest price of the nearer ones.",
@@ -179,7 +181,7 @@ export default definePack({
               let p = entry.p;
               if (shown.has(entry.index) && p < nearer - EPS) {
                 p = nearer;
-                next[entry.index].cost = cents(nearer);
+                next[entry.index].cost = priceText(nearer);
               }
               here = Math.max(here, p);
             }
@@ -193,7 +195,7 @@ export default definePack({
       each: (item, { multiple }, ctx) => {
         const review = reviewPrice(ctx);
         if (review === null || review < 0) throw new Error("Set a valid review price first: this edit uses it.");
-        const value = round(review * multiple, 2);
+        const value = round(review * multiple, 9);
         if (value > MAX_PRICE) throw new Error(`${item.question}: ${item.label} → ${item.answer} would cost more than $1,000,000.`);
         return { ...item, cost: String(value) };
       } },
@@ -250,7 +252,7 @@ export default definePack({
       },
       run: (ctx) => {
         const highest = Math.max(...ctx.shown().map(price).filter((value) => value !== null));
-        ctx.actions.setPrices(null, cents(highest));
+        ctx.actions.setPrices(null, priceText(highest));
         ctx.env?.toast?.(`Default mistake price set to ${money(highest)}.`);
       } },
   ],

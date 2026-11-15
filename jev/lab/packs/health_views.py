@@ -10,7 +10,7 @@ numbers, question ids and paths only; held-out rows' labels are never read.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from jev import decisions, lint, workbench
 from jev.lab import kit
@@ -24,24 +24,29 @@ def _state(entry: dict) -> Any:
     return {"text": value} if isinstance(value, str) else value
 
 
-def _view(entry: dict, paths: List[str]) -> Optional[str]:
-    """What a question's paths read on this row, or None when one of them reads nothing."""
-    parts = []
+def _view(entry: dict, paths: List[str], photo: bool = False) -> Optional[str]:
+    """What a question's paths read on this row, or None when one of them reads nothing. photo: the question reads the
+    row's picture too, so its name is part of what the question sees."""
+    parts: List[Any] = []
     for path in paths:
         found = [value for _route, value in states._lookup(_state(entry), path)]
         if not found or all(inputs._blank(value) for value in found):
             return None
         parts.append(found)
+    if photo:
+        parts.append({workbench.IMAGE_KEY: entry["picture"]})
     return json.dumps(parts, sort_keys=True, ensure_ascii=False)
 
 
-def _pointed(questions: Dict[str, dict]) -> Dict[str, List[str]]:
+def _pointed(questions: Dict[str, dict]) -> Dict[str, Tuple[List[str], bool]]:
+    """Per question: (the state paths it reads other than the picture, whether it reads the picture)."""
     out = {}
     for qid, question in (questions or {}).items():
         if isinstance(question, dict):
-            paths = sorted(set(path for path in lint._paths(question) if path != workbench.PHOTO_FIELD))
+            read = set(lint._paths(question))
+            paths = sorted(path for path in read if path != workbench.PHOTO_FIELD)
             if paths:
-                out[qid] = paths
+                out[qid] = (paths, workbench.PHOTO_FIELD in read)
     return out
 
 
@@ -56,7 +61,7 @@ def _label(question: dict, row: Any, qid: str) -> Optional[str]:
 def same_view_different_labels(rows, questions):
     entries = inputs._entries(rows)
     out = []
-    for qid, paths in _pointed(questions).items():
+    for qid, (paths, photo) in _pointed(questions).items():
         question = questions[qid]
         if question.get("type") not in LABEL_TYPES:
             continue
@@ -65,7 +70,7 @@ def same_view_different_labels(rows, questions):
             if entry["test"]:
                 continue
             label = _label(question, row, qid)
-            view = _view(entry, paths) if label is not None else None
+            view = _view(entry, paths, photo) if label is not None else None
             if view is not None:
                 groups.setdefault(view, []).append((entry["n"], entry["key"], label))
         hits = sorted(n for group in groups.values()
@@ -83,10 +88,10 @@ def same_view_across_split(rows, questions):
     if not any(entry["test"] for entry in entries):
         return []
     out = []
-    for qid, paths in _pointed(questions).items():
+    for qid, (paths, photo) in _pointed(questions).items():
         groups: Dict[str, List[dict]] = {}
         for entry in entries:
-            view = _view(entry, paths)
+            view = _view(entry, paths, photo)
             if view is not None:
                 groups.setdefault(view, []).append(entry)
         hits = sorted(entry["n"] for group in groups.values()
