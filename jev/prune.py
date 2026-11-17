@@ -35,22 +35,42 @@ def _target(target: Any) -> float:
     raise CalibrationError("target must be one of %s" % ", ".join("%g" % t for t in TARGETS))
 
 
-def _outcome(levels: List[List[int]], right: List[bool], labeled: int, qids: List[str], target: float, bound: str,
-             fixed: Optional[Dict[str, float]] = None) -> dict:
+def _outcome(
+    levels: List[List[int]],
+    right: List[bool],
+    labeled: int,
+    qids: List[str],
+    target: float,
+    bound: str,
+    fixed: Optional[Dict[str, float]] = None,
+) -> dict:
     """The thresholds on `qids` (columns of `levels`) that automate the most rows at the target, as Policy's Tune
     finds them, with `fixed` thresholds added. `labeled` counts the rows a rule holds too."""
     steps = policy.search(levels, right, bound, (target,))[0] if levels else None
     if steps is None:
-        return {"gates": None, "labeled": labeled, "automated": 0, "coverage": 0.0, "accuracy": None,
-                "low": None, "high": None}
+        return {
+            "gates": None,
+            "labeled": labeled,
+            "automated": 0,
+            "coverage": 0.0,
+            "accuracy": None,
+            "low": None,
+            "high": None,
+        }
     auto = policy.admitted(levels, steps)
     good = sum(right[i] for i in auto)
     low, high = calibrate.wilson(good, len(auto))
     gates = {q: steps[j] / STEPS for j, q in enumerate(qids)}
     gates.update(fixed or {})
-    return {"gates": gates, "labeled": labeled, "automated": len(auto),
-            "coverage": len(auto) / labeled if labeled else 0.0,
-            "accuracy": good / len(auto) if auto else None, "low": low, "high": high}
+    return {
+        "gates": gates,
+        "labeled": labeled,
+        "automated": len(auto),
+        "coverage": len(auto) / labeled if labeled else 0.0,
+        "accuracy": good / len(auto) if auto else None,
+        "low": low,
+        "high": high,
+    }
 
 
 def _tuned(rows: List[dict], qids: List[str], signal: str, rules: Any, target: float, bound: str) -> dict:
@@ -63,8 +83,15 @@ def _chars(questions: Dict[str, dict]) -> Dict[str, int]:
     return {q: len(json.dumps({q: questions[q]}, ensure_ascii=False)) for q in questions}
 
 
-def prune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate", target: Any = 0.95,
-          rules: Any = None, request: Any = None) -> dict:
+def prune(
+    rows: Any,
+    qids: Any,
+    signal: str = "confidence",
+    bound: str = "estimate",
+    target: Any = 0.95,
+    rules: Any = None,
+    request: Any = None,
+) -> dict:
     """rows and qids as policy.tune takes them; target: one of TARGETS; request: optional {qid: question}, the
     question set the rows were run with, for the unused questions and each question's share of the text."""
     calibrate.check_bound(bound)
@@ -87,13 +114,23 @@ def prune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estima
     gated = []
     for j, q in enumerate(qids):
         others = [o for o in qids if o != q]
-        off = _outcome([lv[:j] + lv[j + 1:] for lv in levels], right, labeled, others, target, bound, {q: 0.0})
+        off = _outcome([lv[:j] + lv[j + 1 :] for lv in levels], right, labeled, others, target, bound, {q: 0.0})
         if off["gates"]:
             off["gates"] = {o: off["gates"][o] for o in qids}  # in the gate's order, with this one at 0
         dropped = _tuned(rows, others, signal, rules, target, bound) if others else None
-        gated.append({"qid": q, "type": types[q], "share": share(q), "rules": reads.get(q, []),
-                      "off": off, "dropped": dropped})
-    unused = [{"qid": q, "type": asked[q]["type"], "share": share(q)} for q in asked if q not in qids and q not in reads]
-    return {"signal": signal, "bound": bound, "target": target, "labeled": labeled,
-            "baseline": _outcome(levels, right, labeled, qids, target, bound),
-            "gated": gated, "unused": unused, "chars": total if asked else None}
+        gated.append(
+            {"qid": q, "type": types[q], "share": share(q), "rules": reads.get(q, []), "off": off, "dropped": dropped}
+        )
+    unused = [
+        {"qid": q, "type": asked[q]["type"], "share": share(q)} for q in asked if q not in qids and q not in reads
+    ]
+    return {
+        "signal": signal,
+        "bound": bound,
+        "target": target,
+        "labeled": labeled,
+        "baseline": _outcome(levels, right, labeled, qids, target, bound),
+        "gated": gated,
+        "unused": unused,
+        "chars": total if asked else None,
+    }

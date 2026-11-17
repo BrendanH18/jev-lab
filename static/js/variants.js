@@ -7,8 +7,13 @@ export function parseVariantText(text, name) {
   const trimmed = String(text ?? "").trim();
   if (!trimmed) throw new Error(`Variant ${name} has no questions`);
   let questions;
-  try { questions = parseUniqueJson(trimmed); } catch (e) { throw new Error(`Variant ${name}: invalid JSON (${e.message})`); }
-  if (!questions || typeof questions !== "object" || Array.isArray(questions)) throw new Error(`Variant ${name}: questions must be an object keyed by question id`);
+  try {
+    questions = parseUniqueJson(trimmed);
+  } catch (e) {
+    throw new Error(`Variant ${name}: invalid JSON (${e.message})`);
+  }
+  if (!questions || typeof questions !== "object" || Array.isArray(questions))
+    throw new Error(`Variant ${name}: questions must be an object keyed by question id`);
   return questions;
 }
 
@@ -19,9 +24,12 @@ export function parseVariantText(text, name) {
 // objects always list in ascending order.
 export function reverseOptions(questions) {
   let moved = false;
-  const out = Object.create(null);  // a question id such as "__proto__" stays an ordinary key
+  const out = Object.create(null); // a question id such as "__proto__" stays an ordinary key
   for (const [qid, q] of Object.entries(questions || {})) {
-    const criteria = q && q.type === "choice" && q.criteria && typeof q.criteria === "object" && !Array.isArray(q.criteria) ? q.criteria : null;
+    const criteria =
+      q && q.type === "choice" && q.criteria && typeof q.criteria === "object" && !Array.isArray(q.criteria)
+        ? q.criteria
+        : null;
     const reversed = criteria ? Object.fromEntries(Object.entries(criteria).reverse()) : null;
     if (reversed && Object.keys(reversed).join("\u0000") !== Object.keys(criteria).join("\u0000")) {
       out[qid] = { ...q, criteria: reversed };

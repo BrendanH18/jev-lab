@@ -45,54 +45,156 @@ export const TESTS_NOW = Date.UTC(2026, 10, 12, 12, 0, 0);
 export const TESTS_SURFACE = "workbench.tests.items";
 
 // The page's filter defaults (workbench-tests.js testFilterDefaults), for data.filters_active.
-export const TESTS_FILTER_DEFAULTS = Object.freeze({ status: "all", type: "all", expectations: "all", images: "all", selection: "all", sort: "saved",
-  minQuestions: "", maxQuestions: "", stateType: "all", notes: "all", questionId: "", coverage: "all", typeMix: "all", searchField: "all", exclude: "",
-  minExpectations: "", maxExpectations: "", minImages: "", maxImages: "", idPrefix: "", excludeType: "all", minStateBytes: "", maxStateBytes: "",
-  namePrefix: "", idSuffix: "", questionMatch: "contains", minUncovered: "", maxUncovered: "", minOptions: "", maxOptions: "", minInstructions: "",
-  maxInstructions: "", minLatency: "", maxLatency: "", minCost: "", maxCost: "", latency: "all", cost: "all", minCriteria: "", maxCriteria: "",
-  minCriteriaCharacters: "", maxCriteriaCharacters: "", minScoreLevels: "", maxScoreLevels: "", minOrphanExpectations: "", maxOrphanExpectations: "",
-  orphanExpectations: "all" });
+export const TESTS_FILTER_DEFAULTS = Object.freeze({
+  status: "all",
+  type: "all",
+  expectations: "all",
+  images: "all",
+  selection: "all",
+  sort: "saved",
+  minQuestions: "",
+  maxQuestions: "",
+  stateType: "all",
+  notes: "all",
+  questionId: "",
+  coverage: "all",
+  typeMix: "all",
+  searchField: "all",
+  exclude: "",
+  minExpectations: "",
+  maxExpectations: "",
+  minImages: "",
+  maxImages: "",
+  idPrefix: "",
+  excludeType: "all",
+  minStateBytes: "",
+  maxStateBytes: "",
+  namePrefix: "",
+  idSuffix: "",
+  questionMatch: "contains",
+  minUncovered: "",
+  maxUncovered: "",
+  minOptions: "",
+  maxOptions: "",
+  minInstructions: "",
+  maxInstructions: "",
+  minLatency: "",
+  maxLatency: "",
+  minCost: "",
+  maxCost: "",
+  latency: "all",
+  cost: "all",
+  minCriteria: "",
+  maxCriteria: "",
+  minCriteriaCharacters: "",
+  maxCriteriaCharacters: "",
+  minScoreLevels: "",
+  maxScoreLevels: "",
+  minOrphanExpectations: "",
+  maxOrphanExpectations: "",
+  orphanExpectations: "all",
+});
 
 // Raw saved tests exactly as GET /api/workbench/items returns them (fresh copies on every call).
 export function sampleTestsRaw() {
   return [
-    { id: "refund-routing", name: "Refund routing", notes: "Customer asks for money back on a bag of beans.", saved_at: "2026-10-01T09:30:00Z",
+    {
+      id: "refund-routing",
+      name: "Refund routing",
+      notes: "Customer asks for money back on a bag of beans.",
+      saved_at: "2026-10-01T09:30:00Z",
       state: "Hi, order HC-1042 arrived stale. Can I get a refund? Dana (dana@customer.example)",
       questions: {
-        intent: { type: "choice", instructions: "What does the customer want?", criteria: { refund: "Money back", replacement: "A new bag", question: "Just asking" } },
+        intent: {
+          type: "choice",
+          instructions: "What does the customer want?",
+          criteria: { refund: "Money back", replacement: "A new bag", question: "Just asking" },
+        },
         urgent: { type: "noul", instructions: "Does this need a reply today?" },
       },
-      expect: { intent: { choice: "refund", min: 0.6 }, urgent: { min: 0.5 } } },
-    { id: "bean-quality", name: "Bean quality review", notes: "", saved_at: "2026-10-15T14:00:00Z",
+      expect: { intent: { choice: "refund", min: 0.6 }, urgent: { min: 0.5 } },
+    },
+    {
+      id: "bean-quality",
+      name: "Bean quality review",
+      notes: "",
+      saved_at: "2026-10-15T14:00:00Z",
       state: { review: "Dark roast tasted burnt, but shipping was fast.", stars: 2 },
-      questions: { quality: { type: "score", instructions: "How happy is the reviewer with the beans?", criteria: ["Unhappy", "Mixed", "Happy"] } },
-      expect: { quality: { min: 1, max: 2 } } },
-    { id: "damaged-bag-photo", name: "Damaged bag photo", notes: "Photo from the wholesale dock.", saved_at: "2026-11-02T08:05:00Z",
+      questions: {
+        quality: {
+          type: "score",
+          instructions: "How happy is the reviewer with the beans?",
+          criteria: ["Unhappy", "Mixed", "Happy"],
+        },
+      },
+      expect: { quality: { min: 1, max: 2 } },
+    },
+    {
+      id: "damaged-bag-photo",
+      name: "Damaged bag photo",
+      notes: "Photo from the wholesale dock.",
+      saved_at: "2026-11-02T08:05:00Z",
       state: { note: "Bag arrived torn at the Portside dock", photo: "photo" },
-      questions: { damage: { type: "box", instructions: "Where is the tear in `photo`?" }, torn: { type: "noul", instructions: "Is the bag in `photo` torn?" } },
+      questions: {
+        damage: { type: "box", instructions: "Where is the tear in `photo`?" },
+        torn: { type: "noul", instructions: "Is the bag in `photo` torn?" },
+      },
       expect: { damage: { box: { left: 0.1, top: 0.2, right: 0.5, bottom: 0.6 }, iou_min: 0.5 } },
-      images: { photo: { sample: "torn-bag" } } },
-    { id: "wholesale-inquiry", name: "Wholesale inquiry", notes: "",
+      images: { photo: { sample: "torn-bag" } },
+    },
+    {
+      id: "wholesale-inquiry",
+      name: "Wholesale inquiry",
+      notes: "",
       state: ["Do you sell 5 kg bags?", "We run a cafe in Portside: orders@portside-cafe.example"],
       questions: {
-        route: { type: "choice", instructions: "Which team should answer?", criteria: { sales: "Wholesale sales", support: "Customer support" } },
+        route: {
+          type: "choice",
+          instructions: "Which team should answer?",
+          criteria: { sales: "Wholesale sales", support: "Customer support" },
+        },
         spam: { type: "noul", instructions: "Is this spam?" },
       },
-      expect: { route: { choice: "wholesale" }, spam: {} } },
-    { id: "latte-art-feedback", name: "Latte art feedback", notes: "archived: replaced by the cafe survey", saved_at: "2026-09-20T17:45:00Z",
+      expect: { route: { choice: "wholesale" }, spam: {} },
+    },
+    {
+      id: "latte-art-feedback",
+      name: "Latte art feedback",
+      notes: "archived: replaced by the cafe survey",
+      saved_at: "2026-09-20T17:45:00Z",
       state: "The latte art was lovely but the milk was lukewarm.",
       questions: {
-        tone: { type: "score", instructions: { text: "Rate the tone", scale: "0-3" }, criteria: ["Angry", "Cold", "Warm", "Delighted"] },
-        mentions_milk: { type: "noul", instructions: "Does the text mention milk?", criteria: { true: "Milk is mentioned", false: "No milk" } },
+        tone: {
+          type: "score",
+          instructions: { text: "Rate the tone", scale: "0-3" },
+          criteria: ["Angry", "Cold", "Warm", "Delighted"],
+        },
+        mentions_milk: {
+          type: "noul",
+          instructions: "Does the text mention milk?",
+          criteria: { true: "Milk is mentioned", false: "No milk" },
+        },
       },
-      expect: { mentions_milk: { min: 0.8 }, old_question: { max: 0.2 } } },
+      expect: { mentions_milk: { min: 0.8 }, old_question: { max: 0.2 } },
+    },
     { id: "unnamed-draft", state: "Draft", questions: null },
   ];
 }
 
-const meta = (model, latency, input, output, cost, backend = "sdk", count = 1) =>
-  ({ model, latency_ms: latency, question_count: count, input_tokens: input, output_tokens: output, cost_usd: cost, backend });
-const trace = (id, metaValue) => ({ request: { state: `state of ${id}`, model: "jev-latest" }, response: { model: metaValue.model }, meta: metaValue });
+const meta = (model, latency, input, output, cost, backend = "sdk", count = 1) => ({
+  model,
+  latency_ms: latency,
+  question_count: count,
+  input_tokens: input,
+  output_tokens: output,
+  cost_usd: cost,
+  backend,
+});
+const trace = (id, metaValue) => ({
+  request: { state: `state of ${id}`, model: "jev-latest" },
+  response: { model: metaValue.model },
+  meta: metaValue,
+});
 
 // The server's batch response for the four tests that were run (POST /api/workbench/items/run).
 export function sampleTestsBatch() {
@@ -101,27 +203,84 @@ export function sampleTestsBatch() {
   const latteMeta = meta("jev-1.1", 980, 220, 15, 0.0003, "stdlib", 2);
   return {
     runs: [
-      { id: "refund-routing", name: "Refund routing", ok: true, elapsed_ms: 430.1, meta: refundMeta, trace: trace("refund-routing", refundMeta),
+      {
+        id: "refund-routing",
+        name: "Refund routing",
+        ok: true,
+        elapsed_ms: 430.1,
+        meta: refundMeta,
+        trace: trace("refund-routing", refundMeta),
         results: {
-          intent: { ok: true, checks: ["choice = refund", "0.91 ≥ 0.60"],
-            answer: { type: "choice", choice: "refund", probabilities: { refund: 0.91, replacement: 0.06, question: 0.03 }, confidence: 0.88 } },
+          intent: {
+            ok: true,
+            checks: ["choice = refund", "0.91 ≥ 0.60"],
+            answer: {
+              type: "choice",
+              choice: "refund",
+              probabilities: { refund: 0.91, replacement: 0.06, question: 0.03 },
+              confidence: 0.88,
+            },
+          },
           urgent: { ok: true, checks: ["0.72 ≥ 0.50"], answer: { type: "noul", noul: 0.72 } },
-        } },
-      { id: "bean-quality", name: "Bean quality review", ok: false, elapsed_ms: 660.4, meta: beanMeta, trace: trace("bean-quality", beanMeta),
+        },
+      },
+      {
+        id: "bean-quality",
+        name: "Bean quality review",
+        ok: false,
+        elapsed_ms: 660.4,
+        meta: beanMeta,
+        trace: trace("bean-quality", beanMeta),
         results: {
-          quality: { ok: false, checks: ["0.40 < 1.00", "0.40 ≤ 2.00"],
-            answer: { type: "score", score: 0.4, legend: { 0: "Unhappy", 1: "Mixed", 2: "Happy" }, probabilities: { 0: 0.62, 1: 0.36, 2: 0.02 }, confidence: 0.55 } },
-        } },
-      { id: "damaged-bag-photo", name: "Damaged bag photo", error: "Budget reached for this session", ok: false, results: {}, elapsed_ms: 3.2 },
-      { id: "latte-art-feedback", name: "Latte art feedback", ok: false, elapsed_ms: 1001, meta: latteMeta, trace: trace("latte-art-feedback", latteMeta),
+          quality: {
+            ok: false,
+            checks: ["0.40 < 1.00", "0.40 ≤ 2.00"],
+            answer: {
+              type: "score",
+              score: 0.4,
+              legend: { 0: "Unhappy", 1: "Mixed", 2: "Happy" },
+              probabilities: { 0: 0.62, 1: 0.36, 2: 0.02 },
+              confidence: 0.55,
+            },
+          },
+        },
+      },
+      {
+        id: "damaged-bag-photo",
+        name: "Damaged bag photo",
+        error: "Budget reached for this session",
+        ok: false,
+        results: {},
+        elapsed_ms: 3.2,
+      },
+      {
+        id: "latte-art-feedback",
+        name: "Latte art feedback",
+        ok: false,
+        elapsed_ms: 1001,
+        meta: latteMeta,
+        trace: trace("latte-art-feedback", latteMeta),
         results: {
-          tone: { ok: null, checks: ["no expectation"],
-            answer: { type: "score", score: 2.3, legend: { 0: "Angry", 1: "Cold", 2: "Warm", 3: "Delighted" }, probabilities: { 0: 0.01, 1: 0.09, 2: 0.49, 3: 0.41 }, confidence: 0.71 } },
+          tone: {
+            ok: null,
+            checks: ["no expectation"],
+            answer: {
+              type: "score",
+              score: 2.3,
+              legend: { 0: "Angry", 1: "Cold", 2: "Warm", 3: "Delighted" },
+              probabilities: { 0: 0.01, 1: 0.09, 2: 0.49, 3: 0.41 },
+              confidence: 0.71,
+            },
+          },
           mentions_milk: { ok: true, checks: ["0.97 ≥ 0.80"], answer: { type: "noul", noul: 0.97 } },
           old_question: { ok: false, checks: ["expectation refers to an unknown question"], answer: null },
-        } },
+        },
+      },
     ],
-    passed: 1, failed: 3, wall_ms: 2100, cost_usd: 0.00066,
+    passed: 1,
+    failed: 3,
+    wall_ms: 2100,
+    cost_usd: 0.00066,
   };
 }
 
@@ -130,7 +289,10 @@ export function sampleTestsResults(items = sampleTestsRaw()) {
   return mergeTestResults(null, sampleTestsBatch(), items);
 }
 
-export const TESTS_STATUS = Object.freeze({ model: "jev-latest", spend: { budget_usd: 1, spent_usd: 0.25, reserved_usd: 0.05 } });
+export const TESTS_STATUS = Object.freeze({
+  model: "jev-latest",
+  spend: { budget_usd: 1, spent_usd: 0.25, reserved_usd: 0.05 },
+});
 
 export function sampleTestsItemsCtx(overrides = {}) {
   const items = overrides.items || sampleTestsRaw();
@@ -150,7 +312,13 @@ export function sampleTestsItemsCtx(overrides = {}) {
     items: () => state.items,
     results: () => state.results,
     // The page: visibleTests with its filter settings, the search box and the Lab hook (ctx.page).
-    shown: () => visibleTests(state.items, state.results, { ...state.filters, selected: state.selected, query: state.query, lab: ctx.page }),
+    shown: () =>
+      visibleTests(state.items, state.results, {
+        ...state.filters,
+        selected: state.selected,
+        query: state.query,
+        lab: ctx.page,
+      }),
     matches: lab ? (item, current) => lab.matches(TESTS_SURFACE, item, current) : undefined,
     arrange: lab ? (list, current) => lab.arrange(TESTS_SURFACE, list, current) : undefined,
     selected: () => state.selected,
@@ -162,12 +330,32 @@ export function sampleTestsItemsCtx(overrides = {}) {
     editingId: () => overrides.editingId ?? null,
     status: () => ("status" in overrides ? overrides.status : TESTS_STATUS),
     now: () => overrides.now ?? TESTS_NOW,
-    setSelection: (ids) => { log.push(["setSelection", ids]); state.previous = [...state.selected]; state.selected = ids; },
-    undoSelection: () => { log.push(["undoSelection"]); state.selected = state.previous || []; state.previous = null; },
-    open: (raw) => { log.push(["open", raw.id]); return Promise.resolve(); },
-    inspect: (value, title) => { log.push(["inspect", title]); return value; },
-    resetFilters: () => { log.push(["resetFilters"]); state.filters = { ...TESTS_FILTER_DEFAULTS }; state.query = ""; },
-    refresh: () => { log.push(["refresh"]); },
+    setSelection: (ids) => {
+      log.push(["setSelection", ids]);
+      state.previous = [...state.selected];
+      state.selected = ids;
+    },
+    undoSelection: () => {
+      log.push(["undoSelection"]);
+      state.selected = state.previous || [];
+      state.previous = null;
+    },
+    open: (raw) => {
+      log.push(["open", raw.id]);
+      return Promise.resolve();
+    },
+    inspect: (value, title) => {
+      log.push(["inspect", title]);
+      return value;
+    },
+    resetFilters: () => {
+      log.push(["resetFilters"]);
+      state.filters = { ...TESTS_FILTER_DEFAULTS };
+      state.query = "";
+    },
+    refresh: () => {
+      log.push(["refresh"]);
+    },
   };
   ctx = testsItemsCtx(source);
   ctx.env = fakeEnv();

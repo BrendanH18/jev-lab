@@ -58,9 +58,10 @@ def problem(keys: List[str], folds: int) -> Optional[str]:
     if len(keys) < folds * MIN_PER_FOLD:
         return "Needs at least %d valid labeled rows to hold some out (%d labeled)." % (folds * MIN_PER_FOLD, len(keys))
     if len(set(keys)) < folds:
-        return ("Needs at least %d distinct labeled inputs for %d folds (%d distinct). "
-                "Exact duplicate inputs must stay together; label more distinct inputs."
-                % (folds, folds, len(set(keys))))
+        return (
+            "Needs at least %d distinct labeled inputs for %d folds (%d distinct). "
+            "Exact duplicate inputs must stay together; label more distinct inputs." % (folds, folds, len(set(keys)))
+        )
     return None
 
 
@@ -73,12 +74,26 @@ def _folds(folds: Any) -> int:
 def _measure(right: List[bool], auto: List[int], n: int) -> dict:
     good = sum(right[i] for i in auto)
     low, high = calibrate.wilson(good, len(auto))
-    return {"automated": len(auto), "correct": good, "coverage": len(auto) / n if n else 0.0,
-            "accuracy": good / len(auto) if auto else None, "low": low, "high": high}
+    return {
+        "automated": len(auto),
+        "correct": good,
+        "coverage": len(auto) / n if n else 0.0,
+        "accuracy": good / len(auto) if auto else None,
+        "low": low,
+        "high": high,
+    }
 
 
-def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimate", folds: Any = FOLDS,
-             costs: Any = None, rules: Any = None, targets: Tuple[float, ...] = TARGETS) -> dict:
+def evaluate(
+    rows: Any,
+    qids: Any,
+    signal: str = "confidence",
+    bound: str = "estimate",
+    folds: Any = FOLDS,
+    costs: Any = None,
+    rules: Any = None,
+    targets: Tuple[float, ...] = TARGETS,
+) -> dict:
     """rows: Policy's rows, each optionally with "key", a string naming its input. For each target accuracy:
     the thresholds tuned on every labeled row and what they automate there, and what thresholds tuned without a
     row automate when they route it, pooled over the folds. targets: the accuracies to tune for, TARGETS unless
@@ -92,14 +107,21 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
     scored = data["scored"]
     everyone = scored + data["held"]  # rows a rule holds fill out their folds, always reviewed
     n = len(everyone)
-    base = {"signal": signal, "bound": bound, "folds": folds, "questions": qids, "labeled": n,
-            "minimum": folds * MIN_PER_FOLD, "targets": []}
+    base = {
+        "signal": signal,
+        "bound": bound,
+        "folds": folds,
+        "questions": qids,
+        "labeled": n,
+        "minimum": folds * MIN_PER_FOLD,
+        "targets": [],
+    }
     keys = [_key(item) for item in everyone]
     base.update(unique_inputs=len(set(keys)), problem=problem(keys, folds))
     if base["problem"]:
         return base
     fold_all = assign(keys, [item["index"] for item in everyone], folds)
-    fold_of = fold_all[:len(scored)]
+    fold_of = fold_all[: len(scored)]
     members = [[i for i in range(len(scored)) if fold_of[i] == f] for f in range(folds)]
     sizes = [fold_all.count(f) for f in range(folds)]
     # Thresholds tuned on every row, then on each fold's complement: one search per fold covers every target.
@@ -128,13 +150,24 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", bound: str = "est
         gap: Optional[float] = None
         if tuned and tuned["accuracy"] is not None and held["accuracy"] is not None:
             gap = tuned["accuracy"] - held["accuracy"]
-        base["targets"].append({
-            "target": target, "tuned": dict(tuned, gates=gates(seen)) if tuned else None, "unseen": held,
-            "gap": gap, "below": held["accuracy"] is not None and held["accuracy"] + calibrate._EPS < target,
-            "unreached": sum(1 for p in parts if p["gates"] is None), "spread": spread, "parts": parts,
-            "needed": calibrate.rows_needed(target)})
+        base["targets"].append(
+            {
+                "target": target,
+                "tuned": dict(tuned, gates=gates(seen)) if tuned else None,
+                "unseen": held,
+                "gap": gap,
+                "below": held["accuracy"] is not None and held["accuracy"] + calibrate._EPS < target,
+                "unreached": sum(1 for p in parts if p["gates"] is None),
+                "spread": spread,
+                "parts": parts,
+                "needed": calibrate.rows_needed(target),
+            }
+        )
     if prices is not None:
         priced = cost.row_costs(scored, qids, prices)
-        base["cost"] = dict(cost.holdout(levels, right, priced, prices["review"], qids, members, sizes),
-                            review_cost=prices["review"], error=prices["error"])
+        base["cost"] = dict(
+            cost.holdout(levels, right, priced, prices["review"], qids, members, sizes),
+            review_cost=prices["review"],
+            error=prices["error"],
+        )
     return base

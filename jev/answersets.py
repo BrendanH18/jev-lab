@@ -56,8 +56,13 @@ def validate_config(spec: Any, questions: Any) -> dict:
         values = {}
         for field in ("cut", "coverage"):
             value = fitted.get(field)
-            if (isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value)
-                    or not 0 <= value <= 1 or (field == "coverage" and value in (0, 1))):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+                or not 0 <= value <= 1
+                or (field == "coverage" and value in (0, 1))
+            ):
                 interval = "above 0 and below 1" if field == "coverage" else "from 0 to 1"
                 raise WorkbenchError("The answer set %s for %r must be a number %s" % (field, qid, interval))
             values[field] = float(value)
@@ -146,8 +151,15 @@ def _prepare(rows: Any) -> Tuple[str, List[dict], List[dict], int]:
             invalid.append({"index": row.get("index"), "reason": str(err).strip("'\"")})
             continue
         key = holdout._key(row)
-        scored.append({"index": row.get("index"), "key": key if isinstance(key, str) and key else "#%s" % (row.get("index"),),
-                       "row": row.get("row"), "options": options, "label": label})
+        scored.append(
+            {
+                "index": row.get("index"),
+                "key": key if isinstance(key, str) and key else "#%s" % (row.get("index"),),
+                "row": row.get("row"),
+                "options": options,
+                "label": label,
+            }
+        )
     if qtype is None:
         raise CalibrationError("No answers to make sets from. Run Bulk first.")
     return qtype, scored, invalid, unlabeled
@@ -156,10 +168,18 @@ def _prepare(rows: Any) -> Tuple[str, List[dict], List[dict], int]:
 def _route(item: dict, at: Optional[float]) -> dict:
     """One row under a cut: its set, the list a person would see, the route, and whether that list holds the label."""
     chosen = answer_set(item["options"], at)
-    shown = chosen or sorted(item["options"], key=lambda k: -item["options"][k])  # nothing reached the cut: every option
-    return {"index": item["index"], "label": item["label"], "set": chosen, "size": len(chosen),
-            "route": "auto" if len(chosen) == 1 else "review", "covered": item["label"] in shown,
-            "probabilities": {k: item["options"][k] for k in shown}}
+    shown = chosen or sorted(
+        item["options"], key=lambda k: -item["options"][k]
+    )  # nothing reached the cut: every option
+    return {
+        "index": item["index"],
+        "label": item["label"],
+        "set": chosen,
+        "size": len(chosen),
+        "route": "auto" if len(chosen) == 1 else "review",
+        "covered": item["label"] in shown,
+        "probabilities": {k: item["options"][k] for k in shown},
+    }
 
 
 def _summary(routed: List[dict], options: int) -> dict:
@@ -178,13 +198,24 @@ def _summary(routed: List[dict], options: int) -> dict:
     a_low, a_high = calibrate.wilson(auto_right, len(auto))
     listed = sum(len(r["probabilities"]) for r in review)
     return {
-        "rows": n, "covered": covered, "coverage": covered / n if n else None, "low": low, "high": high,
-        "single": len(auto), "single_share": len(auto) / n if n else 0.0, "single_right": auto_right,
-        "single_accuracy": auto_right / len(auto) if auto else None, "single_low": a_low, "single_high": a_high,
-        "review": len(review), "short": len(short), "none": sum(1 for r in routed if r["size"] == 0),
+        "rows": n,
+        "covered": covered,
+        "coverage": covered / n if n else None,
+        "low": low,
+        "high": high,
+        "single": len(auto),
+        "single_share": len(auto) / n if n else 0.0,
+        "single_right": auto_right,
+        "single_accuracy": auto_right / len(auto) if auto else None,
+        "single_low": a_low,
+        "single_high": a_high,
+        "review": len(review),
+        "short": len(short),
+        "none": sum(1 for r in routed if r["size"] == 0),
         "review_covered": sum(r["covered"] for r in review),
         # A reviewer reads this many options per reviewed row, where a plain gate would show all of them.
-        "listed_per_review": listed / len(review) if review else None, "options": options,
+        "listed_per_review": listed / len(review) if review else None,
+        "options": options,
         "sizes": sizes,
     }
 
@@ -197,9 +228,20 @@ def evaluate(rows: Any, coverage: Any = 0.9, folds: Any = holdout.FOLDS, field: 
     qtype, scored, invalid, unlabeled = _prepare(rows)
     options = max((len(item["options"]) for item in scored), default=0)
     n = len(scored)
-    base = {"type": qtype, "coverage_target": coverage, "labeled": n, "unlabeled": unlabeled, "invalid": invalid,
-            "needed": needed(coverage), "options": options, "cut": None, "summary": None, "rows": [],
-            "holdout": None, "slices": None}
+    base = {
+        "type": qtype,
+        "coverage_target": coverage,
+        "labeled": n,
+        "unlabeled": unlabeled,
+        "invalid": invalid,
+        "needed": needed(coverage),
+        "options": options,
+        "cut": None,
+        "summary": None,
+        "rows": [],
+        "holdout": None,
+        "slices": None,
+    }
     if not n:
         return base
     scores = [1 - item["options"][item["label"]] for item in scored]
@@ -210,8 +252,13 @@ def evaluate(rows: Any, coverage: Any = 0.9, folds: Any = holdout.FOLDS, field: 
     routed = [_route(item, at) for item in scored]
     base["summary"] = _summary(routed, options)
     base["rows"] = routed
-    base["slices"] = slices.evaluate([{"row": item["row"], "correct": r["covered"], "automated": r["route"] == "auto"}
-                                      for item, r in zip(scored, routed)], field)
+    base["slices"] = slices.evaluate(
+        [
+            {"row": item["row"], "correct": r["covered"], "automated": r["route"] == "auto"}
+            for item, r in zip(scored, routed)
+        ],
+        field,
+    )
     keys = [item["key"] for item in scored]
     issue = holdout.problem(keys, folds)
     if issue is None:
@@ -227,9 +274,14 @@ def evaluate(rows: Any, coverage: Any = 0.9, folds: Any = holdout.FOLDS, field: 
             else:
                 cuts.append(fold_cut)
             unseen.extend(_route(scored[i], fold_cut) for i in range(n) if fold_of[i] == f)
-        base["holdout"] = dict(_summary(unseen, options), folds=folds, unreached=unreached,
-                               spread=[min(cuts), max(cuts)] if cuts else None)
+        base["holdout"] = dict(
+            _summary(unseen, options), folds=folds, unreached=unreached, spread=[min(cuts), max(cuts)] if cuts else None
+        )
     else:
-        base["holdout"] = {"folds": folds, "minimum": folds * holdout.MIN_PER_FOLD,
-                           "unique_inputs": len(set(keys)), "problem": issue}
+        base["holdout"] = {
+            "folds": folds,
+            "minimum": folds * holdout.MIN_PER_FOLD,
+            "unique_inputs": len(set(keys)),
+            "problem": issue,
+        }
     return base

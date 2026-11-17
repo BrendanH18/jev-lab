@@ -14,19 +14,32 @@ const base = ctx();
 const { a1f0: A, b2e1: B, c3d2: C, d4c3: D, e5b4: E } = byId(base);
 const noReport = byId(ctx({ report: null }));
 // Row 3's urgent difference settled as the saved label (false), or as no label.
-const keptSaved = byId(ctx({ choices: { [settleKey("c3d2", "intent")]: "replacement", [settleKey("a1f0", "urgent")]: false } })).a1f0;
+const keptSaved = byId(
+  ctx({ choices: { [settleKey("c3d2", "intent")]: "replacement", [settleKey("a1f0", "urgent")]: false } }),
+).a1f0;
 const unlabeled = byId(ctx({ choices: { [settleKey("a1f0", "urgent")]: null } })).a1f0;
 // Row 3 differing on intent too, with only intent settled.
 const twoDiffs = (() => {
   const report = sampleAgreementReport();
-  report.disagreements.unshift({ row_id: "a1f0", number: 3, row: { text: "x" }, question: "intent", first: "replacement", second: "refund" });
+  report.disagreements.unshift({
+    row_id: "a1f0",
+    number: 3,
+    row: { text: "x" },
+    question: "intent",
+    first: "replacement",
+    second: "refund",
+  });
   report.disagreements_total = 3;
   return ctx({ report, choices: { [settleKey("a1f0", "intent")]: "refund" } });
 })();
 const A2 = byId(twoDiffs).a1f0;
 
 // urgent with a kappa of 0.10 (the sample has none for it).
-const lowUrgent = (() => { const report = sampleAgreementReport(); report.questions.urgent.kappa = 0.1; return ctx({ report }); })();
+const lowUrgent = (() => {
+  const report = sampleAgreementReport();
+  report.questions.urgent.kappa = 0.1;
+  return ctx({ report });
+})();
 const K = byId(lowUrgent);
 
 checkPack(pack, {
@@ -42,10 +55,18 @@ checkPack(pack, {
   took_second: { items: [C, A, keptSaved, unlabeled], values: [true, false, false, false] },
   kept_saved: { items: [keptSaved, C, A, unlabeled], values: [true, false, false, false] },
   left_unlabeled: { items: [unlabeled, C, keptSaved, A], values: [true, false, false, false] },
-  settle_state: { items: [A, B, C, D, A2, noReport.a1f0], values: ["unsettled", "no difference", "settled", "not compared", "partly settled", null], ctx: base },
+  settle_state: {
+    items: [A, B, C, D, A2, noReport.a1f0],
+    values: ["unsettled", "no difference", "settled", "not compared", "partly settled", null],
+    ctx: base,
+  },
   // intent 2/3, urgent 0; tone was not compared.
   weakest_question: { items: [A, B, C, D], values: ["urgent", "intent", "urgent", null], ctx: base },
-  differing_types: { items: [A, C, B, D, A2, noReport.a1f0], values: ["noul", "choice", "none", null, "choice + noul", null], ctx: base },
+  differing_types: {
+    items: [A, C, B, D, A2, noReport.a1f0],
+    values: ["noul", "choice", "none", null, "choice + noul", null],
+    ctx: base,
+  },
 });
 
 test("agreement-sample-rows: agreeing questions are unknown while only part of the differences is shown", () => {

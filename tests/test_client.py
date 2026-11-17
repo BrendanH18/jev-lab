@@ -12,7 +12,11 @@ from jev import images  # noqa: E402
 from jev.client import JevClient, JevError, SpendGuard  # noqa: E402
 from jev.config import Settings  # noqa: E402
 
-RESPONSE = {"model": "jev-1.13.0", "answers": {"q": {"type": "noul", "noul": 0.9}}, "usage": {"input_tokens": 500, "output_tokens": 1}}
+RESPONSE = {
+    "model": "jev-1.13.0",
+    "answers": {"q": {"type": "noul", "noul": 0.9}},
+    "usage": {"input_tokens": 500, "output_tokens": 1},
+}
 QUESTIONS = {"q": {"type": "noul", "instructions": "Is it?"}}
 
 
@@ -104,8 +108,7 @@ class JevClientTests(unittest.TestCase):
         self.assertEqual(client_mod.price_per_input_token("jev-1.13.0"), client_mod.PRICE_PER_INPUT_TOKEN_USD)
         self.assertEqual(client_mod.price_per_input_token("jev-latest"), client_mod.PRICE_PER_INPUT_TOKEN_USD)
         self.assertEqual(client_mod.price_per_input_token("jev-9.0.0"), client_mod.PRICE_PER_INPUT_TOKEN_USD)
-        result = client_mod.JevResult(
-            {"model": "jev-latest", "questions": {}}, dict(RESPONSE, model="jev-1.13.0"), 1.0)
+        result = client_mod.JevResult({"model": "jev-latest", "questions": {}}, dict(RESPONSE, model="jev-1.13.0"), 1.0)
         self.assertAlmostEqual(result.cost_usd, 500 * client_mod.PRICE_PER_INPUT_TOKEN_USD)
 
     def test_images_are_sent_but_never_traced(self):
@@ -114,8 +117,9 @@ class JevClientTests(unittest.TestCase):
         c._post_system_one = lambda payload: sent.update(payload) or dict(RESPONSE)
         photo = images.sample_asset("torn-bag")
         ref = images.new_ref(photo["data"], "photo")
-        result = c.system_one({"photo": ref}, {"q": client_mod.box("the bag in `photo`")}, assets={ref: photo},
-                              model="jev-1.14.0")
+        result = c.system_one(
+            {"photo": ref}, {"q": client_mod.box("the bag in `photo`")}, assets={ref: photo}, model="jev-1.14.0"
+        )
         self.assertIs(sent["assets"][ref], photo)
         self.assertEqual(result.request["model"], "jev-1.14.0")
         shown = result.trace()["request"]["assets"][ref]
@@ -143,16 +147,20 @@ class JevClientTests(unittest.TestCase):
 
         photo = images.sample_asset("intact-bag")
         ref = images.new_ref(photo["data"], "photo")
-        with patch.object(client_mod, "TypeSafeClient", None), \
-                patch.object(client_mod.urllib.request, "urlopen", urlopen):
+        with (
+            patch.object(client_mod, "TypeSafeClient", None),
+            patch.object(client_mod.urllib.request, "urlopen", urlopen),
+        ):
             result = c.system_one({"photo": ref}, QUESTIONS, assets={ref: photo})
             plain = c.system_one("no pictures", QUESTIONS)
         self.assertEqual(seen["headers"].get(images.IMAGES_HEADER.lower()), None, "plain calls skip the header")
         self.assertEqual(result.answers["q"]["noul"], 0.9)
         self.assertEqual(plain.backend, "stdlib fallback")
 
-        with patch.object(client_mod, "TypeSafeClient", None), \
-                patch.object(client_mod.urllib.request, "urlopen", urlopen):
+        with (
+            patch.object(client_mod, "TypeSafeClient", None),
+            patch.object(client_mod.urllib.request, "urlopen", urlopen),
+        ):
             c.system_one({"photo": ref}, QUESTIONS, assets={ref: photo})
         self.assertEqual(seen["headers"][images.IMAGES_HEADER.lower()], "true")
         sent = seen["body"]["assets"][ref]
@@ -171,7 +179,9 @@ class JevClientTests(unittest.TestCase):
         payload = {"state": {"photo": "photo-abc"}, "model": "jev-1.14.0", "questions": QUESTIONS}
         plain = client_mod.estimate_reserve_usd(payload, "jev-1.14.0")
         with_image = client_mod.estimate_reserve_usd(dict(payload, assets={"photo-abc": {}}), "jev-1.14.0", 1)
-        self.assertAlmostEqual(with_image - plain, images.RESERVE_TOKENS_PER_IMAGE * client_mod.price_per_input_token("jev-1.14.0"))
+        self.assertAlmostEqual(
+            with_image - plain, images.RESERVE_TOKENS_PER_IMAGE * client_mod.price_per_input_token("jev-1.14.0")
+        )
 
     def test_model_override_and_box_support(self):
         c = JevClient(settings(TYPESAFE_DEFAULT_MODEL="jev-1.13.0"))
@@ -218,6 +228,7 @@ class SdkTransportTests(unittest.TestCase):
     def make_client(self, handler):
         import httpx2
         from typesafe_sdk import TypeSafeClient
+
         c = JevClient(settings())
         c._sdk = TypeSafeClient(api_key="sk-test", transport=httpx2.MockTransport(handler))
         c._sdk_key = "sk-test"
@@ -225,12 +236,15 @@ class SdkTransportTests(unittest.TestCase):
 
     def test_system_one_and_models_go_through_the_sdk(self):
         import httpx2
+
         seen = {}
 
         def handler(request):
             seen["auth"] = request.headers.get("authorization")
             if request.url.path.endswith("/models"):
-                return httpx2.Response(200, json={"models": [{"name": "jev-latest", "description": "d", "release_date": "2026-01-01"}]})
+                return httpx2.Response(
+                    200, json={"models": [{"name": "jev-latest", "description": "d", "release_date": "2026-01-01"}]}
+                )
             seen["headers"] = request.headers
             seen["body"] = json.loads(request.content)
             return httpx2.Response(200, json=RESPONSE)
@@ -248,6 +262,7 @@ class SdkTransportTests(unittest.TestCase):
 
     def test_images_go_as_multipart_with_the_images_header(self):
         import httpx2
+
         seen = {}
 
         def handler(request):
@@ -255,9 +270,21 @@ class SdkTransportTests(unittest.TestCase):
             seen["body"] = request.content
             if request.headers.get("content-encoding") == "zstd":  # the SDK's default where zstd is available
                 from compression.zstd import decompress
+
                 seen["body"] = decompress(request.content)
-            return httpx2.Response(200, json=dict(RESPONSE, answers={"b": {
-                "type": "box", "box": {"left": 0.1, "top": 0.2, "right": 0.5, "bottom": 0.6}, "confidence": 0.8}}))
+            return httpx2.Response(
+                200,
+                json=dict(
+                    RESPONSE,
+                    answers={
+                        "b": {
+                            "type": "box",
+                            "box": {"left": 0.1, "top": 0.2, "right": 0.5, "bottom": 0.6},
+                            "confidence": 0.8,
+                        }
+                    },
+                ),
+            )
 
         c = self.make_client(handler)
         photo = images.sample_asset("grinder-ok")
@@ -273,7 +300,9 @@ class SdkTransportTests(unittest.TestCase):
         import httpx2
 
         def handler(request):
-            return httpx2.Response(401, json={"detail": {"error_type": "authentication_error", "message": "Invalid key"}})
+            return httpx2.Response(
+                401, json={"detail": {"error_type": "authentication_error", "message": "Invalid key"}}
+            )
 
         c = self.make_client(handler)
         with self.assertRaises(JevError) as ctx:

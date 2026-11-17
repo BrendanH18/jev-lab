@@ -111,8 +111,18 @@
 const LAST_QUESTION = " That was your last question.";
 const ANSWERS = Object.freeze(["Yes", "Probably", "Hard to say", "Probably not", "No"]);
 // Mirrors jev/play.py (reply_for, Games.ask, MAX_TURNS); tests/js/lab/surface-demo-play.test.mjs keeps them in step.
-const RULES = Object.freeze({ yes: 0.85, probably: 0.6, probably_not: 0.4, no: 0.15, guess: 0.6, match: 0.7, mismatch: 0.3,
-  yes_no_question: 0.5, max_turns: 20, max_question_chars: 200 });
+const RULES = Object.freeze({
+  yes: 0.85,
+  probably: 0.6,
+  probably_not: 0.4,
+  no: 0.15,
+  guess: 0.6,
+  match: 0.7,
+  mismatch: 0.3,
+  yes_no_question: 0.5,
+  max_turns: 20,
+  max_question_chars: 200,
+});
 
 const number = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const integer = (value) => (Number.isInteger(value) ? value : null);
@@ -163,7 +173,8 @@ function outcomeOf(game, asked) {
 // A frozen deep copy of plain JSON data, so a pack cannot change what the page holds.
 function frozenCopy(value) {
   if (Array.isArray(value)) return Object.freeze(value.map(frozenCopy));
-  if (value && typeof value === "object") return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, frozenCopy(entry)])));
+  if (value && typeof value === "object")
+    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, frozenCopy(entry)])));
   return value;
 }
 
@@ -202,7 +213,8 @@ export function playHistoryCtx(source = {}) {
     return value && typeof value === "object" ? value : null;
   };
   const busy = () => !!(source.busy && source.busy());
-  const turnsOf = (value) => (value && Array.isArray(value.turns) ? value.turns.filter((turn) => turn && typeof turn === "object") : []);
+  const turnsOf = (value) =>
+    value && Array.isArray(value.turns) ? value.turns.filter((turn) => turn && typeof turn === "object") : [];
   // One item per raw turn object, so items() and shown() hand out the same objects while the game is unchanged.
   const cache = new WeakMap();
   const itemFor = (turn, index, over) => {
@@ -220,7 +232,9 @@ export function playHistoryCtx(source = {}) {
     for (let index = turns.length - 1; index >= 0; index--) out.push(itemFor(turns[index], index, !!current.over));
     return out;
   };
-  const pending = () => { if (busy()) throw new Error("Wait for the current answer first."); };
+  const pending = () => {
+    if (busy()) throw new Error("Wait for the current answer first.");
+  };
   // Copies are made once per raw array, so repeated reads of data hand out the same frozen values.
   const traceCopies = new WeakMap();
   const tracesOf = (raw) => {
@@ -253,23 +267,40 @@ export function playHistoryCtx(source = {}) {
       const asked = turnsOf(current).length;
       const over = !!current?.over;
       return Object.freeze({
-        game: current ? Object.freeze({ category: typeof current.category === "string" ? current.category : "", over, won: !!current.won,
-          outcome: outcomeOf(current, asked), asked,
-          turns_left: Number.isInteger(current.turns_left) ? current.turns_left : Math.max(0, RULES.max_turns - asked) }) : null,
+        game: current
+          ? Object.freeze({
+              category: typeof current.category === "string" ? current.category : "",
+              over,
+              won: !!current.won,
+              outcome: outcomeOf(current, asked),
+              asked,
+              turns_left: Number.isInteger(current.turns_left)
+                ? current.turns_left
+                : Math.max(0, RULES.max_turns - asked),
+            })
+          : null,
         secret: over && typeof current.secret === "string" ? current.secret : null,
         traces: over && Array.isArray(current.traces) ? tracesOf(current.traces) : null,
         past: past(),
         busy: busy(),
-        suggestions: Object.freeze([...(Array.isArray(source.suggestions) ? source.suggestions : [])].filter((entry) => typeof entry === "string")),
+        suggestions: Object.freeze(
+          [...(Array.isArray(source.suggestions) ? source.suggestions : [])].filter(
+            (entry) => typeof entry === "string",
+          ),
+        ),
         answers: ANSWERS,
         rules: RULES,
       });
     },
     actions: {
       draftQuestion(value) {
-        const clean = String(value ?? "").split(/\s+/).filter(Boolean).join(" ");
+        const clean = String(value ?? "")
+          .split(/\s+/)
+          .filter(Boolean)
+          .join(" ");
         if (!clean) throw new Error("There is no question to put in the box.");
-        if ([...clean].length > RULES.max_question_chars) throw new Error(`A question can be at most ${RULES.max_question_chars} characters.`);
+        if ([...clean].length > RULES.max_question_chars)
+          throw new Error(`A question can be at most ${RULES.max_question_chars} characters.`);
         const current = game();
         if (!current) throw new Error("There is no game yet.");
         if (current.over) throw new Error("This game is over. Start a new one.");
@@ -298,7 +329,8 @@ export function playHistoryCtx(source = {}) {
       inspectTurn(n) {
         const current = game();
         if (!current) throw new Error("There is no game yet.");
-        if (!current.over || !Array.isArray(current.traces)) throw new Error("Request traces are released when the game ends.");
+        if (!current.over || !Array.isArray(current.traces))
+          throw new Error("Request traces are released when the game ends.");
         const trace = Number.isInteger(n) && n >= 1 ? current.traces[n - 1] : null;
         if (!trace || typeof trace !== "object") throw new Error(`Turn ${n} has no request trace.`);
         if (!source.inspect) throw new Error("The request inspector is not available here.");
@@ -306,7 +338,9 @@ export function playHistoryCtx(source = {}) {
         return trace;
       },
     },
-    refresh() { if (source.refresh) source.refresh(); },
+    refresh() {
+      if (source.refresh) source.refresh();
+    },
     itemName: (item) => `#${item && item.n !== undefined && item.n !== null ? item.n : "?"}`,
   };
   return ctx;

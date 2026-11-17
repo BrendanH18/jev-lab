@@ -87,14 +87,19 @@ def _pairs_case(feature: dict, case: dict, example_guard: bool):
                 self.assertEqual(question, case["question"])
             if case.get("message") is not None:
                 self.assertRegex(message, case["message"])
-        self.assertEqual(list(check(*_triple(case["miss"]))), [], "%s should stay quiet on its miss case" % feature["id"])
+        self.assertEqual(
+            list(check(*_triple(case["miss"]))), [], "%s should stay quiet on its miss case" % feature["id"]
+        )
         if example_guard:
             for example in examples.EXAMPLES:
                 if example["id"] in case.get("examples_ok", []):
                     continue
                 refs = set((example.get("images") or {}).keys()) if isinstance(example.get("images"), dict) else set()
                 found = list(check(example["state"], example["questions"], refs))
-                self.assertEqual(found, [], "%s reports on the built-in example %s: %s" % (feature["id"], example["id"], found))
+                self.assertEqual(
+                    found, [], "%s reports on the built-in example %s: %s" % (feature["id"], example["id"], found)
+                )
+
     return run
 
 
@@ -114,7 +119,10 @@ def _health_case(feature: dict, case: dict):
         hits = list(feature["check"](*case["hit"]))
         self.assertTrue(hits, "%s should report on its hit case" % feature["id"])
         for item in hits:
-            self.assertTrue(item.get("rows") and all(isinstance(n, int) and n >= 1 for n in item["rows"]), "a finding names 1-based rows")
+            self.assertTrue(
+                item.get("rows") and all(isinstance(n, int) and n >= 1 for n in item["rows"]),
+                "a finding names 1-based rows",
+            )
             self.assertTrue(str(item.get("message") or "").strip(), "a finding needs a message")
             if case.get("message") is not None:
                 self.assertRegex(item["message"], case["message"])
@@ -122,7 +130,10 @@ def _health_case(feature: dict, case: dict):
                 self.assertNotIn(secret, item["message"], "a health finding never quotes an input or a label value")
         if "rows" in case:
             self.assertEqual(sorted({n for item in hits for n in item["rows"]}), sorted(case["rows"]))
-        self.assertEqual(list(feature["check"](*case["miss"])), [], "%s should stay quiet on its miss case" % feature["id"])
+        self.assertEqual(
+            list(feature["check"](*case["miss"])), [], "%s should stay quiet on its miss case" % feature["id"]
+        )
+
     return run
 
 
@@ -134,6 +145,7 @@ def _cli_case(case: dict):
         self.assertTrue("stdout" in case or "stderr" in case, "a cli case states the output it expects")
         _matches(self, case.get("stdout"), out, "stdout")
         _matches(self, case.get("stderr"), err, "stderr")
+
     return run
 
 
@@ -148,6 +160,7 @@ def _route_case(feature: dict, case: dict):
         for body in case.get("bad", []):
             with self.assertRaises((ValueError, KeyError, TypeError), msg="should reject %r" % (body,)):
                 feature["handler"](dict(body))
+
     return run
 
 
@@ -158,6 +171,7 @@ def _format_case(feature: dict, case: dict, direction: str):
             self.assertEqual(feature["parse"](case["parse"]["text"]), case["parse"]["rows"])
         else:
             self.assertEqual(feature["render"](case["render"]["rows"]), case["render"]["text"])
+
     return run
 
 
@@ -174,7 +188,11 @@ def pack_tests(pack: dict, cases: Dict[str, dict]) -> type:
             self.assertIn(ident, features, "case %s matches no feature" % ident)
         for feature in pack["features"]:
             for option in feature.get("options", []) if feature["kind"] == "cli" else []:
-                self.assertIn(option["id"], cases.get(feature["id"], {}).get("options", {}), "cli option %s has no test case" % option["id"])
+                self.assertIn(
+                    option["id"],
+                    cases.get(feature["id"], {}).get("options", {}),
+                    "cli option %s has no test case" % option["id"],
+                )
 
     methods["test_pack_shape"] = shape
     for ident, feature in features.items():
@@ -200,10 +218,14 @@ def pack_tests(pack: dict, cases: Dict[str, dict]) -> type:
                 if callable(feature.get(direction)):
                     methods["test_%s__%s" % (ident, direction)] = _format_case(feature, case, direction)
         else:
+
             def behavior(self: unittest.TestCase, case: dict = case) -> None:
                 self.assertTrue(callable(case.get("check")), "a behavior case needs check")
                 case["check"](self)
+
             methods["test_%s" % ident] = behavior
     expected = len(kit.improvements_of(pack)) + 1
     assert len(methods) == expected or any(features[i]["id"] not in cases for i in features), "one test per improvement"
-    return type("%sTests" % re.sub(r"(?:^|-)(\w)", lambda m: m.group(1).upper(), pack["id"]), (unittest.TestCase,), methods)
+    return type(
+        "%sTests" % re.sub(r"(?:^|-)(\w)", lambda m: m.group(1).upper(), pack["id"]), (unittest.TestCase,), methods
+    )

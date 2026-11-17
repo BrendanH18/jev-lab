@@ -274,14 +274,17 @@ def sweep(rows: List[dict]) -> List[dict]:
         auto = [r for r in rows if r["signal"] + _EPS >= t]
         correct = sum(1 for r in auto if r["correct"])
         low, high = wilson(correct, len(auto))
-        points.append({
-            "threshold": round(t, 2),
-            "automated": len(auto),
-            "correct": correct,
-            "coverage": len(auto) / len(rows) if rows else 0.0,
-            "accuracy": correct / len(auto) if auto else None,
-            "low": low, "high": high,
-        })
+        points.append(
+            {
+                "threshold": round(t, 2),
+                "automated": len(auto),
+                "correct": correct,
+                "coverage": len(auto) / len(rows) if rows else 0.0,
+                "accuracy": correct / len(auto) if auto else None,
+                "low": low,
+                "high": high,
+            }
+        )
     return points
 
 
@@ -294,10 +297,17 @@ def targets(points: List[dict], bound: str = "estimate") -> List[dict]:
     out = []
     for target in TARGETS:
         hit = next((p for p in points if meets(p["correct"], p["automated"], target, bound)), None)
-        entry = {"target": target, "threshold": hit and hit["threshold"],
-                 "coverage": hit["coverage"] if hit else 0.0, "automated": hit["automated"] if hit else 0,
-                 "accuracy": hit and hit["accuracy"], "low": hit and hit["low"], "high": hit and hit["high"],
-                 "needed": rows_needed(target), "plan": None}
+        entry = {
+            "target": target,
+            "threshold": hit and hit["threshold"],
+            "coverage": hit["coverage"] if hit else 0.0,
+            "automated": hit["automated"] if hit else 0,
+            "accuracy": hit and hit["accuracy"],
+            "low": hit and hit["low"],
+            "high": hit and hit["high"],
+            "needed": rows_needed(target),
+            "plan": None,
+        }
         if bound == "lower" and hit is None:
             found = plan([(p["automated"], p["correct"]) for p in points], labeled, target)
             if found:
@@ -320,8 +330,16 @@ def reliability(pairs: List[Tuple[float, bool]]) -> Tuple[List[dict], Optional[f
         stated = sum(p for p, _ in members) / len(members)
         observed = sum(1 for _, hit in members if hit) / len(members)
         ece += len(members) / len(pairs) * abs(stated - observed)
-        out.append({"lo": i / BINS, "hi": (i + 1) / BINS, "count": len(members),
-                    "stated": stated, "observed": observed, "hits": sum(1 for _, hit in members if hit)})
+        out.append(
+            {
+                "lo": i / BINS,
+                "hi": (i + 1) / BINS,
+                "count": len(members),
+                "stated": stated,
+                "observed": observed,
+                "hits": sum(1 for _, hit in members if hit),
+            }
+        )
     return out, (ece if pairs else None)
 
 
@@ -373,12 +391,24 @@ def ordinal(pairs: List[Tuple[int, int, Optional[float]]], levels: List[int]) ->
                 best = (key, c, right)
         _, cut, right = best
         lo, hi = wilson(right, len(expected))
-        cuts.append({"level": k, "cut": cut, "correct": right, "rows": len(expected), "accuracy": right / len(expected),
-                     "low": lo, "high": hi, "flagged": sum(1 for _, e in expected if e + _EPS >= cut),
-                     "actual": actual})
+        cuts.append(
+            {
+                "level": k,
+                "cut": cut,
+                "correct": right,
+                "rows": len(expected),
+                "accuracy": right / len(expected),
+                "low": lo,
+                "high": hi,
+                "flagged": sum(1 for _, e in expected if e + _EPS >= cut),
+                "actual": actual,
+            }
+        )
     return {
-        "within_one": within, "within_one_accuracy": within / n if n else None,
-        "within_one_low": low, "within_one_high": high,
+        "within_one": within,
+        "within_one_accuracy": within / n if n else None,
+        "within_one_low": low,
+        "within_one_high": high,
         "mean_error": sum(abs(label - level) for label, level, _ in pairs) / n if n else None,
         "expected_rows": len(expected),
         "expected_error": sum(abs(label - e) for label, e in expected) / len(expected) if expected else None,
@@ -435,10 +465,18 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
         right = _right(qtype, label, predicted)
         if qtype == "box":
             overlaps.append(iou(label, predicted))
-        scored.append({"index": index, "label": _show(qtype, label), "predicted": _show(qtype, predicted),
-                       "correct": right, "signal": gate, "top": top,
-                       # Noul calibration compares P(yes) with how often the label is yes.
-                       "pair": (noul_p, label) if qtype == "noul" else (top, right)})
+        scored.append(
+            {
+                "index": index,
+                "label": _show(qtype, label),
+                "predicted": _show(qtype, predicted),
+                "correct": right,
+                "signal": gate,
+                "top": top,
+                # Noul calibration compares P(yes) with how often the label is yes.
+                "pair": (noul_p, label) if qtype == "noul" else (top, right),
+            }
+        )
     if qtype is None:
         raise CalibrationError("No answers to calibrate. Run Bulk first.")
     classes = _classes(qtype, first) if first else []
@@ -452,15 +490,26 @@ def evaluate(rows: Any, signal: str = "confidence", bound: str = "estimate") -> 
     correct = sum(1 for r in scored if r["correct"])
     low, high = wilson(correct, len(scored))
     return {
-        "type": qtype, "signal": signal, "bound": bound,
-        "labeled": len(scored), "unlabeled": unlabeled, "invalid": invalid,
-        "correct": correct, "accuracy": correct / len(scored) if scored else None,
-        "accuracy_low": low, "accuracy_high": high,
-        "classes": classes, "confusion": counts,
-        "reliability": bins, "ece": ece,
-        "sweep": points, "targets": targets(points, bound) if scored else [],
-        "rows": scored, "signals": signals,
+        "type": qtype,
+        "signal": signal,
+        "bound": bound,
+        "labeled": len(scored),
+        "unlabeled": unlabeled,
+        "invalid": invalid,
+        "correct": correct,
+        "accuracy": correct / len(scored) if scored else None,
+        "accuracy_low": low,
+        "accuracy_high": high,
+        "classes": classes,
+        "confusion": counts,
+        "reliability": bins,
+        "ece": ece,
+        "sweep": points,
+        "targets": targets(points, bound) if scored else [],
+        "rows": scored,
+        "signals": signals,
         "ordinal": ordinal(ordinal_pairs, [int(c) for c in classes]) if qtype == "score" and scored else None,
         # Box: the mean overlap with the labels, and the overlap that counts as right.
-        "iou_mean": sum(overlaps) / len(overlaps) if overlaps else None, "iou_right": IOU_RIGHT if qtype == "box" else None,
+        "iou_mean": sum(overlaps) / len(overlaps) if overlaps else None,
+        "iou_right": IOU_RIGHT if qtype == "box" else None,
     }

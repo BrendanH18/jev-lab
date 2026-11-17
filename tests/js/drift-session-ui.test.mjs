@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { workbenchSource } from "./workbench-source.mjs";
 
-const body = (name) => workbenchSource.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
-const make = (name, deps) => new Function(...Object.keys(deps), `${body(name)}; return ${name};`)(...Object.values(deps));
+const body = (name) =>
+  workbenchSource.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
+const make = (name, deps) =>
+  new Function(...Object.keys(deps), `${body(name)}; return ${name};`)(...Object.values(deps));
 const nothing = () => {};
 const context = (d) => JSON.stringify(d.report?.labeling || null);
-const queue = () => ({ session_context: "snapshot", questions: { urgent: { type: "noul", instructions: "Urgent?" } },
-  gates: { urgent: 0.6 }, items: [{ line: 3, index: 2, row: { text: "An input", _image: "torn-bag" }, labels: { urgent: false } }] });
+const queue = () => ({
+  session_context: "snapshot",
+  questions: { urgent: { type: "noul", instructions: "Urgent?" } },
+  gates: { urgent: 0.6 },
+  items: [{ line: 3, index: 2, row: { text: "An input", _image: "torn-bag" }, labels: { urgent: false } }],
+});
 
 function setup({ approve = true, api: override, empty = false } = {}) {
   const d = { report: empty ? null : { labeling: queue(), estimate: { accuracy: 0.99 } } };
@@ -15,9 +21,21 @@ function setup({ approve = true, api: override, empty = false } = {}) {
   const W = { bulk: { checkRuns: { coffee: run } } };
   const restored = { labeling: queue(), counts: { rows: 1, edited_rows: 1, labels: 1 } };
   const calls = [];
-  const deps = { W, render: nothing, toast: nothing, handleError: (e) => { throw e; },
-    driftEditContext: context, loadPictureUrls: async () => {}, window: { confirm: () => approve },
-    api: async (url, data) => { calls.push([url, data]); return override ? override(d, restored) : restored; } };
+  const deps = {
+    W,
+    render: nothing,
+    toast: nothing,
+    handleError: (e) => {
+      throw e;
+    },
+    driftEditContext: context,
+    loadPictureUrls: async () => {},
+    window: { confirm: () => approve },
+    api: async (url, data) => {
+      calls.push([url, data]);
+      return override ? override(d, restored) : restored;
+    },
+  };
   deps.driftQueuesUnsaved = make("driftQueuesUnsaved", { W });
   return { W, run, d, restored, calls, deps };
 }
@@ -66,9 +84,14 @@ test("late previews and accept responses cannot replace a newer queue or human e
       let finish;
       const s = setup();
       if (stage === "accept") await make("previewDriftSession", s.deps)("coffee", {});
-      s.deps.api = () => new Promise((resolve) => { finish = resolve; });
-      const pending = stage === "preview" ? make("previewDriftSession", s.deps)("coffee", {})
-        : make("acceptDriftSession", s.deps)("coffee");
+      s.deps.api = () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        });
+      const pending =
+        stage === "preview"
+          ? make("previewDriftSession", s.deps)("coffee", {})
+          : make("acceptDriftSession", s.deps)("coffee");
       if (replace) s.W.bulk.checkRuns.coffee = { drift: {} };
       else s.d.report.labeling.items[0].labels.urgent = true;
       finish(s.restored);
@@ -83,22 +106,29 @@ test("download strips all report fields and sends only original inputs, position
   const s = setup();
   s.d.report.labeling.items[0].labels = { urgent: false, level: 0, empty: null };
   let payload;
-  await make("downloadDriftSession", { ...s.deps,
-    api: async (_path, data) => { payload = data; return {}; },
-    Blob, URL: { createObjectURL: () => "blob:session", revokeObjectURL: nothing },
+  await make("downloadDriftSession", {
+    ...s.deps,
+    api: async (_path, data) => {
+      payload = data;
+      return {};
+    },
+    Blob,
+    URL: { createObjectURL: () => "blob:session", revokeObjectURL: nothing },
     h: () => ({ click: nothing }),
   })("coffee");
-  assert.deepEqual(payload, { id: "coffee", context: "snapshot",
+  assert.deepEqual(payload, {
+    id: "coffee",
+    context: "snapshot",
     members: [{ line: 3, row: { text: "An input", _image: "torn-bag" } }],
-    items: [{ line: 3, labels: { urgent: false, level: 0 } }] });
+    items: [{ line: 3, labels: { urgent: false, level: 0 } }],
+  });
   assert.equal(s.d.busy, false);
 });
 
 test("a recovered report renders the labeling queue without reading model statistics", () => {
   const s = setup({ empty: true });
   s.d.report = { recovered: true, labeling: queue() };
-  const report = make("driftReport", { h: (_tag, _attrs, ...children) => children,
-    driftLabels: () => "Human queue" });
+  const report = make("driftReport", { h: (_tag, _attrs, ...children) => children, driftLabels: () => "Human queue" });
   assert.match(JSON.stringify(report({}, s.run)), /Recovered human labeling queue/);
 });
 
@@ -119,9 +149,15 @@ test("partial Add warns before invalidating remaining recoverable human drafts",
   rep.room = 3;
   rep.items.push({ line: 4, row: { text: "Unfinished" }, labels: { urgent: null, level: 0 } });
   let warned = false;
-  const add = make("addDriftLabels", { ...s.deps,
+  const add = make("addDriftLabels", {
+    ...s.deps,
     queueReady: (item) => item.labels.urgent !== null,
-    window: { confirm: (message) => { warned = /prevents downloading the remaining traffic labels/.test(message); return false; } },
+    window: {
+      confirm: (message) => {
+        warned = /prevents downloading the remaining traffic labels/.test(message);
+        return false;
+      },
+    },
     api: () => assert.fail("cancel must happen before saving"),
   });
   await add("coffee");
@@ -136,11 +172,18 @@ test("edits during drift spend preview keep the queue and make no paid compariso
     s.d.text = "New traffic";
     s.run.model = "";
     let finish;
-    const waiting = new Promise((resolve) => { finish = resolve; });
+    const waiting = new Promise((resolve) => {
+      finish = resolve;
+    });
     const report = s.d.report;
-    const run = make("runDrift", { ...s.deps, lineCount: () => 1, rowsPayload: (text) => text,
-      confirm: () => true, confirmSpend: () => waiting,
-      api: () => assert.fail("changed labels/inputs must not start a paid run") });
+    const run = make("runDrift", {
+      ...s.deps,
+      lineCount: () => 1,
+      rowsPayload: (text) => text,
+      confirm: () => true,
+      confirmSpend: () => waiting,
+      api: () => assert.fail("changed labels/inputs must not start a paid run"),
+    });
     const pending = run("coffee");
     if (change === "label") s.d.report.labeling.items[0].labels.urgent = true;
     else if (change === "inputs") s.d.text = "Different traffic";

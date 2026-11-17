@@ -154,7 +154,8 @@ const EMPTY = Object.freeze([]);
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : JSON.stringify(value) ?? "");
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const tidy = (value) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
 const percent = (value, digits = 0) => `${(value * 100).toFixed(digits)}%`;
 
@@ -169,7 +170,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -184,19 +189,30 @@ function criteriaOf(type, question, answer) {
   const criteria = isObject(question) ? question.criteria : undefined;
   if (type === "score") {
     if (Array.isArray(criteria)) return criteria.map((text, index) => ({ key: String(index), text: asText(text) }));
-    return Object.entries(isObject(answer.legend) ? answer.legend : {}).map(([key, text]) => ({ key, text: asText(text) }));
+    return Object.entries(isObject(answer.legend) ? answer.legend : {}).map(([key, text]) => ({
+      key,
+      text: asText(text),
+    }));
   }
-  if ((type === "choice" || type === "noul") && isObject(criteria)) return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
+  if ((type === "choice" || type === "noul") && isObject(criteria))
+    return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
   return [];
 }
 
 function probabilitiesOf(type, answer) {
   if (type === "noul") {
     const yes = finite(answer.noul);
-    return yes === null ? [] : [{ key: "yes", p: yes }, { key: "no", p: 1 - yes }];
+    return yes === null
+      ? []
+      : [
+          { key: "yes", p: yes },
+          { key: "no", p: 1 - yes },
+        ];
   }
   if (type !== "choice" && type !== "score") return [];
-  return Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) => (finite(p) === null ? [] : [{ key, p }]));
+  return Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) =>
+    finite(p) === null ? [] : [{ key, p }],
+  );
 }
 
 function boxOf(type, answer) {
@@ -210,13 +226,18 @@ function answerRow(id, answer, question, position) {
   const criteria = criteriaOf(type, question, answer);
   const probabilities = probabilitiesOf(type, answer);
   const box = boxOf(type, answer);
-  let value = null, display = "", scale = null;
+  let value = null,
+    display = "",
+    scale = null;
   if (type === "choice") {
     value = answer.choice === null || answer.choice === undefined ? null : String(answer.choice);
     if (value !== null) display = value.replace(/_/g, " ");
   } else if (type === "score") {
     value = finite(answer.score);
-    const levels = isObject(answer.legend) && Object.keys(answer.legend).length ? Object.keys(answer.legend).length : criteria.length;
+    const levels =
+      isObject(answer.legend) && Object.keys(answer.legend).length
+        ? Object.keys(answer.legend).length
+        : criteria.length;
     scale = levels ? levels - 1 : null;
     if (value !== null) display = scale === null ? value.toFixed(2) : `${value.toFixed(2)} / ${scale}`;
   } else if (type === "noul") {
@@ -227,8 +248,21 @@ function answerRow(id, answer, question, position) {
   }
   let top = null;
   for (const entry of probabilities) if (!top || entry.p > top.p) top = entry;
-  return { id, position, type, instructions: isObject(question) ? asText(question.instructions) : "", criteria, value, display, scale,
-    probabilities, top: top ? { ...top } : null, confidence: type === "noul" ? null : finite(answer.confidence), box, answer: clone(answer) };
+  return {
+    id,
+    position,
+    type,
+    instructions: isObject(question) ? asText(question.instructions) : "",
+    criteria,
+    value,
+    display,
+    scale,
+    probabilities,
+    top: top ? { ...top } : null,
+    confidence: type === "noul" ? null : finite(answer.confidence),
+    box,
+    answer: clone(answer),
+  };
 }
 
 // What one raw playground result ({ answers, meta, trace }) gives the surface. Kept per result object, so the item
@@ -241,7 +275,8 @@ function viewOf(result) {
   const questions = request && isObject(request.questions) ? request.questions : null;
   const state = request ? request.state : undefined;
   const answers = isObject(result.answers) ? result.answers : {};
-  const rows = Object.entries(answers).filter(([, answer]) => isObject(answer))
+  const rows = Object.entries(answers)
+    .filter(([, answer]) => isObject(answer))
     .map(([id, answer], index) => answerRow(id, answer, questions ? questions[id] : null, index + 1));
   const view = deepFreeze({
     rows,
@@ -259,7 +294,13 @@ const ENTRIES = new WeakMap();
 function historyEntry(raw) {
   if (ENTRIES.has(raw)) return ENTRIES.get(raw);
   const view = viewOf(raw.result);
-  const entry = Object.freeze({ call: finite(raw.call), at: finite(raw.at), text: view.text, meta: view.meta, rows: view.rows });
+  const entry = Object.freeze({
+    call: finite(raw.call),
+    at: finite(raw.at),
+    text: view.text,
+    meta: view.meta,
+    rows: view.rows,
+  });
   ENTRIES.set(raw, entry);
   return entry;
 }
@@ -286,7 +327,9 @@ export function indexPlaygroundCtx(source = {}) {
   const draft = () => asText(read(source, "draft", ""));
   const examples = () => {
     const list = read(source, "examples", EMPTY);
-    return Array.isArray(list) ? list.filter(isObject).map((example) => ({ label: asText(example.label), text: asText(example.text) })) : [];
+    return Array.isArray(list)
+      ? list.filter(isObject).map((example) => ({ label: asText(example.label), text: asText(example.text) }))
+      : [];
   };
   const ctx = {
     items: () => view()?.rows || EMPTY,
@@ -295,25 +338,43 @@ export function indexPlaygroundCtx(source = {}) {
       return source.arrange ? source.arrange(list, ctx) : list;
     },
     data: {
-      get text() { return view()?.text ?? null; },
-      get draft() { return draft(); },
+      get text() {
+        return view()?.text ?? null;
+      },
+      get draft() {
+        return draft();
+      },
       get stale() {
         const text = view()?.text;
         if (typeof text !== "string") return false;
         const typed = draft().trim();
         return typed !== text && Array.from(typed).slice(0, 4000).join("") !== text;
       },
-      get pending() { return read(source, "pending", false) === true; },
+      get pending() {
+        return read(source, "pending", false) === true;
+      },
       get error() {
         const message = read(source, "error", null);
         return typeof message === "string" && message ? message : null;
       },
-      get configured() { return read(source, "configured", false) === true; },
-      get examples() { return deepFreeze(examples()); },
-      get questions() { return view()?.questions ?? null; },
-      get request() { return view()?.request ?? null; },
-      get meta() { return view()?.meta ?? null; },
-      get trace() { return view()?.trace ?? null; },
+      get configured() {
+        return read(source, "configured", false) === true;
+      },
+      get examples() {
+        return deepFreeze(examples());
+      },
+      get questions() {
+        return view()?.questions ?? null;
+      },
+      get request() {
+        return view()?.request ?? null;
+      },
+      get meta() {
+        return view()?.meta ?? null;
+      },
+      get trace() {
+        return view()?.trace ?? null;
+      },
       get calls() {
         const count = read(source, "calls", null);
         return Number.isInteger(count) && count >= 0 ? count : ctx.data.history.length;
@@ -321,7 +382,12 @@ export function indexPlaygroundCtx(source = {}) {
       get history() {
         const list = read(source, "history", EMPTY);
         if (!Array.isArray(list)) return EMPTY;
-        return Object.freeze(list.filter((raw) => isObject(raw) && isObject(raw.result)).slice(-HISTORY_SHOWN).map(historyEntry));
+        return Object.freeze(
+          list
+            .filter((raw) => isObject(raw) && isObject(raw.result))
+            .slice(-HISTORY_SHOWN)
+            .map(historyEntry),
+        );
       },
     },
     actions: {
@@ -337,7 +403,9 @@ export function indexPlaygroundCtx(source = {}) {
       focusText: () => call(source, "focusText"),
       openSettings: () => call(source, "openSettings"),
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;
@@ -355,13 +423,25 @@ function appItem(raw, index, taken) {
   const numbered = label.match(/\bapp\s+(\d+)\b/i);
   const title = tidy(raw.title);
   const split = title.match(/^([^\p{L}\p{N}]+)(.*)$/u);
-  return { id, href, position: index + 1, label, number: numbered ? Number(numbered[1]) : null,
+  return {
+    id,
+    href,
+    position: index + 1,
+    label,
+    number: numbered ? Number(numbered[1]) : null,
     tag: label.includes("·") ? label.slice(label.indexOf("·") + 1).trim() : "",
-    title, emoji: split ? split[1].trim() : "", name: split ? split[2].trim() : title, summary: tidy(raw.summary),
-    points: Array.isArray(raw.points) ? raw.points.map(tidy).filter(Boolean) : [], featured: raw.featured === true, cta: tidy(raw.cta) };
+    title,
+    emoji: split ? split[1].trim() : "",
+    name: split ? split[2].trim() : title,
+    summary: tidy(raw.summary),
+    points: Array.isArray(raw.points) ? raw.points.map(tidy).filter(Boolean) : [],
+    featured: raw.featured === true,
+    cta: tidy(raw.cta),
+  };
 }
 
-const copyCards = (list) => (Array.isArray(list) ? list.filter(isObject).map((card) => ({ title: tidy(card.title), text: tidy(card.text) })) : []);
+const copyCards = (list) =>
+  Array.isArray(list) ? list.filter(isObject).map((card) => ({ title: tidy(card.title), text: tidy(card.text) })) : [];
 
 // source: {
 //   cards: () => the raw cards in page order, [{ href, label, title, summary, points, featured, cta }] — return the
@@ -376,7 +456,12 @@ export function indexAppsCtx(source = {}) {
     const cards = read(source, "cards", EMPTY);
     if (cards !== built.cards) {
       const taken = new Set();
-      built = { cards, items: deepFreeze((Array.isArray(cards) ? cards : []).filter(isObject).map((raw, index) => appItem(raw, index, taken))) };
+      built = {
+        cards,
+        items: deepFreeze(
+          (Array.isArray(cards) ? cards : []).filter(isObject).map((raw, index) => appItem(raw, index, taken)),
+        ),
+      };
     }
     return built.items;
   };
@@ -396,20 +481,31 @@ export function indexAppsCtx(source = {}) {
       return source.arrange ? source.arrange(list, ctx) : list;
     },
     data: {
-      get heading() { return tidy(page().heading); },
-      get lede() { return tidy(page().lede); },
-      get features() { return deepFreeze(copyCards(page().features)); },
-      get principles() { return deepFreeze(copyCards(page().principles)); },
+      get heading() {
+        return tidy(page().heading);
+      },
+      get lede() {
+        return tidy(page().lede);
+      },
+      get features() {
+        return deepFreeze(copyCards(page().features));
+      },
+      get principles() {
+        return deepFreeze(copyCards(page().principles));
+      },
     },
     actions: {
       open: (id) => call(source, "open", find(id)),
       focus(id) {
         const item = find(id);
-        if (!ctx.shown().includes(item)) throw new Error(`${item.name || item.id} is hidden by the current filters. Clear them to go to its card.`);
+        if (!ctx.shown().includes(item))
+          throw new Error(`${item.name || item.id} is hidden by the current filters. Clear them to go to its card.`);
         return call(source, "focus", item);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;

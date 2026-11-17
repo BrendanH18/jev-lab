@@ -26,8 +26,11 @@ ROLES = ("gated", "rule", "shortlist")
 LABEL_TYPES = ("choice", "noul", "score")
 SIGNAL_READ = {
     "confidence": {"noul": "|2p - 1|", "choice": "confidence", "score": "confidence"},
-    "top_probability": {"noul": "max(p, 1 - p)", "choice": "probability of the chosen option",
-                        "score": "probability of the likeliest level"},
+    "top_probability": {
+        "noul": "max(p, 1 - p)",
+        "choice": "probability of the chosen option",
+        "score": "probability of the likeliest level",
+    },
 }
 EPS = 1e-9  # as the exported gate: a signal equal to its threshold clears it
 
@@ -58,8 +61,14 @@ def _reads(rule: dict) -> List[str]:
 
 
 def _provenance(dataset: dict, check: dict, model: Optional[str] = None) -> dict:
-    return gate.provenance(dataset.get("questions"), check["gates"], check["signal"], model or check["model"],
-                           check.get("rules"), check.get("answer_sets"))
+    return gate.provenance(
+        dataset.get("questions"),
+        check["gates"],
+        check["signal"],
+        model or check["model"],
+        check.get("rules"),
+        check.get("answer_sets"),
+    )
 
 
 def _roles(qid: str, check: dict, rules: List[dict]) -> List[str]:
@@ -113,10 +122,23 @@ def run_show(args: Any) -> int:
     questions, rules = _questions(dataset), _rules(dataset, check)
     provenance = _provenance(dataset, check)
     if args.json:
-        print(json.dumps({"dataset": dataset["id"], "model": check["model"], "signal": check["signal"], "thresholds": check["gates"],
-                          "types": {qid: q.get("type") for qid, q in questions.items()}, "rules": rules,
-                          "answer_sets": check.get("answer_sets") or {}, "slice_targets": check.get("slice_targets") or [],
-                          "provenance": provenance}, indent=1, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    "dataset": dataset["id"],
+                    "model": check["model"],
+                    "signal": check["signal"],
+                    "thresholds": check["gates"],
+                    "types": {qid: q.get("type") for qid, q in questions.items()},
+                    "rules": rules,
+                    "answer_sets": check.get("answer_sets") or {},
+                    "slice_targets": check.get("slice_targets") or [],
+                    "provenance": provenance,
+                },
+                indent=1,
+                ensure_ascii=False,
+            )
+        )
         return 0
     reads = SIGNAL_READ[check["signal"]]
     rows = []
@@ -128,7 +150,10 @@ def run_show(args: Any) -> int:
             rows.append([qid, questions[qid].get("type"), None, "", _cut(check, qid), _rule_count(qid, rules)])
     if args.format == "table":
         print("gate of %s (%s)" % (dataset.get("name") or dataset["id"], dataset["id"]))
-        print("model %s, signal %s, tuned on %s" % (check["model"], check["signal"], check.get("tuned_on") or "(not recorded)"))
+        print(
+            "model %s, signal %s, tuned on %s"
+            % (check["model"], check["signal"], check.get("tuned_on") or "(not recorded)")
+        )
         print("provenance fingerprint %s" % provenance["fingerprint"][:16])
         print()
     kit.emit(args, ["question", "type", "threshold", "signal read", "shortlist cut", "rules"], rows)
@@ -151,7 +176,9 @@ def run_rules(args: Any) -> int:
         reads = _reads(rule)
         if args.question and args.question not in reads:
             continue
-        rows.append([number, rule["rule"], ", ".join(reads), ", ".join(qid for qid in reads if qid not in check["gates"])])
+        rows.append(
+            [number, rule["rule"], ", ".join(reads), ", ".join(qid for qid in reads if qid not in check["gates"])]
+        )
     empty = "no rule reads %s" % args.question if args.question else "the check has no rules"
     _table_or(args, ["#", "rule", "reads", "not gated"], rows, empty)
     return 0
@@ -162,14 +189,19 @@ def run_rules(args: Any) -> int:
 
 def _configure_slices(parser: Any) -> None:
     _dataset_argument(parser)
-    parser.add_argument("--missing", action="store_true",
-                        help="only slice targets with no tuning row labeled for every gated question; exit 1 if any")
+    parser.add_argument(
+        "--missing",
+        action="store_true",
+        help="only slice targets with no tuning row labeled for every gated question; exit 1 if any",
+    )
     kit.add_format(parser)
 
 
 def _labeled_for(row: Any, gates: Dict[str, float]) -> bool:
     labels = row.get(workbench.LABEL_KEY) if isinstance(row, dict) else None
-    return isinstance(labels, dict) and all(labels.get(qid) not in (None, "") for qid in gates)  # as Policy counts a label
+    return isinstance(labels, dict) and all(
+        labels.get(qid) not in (None, "") for qid in gates
+    )  # as Policy counts a label
 
 
 def run_slices(args: Any) -> int:
@@ -181,7 +213,9 @@ def run_slices(args: Any) -> int:
         labeled = sum(_labeled_for(row, check["gates"]) for row in matched)
         if args.missing and labeled:
             continue
-        rows.append([target["field"], target["value"], target["min_accuracy"], target["min_coverage"], len(matched), labeled])
+        rows.append(
+            [target["field"], target["value"], target["min_accuracy"], target["min_coverage"], len(matched), labeled]
+        )
     if args.missing:
         empty = "every slice target has tuning rows labeled for every gated question"
     else:
@@ -231,7 +265,9 @@ def run_export(args: Any) -> int:
 def _configure_diff(parser: Any) -> None:
     parser.add_argument("a", help="the first dataset id")
     parser.add_argument("b", help="the second dataset id")
-    parser.add_argument("--ignore-model", action="store_true", help="leave the model out, as when a check moves to a new version")
+    parser.add_argument(
+        "--ignore-model", action="store_true", help="leave the model out, as when a check moves to a new version"
+    )
     kit.add_format(parser)
 
 
@@ -285,8 +321,11 @@ def run_diff(args: Any) -> int:
 
 def _configure_questions(parser: Any) -> None:
     _dataset_argument(parser)
-    parser.add_argument("--ignored", action="store_true",
-                        help="only Choice, Noul and Score questions no threshold, rule or shortlist reads; exit 1 if any")
+    parser.add_argument(
+        "--ignored",
+        action="store_true",
+        help="only Choice, Noul and Score questions no threshold, rule or shortlist reads; exit 1 if any",
+    )
     kit.add_format(parser)
 
 
@@ -311,11 +350,21 @@ def run_questions(args: Any) -> int:
 
 def _configure_route(parser: Any) -> None:
     _dataset_argument(parser)
-    parser.add_argument("--signal", action="append", metavar="ID=NUMBER",
-                        help="a gated question's signal, from 0 to 1 (repeat per question); a missing one holds its question")
-    parser.add_argument("--answer", action="append", metavar="ID=VALUE",
-                        help="a question's answer for the rules: an option, yes or no, or a level number (repeat per question)")
-    parser.add_argument("--json", action="store_true", help="print the route, held questions and rules as decide() returns them")
+    parser.add_argument(
+        "--signal",
+        action="append",
+        metavar="ID=NUMBER",
+        help="a gated question's signal, from 0 to 1 (repeat per question); a missing one holds its question",
+    )
+    parser.add_argument(
+        "--answer",
+        action="append",
+        metavar="ID=VALUE",
+        help="a question's answer for the rules: an option, yes or no, or a level number (repeat per question)",
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="print the route, held questions and rules as decide() returns them"
+    )
 
 
 def run_route(args: Any) -> int:
@@ -382,48 +431,139 @@ def run_find(args: Any) -> int:
         roles = _roles(args.question, check, rules)
         if not roles or (args.role and args.role not in roles):
             continue
-        rows.append([dataset["id"], ", ".join(roles), check["gates"].get(args.question), _cut(check, args.question),
-                     _rule_count(args.question, rules)])
-    _table_or(args, ["dataset", "role", "threshold", "shortlist cut", "rules"], rows, "no saved check reads %s" % args.question)
+        rows.append(
+            [
+                dataset["id"],
+                ", ".join(roles),
+                check["gates"].get(args.question),
+                _cut(check, args.question),
+                _rule_count(args.question, rules),
+            ]
+        )
+    _table_or(
+        args,
+        ["dataset", "role", "threshold", "shortlist cut", "rules"],
+        rows,
+        "no saved check reads %s" % args.question,
+    )
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-gates",
-    "surface": "python.cli",
-    "title": "Saved gate commands",
-    "about": "Offline views and exports of the gate a saved check holds: thresholds with the signal each reads, rules, "
-             "the questions it reads or ignores, slice targets with their labeled tuning rows, a hand-typed routing, "
-             "checks that read a question, a diff of two checks' gates, and the exported module written to --out. "
-             "Nothing runs a gate or calls the model.",
-    "features": [
-        {"id": "show", "kind": "cli", "command": ["gates", "show"], "configure": _configure_show, "run": run_show,
-         "title": "Show a check's gate as decide() applies it: model, signal, provenance, and each threshold with the signal it reads",
-         "options": [{"id": "json", "title": "--json prints the whole gate configuration as JSON: thresholds, types, rules, cuts, slice targets and provenance"},
-                     dict(FORMAT, title="--format json|csv|markdown prints only the question rows, in another format")]},
-        {"id": "rules", "kind": "cli", "command": ["gates", "rules"], "configure": _configure_rules, "run": run_rules,
-         "title": "List a check's consistency rules with the questions each reads and the ones no threshold gates",
-         "options": [{"id": "question", "title": "--question ID keeps the rules that read one question"}, dict(FORMAT)]},
-        {"id": "slices", "kind": "cli", "command": ["gates", "slices"], "configure": _configure_slices, "run": run_slices,
-         "title": "List a check's slice targets with how many tuning rows match each and are labeled for every gate",
-         "options": [{"id": "missing", "title": "--missing keeps targets no labeled tuning row can evaluate and exits 1 if any"},
-                     dict(FORMAT)]},
-        {"id": "export", "kind": "cli", "command": ["gates", "export"], "configure": _configure_export, "run": run_export,
-         "title": "Write a check's exported gate module to --out, outside the Workbench data directory, without running it",
-         "options": [{"id": "language", "title": "--language javascript writes the gate.mjs module instead of gate.py"},
-                     {"id": "force", "title": "--force replaces an existing --out file"}]},
-        {"id": "diff", "kind": "cli", "command": ["gates", "diff"], "configure": _configure_diff, "run": run_diff,
-         "title": "Diff two checks' gates: model, signal, targets, thresholds, rules, shortlist cuts, slice targets and fingerprint; exit 1 if any differ",
-         "options": [{"id": "ignore_model", "title": "--ignore-model compares everything but the model"}, dict(FORMAT)]},
-        {"id": "questions", "kind": "cli", "command": ["gates", "questions"], "configure": _configure_questions, "run": run_questions,
-         "title": "List every dataset question with how the gate reads it: threshold, rules, shortlist, output only, or ignored",
-         "options": [{"id": "ignored", "title": "--ignored keeps the questions the gate never reads and exits 1 if any"}, dict(FORMAT)]},
-        {"id": "route", "kind": "cli", "command": ["gates", "route"], "configure": _configure_route, "run": run_route,
-         "title": "Route one hand-typed set of signals offline: the route, the held questions and why",
-         "options": [{"id": "answer", "title": "--answer ID=VALUE checks the rules against typed answers"},
-                     {"id": "json", "title": "--json prints the route, held questions and rules as decide() returns them"}]},
-        {"id": "find", "kind": "cli", "command": ["gates", "find"], "configure": _configure_find, "run": run_find,
-         "title": "Find the saved checks whose gate reads a question, and how: threshold, rules or shortlist",
-         "options": [{"id": "role", "title": "--role gated|rule|shortlist keeps checks that read it one way"}, dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-gates",
+        "surface": "python.cli",
+        "title": "Saved gate commands",
+        "about": "Offline views and exports of the gate a saved check holds: thresholds with the signal each reads, rules, "
+        "the questions it reads or ignores, slice targets with their labeled tuning rows, a hand-typed routing, "
+        "checks that read a question, a diff of two checks' gates, and the exported module written to --out. "
+        "Nothing runs a gate or calls the model.",
+        "features": [
+            {
+                "id": "show",
+                "kind": "cli",
+                "command": ["gates", "show"],
+                "configure": _configure_show,
+                "run": run_show,
+                "title": "Show a check's gate as decide() applies it: model, signal, provenance, and each threshold with the signal it reads",
+                "options": [
+                    {
+                        "id": "json",
+                        "title": "--json prints the whole gate configuration as JSON: thresholds, types, rules, cuts, slice targets and provenance",
+                    },
+                    dict(FORMAT, title="--format json|csv|markdown prints only the question rows, in another format"),
+                ],
+            },
+            {
+                "id": "rules",
+                "kind": "cli",
+                "command": ["gates", "rules"],
+                "configure": _configure_rules,
+                "run": run_rules,
+                "title": "List a check's consistency rules with the questions each reads and the ones no threshold gates",
+                "options": [
+                    {"id": "question", "title": "--question ID keeps the rules that read one question"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "slices",
+                "kind": "cli",
+                "command": ["gates", "slices"],
+                "configure": _configure_slices,
+                "run": run_slices,
+                "title": "List a check's slice targets with how many tuning rows match each and are labeled for every gate",
+                "options": [
+                    {
+                        "id": "missing",
+                        "title": "--missing keeps targets no labeled tuning row can evaluate and exits 1 if any",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "export",
+                "kind": "cli",
+                "command": ["gates", "export"],
+                "configure": _configure_export,
+                "run": run_export,
+                "title": "Write a check's exported gate module to --out, outside the Workbench data directory, without running it",
+                "options": [
+                    {"id": "language", "title": "--language javascript writes the gate.mjs module instead of gate.py"},
+                    {"id": "force", "title": "--force replaces an existing --out file"},
+                ],
+            },
+            {
+                "id": "diff",
+                "kind": "cli",
+                "command": ["gates", "diff"],
+                "configure": _configure_diff,
+                "run": run_diff,
+                "title": "Diff two checks' gates: model, signal, targets, thresholds, rules, shortlist cuts, slice targets and fingerprint; exit 1 if any differ",
+                "options": [
+                    {"id": "ignore_model", "title": "--ignore-model compares everything but the model"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "questions",
+                "kind": "cli",
+                "command": ["gates", "questions"],
+                "configure": _configure_questions,
+                "run": run_questions,
+                "title": "List every dataset question with how the gate reads it: threshold, rules, shortlist, output only, or ignored",
+                "options": [
+                    {"id": "ignored", "title": "--ignored keeps the questions the gate never reads and exits 1 if any"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "route",
+                "kind": "cli",
+                "command": ["gates", "route"],
+                "configure": _configure_route,
+                "run": run_route,
+                "title": "Route one hand-typed set of signals offline: the route, the held questions and why",
+                "options": [
+                    {"id": "answer", "title": "--answer ID=VALUE checks the rules against typed answers"},
+                    {
+                        "id": "json",
+                        "title": "--json prints the route, held questions and rules as decide() returns them",
+                    },
+                ],
+            },
+            {
+                "id": "find",
+                "kind": "cli",
+                "command": ["gates", "find"],
+                "configure": _configure_find,
+                "run": run_find,
+                "title": "Find the saved checks whose gate reads a question, and how: threshold, rules or shortlist",
+                "options": [
+                    {"id": "role", "title": "--role gated|rule|shortlist keeps checks that read it one way"},
+                    dict(FORMAT),
+                ],
+            },
+        ],
+    }
+)

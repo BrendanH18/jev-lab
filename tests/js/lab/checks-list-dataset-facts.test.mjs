@@ -10,37 +10,59 @@ import { checkPack } from "./harness.mjs";
 import { sampleChecksListCtx } from "./fixtures/workbench-checks.mjs";
 
 const ctx = (overrides) => sampleChecksListCtx(overrides);
-const C = Object.fromEntries(ctx({ catalogHidden: [] }).items().map((item) => [item.id, item]));
-const H = C["harbor-support"], WL = C["wholesale-leads"], B = C["bean-reviews"], R = C["roastery-orders"];
+const C = Object.fromEntries(
+  ctx({ catalogHidden: [] })
+    .items()
+    .map((item) => [item.id, item]),
+);
+const H = C["harbor-support"],
+  WL = C["wholesale-leads"],
+  B = C["bean-reviews"],
+  R = C["roastery-orders"];
 
-checkPack(pack, {
-  tuning_rows: { items: [H, WL, B, R], values: [40, 30, 240, 12] },
-  held_out_rows: { items: [H, WL, B], values: [8, 0, 20] },
-  held_out_share: { items: [H, WL, B, { rows: 0, held_out_rows: 0 }], values: [8 / 48, 0, 20 / 260, null] },
-  labeled_share: { items: [H, WL, B, R], values: [40 / 48, 1, 120 / 260, 0] },
-  unlabeled_rows: { items: [H, WL, B, R], values: [8, 0, 140, 12] },
-  calls_per_run: { items: [H, WL, B], values: [40, 30, 200] },
-  rows_past_cap: { items: [H, B], values: [0, 40] },
-  question_count: { items: [H, WL, B], values: [3, 2, 1] },
-  // A gate naming more questions than the dataset saves gives 0, never a negative count.
-  ungated_questions: { items: [H, WL, B, { question_count: 1, gated: ["crema", "bitter"] }, { gated: [] }], values: [1, 1, 0, 0, null] },
-  catalog_position: { items: [H, WL, B, R], values: [1, 2, 3, 4] },
-  review_rows: { items: [H, WL], values: [4, 0] },
-  review_ready: { items: [H, WL], values: [2, 0] },
-  review_audit: { items: [H, WL], values: [1, 0] },
-  review_edits: { items: [H, WL], values: [2, 0] },
+checkPack(
+  pack,
+  {
+    tuning_rows: { items: [H, WL, B, R], values: [40, 30, 240, 12] },
+    held_out_rows: { items: [H, WL, B], values: [8, 0, 20] },
+    held_out_share: { items: [H, WL, B, { rows: 0, held_out_rows: 0 }], values: [8 / 48, 0, 20 / 260, null] },
+    labeled_share: { items: [H, WL, B, R], values: [40 / 48, 1, 120 / 260, 0] },
+    unlabeled_rows: { items: [H, WL, B, R], values: [8, 0, 140, 12] },
+    calls_per_run: { items: [H, WL, B], values: [40, 30, 200] },
+    rows_past_cap: { items: [H, B], values: [0, 40] },
+    question_count: { items: [H, WL, B], values: [3, 2, 1] },
+    // A gate naming more questions than the dataset saves gives 0, never a negative count.
+    ungated_questions: {
+      items: [H, WL, B, { question_count: 1, gated: ["crema", "bitter"] }, { gated: [] }],
+      values: [1, 1, 0, 0, null],
+    },
+    catalog_position: { items: [H, WL, B, R], values: [1, 2, 3, 4] },
+    review_rows: { items: [H, WL], values: [4, 0] },
+    review_ready: { items: [H, WL], values: [2, 0] },
+    review_audit: { items: [H, WL], values: [1, 0] },
+    review_edits: { items: [H, WL], values: [2, 0] },
 
-  loaded: { items: [WL, H], values: [true, false] },
-  has_held_out: { items: [H, WL], values: [true, false] },
-  capped: { items: [B, H], values: [true, false] },
-  every_row_labeled: { items: [WL, H, R], values: [true, false, false] },
-  busy: { items: [R, H], values: [true, false] },
-  review_open: { items: [H, WL], values: [true, false] },
+    loaded: { items: [WL, H], values: [true, false] },
+    has_held_out: { items: [H, WL], values: [true, false] },
+    capped: { items: [B, H], values: [true, false] },
+    every_row_labeled: { items: [WL, H, R], values: [true, false, false] },
+    busy: { items: [R, H], values: [true, false] },
+    review_open: { items: [H, WL], values: [true, false] },
 
-  size_band: { items: [H, WL, B, R, { tuning_rows: 150 }], values: ["30 to 99", "30 to 99", "over 200", "under 30", "100 to 200"] },
-  labeling_band: { items: [R, B, H, WL], values: ["none labeled", "under half labeled", "half or more labeled", "all labeled"] },
-  open_panels: { items: [H, R, WL, { drift: { open: true }, queue: { open: true } }],
-    values: ["Review queue", "Try a new version", "none open", "Compare new rows + Review queue"] },
+    size_band: {
+      items: [H, WL, B, R, { tuning_rows: 150 }],
+      values: ["30 to 99", "30 to 99", "over 200", "under 30", "100 to 200"],
+    },
+    labeling_band: {
+      items: [R, B, H, WL],
+      values: ["none labeled", "under half labeled", "half or more labeled", "all labeled"],
+    },
+    open_panels: {
+      items: [H, R, WL, { drift: { open: true }, queue: { open: true } }],
+      values: ["Review queue", "Try a new version", "none open", "Compare new rows + Review queue"],
+    },
 
-  dataset_id: { items: [H, WL], values: ["harbor-support", "wholesale-leads"] },
-}, { ctx: () => ctx() });
+    dataset_id: { items: [H, WL], values: ["harbor-support", "wholesale-leads"] },
+  },
+  { ctx: () => ctx() },
+);

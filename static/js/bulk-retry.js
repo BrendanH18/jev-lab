@@ -11,8 +11,9 @@ export function unansweredBulkIndices(result) {
 }
 
 export function bulkRetryRows(result, filter = "all") {
-  return (result?.results || []).filter((row) => !row.answers
-    && (filter === "all" || (filter === "failed" ? !!row.error : !row.error)));
+  return (result?.results || []).filter(
+    (row) => !row.answers && (filter === "all" || (filter === "failed" ? !!row.error : !row.error)),
+  );
 }
 
 export function bulkRetryPlan(result, request, current, selection = undefined) {
@@ -30,14 +31,18 @@ export function bulkRetryPlan(result, request, current, selection = undefined) {
   if (!indices.length) return refuse("Select at least one unanswered row to retry.");
   if (!request || !request.model) return refuse("Run the full batch again to record its request and model.");
   if (current.error || bulkRetryContext(request) !== bulkRetryContext(current)) {
-    return refuse("Rows, questions, or model configuration changed. Restore the original request or run the full batch again.");
+    return refuse(
+      "Rows, questions, or model configuration changed. Restore the original request or run the full batch again.",
+    );
   }
   const answered = result.results.filter((row) => row.answers);
   const models = new Set(answered.map((row) => row.meta?.model));
   let model = request.model;
   if (answered.length) {
     if (models.size !== 1 || !/^jev-\d+\.\d+(\.\d+)?$/.test([...models][0] || "")) {
-      return refuse("The answered rows do not identify one model version. Run the full batch again before combining answers.");
+      return refuse(
+        "The answered rows do not identify one model version. Run the full batch again before combining answers.",
+      );
     }
     model = [...models][0];
   }
@@ -59,9 +64,12 @@ export function mergeBulkRetry(previous, attempt, indices, model) {
   const answered = [...previous.results, ...attempt.results].filter((row) => row.answers);
   const models = new Set(answered.map((row) => row.meta?.model));
   const pinned = /^jev-\d+\.\d+(\.\d+)?$/.test(model);
-  const compatible = !attempt.results.some((row) => row.answers) || (models.size === 1
-    && /^jev-\d+\.\d+(\.\d+)?$/.test([...models][0] || "") && (!pinned || models.has(model)));
-  const retryError = compatible ? null : "Retry did not identify the same model version. Its spend is counted; incompatible answers were left unanswered. Run the full batch again.";
+  const compatible =
+    !attempt.results.some((row) => row.answers) ||
+    (models.size === 1 && /^jev-\d+\.\d+(\.\d+)?$/.test([...models][0] || "") && (!pinned || models.has(model)));
+  const retryError = compatible
+    ? null
+    : "Retry did not identify the same model version. Its spend is counted; incompatible answers were left unanswered. Run the full batch again.";
   const results = previous.results.map((row) => {
     if (!updates.has(row.index)) return row;
     // Keep the original inputs and saved labels; table edits live separately in bulk.labels.
@@ -69,11 +77,16 @@ export function mergeBulkRetry(previous, attempt, indices, model) {
     const outcome = !compatible && update.answers ? { index: row.index, error: retryError } : update;
     return { ...outcome, row: row.row, expect: row.expect };
   });
-  return { ...previous, results, completed: results.filter((row) => row.answers).length,
-    stopped: attempt.stopped || null, retry_error: retryError,
+  return {
+    ...previous,
+    results,
+    completed: results.filter((row) => row.answers).length,
+    stopped: attempt.stopped || null,
+    retry_error: retryError,
     cost_usd: previous.cost_usd + attempt.cost_usd,
     input_tokens: previous.input_tokens + attempt.input_tokens,
-    wall_ms: previous.wall_ms + attempt.wall_ms };
+    wall_ms: previous.wall_ms + attempt.wall_ms,
+  };
 }
 
 export function clearBulkRetryReports(bulk) {

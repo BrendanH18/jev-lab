@@ -58,7 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
             leaf = top.add_parser(words[0], help=feature["title"], description=description)
         else:
             if words[0] not in groups:
-                group = top.add_parser(words[0], help="%s commands" % words[0], description="%s commands." % words[0].capitalize())
+                group = top.add_parser(
+                    words[0], help="%s commands" % words[0], description="%s commands." % words[0].capitalize()
+                )
                 group.set_defaults(_group=group)
                 groups[words[0]] = (group, group.add_subparsers(dest="_subcommand", metavar="<subcommand>"))
             leaf = groups[words[0]][1].add_parser(words[1], help=feature["title"], description=description)

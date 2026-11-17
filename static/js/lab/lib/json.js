@@ -23,16 +23,22 @@ const NAME_AT = /[A-Za-z_][A-Za-z0-9_]*/y;
 function str(value) {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return "";
-  try { return String(value); } catch { return ""; }
+  try {
+    return String(value);
+  } catch {
+    return "";
+  }
 }
 
 // Sets an own property, even for the key "__proto__", which plain assignment would treat as the prototype.
 function setOwn(object, key, value) {
-  if (key === "__proto__") Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+  if (key === "__proto__")
+    Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
   else object[key] = value;
 }
 
-const keyPath = (parent, key) => (IDENTIFIER.test(key) ? (parent === "" ? key : `${parent}.${key}`) : `${parent}[${JSON.stringify(key)}]`);
+const keyPath = (parent, key) =>
+  IDENTIFIER.test(key) ? (parent === "" ? key : `${parent}.${key}`) : `${parent}[${JSON.stringify(key)}]`;
 const indexPath = (parent, index) => `${parent}[${index}]`;
 const isSegment = (segment) => typeof segment === "string" || (Number.isSafeInteger(segment) && segment >= 0);
 
@@ -47,7 +53,8 @@ export function isPlainObject(value) {
 }
 
 const isContainer = (value) => Array.isArray(value) || isPlainObject(value);
-const isEmpty = (container) => (Array.isArray(container) ? container.length === 0 : Object.keys(container).length === 0);
+const isEmpty = (container) =>
+  Array.isArray(container) ? container.length === 0 : Object.keys(container).length === 0;
 const isLeaf = (value) => !isContainer(value) || isEmpty(value);
 
 // The JSON type of a value: "null", "array", "object", "string", "number" or "boolean". Every object that is not an
@@ -66,7 +73,10 @@ export function typeName(value) {
 // segments is not an array or holds anything but strings and whole numbers >= 0.
 export function formatPath(segments) {
   if (!Array.isArray(segments) || !segments.every(isSegment)) return null;
-  return segments.reduce((path, segment) => (typeof segment === "number" ? indexPath(path, segment) : keyPath(path, segment)), "");
+  return segments.reduce(
+    (path, segment) => (typeof segment === "number" ? indexPath(path, segment) : keyPath(path, segment)),
+    "",
+  );
 }
 
 // The segments of a path: parsePath("a.b[0]") is ["a", "b", 0], parsePath('["my key"].x') is ["my key", "x"],
@@ -82,7 +92,11 @@ export function parsePath(path) {
       let end = index + 2;
       while (end < path.length && path[end] !== '"') end += path[end] === "\\" ? 2 : 1;
       if (end >= path.length || path[end + 1] !== "]") return null;
-      try { segments.push(JSON.parse(path.slice(index + 1, end + 1))); } catch { return null; }
+      try {
+        segments.push(JSON.parse(path.slice(index + 1, end + 1)));
+      } catch {
+        return null;
+      }
       index = end + 2;
     } else if (path[index] === "[") {
       const close = path.indexOf("]", index);
@@ -112,7 +126,8 @@ export function getPath(value, path) {
   for (const segment of segments) {
     if (typeof segment === "number") {
       if (!Array.isArray(node) || segment >= node.length) return undefined;
-    } else if (node === null || typeof node !== "object" || Array.isArray(node) || !hasOwn(node, segment)) return undefined;
+    } else if (node === null || typeof node !== "object" || Array.isArray(node) || !hasOwn(node, segment))
+      return undefined;
     node = node[segment];
   }
   return node;
@@ -187,7 +202,8 @@ export function walk(value, visit) {
     count += 1;
     if (visit(path, node) === false || !isContainer(node) || open.includes(node)) return;
     open.push(node);
-    if (Array.isArray(node)) for (let index = 0; index < node.length; index += 1) step(node[index], indexPath(path, index));
+    if (Array.isArray(node))
+      for (let index = 0; index < node.length; index += 1) step(node[index], indexPath(path, index));
     else for (const key of Object.keys(node)) step(node[key], keyPath(path, key));
     open.pop();
   };
@@ -214,7 +230,9 @@ export function depth(value) {
 // {} or []; 3 for { a: 1, b: [2, {}] }. Always the length of listPaths(value).
 export function countLeaves(value) {
   let count = 0;
-  walk(value, (_path, node) => { if (isLeaf(node)) count += 1; });
+  walk(value, (_path, node) => {
+    if (isLeaf(node)) count += 1;
+  });
   return count;
 }
 
@@ -222,15 +240,26 @@ export function countLeaves(value) {
 // store or send). null for a value JSON cannot serialize: undefined, a function, a bigint or a cycle.
 export function byteSize(value) {
   let text;
-  try { text = JSON.stringify(value); } catch { return null; }
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    return null;
+  }
   if (typeof text !== "string") return null;
   let bytes = 0;
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
     if (code < 0x80) bytes += 1;
     else if (code < 0x800) bytes += 2;
-    else if (code >= 0xD800 && code <= 0xDBFF && text.charCodeAt(index + 1) >= 0xDC00 && text.charCodeAt(index + 1) <= 0xDFFF) { bytes += 4; index += 1; }
-    else bytes += 3;
+    else if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      text.charCodeAt(index + 1) >= 0xdc00 &&
+      text.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      bytes += 4;
+      index += 1;
+    } else bytes += 3;
   }
   return bytes;
 }
@@ -239,7 +268,9 @@ export function byteSize(value) {
 // ["a", "b[0]", "b[1].c"] for { a: 1, b: [2, { c: 3 }] }.
 export function listPaths(value) {
   const out = [];
-  walk(value, (path, node) => { if (isLeaf(node)) out.push(path); });
+  walk(value, (path, node) => {
+    if (isLeaf(node)) out.push(path);
+  });
   return out;
 }
 
@@ -247,7 +278,9 @@ export function listPaths(value) {
 // { "a.b[0]": 1, "a.b[1]": {} }. A lone value or empty container is { "": value }. unflatten reverses it.
 export function flatten(value) {
   const out = {};
-  walk(value, (path, node) => { if (isLeaf(node)) setOwn(out, path, node); });
+  walk(value, (path, node) => {
+    if (isLeaf(node)) setOwn(out, path, node);
+  });
   return out;
 }
 
@@ -285,11 +318,17 @@ export function unflatten(flat) {
     const segments = parsePath(path);
     if (!segments) return null;
     const leaf = copyDeep(flat[path], false, []);
-    if (!segments.length) { root = leaf; continue; }
+    if (!segments.length) {
+      root = leaf;
+      continue;
+    }
     if (!fits(root, segments[0])) root = typeof segments[0] === "number" ? [] : {};
     let node = root;
     segments.forEach((segment, index) => {
-      if (index === segments.length - 1) { place(node, segment, leaf); return; }
+      if (index === segments.length - 1) {
+        place(node, segment, leaf);
+        return;
+      }
       const following = segments[index + 1];
       let child = typeof segment === "number" || hasOwn(node, segment) ? node[segment] : undefined;
       if (!fits(child, following)) {
@@ -351,7 +390,11 @@ export function stableStringify(value, indent = 0) {
   let gap = "";
   if (typeof indent === "number" && indent >= 1) gap = " ".repeat(Math.min(10, Math.floor(indent)));
   else if (typeof indent === "string") gap = indent.slice(0, 10);
-  try { return serialize(value, gap, 0, []) ?? null; } catch { return null; }
+  try {
+    return serialize(value, gap, 0, []) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // A new object with only the listed keys that the object owns, in the order listed (a key listed twice appears
@@ -379,7 +422,8 @@ function equal(a, b, open) {
   if (a === b) return true;
   if (typeof a === "number" && typeof b === "number") return Number.isNaN(a) && Number.isNaN(b);
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
-  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime() || (Number.isNaN(a.getTime()) && Number.isNaN(b.getTime()));
+  if (a instanceof Date && b instanceof Date)
+    return a.getTime() === b.getTime() || (Number.isNaN(a.getTime()) && Number.isNaN(b.getTime()));
   const list = Array.isArray(a);
   if (list !== Array.isArray(b) || (!list && !(isPlainObject(a) && isPlainObject(b))) || open.includes(a)) return false;
   open.push(a);
@@ -423,8 +467,12 @@ export function diffValues(before, after) {
       else if (inA) out.push({ path: child, kind: "removed", before: a[key], after: undefined });
       else out.push({ path: child, kind: "added", before: undefined, after: b[key] });
     };
-    if (lists) for (let index = 0; index < Math.max(a.length, b.length); index += 1) pair(index < a.length, index < b.length, index, indexPath(path, index));
-    else for (const key of Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort()) pair(hasOwn(a, key), hasOwn(b, key), key, keyPath(path, key));
+    if (lists)
+      for (let index = 0; index < Math.max(a.length, b.length); index += 1)
+        pair(index < a.length, index < b.length, index, indexPath(path, index));
+    else
+      for (const key of Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort())
+        pair(hasOwn(a, key), hasOwn(b, key), key, keyPath(path, key));
     open.pop();
   };
   step(before, after, "");
@@ -436,8 +484,10 @@ function merge(a, b, open) {
   if (!isPlainObject(a) || !isPlainObject(b) || open.includes(a)) return copyDeep(b, false, []);
   open.push(a);
   const out = {};
-  for (const key of Object.keys(a)) setOwn(out, key, hasOwn(b, key) ? merge(a[key], b[key], open) : copyDeep(a[key], false, []));
-  for (const key of Object.keys(b)) if (!hasOwn(a, key) && b[key] !== undefined) setOwn(out, key, copyDeep(b[key], false, []));
+  for (const key of Object.keys(a))
+    setOwn(out, key, hasOwn(b, key) ? merge(a[key], b[key], open) : copyDeep(a[key], false, []));
+  for (const key of Object.keys(b))
+    if (!hasOwn(a, key) && b[key] !== undefined) setOwn(out, key, copyDeep(b[key], false, []));
   open.pop();
   return out;
 }
@@ -458,7 +508,11 @@ export function mergeDeep(a, b) {
 // valid JSON.
 export function duplicateKeys(text) {
   const source = str(text);
-  try { JSON.parse(source); } catch { return null; }
+  try {
+    JSON.parse(source);
+  } catch {
+    return null;
+  }
   const out = [];
   const stack = [];
   const childPath = () => {

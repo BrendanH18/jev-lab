@@ -21,8 +21,14 @@ from .compare import NAMES
 KINDS = ("bulk", "compare", "check", "drift", "upgrade", "items")
 
 
-def _rows_cost(split: List[tuple], questions: Dict[str, dict], model: str, field: str = "text",
-               kind: Optional[str] = None, indices: Optional[List[int]] = None) -> List[float]:
+def _rows_cost(
+    split: List[tuple],
+    questions: Dict[str, dict],
+    model: str,
+    field: str = "text",
+    kind: Optional[str] = None,
+    indices: Optional[List[int]] = None,
+) -> List[float]:
     """One reserve per row: the state the run sends for that row, with its picture's reference."""
     out = []
     for index in range(len(split)) if indices is None else indices:
@@ -52,26 +58,51 @@ def summarize(client: JevClient, kind: str, parts: List[dict], **extra: Any) -> 
         remaining, fits = None, True
     notes = []
     if not fits:
-        notes.append("The upper bound is more than the budget left. The guard stops the run when the budget is "
-                     "spent, so the rows after that get no answer.")
+        notes.append(
+            "The upper bound is more than the budget left. The guard stops the run when the budget is "
+            "spent, so the rows after that get no answer."
+        )
     rpm = int(snap.get("rpm") or 0)
     if rpm > 0 and calls > rpm:
-        notes.append("%d calls is more than the local limit of %d live calls a minute; calls past it fail with a "
-                     "rate-limit error and leave their rows without answers." % (calls, rpm))
-    out = {"kind": kind, "calls": calls, "usd": usd, "upper_bound": True,
-           "models": sorted({p["model"] for p in parts if p["calls"]}), "parts": parts,
-           "budget_usd": budget if budget > 0 else None, "remaining_usd": remaining, "fits": fits, "notes": notes}
+        notes.append(
+            "%d calls is more than the local limit of %d live calls a minute; calls past it fail with a "
+            "rate-limit error and leave their rows without answers." % (calls, rpm)
+        )
+    out = {
+        "kind": kind,
+        "calls": calls,
+        "usd": usd,
+        "upper_bound": True,
+        "models": sorted({p["model"] for p in parts if p["calls"]}),
+        "parts": parts,
+        "budget_usd": budget if budget > 0 else None,
+        "remaining_usd": remaining,
+        "fits": fits,
+        "notes": notes,
+    }
     out.update(extra)
     return out
 
 
-def for_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None,
-             indices: Any = None) -> dict:
+def for_bulk(
+    client: JevClient,
+    rows: List[Any],
+    questions: Any,
+    field: str = "text",
+    model: Optional[str] = None,
+    indices: Any = None,
+) -> dict:
     """workbench.run_bulk: one call per selected row of the first MAX_BULK_ROWS. Bulk sends test rows too."""
     questions, split, selected = workbench.prepare_bulk_selection(rows, questions, indices)
     asked = model or client.model
-    return summarize(client, "bulk", [_part("rows", asked, _rows_cost(split, questions, asked, field, indices=selected))],
-                     rows=len(selected), capped=max(0, _nonempty(rows) - len(split)), held_out=0)
+    return summarize(
+        client,
+        "bulk",
+        [_part("rows", asked, _rows_cost(split, questions, asked, field, indices=selected))],
+        rows=len(selected),
+        capped=max(0, _nonempty(rows) - len(split)),
+        held_out=0,
+    )
 
 
 def for_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
@@ -84,12 +115,20 @@ def for_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
         state, _sent = workbench.job_state(split, index, field, kind)
         variant = 0 if n % width < len(asked[0]) else 1
         costs.setdefault(variant, []).append(
-            request_reserve_usd(state, questions, model, workbench.picture_refs(split, index)))
-    parts = [_part("variant %s%s" % (NAMES[v], ", both orders" if variants[v]["average_orders"] else ""),
-                   models[v], costs.get(v, [])) for v in range(len(variants))]
+            request_reserve_usd(state, questions, model, workbench.picture_refs(split, index))
+        )
+    parts = [
+        _part(
+            "variant %s%s" % (NAMES[v], ", both orders" if variants[v]["average_orders"] else ""),
+            models[v],
+            costs.get(v, []),
+        )
+        for v in range(len(variants))
+    ]
     given = min(_nonempty(rows), workbench.MAX_BULK_ROWS)
-    return summarize(client, "compare", parts, rows=len(split), held_out=held_out,
-                     capped=max(0, _nonempty(rows) - given))
+    return summarize(
+        client, "compare", parts, rows=len(split), held_out=held_out, capped=max(0, _nonempty(rows) - given)
+    )
 
 
 def for_check(client: JevClient, dataset_id: str, model: Optional[str] = None) -> dict:
@@ -98,8 +137,14 @@ def for_check(client: JevClient, dataset_id: str, model: Optional[str] = None) -
     asked = checks.asked_model(check, model)
     tuning = workbench.tuning_rows(dataset)
     questions, split = workbench.prepare_bulk(tuning, dataset["questions"])
-    return summarize(client, "check", [_part("dataset rows", asked, _rows_cost(split, questions, asked))],
-                     id=dataset_id, rows=len(split), held_out=len(dataset["rows"]) - len(tuning))
+    return summarize(
+        client,
+        "check",
+        [_part("dataset rows", asked, _rows_cost(split, questions, asked))],
+        id=dataset_id,
+        rows=len(split),
+        held_out=len(dataset["rows"]) - len(tuning),
+    )
 
 
 def for_drift(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = None) -> dict:
@@ -109,10 +154,18 @@ def for_drift(client: JevClient, dataset_id: str, rows: Any, model: Optional[str
     tuning = workbench.tuning_rows(dataset)
     questions, ref = workbench.prepare_bulk(tuning, questions)
     questions, new = workbench.prepare_bulk(fresh, questions)
-    parts = [_part("dataset rows", asked, _rows_cost(ref, questions, asked)),
-             _part("new rows", asked, _rows_cost(new, questions, asked))]
-    return summarize(client, "drift", parts, id=dataset_id, rows=len(ref) + len(new),
-                     held_out=(len(dataset["rows"]) - len(tuning)) + held_out)
+    parts = [
+        _part("dataset rows", asked, _rows_cost(ref, questions, asked)),
+        _part("new rows", asked, _rows_cost(new, questions, asked)),
+    ]
+    return summarize(
+        client,
+        "drift",
+        parts,
+        id=dataset_id,
+        rows=len(ref) + len(new),
+        held_out=(len(dataset["rows"]) - len(tuning)) + held_out,
+    )
 
 
 def for_upgrade(client: JevClient, dataset_id: str, candidate: Any) -> dict:
@@ -121,15 +174,20 @@ def for_upgrade(client: JevClient, dataset_id: str, candidate: Any) -> dict:
     dataset, _check, current, candidate, questions = upgrade.prepare(dataset_id, candidate)
     tuning = workbench.tuning_rows(dataset)
     questions, split = workbench.prepare_bulk(tuning, questions)
-    parts = [_part("tuned-on version", current, _rows_cost(split, questions, current)),
-             _part("candidate", candidate, _rows_cost(split, questions, candidate))]
-    return summarize(client, "upgrade", parts, id=dataset_id, rows=len(split),
-                     held_out=len(dataset["rows"]) - len(tuning))
+    parts = [
+        _part("tuned-on version", current, _rows_cost(split, questions, current)),
+        _part("candidate", candidate, _rows_cost(split, questions, candidate)),
+    ]
+    return summarize(
+        client, "upgrade", parts, id=dataset_id, rows=len(split), held_out=len(dataset["rows"]) - len(tuning)
+    )
 
 
 def for_items(client: JevClient, chosen: List[dict]) -> dict:
     """workbench.run_items: one call per saved test, with its saved pictures, asking the current model."""
     model = client.model
-    costs = [request_reserve_usd(it.get("state"), it.get("questions") or {}, model, list((it.get("images") or {}).keys()))
-             for it in chosen]
+    costs = [
+        request_reserve_usd(it.get("state"), it.get("questions") or {}, model, list((it.get("images") or {}).keys()))
+        for it in chosen
+    ]
     return summarize(client, "items", [_part("saved tests", model, costs)], rows=len(costs))

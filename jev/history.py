@@ -115,10 +115,15 @@ def _entry(dataset_id: str, path: Path, current: Optional[bytes]) -> dict:
             raise TypeError
         summary = workbench.dataset_summary(dict(dataset, id=dataset_id))
         questions = dataset.get("questions")
-        out.update(name=dataset.get("name"), saved_at=dataset.get("saved_at"), rows=len(rows),
-                   labeled=summary["labeled"], test_rows=summary["test"]["rows"] if summary["test"] else 0,
-                   questions=list(questions) if isinstance(questions, dict) else [],
-                   checks=1 if isinstance(dataset.get("check"), dict) else 0)
+        out.update(
+            name=dataset.get("name"),
+            saved_at=dataset.get("saved_at"),
+            rows=len(rows),
+            labeled=summary["labeled"],
+            test_rows=summary["test"]["rows"] if summary["test"] else 0,
+            questions=list(questions) if isinstance(questions, dict) else [],
+            checks=1 if isinstance(dataset.get("check"), dict) else 0,
+        )
     except (ValueError, KeyError, TypeError, AttributeError):
         out["error"] = "Not a readable dataset file"
     return out
@@ -131,8 +136,12 @@ def revisions(dataset_id: str) -> dict:
         current = workbench._dataset_path(dataset_id).read_bytes()
     except FileNotFoundError:
         current = None
-    return {"id": dataset_id, "exists": current is not None, "keep": KEEP,
-            "revisions": [_entry(dataset_id, path, current) for path in reversed(_revisions(dataset_id))]}
+    return {
+        "id": dataset_id,
+        "exists": current is not None,
+        "keep": KEEP,
+        "revisions": [_entry(dataset_id, path, current) for path in reversed(_revisions(dataset_id))],
+    }
 
 
 @workbench.dataset_update()
@@ -173,7 +182,7 @@ def _looks(*tests: Any) -> list:
             if here[key] > kept.get(key, 0):
                 kept[key] = here[key]
                 out.append(look)
-    return out[-testsplit.MAX_LOOKS_KEPT:]
+    return out[-testsplit.MAX_LOOKS_KEPT :]
 
 
 def _kept_test(dataset_id: str, revision: str) -> dict:
@@ -203,8 +212,9 @@ def _candidate(dataset_id: str, revision: Any) -> tuple:
     candidate.pop("check_dropped", None)
     if isinstance(raw.get("check"), dict):
         try:
-            candidate["check"] = dict(checks.validate_check(raw["check"], candidate.get("questions")),
-                                      saved_at=raw["check"].get("saved_at"))
+            candidate["check"] = dict(
+                checks.validate_check(raw["check"], candidate.get("questions")), saved_at=raw["check"].get("saved_at")
+            )
         except WorkbenchError as err:
             candidate["check_dropped"] = str(err)
     # Likewise the revision's own labeling guidelines, kept where they still fit the revision's questions.
@@ -223,10 +233,17 @@ def _candidate(dataset_id: str, revision: Any) -> tuple:
         # A deleted dataset has no current file: the kept revisions hold the looks recorded since. Merge them oldest
         # first (the selected revision is one of them) so the cap keeps the newest looks.
         kept = [] if prior else [_kept_test(dataset_id, p.stem) for p in _revisions(dataset_id)]
-        candidate["test"] = {"locked_at": old.get("locked_at") or now.get("locked_at") or candidate["test"]["locked_at"],
-                             "looks": _looks(*kept, old, now) if kept else _looks(old, now)}
-    if len(workbench._dataset_text({k: v for k, v in candidate.items() if k not in NOTES})) > workbench.MAX_DATASET_CHARS:
-        raise WorkbenchError("The dataset is too large to save (limit %d characters as JSON)" % workbench.MAX_DATASET_CHARS)
+        candidate["test"] = {
+            "locked_at": old.get("locked_at") or now.get("locked_at") or candidate["test"]["locked_at"],
+            "looks": _looks(*kept, old, now) if kept else _looks(old, now),
+        }
+    if (
+        len(workbench._dataset_text({k: v for k, v in candidate.items() if k not in NOTES}))
+        > workbench.MAX_DATASET_CHARS
+    ):
+        raise WorkbenchError(
+            "The dataset is too large to save (limit %d characters as JSON)" % workbench.MAX_DATASET_CHARS
+        )
     return prior, token, candidate
 
 

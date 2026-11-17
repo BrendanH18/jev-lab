@@ -63,23 +63,31 @@ def gates_text(check: dict) -> str:
 
 
 def targets_text(check: dict) -> str:
-    accuracy = "%s accurate%s" % (pct(check["min_accuracy"]).strip(), " at 95% confidence" if check["bound"] == "lower" else "")
+    accuracy = "%s accurate%s" % (
+        pct(check["min_accuracy"]).strip(),
+        " at 95% confidence" if check["bound"] == "lower" else "",
+    )
     return "%s, at least %s automated" % (accuracy, pct(check["min_coverage"]).strip())
 
 
 def print_slice_targets(check: dict) -> None:
     for target in check.get("slice_targets", []):
-        print("  slice %r = %r: %s" % (target["field"], target["value"],
-                                        targets_text(dict(target, bound=check["bound"]))))
+        print(
+            "  slice %r = %r: %s" % (target["field"], target["value"], targets_text(dict(target, bound=check["bound"])))
+        )
 
 
 def print_slices(rep: dict) -> None:
     for s in rep.get("slice_targets", []):
-        print("  slice %r = %r: %s (%d rows, %s labeled)" % (
-            s["field"], s["value"], s["status"].upper(), s["rows"], s.get("labeled") or 0))
+        print(
+            "  slice %r = %r: %s (%d rows, %s labeled)"
+            % (s["field"], s["value"], s["status"].upper(), s["rows"], s.get("labeled") or 0)
+        )
         for name, target in s["targets"].items():
-            print("    %s %s, target %s  %s" % (name, pct(target["value"]).strip(),
-                                               pct(target["target"]).strip(), "ok" if target["ok"] else "FAIL"))
+            print(
+                "    %s %s, target %s  %s"
+                % (name, pct(target["value"]).strip(), pct(target["target"]).strip(), "ok" if target["ok"] else "FAIL")
+            )
         for reason in s["reasons"]:
             print("    - " + reason)
 
@@ -88,8 +96,10 @@ def print_list(summaries) -> None:
     for d in summaries:
         c = d["check"]
         tuned = "  tuned on %s" % c["tuned_on"] if c.get("tuned_on") and c["tuned_on"] != c.get("model") else ""
-        print("%s  (%d rows, %d labeled)  model %s%s\n  gate: %s on %s\n  targets: %s" % (
-            d["id"], d["rows"], d["labeled"], c.get("model"), tuned, gates_text(c), c.get("signal"), targets_text(c)))
+        print(
+            "%s  (%d rows, %d labeled)  model %s%s\n  gate: %s on %s\n  targets: %s"
+            % (d["id"], d["rows"], d["labeled"], c.get("model"), tuned, gates_text(c), c.get("signal"), targets_text(c))
+        )
         print_slice_targets(c)
         for note in d.get("check_notes", []):
             print("  note: " + note)
@@ -98,29 +108,54 @@ def print_list(summaries) -> None:
 def print_report(rep: dict) -> None:
     c = rep["check"]
     answered = ", ".join(rep["answered_by"]) or "none"
-    print("\n%s  (%d rows, %s labeled; asked %s, answered by %s)" % (
-        rep["id"], rep["rows"], rep.get("labeled", 0), rep["model"], answered))
+    print(
+        "\n%s  (%d rows, %s labeled; asked %s, answered by %s)"
+        % (rep["id"], rep["rows"], rep.get("labeled", 0), rep["model"], answered)
+    )
     print("  gate: %s on %s" % (gates_text(c), c["signal"]))
     t = rep["targets"]
     if t:
         acc, cov = t["accuracy"], t["coverage"]
         lower = c["bound"] == "lower"
-        interval = "" if rep["accuracy_low"] is None else "  [%s-%s]" % (pct(rep["accuracy_low"]).strip(),
-                                                                          pct(rep["accuracy_high"]).strip())
-        print("  accuracy   %s%-16s target %s%s  %s" % (pct(rep["accuracy"]), interval, pct(acc["target"]).strip(),
-                                                        " (95% lower bound)" if lower else "", "ok" if acc["ok"] else "FAIL"))
-        print("  automated  %s  %d of %d    min %s  %s" % (pct(rep["coverage"]), rep["automated"], rep["labeled"],
-                                                         pct(cov["target"]).strip(), "ok" if cov["ok"] else "FAIL"))
+        interval = (
+            ""
+            if rep["accuracy_low"] is None
+            else "  [%s-%s]" % (pct(rep["accuracy_low"]).strip(), pct(rep["accuracy_high"]).strip())
+        )
+        print(
+            "  accuracy   %s%-16s target %s%s  %s"
+            % (
+                pct(rep["accuracy"]),
+                interval,
+                pct(acc["target"]).strip(),
+                " (95% lower bound)" if lower else "",
+                "ok" if acc["ok"] else "FAIL",
+            )
+        )
+        print(
+            "  automated  %s  %d of %d    min %s  %s"
+            % (
+                pct(rep["coverage"]),
+                rep["automated"],
+                rep["labeled"],
+                pct(cov["target"]).strip(),
+                "ok" if cov["ok"] else "FAIL",
+            )
+        )
     print_slices(rep)
     latency = rep["latency_ms_median"]
-    print("  cost $%.5f · %d input tokens · median latency %s" % (
-        rep["cost_usd"], rep["input_tokens"], "n/a" if latency is None else "%.0f ms" % latency))
+    print(
+        "  cost $%.5f · %d input tokens · median latency %s"
+        % (rep["cost_usd"], rep["input_tokens"], "n/a" if latency is None else "%.0f ms" % latency)
+    )
     for reason in rep["reasons"]:
         print("  - " + reason)
     for note in rep.get("notes", []):
         print("  note: " + note)
     for m in rep["mistakes"][:MISTAKES_PRINTED]:
-        wrong = "; ".join("%s answered %s, label %s (%.2f)" % (q, a["answer"], a["label"], a["signal"]) for q, a in m["wrong"].items())
+        wrong = "; ".join(
+            "%s answered %s, label %s (%.2f)" % (q, a["answer"], a["label"], a["signal"]) for q, a in m["wrong"].items()
+        )
         row = m["row"] if len(m["row"]) <= 70 else m["row"][:67] + "..."
         print("  wrong but automated, row %d: %s\n      %s" % (m["index"] + 1, row, wrong))
     if rep["mistakes_total"] > MISTAKES_PRINTED:
@@ -140,31 +175,49 @@ def print_drift(rep: dict) -> None:
     c = rep["check"]
     ref, new = rep["reference"], rep["new"]
     answered = ", ".join(rep["answered_by"]) or "none"
-    print("\n%s  (%d dataset rows, %d new rows; asked %s, answered by %s)" % (
-        rep["id"], ref["rows"], new["rows"], rep["model"], answered))
+    print(
+        "\n%s  (%d dataset rows, %d new rows; asked %s, answered by %s)"
+        % (rep["id"], ref["rows"], new["rows"], rep["model"], answered)
+    )
     print("  gate: %s on %s" % (gates_text(c), c["signal"]))
     print("  the check on the dataset rows: %s" % rep["check_status"].upper())
     print("                      dataset          new rows         adjusted p")
     a = rep["automation"]
-    print("  automated   %-17s %-16s %s%s" % (share_text(ref), share_text(new), p_text(a["p_adjusted"]),
-                                              "  SHIFT" if a["shifted"] else ""))
+    print(
+        "  automated   %-17s %-16s %s%s"
+        % (share_text(ref), share_text(new), p_text(a["p_adjusted"]), "  SHIFT" if a["shifted"] else "")
+    )
     e = rep["estimate"]
     if ref["accuracy"] is not None:
         interval = "" if e["low"] is None else "  [%s-%s]" % (pct(e["low"]).strip(), pct(e["high"]).strip())
-        print("  accuracy    %s on the dataset, estimated %s on new rows%s" % (
-            pct(ref["accuracy"]).strip(), pct(e["accuracy"]).strip(), interval))
+        print(
+            "  accuracy    %s on the dataset, estimated %s on new rows%s"
+            % (pct(ref["accuracy"]).strip(), pct(e["accuracy"]).strip(), interval)
+        )
     for q in rep["questions"]:
         s = q["signal"]
         flags = [w for w, on in (("MIX", q["mix_shifted"]), ("SIGNAL", s["shifted"])) if on]
         moved = sorted(q["mix"], key=lambda m: -abs((m["new_share"] or 0) - (m["reference_share"] or 0)))[:3]
-        mix = ", ".join("%s %s->%s" % (m["answer"], pct(m["reference_share"]).strip(), pct(m["new_share"]).strip())
-                        for m in moved)
-        median = ("median %.2f->%.2f" % (s["reference"]["median"], s["new"]["median"])
-                  if s["reference"]["median"] is not None and s["new"]["median"] is not None else "")
-        print("  %s%s  mix p %s  signal p %s  %s; %s%s" % (q["qid"], " (gated)" if q["gated"] else "",
-                                                       p_text(q["mix_p_adjusted"]).strip(),
-                                                       p_text(s["p_adjusted"]).strip(), mix, median,
-                                                       "  " + " ".join(flags) if flags else ""))
+        mix = ", ".join(
+            "%s %s->%s" % (m["answer"], pct(m["reference_share"]).strip(), pct(m["new_share"]).strip()) for m in moved
+        )
+        median = (
+            "median %.2f->%.2f" % (s["reference"]["median"], s["new"]["median"])
+            if s["reference"]["median"] is not None and s["new"]["median"] is not None
+            else ""
+        )
+        print(
+            "  %s%s  mix p %s  signal p %s  %s; %s%s"
+            % (
+                q["qid"],
+                " (gated)" if q["gated"] else "",
+                p_text(q["mix_p_adjusted"]).strip(),
+                p_text(s["p_adjusted"]).strip(),
+                mix,
+                median,
+                "  " + " ".join(flags) if flags else "",
+            )
+        )
     print("  cost $%.5f · %d calls · %d input tokens" % (rep["cost_usd"], rep["calls"], rep["input_tokens"]))
     for reason in rep["check_reasons"]:
         print("  - check: " + reason)
@@ -181,14 +234,26 @@ def print_drift(rep: dict) -> None:
 def side_text(side: dict, sums: dict) -> str:
     if not sums.get("targets"):
         return "%s, not judged" % sums["status"].upper()
-    return "%s  accuracy %s, %s automated" % (sums["status"].upper(), pct(sums["accuracy"]).strip(), pct(sums["coverage"]).strip())
+    return "%s  accuracy %s, %s automated" % (
+        sums["status"].upper(),
+        pct(sums["accuracy"]).strip(),
+        pct(sums["coverage"]).strip(),
+    )
 
 
 def print_upgrade(rep: dict) -> None:
     c, s = rep["check"], rep["sides"]
-    print("\n%s  (%d rows; %s, answered by %s -> %s, answered by %s)" % (
-        rep["id"], s["current"]["rows"], s["current"]["model"], ", ".join(s["current"]["answered_by"]) or "none",
-        s["candidate"]["model"], ", ".join(s["candidate"]["answered_by"]) or "none"))
+    print(
+        "\n%s  (%d rows; %s, answered by %s -> %s, answered by %s)"
+        % (
+            rep["id"],
+            s["current"]["rows"],
+            s["current"]["model"],
+            ", ".join(s["current"]["answered_by"]) or "none",
+            s["candidate"]["model"],
+            ", ".join(s["candidate"]["answered_by"]) or "none",
+        )
+    )
     print("  gate: %s on %s; targets: %s" % (gates_text(c), c["signal"], targets_text(c)))
     print_slice_targets(c)
     print("  saved gate, tuned-on version:  %s" % side_text(s["current"], rep["current"]))
@@ -197,13 +262,17 @@ def print_upgrade(rep: dict) -> None:
     print_slices(rep["candidate"])
     t = rep["retuned"]
     if t["gates"] is not None:
-        print("  retuned gate: %s  %s" % (", ".join("%s>=%.2f" % kv for kv in t["gates"].items()),
-                                         side_text(s["candidate"], t["report"])))
+        print(
+            "  retuned gate: %s  %s"
+            % (", ".join("%s>=%.2f" % kv for kv in t["gates"].items()), side_text(s["candidate"], t["report"]))
+        )
         print_slices(t["report"])
         u = t["unseen"]
         if u:
-            print("    on unseen rows (%d-fold): accuracy %s, %s automated" % (
-                u["folds"], pct(u["accuracy"]).strip(), pct(u["coverage"]).strip()))
+            print(
+                "    on unseen rows (%d-fold): accuracy %s, %s automated"
+                % (u["folds"], pct(u["accuracy"]).strip(), pct(u["coverage"]).strip())
+            )
         elif t.get("holdout_problem"):
             print("    on unseen rows: %s" % t["holdout_problem"])
     elif t["problem"]:
@@ -212,9 +281,17 @@ def print_upgrade(rep: dict) -> None:
         print("  retuned gate: no thresholds reach %s on the candidate's answers" % pct(c["min_accuracy"]).strip())
     p = rep["paired"]
     if p["rows"]:
-        print("  every gated answer right, %d labeled rows: %s -> %s  (only tuned-on %d, only candidate %d, McNemar p %s)" % (
-            p["rows"], pct(p["current"]["accuracy"]).strip(), pct(p["candidate"]["accuracy"]).strip(),
-            p["current_only"], p["candidate_only"], p_text(p["p"]).strip()))
+        print(
+            "  every gated answer right, %d labeled rows: %s -> %s  (only tuned-on %d, only candidate %d, McNemar p %s)"
+            % (
+                p["rows"],
+                pct(p["current"]["accuracy"]).strip(),
+                pct(p["candidate"]["accuracy"]).strip(),
+                p["current_only"],
+                p["candidate_only"],
+                p_text(p["p"]).strip(),
+            )
+        )
     for q in rep["changed"]["questions"]:
         if q["rows"]:
             print("  %s changed its answer on %d of %d rows" % (q["qid"], q["changed"], q["rows"]))
@@ -249,8 +326,10 @@ def run_upgrade(args, ids) -> int:
         reports.append({"verdict": "error", "reasons": [str(err)]})
     finally:
         s = client.guard.snapshot()
-        print("\n%d live calls · %d input tokens · $%.5f · %.1f s" % (
-            s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started))
+        print(
+            "\n%d live calls · %d input tokens · $%.5f · %.1f s"
+            % (s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started)
+        )
         if args.out:
             Path(args.out).write_text(json.dumps(reports, indent=1, default=str))
     verdicts = [r["verdict"] for r in reports]
@@ -282,7 +361,7 @@ def usd_up(value: float) -> str:
     if value <= 0:
         return "$0"
     places = max(2, 1 - math.floor(math.log10(value)))
-    step = 10 ** -places
+    step = 10**-places
     return "$%.*f" % (places, math.ceil(value / step - 1e-9) * step)
 
 
@@ -311,11 +390,22 @@ def run_estimate(args, ids, with_checks: dict) -> int:
             continue
         calls, usd = calls + rep["calls"], usd + rep["usd"]
         held = rep.get("held_out") or 0
-        print("%s  %s: %d call%s, at most %s%s" % (dataset_id, what, rep["calls"], "" if rep["calls"] == 1 else "s",
-                                                 usd_up(rep["usd"]),
-                                                 "  (%d test row%s left out)" % (held, "" if held == 1 else "s") if held else ""))
+        print(
+            "%s  %s: %d call%s, at most %s%s"
+            % (
+                dataset_id,
+                what,
+                rep["calls"],
+                "" if rep["calls"] == 1 else "s",
+                usd_up(rep["usd"]),
+                "  (%d test row%s left out)" % (held, "" if held == 1 else "s") if held else "",
+            )
+        )
         for part in rep["parts"]:
-            print("  %-17s %4d calls to %s, at most %s" % (part["label"], part["calls"], part["model"], usd_up(part["usd"])))
+            print(
+                "  %-17s %4d calls to %s, at most %s"
+                % (part["label"], part["calls"], part["model"], usd_up(part["usd"]))
+            )
         for note in rep["notes"]:
             if "budget" not in note:
                 print("  note: " + note)
@@ -325,8 +415,10 @@ def run_estimate(args, ids, with_checks: dict) -> int:
         limit = "%s the $%.2f budget of one run (JEV_LAB_BUDGET_USD)" % (fits, budget)
     else:
         limit = "no budget set"
-    print("\nTotal: %d call%s, at most %s, an upper bound, not a measured cost; %s. No model calls were made." % (
-        calls, "" if calls == 1 else "s", usd_up(usd), limit))
+    print(
+        "\nTotal: %d call%s, at most %s, an upper bound, not a measured cost; %s. No model calls were made."
+        % (calls, "" if calls == 1 else "s", usd_up(usd), limit)
+    )
     return 2 if failed else 0
 
 
@@ -340,8 +432,10 @@ def run_drift(args, with_checks: dict) -> int:
         print("No API key. Set TYPESAFE_API_KEY or add it to .env.")
         return 2
     dataset_id = ids[0]
-    print("%s: %d dataset rows and %d new rows, one call per row, via %s" % (
-        dataset_id, with_checks[dataset_id]["rows"], len(rows), client.backend))
+    print(
+        "%s: %d dataset rows and %d new rows, one call per row, via %s"
+        % (dataset_id, with_checks[dataset_id]["rows"], len(rows), client.backend)
+    )
     started = time.perf_counter()
     rep = None
     try:
@@ -351,8 +445,10 @@ def run_drift(args, with_checks: dict) -> int:
         print("\nStopped: %s" % err)
     finally:
         s = client.guard.snapshot()
-        print("\n%d live calls · %d input tokens · $%.5f · %.1f s" % (
-            s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started))
+        print(
+            "\n%d live calls · %d input tokens · $%.5f · %.1f s"
+            % (s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started)
+        )
         if args.out and rep is not None:
             Path(args.out).write_text(json.dumps(rep, indent=1, default=str))
     if rep is None or rep["status"] == "error" or rep["check_status"] == "error":
@@ -367,17 +463,26 @@ def main(argv=None) -> int:
     parser.add_argument("--list", action="store_true", help="list the checks and exit, without model calls")
     parser.add_argument("--out", help="write the reports as JSON here (they include rows and answers)")
     parser.add_argument("--drift", metavar="FILE", help="compare the unlabeled rows in FILE with one check's dataset")
-    parser.add_argument("--upgrade-to", metavar="MODEL",
-                        help="ask each check's tuned-on version and MODEL every row, and say whether the check can move")
-    parser.add_argument("--estimate", action="store_true",
-                        help="print the calls and an upper bound on their cost instead of running; no model calls")
+    parser.add_argument(
+        "--upgrade-to",
+        metavar="MODEL",
+        help="ask each check's tuned-on version and MODEL every row, and say whether the check can move",
+    )
+    parser.add_argument(
+        "--estimate",
+        action="store_true",
+        help="print the calls and an upper bound on their cost instead of running; no model calls",
+    )
     args = parser.parse_args(argv)
 
     with_checks = {d["id"]: d for d in checks.listed()}
     ids = args.ids or sorted(with_checks)
     unknown = [i for i in ids if i not in with_checks]
     if unknown:
-        print("No check saved in: %s. Datasets with a check: %s" % (", ".join(unknown), ", ".join(sorted(with_checks)) or "none"))
+        print(
+            "No check saved in: %s. Datasets with a check: %s"
+            % (", ".join(unknown), ", ".join(sorted(with_checks)) or "none")
+        )
         return 2
     if not ids:
         print("No dataset in data/workbench/datasets/ holds a check. Save one from the Workbench's Policy panel.")
@@ -400,7 +505,9 @@ def main(argv=None) -> int:
         print("No API key. Set TYPESAFE_API_KEY or add it to .env.")
         return 2
     rows = sum(with_checks[i]["rows"] for i in ids)
-    print("%d check%s, %d rows, one call per row, via %s" % (len(ids), "" if len(ids) == 1 else "s", rows, client.backend))
+    print(
+        "%d check%s, %d rows, one call per row, via %s" % (len(ids), "" if len(ids) == 1 else "s", rows, client.backend)
+    )
     started = time.perf_counter()
     reports = []
     try:
@@ -418,8 +525,10 @@ def main(argv=None) -> int:
         reports.append({"status": "error", "reasons": [str(err)]})
     finally:
         s = client.guard.snapshot()
-        print("\n%d live calls · %d input tokens · $%.5f · %.1f s" % (
-            s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started))
+        print(
+            "\n%d live calls · %d input tokens · $%.5f · %.1f s"
+            % (s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started)
+        )
         if args.out:
             Path(args.out).write_text(json.dumps(reports, indent=1, default=str))
     statuses = [r["status"] for r in reports]

@@ -221,18 +221,33 @@
 //     here: the page's "Download CSV" already carries them.
 //   - Agreement and kappa describe two people's labels, never model accuracy.
 import { clone } from "../kit.js";
-import { catalogActiveFilters, catalogDefaults, canCopyDataset, matchesCatalog, sortedCatalog } from "../../dataset-catalog.js";
+import {
+  catalogActiveFilters,
+  catalogDefaults,
+  canCopyDataset,
+  matchesCatalog,
+  sortedCatalog,
+} from "../../dataset-catalog.js";
 import { agreementEditsUnsaved, secondItems, settleKey, settledItems } from "../../agreement.js";
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const count = (value) => (Number.isInteger(value) && value >= 0 ? value : typeof value === "number" && value >= 0 && Number.isFinite(value) ? Math.floor(value) : 0);
+const count = (value) =>
+  Number.isInteger(value) && value >= 0
+    ? value
+    : typeof value === "number" && value >= 0 && Number.isFinite(value)
+      ? Math.floor(value)
+      : 0;
 const textOr = (value, fallback = null) => (typeof value === "string" && value !== "" ? value : fallback);
 const has = Object.prototype.hasOwnProperty;
 const STAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
 
 const copyOf = (value) => {
-  try { return value === undefined ? null : clone(value); } catch { return null; }
+  try {
+    return value === undefined ? null : clone(value);
+  } catch {
+    return null;
+  }
 };
 
 function deepFreeze(value) {
@@ -246,7 +261,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback, ...args) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name](...args) : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name](...args) : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -280,7 +299,8 @@ function pageHook(source, ctx, of) {
         return item;
       });
       const arranged = source.arrange(list, ctx);
-      if (!Array.isArray(arranged) || arranged.length !== raws.length || !arranged.every((item) => pairs.has(item))) return raws;
+      if (!Array.isArray(arranged) || arranged.length !== raws.length || !arranged.every((item) => pairs.has(item)))
+        return raws;
       return arranged.map((item) => pairs.get(item));
     },
   };
@@ -301,10 +321,21 @@ function itemCache(make) {
 // ---------- workbench.datasets.catalog ----------
 
 function catalogItem(raw, index, { loadedId, pinned, agreementOpen }) {
-  const rows = count(raw.rows), labeled = count(raw.labeled), questions = count(raw.questions), guidelines = count(raw.guidelines);
-  const test = isObject(raw.test) ? { rows: count(raw.test.rows), labeled: count(raw.test.labeled),
-    share: finite(raw.test.share), looks: count(raw.test.looks), locked_at: textOr(raw.test.locked_at) } : null;
-  const heldOut = test ? test.rows : 0, heldOutLabeled = test ? test.labeled : 0;
+  const rows = count(raw.rows),
+    labeled = count(raw.labeled),
+    questions = count(raw.questions),
+    guidelines = count(raw.guidelines);
+  const test = isObject(raw.test)
+    ? {
+        rows: count(raw.test.rows),
+        labeled: count(raw.test.labeled),
+        share: finite(raw.test.share),
+        looks: count(raw.test.looks),
+        locked_at: textOr(raw.test.locked_at),
+      }
+    : null;
+  const heldOut = test ? test.rows : 0,
+    heldOutLabeled = test ? test.labeled : 0;
   const id = String(raw.id ?? "");
   const notes = typeof raw.notes === "string" ? raw.notes : "";
   return {
@@ -320,7 +351,10 @@ function catalogItem(raw, index, { loadedId, pinned, agreementOpen }) {
     unlabeled: Math.max(0, rows - labeled),
     label_share: rows ? labeled / rows : null,
     questions,
-    question_labels: Object.entries(isObject(raw.labels) ? raw.labels : {}).map(([qid, n]) => ({ id: qid, labeled: count(n) })),
+    question_labels: Object.entries(isObject(raw.labels) ? raw.labels : {}).map(([qid, n]) => ({
+      id: qid,
+      labeled: count(n),
+    })),
     guidelines,
     unguided: Math.max(0, questions - guidelines),
     has_check: isObject(raw.check),
@@ -352,7 +386,10 @@ export function datasetsCatalogCtx(source = {}) {
     const list = read(source, "datasets", []);
     return Array.isArray(list) ? list.filter(isObject) : [];
   };
-  const filters = () => ({ ...catalogDefaults(), ...(isObject(read(source, "filters", {})) ? read(source, "filters", {}) : {}) });
+  const filters = () => ({
+    ...catalogDefaults(),
+    ...(isObject(read(source, "filters", {})) ? read(source, "filters", {}) : {}),
+  });
   const pins = () => {
     const ids = filters().pinnedIds;
     return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
@@ -417,8 +454,12 @@ export function datasetsCatalogCtx(source = {}) {
       },
       loadCopy(id) {
         const raw = rawById(id);
-        if (read(source, "copyBusy", false) === true) throw new Error("A copy is already loading. Wait for it to finish.");
-        if (!canCopyDataset(raw)) throw new Error(`“${id}” has held-out rows or test history. Download its ZIP and import it to copy that history too.`);
+        if (read(source, "copyBusy", false) === true)
+          throw new Error("A copy is already loading. Wait for it to finish.");
+        if (!canCopyDataset(raw))
+          throw new Error(
+            `“${id}” has held-out rows or test history. Download its ZIP and import it to copy that history too.`,
+          );
         return call(source, "loadCopy", where, id);
       },
       downloadBundle(id) {
@@ -431,22 +472,30 @@ export function datasetsCatalogCtx(source = {}) {
         const known = new Set(ids.filter((id) => typeof id === "string" && saved.includes(id)));
         if (!known.size) throw new Error("None of those IDs is a saved dataset. Pins are unchanged.");
         const current = new Set(pins().filter((id) => saved.includes(id)));
-        for (const id of known) if (pinned === false) current.delete(id); else current.add(id);
+        for (const id of known)
+          if (pinned === false) current.delete(id);
+          else current.add(id);
         // Keep the page's pin order (the order pins were made), then new pins in saved order.
-        const next = [...pins().filter((id) => current.has(id)), ...saved.filter((id) => current.has(id) && !pins().includes(id))];
+        const next = [
+          ...pins().filter((id) => current.has(id)),
+          ...saved.filter((id) => current.has(id) && !pins().includes(id)),
+        ];
         call(source, "setPins", where, next);
         return next;
       },
       openAgreement(id) {
         const raw = rawById(id);
-        if (!(count(raw.labeled) > 0 && count(raw.questions) > 0)) throw new Error(`“${id}” needs saved questions and labeled rows before a second person can label a sample.`);
+        if (!(count(raw.labeled) > 0 && count(raw.questions) > 0))
+          throw new Error(`“${id}” needs saved questions and labeled rows before a second person can label a sample.`);
         return call(source, "openAgreement", where, id);
       },
       resetFilters() {
         return call(source, "resetFilters", where);
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && typeof item.id === "string" ? item.id : "?"),
   };
   // The page's hook (not for packs): Lab's filters and sort on the page's raw dataset summaries.
@@ -459,7 +508,8 @@ export function datasetsCatalogCtx(source = {}) {
 
 function historyItem(raw, index, previewing) {
   const readable = !raw.error;
-  const rows = readable ? count(raw.rows) : null, labeled = readable ? count(raw.labeled) : null;
+  const rows = readable ? count(raw.rows) : null,
+    labeled = readable ? count(raw.labeled) : null;
   return {
     revision: String(raw.revision ?? ""),
     position: index + 1,
@@ -482,21 +532,42 @@ function historyItem(raw, index, previewing) {
 
 function previewOf(report) {
   if (!isObject(report)) return null;
-  const rows = isObject(report.rows) ? report.rows : {}, labels = isObject(report.labels) ? report.labels : {};
-  const test = isObject(report.test) ? report.test : {}, guides = isObject(report.guidelines) ? report.guidelines : null;
+  const rows = isObject(report.rows) ? report.rows : {},
+    labels = isObject(report.labels) ? report.labels : {};
+  const test = isObject(report.test) ? report.test : {},
+    guides = isObject(report.guidelines) ? report.guidelines : null;
   const ids = (value) => (Array.isArray(value) ? value.length : 0);
   return {
     revision: null,
     exists: report.exists !== false,
-    rows: { before: count(rows.before), after: count(rows.after), added: count(rows.added), removed: count(rows.removed), order_changed: rows.order_changed === true },
+    rows: {
+      before: count(rows.before),
+      after: count(rows.after),
+      added: count(rows.added),
+      removed: count(rows.removed),
+      order_changed: rows.order_changed === true,
+    },
     labels: { added: count(labels.added), removed: count(labels.removed), changed: count(labels.changed) },
     questions_changed: report.questions_changed === true,
     rules_changed: report.rules_changed === true,
     metadata_changed: report.metadata_changed === true,
     check: ["preserved", "removed", "none"].includes(report.check) ? report.check : "none",
     check_changed: report.check_changed === true,
-    test: { before: count(test.before), after: count(test.after), changed_membership: count(test.changed_membership), history: textOr(test.history, "none") },
-    guidelines: guides ? { before: count(guides.before), after: count(guides.after), added: ids(guides.added), changed: ids(guides.changed), removed: ids(guides.removed) } : null,
+    test: {
+      before: count(test.before),
+      after: count(test.after),
+      changed_membership: count(test.changed_membership),
+      history: textOr(test.history, "none"),
+    },
+    guidelines: guides
+      ? {
+          before: count(guides.before),
+          after: count(guides.after),
+          added: ids(guides.added),
+          changed: ids(guides.changed),
+          removed: ids(guides.removed),
+        }
+      : null,
   };
 }
 
@@ -531,7 +602,9 @@ export function datasetsHistoryCtx(source = {}) {
     return { list, of };
   };
   const busy = () => state().busy === true;
-  const notBusy = () => { if (busy()) throw new Error("Wait for the history to finish reading or restoring."); };
+  const notBusy = () => {
+    if (busy()) throw new Error("Wait for the history to finish reading or restoring.");
+  };
   const where = "The history panel";
 
   const ctx = {
@@ -559,8 +632,16 @@ export function datasetsHistoryCtx(source = {}) {
         busy: busy(),
         changed_only: state().changedOnly === true,
         preview,
-        deleted: Array.isArray(deleted) ? deleted.filter(isObject).map((entry) => ({ id: String(entry.id ?? ""), name: textOr(entry.name),
-          revisions: count(entry.revisions), latest: textOr(entry.latest) })) : null,
+        deleted: Array.isArray(deleted)
+          ? deleted
+              .filter(isObject)
+              .map((entry) => ({
+                id: String(entry.id ?? ""),
+                name: textOr(entry.name),
+                revisions: count(entry.revisions),
+                latest: textOr(entry.latest),
+              }))
+          : null,
         now: now === null ? Date.now() : now,
       });
     },
@@ -572,7 +653,8 @@ export function datasetsHistoryCtx(source = {}) {
       preview(revision) {
         notBusy();
         const entry = (listing()?.revisions || []).find((raw) => isObject(raw) && raw.revision === revision);
-        if (typeof revision !== "string" || !entry) throw new Error(`Revision “${String(revision)}” is not in this history. Refresh it.`);
+        if (typeof revision !== "string" || !entry)
+          throw new Error(`Revision “${String(revision)}” is not in this history. Refresh it.`);
         if (entry.error) throw new Error("That revision is not a readable dataset file, so it cannot be restored.");
         return call(source, "preview", where, entry);
       },
@@ -582,7 +664,8 @@ export function datasetsHistoryCtx(source = {}) {
       },
       restore() {
         notBusy();
-        if (!state().preview?.report) throw new Error("Preview a revision first: a restore always shows its change summary.");
+        if (!state().preview?.report)
+          throw new Error("Preview a revision first: a restore always shows its change summary.");
         return call(source, "restore", where);
       },
       setChangedOnly(on) {
@@ -590,7 +673,9 @@ export function datasetsHistoryCtx(source = {}) {
         return call(source, "setChangedOnly", where, on);
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && Number.isInteger(item.position) ? `#${item.position}` : "?"),
   };
   const page = pageHook(source, ctx, (raw) => lookup().of(raw));
@@ -603,7 +688,8 @@ export function datasetsHistoryCtx(source = {}) {
 const optionsOf = (question) => {
   if (!isObject(question)) return [];
   if (question.type === "noul") return ["yes", "no"];
-  if (question.type === "score") return Array.isArray(question.criteria) ? question.criteria.map((_, index) => String(index)) : [];
+  if (question.type === "score")
+    return Array.isArray(question.criteria) ? question.criteria.map((_, index) => String(index)) : [];
   if (question.type === "box") return [];
   return isObject(question.criteria) ? Object.keys(question.criteria) : [];
 };
@@ -644,7 +730,8 @@ function agreementItem(raw, index, { labels, rowDiffs }) {
 
 function reportOf(report, questions) {
   if (!isObject(report)) return null;
-  const o = isObject(report.overall) ? report.overall : {}, c = isObject(report.counts) ? report.counts : {};
+  const o = isObject(report.overall) ? report.overall : {},
+    c = isObject(report.counts) ? report.counts : {};
   const rate = (value) => finite(value);
   const order = Object.keys(isObject(questions) ? questions : {});
   const per = isObject(report.questions) ? report.questions : {};
@@ -652,13 +739,36 @@ function reportOf(report, questions) {
   const disagreements = Array.isArray(report.disagreements) ? report.disagreements : [];
   const total = count(report.disagreements_total);
   return {
-    overall: { labels: count(o.labels), agree: count(o.agree), agreement: rate(o.agreement), rows: count(o.rows), rows_agree: count(o.rows_agree),
-      rows_agreement: rate(o.rows_agreement), rows_low: rate(o.rows_low), rows_high: rate(o.rows_high) },
-    counts: Object.fromEntries(["rows", "matched", "not_found", "repeated", "unlabeled", "compared", "all_agree", "only_second"].map((key) => [key, count(c[key])])),
+    overall: {
+      labels: count(o.labels),
+      agree: count(o.agree),
+      agreement: rate(o.agreement),
+      rows: count(o.rows),
+      rows_agree: count(o.rows_agree),
+      rows_agreement: rate(o.rows_agreement),
+      rows_low: rate(o.rows_low),
+      rows_high: rate(o.rows_high),
+    },
+    counts: Object.fromEntries(
+      ["rows", "matched", "not_found", "repeated", "unlabeled", "compared", "all_agree", "only_second"].map((key) => [
+        key,
+        count(c[key]),
+      ]),
+    ),
     questions: ids.map((qid) => {
       const q = isObject(per[qid]) ? per[qid] : {};
-      return { id: qid, rows: count(q.rows), agree: count(q.agree), agreement: rate(q.agreement), low: rate(q.low), high: rate(q.high), kappa: rate(q.kappa),
-        mixups: (Array.isArray(q.mixups) ? q.mixups : []).filter(isObject).map((m) => ({ saved: labelOf(m.first), second: labelOf(m.second), rows: count(m.rows) })) };
+      return {
+        id: qid,
+        rows: count(q.rows),
+        agree: count(q.agree),
+        agreement: rate(q.agreement),
+        low: rate(q.low),
+        high: rate(q.high),
+        kappa: rate(q.kappa),
+        mixups: (Array.isArray(q.mixups) ? q.mixups : [])
+          .filter(isObject)
+          .map((m) => ({ saved: labelOf(m.first), second: labelOf(m.second), rows: count(m.rows) })),
+      };
     }),
     disagreements_total: Math.max(total, disagreements.length),
     disagreements_shown: disagreements.length,
@@ -695,7 +805,12 @@ export function datasetsAgreementCtx(source = {}) {
         if (!isObject(d)) continue;
         const key = settleKey(d.row_id, d.question);
         const settle = has.call(picks, key) ? { set: true, value: labelOf(picks[key]) } : { set: false };
-        const entry = { question: String(d.question ?? ""), saved: labelOf(d.first), second: labelOf(d.second), settle };
+        const entry = {
+          question: String(d.question ?? ""),
+          saved: labelOf(d.first),
+          second: labelOf(d.second),
+          settle,
+        };
         diffs.set(d.row_id, [...(diffs.get(d.row_id) || []), entry]);
       }
     }
@@ -704,14 +819,20 @@ export function datasetsAgreementCtx(source = {}) {
       const index = position.has(raw) ? position.get(raw) : list.length;
       const given = has.call(labels, raw.row_id) ? labels[raw.row_id] : null;
       const rowDiffs = rep ? diffs.get(raw.row_id) || [] : null;
-      return make(raw, JSON.stringify([index, given ? Object.entries(given) : null, rowDiffs]), index, { labels: given, rowDiffs });
+      return make(raw, JSON.stringify([index, given ? Object.entries(given) : null, rowDiffs]), index, {
+        labels: given,
+        rowDiffs,
+      });
     };
     return { list, of };
   };
   const busy = () => run()?.busy === true;
-  const notBusy = () => { if (busy()) throw new Error("Wait for the agreement sample to finish drawing, comparing or saving."); };
+  const notBusy = () => {
+    if (busy()) throw new Error("Wait for the agreement sample to finish drawing, comparing or saving.");
+  };
   const where = "Label agreement";
-  const questionOf = (qid) => (has.call(questionsRaw(), qid) && isObject(questionsRaw()[qid]) ? questionsRaw()[qid] : null);
+  const questionOf = (qid) =>
+    has.call(questionsRaw(), qid) && isObject(questionsRaw()[qid]) ? questionsRaw()[qid] : null;
 
   const ctx = {
     items() {
@@ -723,21 +844,41 @@ export function datasetsAgreementCtx(source = {}) {
       return page.arrange(list.filter((raw) => page.matches(raw))).map(of);
     },
     get data() {
-      const a = run(), s = sample(), rep = report();
+      const a = run(),
+        s = sample(),
+        rep = report();
       const items = Array.isArray(s?.items) ? s.items.filter(isObject) : [];
       const labels = isObject(a?.labels) ? a.labels : {};
-      const sent = secondItems(items.filter((item) => Array.isArray(item.questions)), labels);
+      const sent = secondItems(
+        items.filter((item) => Array.isArray(item.questions)),
+        labels,
+      );
       const now = finite(read(source, "now", null));
       let settled = 0;
-      try { settled = rep ? settledItems(rep.disagreements, choices()).length : 0; } catch { settled = 0; }
+      try {
+        settled = rep ? settledItems(rep.disagreements, choices()).length : 0;
+      } catch {
+        settled = 0;
+      }
       return deepFreeze({
         dataset_id: String(read(source, "datasetId", "")),
         dataset_name: String(read(source, "datasetName", "") || read(source, "datasetId", "")),
         open: a?.open === true,
         busy: busy(),
-        sample: s ? { requested: count(s.sample_size), drawn: items.length, eligible: count(s.eligible), seed: finite(s.seed),
-          recoverable: !!s.session_context } : null,
-        questions: Object.entries(questionsRaw()).map(([id, q]) => ({ id, type: isObject(q) && typeof q.type === "string" ? q.type : "", options: optionsOf(q) })),
+        sample: s
+          ? {
+              requested: count(s.sample_size),
+              drawn: items.length,
+              eligible: count(s.eligible),
+              seed: finite(s.seed),
+              recoverable: !!s.session_context,
+            }
+          : null,
+        questions: Object.entries(questionsRaw()).map(([id, q]) => ({
+          id,
+          type: isObject(q) && typeof q.type === "string" ? q.type : "",
+          options: optionsOf(q),
+        })),
         given_rows: sent.length,
         given_labels: sent.reduce((sum, item) => sum + Object.keys(item.labels).length, 0),
         unsaved: agreementEditsUnsaved(a),
@@ -752,15 +893,22 @@ export function datasetsAgreementCtx(source = {}) {
       setSecondLabel(rowId, question, value = null) {
         notBusy();
         const item = (sample()?.items || []).find((entry) => isObject(entry) && entry.row_id === rowId);
-        if (typeof rowId !== "string" || !item) throw new Error(`Row “${String(rowId)}” is not in this agreement sample.`);
-        if (!Array.isArray(item.questions) || !item.questions.includes(question)) throw new Error(`Row ${item.number} does not ask “${String(question)}”.`);
+        if (typeof rowId !== "string" || !item)
+          throw new Error(`Row “${String(rowId)}” is not in this agreement sample.`);
+        if (!Array.isArray(item.questions) || !item.questions.includes(question))
+          throw new Error(`Row ${item.number} does not ask “${String(question)}”.`);
         if (!validLabel(questionOf(question), value)) throw new Error(`That is not a label “${question}” offers.`);
         return call(source, "setLabel", where, rowId, question, value);
       },
       compare() {
         notBusy();
         if (!sample()) throw new Error("Draw a sample first.");
-        if (!secondItems((sample().items || []).filter((entry) => isObject(entry) && Array.isArray(entry.questions)), run()?.labels || {}).length) {
+        if (
+          !secondItems(
+            (sample().items || []).filter((entry) => isObject(entry) && Array.isArray(entry.questions)),
+            run()?.labels || {},
+          ).length
+        ) {
           throw new Error("Give at least one second label before comparing.");
         }
         return call(source, "compare", where);
@@ -769,15 +917,23 @@ export function datasetsAgreementCtx(source = {}) {
         notBusy();
         const rep = report();
         if (!rep) throw new Error("Compare first: settling needs the current comparison.");
-        const found = (Array.isArray(rep.disagreements) ? rep.disagreements : []).find((d) => isObject(d) && d.row_id === rowId && d.question === question);
+        const found = (Array.isArray(rep.disagreements) ? rep.disagreements : []).find(
+          (d) => isObject(d) && d.row_id === rowId && d.question === question,
+        );
         if (!found) throw new Error("That row and question is not a disagreement shown in the current comparison.");
         const q = questionOf(question);
-        const fits = value === null || validLabel(q, value) || JSON.stringify(value) === JSON.stringify(found.first) || JSON.stringify(value) === JSON.stringify(found.second);
+        const fits =
+          value === null ||
+          validLabel(q, value) ||
+          JSON.stringify(value) === JSON.stringify(found.first) ||
+          JSON.stringify(value) === JSON.stringify(found.second);
         if (!fits) throw new Error(`That is not a label “${question}” offers.`);
         return call(source, "settle", where, rowId, question, value);
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && Number.isInteger(item.number) ? `row ${item.number}` : "?"),
   };
   const page = pageHook(source, ctx, (raw) => lookup().of(raw));

@@ -30,28 +30,64 @@ from decimal import Decimal
 from typing import Callable, List, Optional, Sequence, Tuple
 
 __all__ = [
-    "is_probability", "is_count", "clamp", "logit", "expit", "round",
-    "log_gamma", "log_factorial", "log_choose", "choose", "erf", "erfc",
-    "normal_pdf", "normal_cdf", "normal_sf", "normal_quantile",
-    "incomplete_beta", "beta_quantile", "incomplete_gamma_p", "incomplete_gamma_q",
-    "chi_square_cdf", "chi_square_sf", "chi_square_quantile", "student_t_cdf", "student_t_sf", "student_t_quantile",
-    "binomial_pmf", "binomial_cdf", "binomial_sf", "hypergeometric_pmf", "poisson_pmf", "poisson_cdf", "poisson_sf",
-    "sum", "mean", "variance", "stdev", "median", "quantile", "min_of", "max_of",
-    "mulberry32", "shuffled", "sample_indexes",
+    "is_probability",
+    "is_count",
+    "clamp",
+    "logit",
+    "expit",
+    "round",
+    "log_gamma",
+    "log_factorial",
+    "log_choose",
+    "choose",
+    "erf",
+    "erfc",
+    "normal_pdf",
+    "normal_cdf",
+    "normal_sf",
+    "normal_quantile",
+    "incomplete_beta",
+    "beta_quantile",
+    "incomplete_gamma_p",
+    "incomplete_gamma_q",
+    "chi_square_cdf",
+    "chi_square_sf",
+    "chi_square_quantile",
+    "student_t_cdf",
+    "student_t_sf",
+    "student_t_quantile",
+    "binomial_pmf",
+    "binomial_cdf",
+    "binomial_sf",
+    "hypergeometric_pmf",
+    "poisson_pmf",
+    "poisson_cdf",
+    "poisson_sf",
+    "sum",
+    "mean",
+    "variance",
+    "stdev",
+    "median",
+    "quantile",
+    "min_of",
+    "max_of",
+    "mulberry32",
+    "shuffled",
+    "sample_indexes",
 ]
 
-EPSILON = 2.220446049250313e-16        # 2^-52
-TINY = 1e-300                          # keeps the continued fractions away from a division by zero
+EPSILON = 2.220446049250313e-16  # 2^-52
+TINY = 1e-300  # keeps the continued fractions away from a division by zero
 TWO_PI = 6.283185307179586
-LN_SQRT_2PI = 0.9189385332046728       # ln sqrt(2 pi)
-INV_SQRT_PI = 0.5641895835477563       # 1 / sqrt(pi)
-SQRT1_2 = 0.7071067811865476           # 1 / sqrt(2)
+LN_SQRT_2PI = 0.9189385332046728  # ln sqrt(2 pi)
+INV_SQRT_PI = 0.5641895835477563  # 1 / sqrt(pi)
+SQRT1_2 = 0.7071067811865476  # 1 / sqrt(2)
 ONE_MINUS_EULER = 0.42278433509846713  # 1 - Euler's constant
-LOG_HALF = -0.6931471805599453         # ln(1/2)
-LOG_MIN = -744.4400719213812           # ln of the smallest positive double
-MIN_VALUE = 5e-324                     # the smallest positive double
-MAX_STEPS = 500000                     # ceiling for one continued fraction or series
-MAX_SAFE = 2 ** 53 - 1                 # the largest integer a double holds with all its neighbours
+LOG_HALF = -0.6931471805599453  # ln(1/2)
+LOG_MIN = -744.4400719213812  # ln of the smallest positive double
+MIN_VALUE = 5e-324  # the smallest positive double
+MAX_STEPS = 500000  # ceiling for one continued fraction or series
+MAX_SAFE = 2**53 - 1  # the largest integer a double holds with all its neighbours
 INF = float("inf")
 NAN = float("nan")
 
@@ -60,6 +96,7 @@ Core = Tuple[float, float, float]
 
 
 # ---------- argument checks and float helpers that never raise ----------
+
 
 def _number(x) -> Optional[float]:
     """x as a float when it is a finite int or float (bool excluded); None otherwise."""
@@ -135,6 +172,7 @@ def _horner(coefficients: Sequence[float], x: float) -> float:
 
 # ---------- utilities ----------
 
+
 def is_probability(x) -> bool:
     """True for a number in [0, 1]; False for anything else, including NaN and non-numbers."""
     return _probability(x) is not None
@@ -199,14 +237,14 @@ def round(x, digits=0) -> Optional[float]:
         return 0.0
     _sign, figure_tuple, exponent = Decimal(repr(abs(value))).as_tuple()
     figures = "".join(str(figure) for figure in figure_tuple).rstrip("0")
-    exponent += len(figure_tuple) - len(figures)   # |x| = figures * 10^exponent
-    drop = -exponent - places                       # how many trailing figures go
+    exponent += len(figure_tuple) - len(figures)  # |x| = figures * 10^exponent
+    drop = -exponent - places  # how many trailing figures go
     if drop <= 0:
         return value
     if drop > len(figures):
         return 0.0
     kept = int(figures[: len(figures) - drop] or "0")
-    if figures[len(figures) - drop] >= "5":         # the first dropped figure is 5 or more
+    if figures[len(figures) - drop] >= "5":  # the first dropped figure is 5 or more
         kept += 1
     result = float("%de%d" % (kept, exponent + drop))
     if not math.isfinite(result):
@@ -217,14 +255,37 @@ def round(x, digits=0) -> Optional[float]:
 # ---------- special functions ----------
 
 # (-1)^k (zeta(k) - 1) / k for k = 2..30: the series of ln gamma(2 + w) after its linear term.
-LOG_GAMMA_SERIES = (3.1044247747322276e-11, -6.4229645638381e-11, 1.330476437424449e-10, -2.7595228851242334e-10,
-                    5.731367241678862e-10, -1.1921401405860912e-09, 2.4836745438024785e-09, -5.183475041970047e-09,
-                    1.0838659214896955e-08, -2.2711094608943164e-08, 4.7698101693639804e-08, -1.0043224823968099e-07,
-                    2.1207184805554665e-07, -4.492469198764566e-07, 9.55141213040742e-07, -2.039215753801366e-06,
-                    4.374866789907488e-06, -9.439488275268397e-06, 2.050721277567069e-05, -4.492623673813314e-05,
-                    9.945751278180853e-05, -0.00022315475845357939, 0.0005096695247430425, -0.001192753911703261,
-                    0.0028905103307415234, -0.007385551028673986, 0.020580808427784546, -0.0673523010531981,
-                    0.3224670334241132)
+LOG_GAMMA_SERIES = (
+    3.1044247747322276e-11,
+    -6.4229645638381e-11,
+    1.330476437424449e-10,
+    -2.7595228851242334e-10,
+    5.731367241678862e-10,
+    -1.1921401405860912e-09,
+    2.4836745438024785e-09,
+    -5.183475041970047e-09,
+    1.0838659214896955e-08,
+    -2.2711094608943164e-08,
+    4.7698101693639804e-08,
+    -1.0043224823968099e-07,
+    2.1207184805554665e-07,
+    -4.492469198764566e-07,
+    9.55141213040742e-07,
+    -2.039215753801366e-06,
+    4.374866789907488e-06,
+    -9.439488275268397e-06,
+    2.050721277567069e-05,
+    -4.492623673813314e-05,
+    9.945751278180853e-05,
+    -0.00022315475845357939,
+    0.0005096695247430425,
+    -0.001192753911703261,
+    0.0028905103307415234,
+    -0.007385551028673986,
+    0.020580808427784546,
+    -0.0673523010531981,
+    0.3224670334241132,
+)
 
 # B(2k) / (2k (2k - 1)) for k = 8..1: the tail of Stirling's series.
 STIRLING_SERIES = (-3617 / 122400, 1 / 156, -691 / 360360, 1 / 1188, -1 / 1680, 1 / 1260, -1 / 360, 1 / 12)
@@ -243,7 +304,7 @@ def _stirling_tail(z: float) -> float:
 def _lgamma(x: float) -> float:
     """ln gamma(x) for a float x > 0; infinite when it overflows."""
     if x < 0.5:
-        return _log_gamma_near_two(x) - math.log1p(x) - math.log(x)   # gamma(x) = gamma(2 + x) / (x (1 + x))
+        return _log_gamma_near_two(x) - math.log1p(x) - math.log(x)  # gamma(x) = gamma(2 + x) / (x (1 + x))
     if x < 1.5:
         return _log_gamma_near_two(x - 1) - math.log1p(x - 1)
     if x <= 2.5:
@@ -288,11 +349,17 @@ def log_choose(n, k) -> Optional[float]:
             value += math.log((m + i) / i)
             i += 1
         return value
-    return (j * math.log(nf / j) - m * math.log1p(-j / nf) + 0.5 * math.log(nf / j / m / TWO_PI)
-            + _stirling_tail(nf) - _stirling_tail(j) - _stirling_tail(m))
+    return (
+        j * math.log(nf / j)
+        - m * math.log1p(-j / nf)
+        + 0.5 * math.log(nf / j / m / TWO_PI)
+        + _stirling_tail(nf)
+        - _stirling_tail(j)
+        - _stirling_tail(m)
+    )
 
 
-_CHOOSE_LIMIT = 2 ** 1024
+_CHOOSE_LIMIT = 2**1024
 
 
 def choose(n, k) -> Optional[float]:
@@ -302,11 +369,11 @@ def choose(n, k) -> Optional[float]:
     if total is None or part is None or part > total:
         return None
     j = min(part, total - part)
-    if j >= 1024:   # C(n, j) >= 2^j
+    if j >= 1024:  # C(n, j) >= 2^j
         return None
     value = 1
     for i in range(1, j + 1):
-        value = value * (total - j + i) // i   # always divides exactly: value is C(n - j + i, i)
+        value = value * (total - j + i) // i  # always divides exactly: value is C(n - j + i, i)
         if value >= _CHOOSE_LIMIT:
             return None
     try:
@@ -316,18 +383,52 @@ def choose(n, k) -> Optional[float]:
 
 
 # W. J. Cody's rational approximations (Math. Comp. 23, 1969; SPECFUN's CALERF).
-ERF_SMALL_TOP = (1.85777706184603153e-1, 3.16112374387056560e0, 1.13864154151050156e2, 3.77485237685302021e2,
-                 3.20937758913846947e3)
+ERF_SMALL_TOP = (
+    1.85777706184603153e-1,
+    3.16112374387056560e0,
+    1.13864154151050156e2,
+    3.77485237685302021e2,
+    3.20937758913846947e3,
+)
 ERF_SMALL_BOTTOM = (1, 2.36012909523441209e1, 2.44024637934444173e2, 1.28261652607737228e3, 2.84423683343917062e3)
-ERFC_MIDDLE_TOP = (2.15311535474403846e-8, 5.64188496988670089e-1, 8.88314979438837594e0, 6.61191906371416295e1,
-                   2.98635138197400131e2, 8.81952221241769090e2, 1.71204761263407058e3, 2.05107837782607147e3,
-                   1.23033935479799725e3)
-ERFC_MIDDLE_BOTTOM = (1, 1.57449261107098347e1, 1.17693950891312499e2, 5.37181101862009858e2, 1.62138957456669019e3,
-                      3.29079923573345963e3, 4.36261909014324716e3, 3.43936767414372164e3, 1.23033935480374942e3)
-ERFC_FAR_TOP = (1.63153871373020978e-2, 3.05326634961232344e-1, 3.60344899949804439e-1, 1.25781726111229246e-1,
-                1.60837851487422766e-2, 6.58749161529837803e-4)
-ERFC_FAR_BOTTOM = (1, 2.56852019228982242e0, 1.87295284992346725e0, 5.27905102951428412e-1, 6.05183413124413191e-2,
-                   2.33520497626869185e-3)
+ERFC_MIDDLE_TOP = (
+    2.15311535474403846e-8,
+    5.64188496988670089e-1,
+    8.88314979438837594e0,
+    6.61191906371416295e1,
+    2.98635138197400131e2,
+    8.81952221241769090e2,
+    1.71204761263407058e3,
+    2.05107837782607147e3,
+    1.23033935479799725e3,
+)
+ERFC_MIDDLE_BOTTOM = (
+    1,
+    1.57449261107098347e1,
+    1.17693950891312499e2,
+    5.37181101862009858e2,
+    1.62138957456669019e3,
+    3.29079923573345963e3,
+    4.36261909014324716e3,
+    3.43936767414372164e3,
+    1.23033935480374942e3,
+)
+ERFC_FAR_TOP = (
+    1.63153871373020978e-2,
+    3.05326634961232344e-1,
+    3.60344899949804439e-1,
+    1.25781726111229246e-1,
+    1.60837851487422766e-2,
+    6.58749161529837803e-4,
+)
+ERFC_FAR_BOTTOM = (
+    1,
+    2.56852019228982242e0,
+    1.87295284992346725e0,
+    5.27905102951428412e-1,
+    6.05183413124413191e-2,
+    2.33520497626869185e-3,
+)
 
 
 def _erf_small(y: float) -> float:
@@ -402,24 +503,66 @@ def normal_sf(z) -> Optional[float]:
 
 
 # M. J. Wichura's algorithm AS 241 (Applied Statistics 37, 1988), the one Python's statistics.NormalDist uses.
-QUANTILE_CENTRE_TOP = (2.5090809287301226727e3, 3.3430575583588128105e4, 6.7265770927008700853e4,
-                       4.5921953931549871457e4, 1.3731693765509461125e4, 1.9715909503065514427e3,
-                       1.3314166789178437745e2, 3.3871328727963666080e0)
-QUANTILE_CENTRE_BOTTOM = (5.2264952788528545610e3, 2.8729085735721942674e4, 3.9307895800092710610e4,
-                          2.1213794301586595867e4, 5.3941960214247511077e3, 6.8718700749205790830e2,
-                          4.2313330701600911252e1, 1)
-QUANTILE_MIDDLE_TOP = (7.74545014278341407640e-4, 2.27238449892691845833e-2, 2.41780725177450611770e-1,
-                       1.27045825245236838258e0, 3.64784832476320460504e0, 5.76949722146069140550e0,
-                       4.63033784615654529590e0, 1.42343711074968357734e0)
-QUANTILE_MIDDLE_BOTTOM = (1.05075007164441684324e-9, 5.47593808499534494600e-4, 1.51986665636164571966e-2,
-                          1.48103976427480074590e-1, 6.89767334985100004550e-1, 1.67638483018380384940e0,
-                          2.05319162663775882187e0, 1)
-QUANTILE_TAIL_TOP = (2.01033439929228813265e-7, 2.71155556874348757815e-5, 1.24266094738807843860e-3,
-                     2.65321895265761230930e-2, 2.96560571828504891230e-1, 1.78482653991729133580e0,
-                     5.46378491116411436990e0, 6.65790464350110377720e0)
-QUANTILE_TAIL_BOTTOM = (2.04426310338993978564e-15, 1.42151175831644588870e-7, 1.84631831751005468180e-5,
-                        7.86869131145613259100e-4, 1.48753612908506148525e-2, 1.36929880922735805310e-1,
-                        5.99832206555887937690e-1, 1)
+QUANTILE_CENTRE_TOP = (
+    2.5090809287301226727e3,
+    3.3430575583588128105e4,
+    6.7265770927008700853e4,
+    4.5921953931549871457e4,
+    1.3731693765509461125e4,
+    1.9715909503065514427e3,
+    1.3314166789178437745e2,
+    3.3871328727963666080e0,
+)
+QUANTILE_CENTRE_BOTTOM = (
+    5.2264952788528545610e3,
+    2.8729085735721942674e4,
+    3.9307895800092710610e4,
+    2.1213794301586595867e4,
+    5.3941960214247511077e3,
+    6.8718700749205790830e2,
+    4.2313330701600911252e1,
+    1,
+)
+QUANTILE_MIDDLE_TOP = (
+    7.74545014278341407640e-4,
+    2.27238449892691845833e-2,
+    2.41780725177450611770e-1,
+    1.27045825245236838258e0,
+    3.64784832476320460504e0,
+    5.76949722146069140550e0,
+    4.63033784615654529590e0,
+    1.42343711074968357734e0,
+)
+QUANTILE_MIDDLE_BOTTOM = (
+    1.05075007164441684324e-9,
+    5.47593808499534494600e-4,
+    1.51986665636164571966e-2,
+    1.48103976427480074590e-1,
+    6.89767334985100004550e-1,
+    1.67638483018380384940e0,
+    2.05319162663775882187e0,
+    1,
+)
+QUANTILE_TAIL_TOP = (
+    2.01033439929228813265e-7,
+    2.71155556874348757815e-5,
+    1.24266094738807843860e-3,
+    2.65321895265761230930e-2,
+    2.96560571828504891230e-1,
+    1.78482653991729133580e0,
+    5.46378491116411436990e0,
+    6.65790464350110377720e0,
+)
+QUANTILE_TAIL_BOTTOM = (
+    2.04426310338993978564e-15,
+    1.42151175831644588870e-7,
+    1.84631831751005468180e-5,
+    7.86869131145613259100e-4,
+    1.48753612908506148525e-2,
+    1.36929880922735805310e-1,
+    5.99832206555887937690e-1,
+    1,
+)
 
 
 def _normal_quantile(p: float) -> float:
@@ -452,7 +595,7 @@ def _log_deficit(u: float, ratio: float) -> float:
         return u - _log1p(u)
     r = u / (2 + u)
     t = r * r
-    series = 0.0   # 1/3 + t/5 + t^2/7 + ..., from ln(1 + u) = 2 atanh(r)
+    series = 0.0  # 1/3 + t/5 + t^2/7 + ..., from ln(1 + u) = 2 atanh(r)
     for k in range(14, -1, -1):
         series = series * t + 1 / (2 * k + 3)
     return r * (u - 2 * t * series)
@@ -463,19 +606,26 @@ def _log_beta(a: float, b: float) -> float:
     small, large = min(a, b), max(a, b)
     if large < 10:
         return _lgamma(small) + _lgamma(large) - _lgamma(small + large)
-    total = small + large   # ln gamma(total) - ln gamma(large) by Stirling, term by term
-    return _lgamma(small) - ((large - 0.5) * math.log1p(small / large) + small * (_log(total) - 1)
-                             + _stirling_tail(total) - _stirling_tail(large))
+    total = small + large  # ln gamma(total) - ln gamma(large) by Stirling, term by term
+    return _lgamma(small) - (
+        (large - 0.5) * math.log1p(small / large)
+        + small * (_log(total) - 1)
+        + _stirling_tail(total)
+        - _stirling_tail(large)
+    )
 
 
 def _beta_prefix(x: float, y: float, a: float, b: float) -> float:
     """x^a y^b / B(a, b) for 0 < x < 1 with y = 1 - x; built around the mean for large a and b."""
     if a >= 10 and b >= 10:
         total = a + b
-        lam = x * b - y * a   # (a + b) (x - a / (a + b))
+        lam = x * b - y * a  # (a + b) (x - a / (a + b))
         exponent = -(a * _log_deficit(lam / a, x * total / a) + b * _log_deficit(-lam / b, y * total / b))
-        return (math.sqrt(a / TWO_PI) * math.sqrt(b / total)
-                * _exp(exponent + _stirling_tail(total) - _stirling_tail(a) - _stirling_tail(b)))
+        return (
+            math.sqrt(a / TWO_PI)
+            * math.sqrt(b / total)
+            * _exp(exponent + _stirling_tail(total) - _stirling_tail(a) - _stirling_tail(b))
+        )
     log_x = math.log1p(-y) if x > 0.5 else _log(x)
     log_y = math.log1p(-x) if y > 0.5 else _log(y)
     return _exp(a * log_x + b * log_y - _log_beta(a, b))
@@ -551,8 +701,9 @@ def incomplete_beta(x, a, b) -> Optional[float]:
 Evaluate = Callable[[float], Optional[Pair]]
 
 
-def _solve_monotone(evaluate: Evaluate, low: float, high: float, start: float, increasing: bool,
-                    relative: bool) -> Optional[float]:
+def _solve_monotone(
+    evaluate: Evaluate, low: float, high: float, start: float, increasing: bool, relative: bool
+) -> Optional[float]:
     """The root of a monotone function by Newton steps kept inside a shrinking bracket, with a bisection whenever a
     step leaves the bracket or fails to halve the previous one. evaluate(t) gives (h, dh/dt), or None to give up."""
     lo, hi = low, high
@@ -597,6 +748,7 @@ def _beta_guess(p: float, a: float, b: float) -> float:
 
 def _beta_root(target: float, a: float, b: float, mirrored: bool) -> Optional[float]:
     """v in [0, 1/2] with I_v(a, b) = target, or with I_(1 - v)(a, b) = target when `mirrored`, solved on ln v."""
+
     def evaluate(w: float) -> Optional[Pair]:
         v = math.exp(w)
         core = _beta_core(1 - v, v, a, b) if mirrored else _beta_core(v, 1 - v, a, b)
@@ -618,7 +770,7 @@ def _beta_root(target: float, a: float, b: float, mirrored: bool) -> Optional[fl
     if w is None:
         return None
     v = math.exp(w)
-    if v <= MIN_VALUE:   # the root may lie below the smallest double, and then it rounds to 0
+    if v <= MIN_VALUE:  # the root may lie below the smallest double, and then it rounds to 0
         core = _beta_core(1 - MIN_VALUE, MIN_VALUE, a, b) if mirrored else _beta_core(MIN_VALUE, 1 - MIN_VALUE, a, b)
         if core is not None and (core[0] < target if mirrored else core[0] > target):
             return 0.0
@@ -663,7 +815,7 @@ def _gamma_core(a: float, x: float) -> Optional[Core]:
     fraction above it; None when either does not settle within MAX_STEPS."""
     if x <= 0:
         return (0.0, 1.0, 0.0)
-    if a == 0:   # a half degree of freedom that underflowed: the limit puts all mass at 0
+    if a == 0:  # a half degree of freedom that underflowed: the limit puts all mass at 0
         return (1.0, 0.0, 0.0)
     prefix = _gamma_prefix(a, x)
     if x < a + 1:
@@ -730,9 +882,10 @@ def _gamma_quantile(p: float, a: float) -> Optional[float]:
     middle = _gamma_core(a, a)
     if middle is None:
         return None
-    cube = 1 - 1 / (9 * a) + _normal_quantile(p) / (3 * math.sqrt(a))   # Wilson and Hilferty's approximation
+    cube = 1 - 1 / (9 * a) + _normal_quantile(p) / (3 * math.sqrt(a))  # Wilson and Hilferty's approximation
     guess = a * cube * cube * cube if a >= 1 and cube > 0 else 0.0
     if p <= middle[0]:
+
         def evaluate_lower(w: float) -> Optional[Pair]:
             core = _gamma_core(a, math.exp(w))
             if core is None:
@@ -744,7 +897,7 @@ def _gamma_quantile(p: float, a: float) -> Optional[float]:
         if w is None:
             return None
         x = math.exp(w)
-        if x <= MIN_VALUE:   # the root may lie below the smallest double, and then it rounds to 0
+        if x <= MIN_VALUE:  # the root may lie below the smallest double, and then it rounds to 0
             core = _gamma_core(a, MIN_VALUE)
             if core is not None and core[0] > p:
                 return 0.0
@@ -797,7 +950,7 @@ def chi_square_quantile(p, df) -> Optional[float]:
     value, freedom = _number(p), _number(df)
     if value is None or freedom is None or value < 0 or value >= 1 or freedom <= 0:
         return None
-    if value == 0 or 0.5 * freedom == 0:   # df / 2 underflows only for the smallest double: all mass at 0
+    if value == 0 or 0.5 * freedom == 0:  # df / 2 underflows only for the smallest double: all mass at 0
         return 0.0
     x = _gamma_quantile(value, 0.5 * freedom)
     return None if x is None else _finite(2 * x)
@@ -806,7 +959,7 @@ def chi_square_quantile(p, df) -> Optional[float]:
 def _student_halves(t: float, df: float) -> Optional[Pair]:
     """(P[T >= |t|], P[0 <= T <= |t|]) for Student's t with df degrees of freedom; None when the beta function
     fails."""
-    if 0.5 * df == 0:   # df / 2 underflows only for the smallest double: the limit puts no mass near 0
+    if 0.5 * df == 0:  # df / 2 underflows only for the smallest double: the limit puts no mass near 0
         return (0.5, 0.0)
     square = t * t
     if square > df:
@@ -855,7 +1008,7 @@ def student_t_quantile(p, df) -> Optional[float]:
         return None
     if value == 0.5:
         return 0.0
-    if 0.5 * freedom == 0:   # df / 2 underflows only for the smallest double: every other quantile is infinite
+    if 0.5 * freedom == 0:  # df / 2 underflows only for the smallest double: every other quantile is infinite
         return None
     pair = _beta_quantile_pair(2 * (value if value < 0.5 else 1 - value), 0.5 * freedom, 0.5)
     if pair is None or pair[0] == 0:
@@ -865,6 +1018,7 @@ def student_t_quantile(p, df) -> Optional[float]:
 
 
 # ---------- discrete distributions ----------
+
 
 def _stirling_error(n: float) -> float:
     """ln(n!) - ((n + 1/2) ln n - n + ln sqrt(2 pi)) for an integer n >= 1."""
@@ -887,8 +1041,7 @@ def _binomial_term(k: float, n: float, p: float, q: float) -> float:
     if k == n:
         return _exp(n * (math.log1p(-q) if q < 0.5 else math.log(p)))
     m = n - k
-    exponent = (_stirling_error(n) - _stirling_error(k) - _stirling_error(m) - _deviance(k, n * p)
-                - _deviance(m, n * q))
+    exponent = _stirling_error(n) - _stirling_error(k) - _stirling_error(m) - _deviance(k, n * p) - _deviance(m, n * q)
     return math.sqrt(n / (TWO_PI * k * m)) * _exp(exponent)
 
 
@@ -953,8 +1106,11 @@ def hypergeometric_pmf(k, population, successes, draws) -> Optional[float]:
     if drawn == 0:
         return 1.0
     p, q = drawn / total, (total - drawn) / total
-    return (_binomial_term(float(hits), float(good), p, q) * _binomial_term(float(drawn - hits), float(failures), p, q)
-            / _binomial_term(float(drawn), float(total), p, q))
+    return (
+        _binomial_term(float(hits), float(good), p, q)
+        * _binomial_term(float(drawn - hits), float(failures), p, q)
+        / _binomial_term(float(drawn), float(total), p, q)
+    )
 
 
 def _poisson_arguments(k, mean) -> Optional[Tuple[int, float]]:
@@ -1008,6 +1164,7 @@ def poisson_sf(k, mean) -> Optional[float]:
 
 # ---------- descriptive statistics ----------
 
+
 def _numbers(values) -> Optional[List[float]]:
     """values as a list of floats when it is a nonempty list or tuple of finite numbers; None otherwise."""
     if not isinstance(values, (list, tuple)) or not values:
@@ -1055,7 +1212,7 @@ def variance(values, sample=True) -> Optional[float]:
         return None
     centre = _total(numbers) / len(numbers)
     deviations = [value - centre for value in numbers]
-    drift = _total(deviations)   # zero in exact arithmetic; corrects the rounding of the mean
+    drift = _total(deviations)  # zero in exact arithmetic; corrects the rounding of the mean
     squares = _total([d * d for d in deviations]) - drift * drift / len(numbers)
     if math.isnan(squares):
         return None
@@ -1123,6 +1280,7 @@ def max_of(values) -> Optional[float]:
 
 
 # ---------- seeded randomness ----------
+
 
 def mulberry32(seed) -> Optional[Callable[[], float]]:
     """A deterministic generator: a function that returns the next float in [0, 1) each time it is called

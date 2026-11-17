@@ -55,31 +55,53 @@ def summarize(prior: dict, candidate: dict, revision: str) -> dict:
             right = _labels(new[index]) if index < len(new) else {}
             labels_added += len(right.keys() - left.keys())
             labels_removed += len(left.keys() - right.keys())
-            labels_changed += sum(json.dumps(left[q], sort_keys=True) != json.dumps(right[q], sort_keys=True)
-                                  for q in left.keys() & right.keys())
+            labels_changed += sum(
+                json.dumps(left[q], sort_keys=True) != json.dumps(right[q], sort_keys=True)
+                for q in left.keys() & right.keys()
+            )
             if index < min(len(old), len(new)):
                 split_changed += workbench.row_test(old[index]) != workbench.row_test(new[index])
     test_before = sum(workbench.row_test(row) for row in prior.get("rows", []))
     test_after = sum(workbench.row_test(row) for row in candidate["rows"])
-    return {"id": candidate["id"], "exists": bool(prior), "revision": revision,
-            "rows": {"before": len(prior.get("rows", [])), "after": len(candidate["rows"]),
-                     "added": added, "removed": removed,
-                     "order_changed": [decisions._key(r) for r in prior.get("rows", [])] !=
-                                      [decisions._key(r) for r in candidate["rows"]]},
-            "labels": {"added": labels_added, "removed": labels_removed, "changed": labels_changed},
-            # Preserve Choice option order when comparing schemas.
-            "questions_changed": json.dumps(prior.get("questions")) != json.dumps(candidate.get("questions")),
-            "rules_changed": prior.get("rules", "") != candidate.get("rules", ""),
-            "metadata_changed": any(prior.get(k, "") != candidate.get(k, "") for k in ("name", "notes")),
-            "check": "removed" if candidate.get("check_dropped") else "preserved" if candidate.get("check") else "none",
-            "check_dropped": candidate.get("check_dropped"),
-            "check_changed": json.dumps(prior.get("check"), sort_keys=True) != json.dumps(candidate.get("check"), sort_keys=True),
-            # Labeling guidelines by question id only: never a note, an example, or a label value.
-            "guidelines": dict(guidelines.changes(prior.get("guidelines"), candidate.get("guidelines")),
-                               dropped=candidate.get("guidelines_dropped") or []),
-            "test": {"before": test_before, "after": test_after, "changed_membership": split_changed,
-                     "history": "preserved" if test_after and prior.get("test") else "started" if test_after else
-                                "removed" if prior.get("test") else "none"}}
+    return {
+        "id": candidate["id"],
+        "exists": bool(prior),
+        "revision": revision,
+        "rows": {
+            "before": len(prior.get("rows", [])),
+            "after": len(candidate["rows"]),
+            "added": added,
+            "removed": removed,
+            "order_changed": [decisions._key(r) for r in prior.get("rows", [])]
+            != [decisions._key(r) for r in candidate["rows"]],
+        },
+        "labels": {"added": labels_added, "removed": labels_removed, "changed": labels_changed},
+        # Preserve Choice option order when comparing schemas.
+        "questions_changed": json.dumps(prior.get("questions")) != json.dumps(candidate.get("questions")),
+        "rules_changed": prior.get("rules", "") != candidate.get("rules", ""),
+        "metadata_changed": any(prior.get(k, "") != candidate.get(k, "") for k in ("name", "notes")),
+        "check": "removed" if candidate.get("check_dropped") else "preserved" if candidate.get("check") else "none",
+        "check_dropped": candidate.get("check_dropped"),
+        "check_changed": json.dumps(prior.get("check"), sort_keys=True)
+        != json.dumps(candidate.get("check"), sort_keys=True),
+        # Labeling guidelines by question id only: never a note, an example, or a label value.
+        "guidelines": dict(
+            guidelines.changes(prior.get("guidelines"), candidate.get("guidelines")),
+            dropped=candidate.get("guidelines_dropped") or [],
+        ),
+        "test": {
+            "before": test_before,
+            "after": test_after,
+            "changed_membership": split_changed,
+            "history": "preserved"
+            if test_after and prior.get("test")
+            else "started"
+            if test_after
+            else "removed"
+            if prior.get("test")
+            else "none",
+        },
+    }
 
 
 @workbench.dataset_update()

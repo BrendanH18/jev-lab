@@ -98,7 +98,9 @@ def _counts(k: int, n: int, what: str = "") -> None:
 
 
 def _add_confidence(parser: Any) -> None:
-    parser.add_argument("--confidence", type=float, default=0.95, metavar="LEVEL", help="confidence level (default: 0.95)")
+    parser.add_argument(
+        "--confidence", type=float, default=0.95, metavar="LEVEL", help="confidence level (default: 0.95)"
+    )
 
 
 def _metric_table(args: Any, rows: List[list]) -> None:
@@ -188,7 +190,9 @@ def read_pairs(path: str, columns: Optional[str], width: int = 2) -> List[Tuple[
                 out.append((number, [_cell(value.get(names[i])) for i in keys]))
             elif isinstance(value, list):
                 if columns:
-                    raise kit.CliError("--columns names keys of JSON objects or a CSV header; line %d is an array" % number)
+                    raise kit.CliError(
+                        "--columns names keys of JSON objects or a CSV header; line %d is an array" % number
+                    )
                 out.append((number, [_cell(value[i]) if i < len(value) else None for i in range(width)]))
             else:
                 raise kit.CliError("line %d is neither a JSON object nor an array" % number)
@@ -289,7 +293,7 @@ def run_interval(args: Any) -> int:
     _counts(args.successes, args.trials)
     confidence = _confidence(args.confidence)
     rows = []
-    for method in ([args.method] if args.method else METHODS):
+    for method in [args.method] if args.method else METHODS:
         low, high = interval(method, args.successes, args.trials, confidence)
         rows.append([method, _r(args.successes / args.trials), _r(low), _r(high)])
     kit.emit(args, ["method", "estimate", "low", "high"], rows)
@@ -301,7 +305,9 @@ def run_interval(args: Any) -> int:
 
 def _configure_sample_size(parser: Any) -> None:
     parser.add_argument("--margin", type=float, required=True, metavar="M", help="the half-width the interval may have")
-    parser.add_argument("--expected", type=float, default=0.5, metavar="P", help="the proportion you expect (default: 0.5)")
+    parser.add_argument(
+        "--expected", type=float, default=0.5, metavar="P", help="the proportion you expect (default: 0.5)"
+    )
     parser.add_argument("--population", type=int, metavar="N", help="a finite population of N rows")
     parser.add_argument("--method", choices=("wald", "wilson"), default="wald", help="the interval the margin is for")
     _add_confidence(parser)
@@ -352,8 +358,12 @@ def run_sample_size(args: Any) -> int:
 def _configure_two(parser: Any) -> None:
     for name in ("successes_a", "trials_a", "successes_b", "trials_b"):
         parser.add_argument(name, type=int)
-    parser.add_argument("--alternative", choices=("two-sided", "greater", "less"), default="two-sided",
-                        help="the alternative to rate A = rate B (greater: A above B)")
+    parser.add_argument(
+        "--alternative",
+        choices=("two-sided", "greater", "less"),
+        default="two-sided",
+        help="the alternative to rate A = rate B (greater: A above B)",
+    )
     parser.add_argument("--alpha", type=float, metavar="A", help="exit 1 when the p-value is below A")
     _add_confidence(parser)
     kit.add_format(parser)
@@ -384,8 +394,18 @@ def run_two(args: Any) -> int:
     l2, u2 = wilson(k2, n2, z)
     low = difference - math.sqrt((p1 - l1) ** 2 + (u2 - p2) ** 2)
     high = difference + math.sqrt((u1 - p1) ** 2 + (p2 - l2) ** 2)
-    _metric_table(args, [["rate A", _r(p1)], ["rate B", _r(p2)], ["difference", _r(difference)], ["low", _r(low)],
-                         ["high", _r(high)], ["z", _r(z_value)], ["p-value", _sig(p_value)]])
+    _metric_table(
+        args,
+        [
+            ["rate A", _r(p1)],
+            ["rate B", _r(p2)],
+            ["difference", _r(difference)],
+            ["low", _r(low)],
+            ["high", _r(high)],
+            ["z", _r(z_value)],
+            ["p-value", _sig(p_value)],
+        ],
+    )
     if args.alpha is not None and p_value < args.alpha:
         print("the difference is significant at alpha %g (p = %.4g)" % (args.alpha, p_value), file=sys.stderr)
         return 1
@@ -396,9 +416,16 @@ def run_two(args: Any) -> int:
 
 
 def _configure_mcnemar(parser: Any) -> None:
-    parser.add_argument("counts", type=int, nargs="*", metavar="B C",
-                        help="rows A got right and B wrong, then rows A got wrong and B right")
-    parser.add_argument("--file", metavar="PATH", help="a CSV or JSON-lines file of label,a,b triples to count them from")
+    parser.add_argument(
+        "counts",
+        type=int,
+        nargs="*",
+        metavar="B C",
+        help="rows A got right and B wrong, then rows A got wrong and B right",
+    )
+    parser.add_argument(
+        "--file", metavar="PATH", help="a CSV or JSON-lines file of label,a,b triples to count them from"
+    )
     parser.add_argument("--alpha", type=float, metavar="A", help="exit 1 when the exact p-value is below A")
     _add_columns(parser, "label, A and B")
     kit.add_format(parser)
@@ -425,8 +452,14 @@ def run_mcnemar(args: Any) -> int:
         chi = max(abs(b - c) - 1, 0) ** 2 / discordant
         p_chi = mathx.chi_square_sf(chi, 1)
         p_exact = min(1.0, 2 * mathx.binomial_cdf(min(b, c), discordant, 0.5))
-    rows += [["A right, B wrong", b], ["A wrong, B right", c], ["discordant", discordant], ["chi-square", _r(chi)],
-             ["p (chi-square)", _sig(p_chi)], ["p (exact)", _sig(p_exact)]]
+    rows += [
+        ["A right, B wrong", b],
+        ["A wrong, B right", c],
+        ["discordant", discordant],
+        ["chi-square", _r(chi)],
+        ["p (chi-square)", _sig(p_chi)],
+        ["p (exact)", _sig(p_exact)],
+    ]
     _metric_table(args, rows)
     if args.alpha is not None and p_exact < args.alpha:
         print("A and B differ at alpha %g (exact p = %.4g)" % (args.alpha, p_exact), file=sys.stderr)
@@ -439,8 +472,11 @@ def run_mcnemar(args: Any) -> int:
 
 def _configure_kappa(parser: Any) -> None:
     _add_file(parser, "label")
-    parser.add_argument("--weighted", choices=("linear", "quadratic"),
-                        help="weighted kappa for numeric (ordinal) labels such as Score levels")
+    parser.add_argument(
+        "--weighted",
+        choices=("linear", "quadratic"),
+        help="weighted kappa for numeric (ordinal) labels such as Score levels",
+    )
     _add_confidence(parser)
     _add_columns(parser, "two raters'")
     kit.add_format(parser)
@@ -479,7 +515,9 @@ def run_kappa(args: Any) -> int:
             return 1 - (distance if args.weighted == "linear" else distance * distance)
 
         observed = sum(weight(a, b) for a, b in pairs) / n
-        chance = sum(first.get(a, 0) * second.get(b, 0) * weight(a, b) for a in categories for b in categories) / (n * n)
+        chance = sum(first.get(a, 0) * second.get(b, 0) * weight(a, b) for a in categories for b in categories) / (
+            n * n
+        )
     else:
         observed = sum(1 for a, b in pairs if a == b) / n
         chance = sum(first.get(c, 0) * second.get(c, 0) for c in categories) / (n * n)
@@ -525,11 +563,19 @@ def run_confusion(args: Any) -> int:
     for label in categories:
         cells = [counts.get((label, prediction), 0) for prediction in categories]
         total = sum(cells)
-        rows.append([label] + ([_pct(cell, total) for cell in cells] + [100.0 if total else None] if args.normalize
-                               else cells + [total]))
+        rows.append(
+            [label]
+            + (
+                [_pct(cell, total) for cell in cells] + [100.0 if total else None]
+                if args.normalize
+                else cells + [total]
+            )
+        )
     columns_total = [sum(counts.get((label, prediction), 0) for label in categories) for prediction in categories]
     n = len(pairs)
-    rows.append(["total"] + ([_pct(cell, n) for cell in columns_total] + [100.0] if args.normalize else columns_total + [n]))
+    rows.append(
+        ["total"] + ([_pct(cell, n) for cell in columns_total] + [100.0] if args.normalize else columns_total + [n])
+    )
     kit.emit(args, ["label"] + categories + ["total"], rows)
     return 0
 
@@ -565,10 +611,23 @@ def _binary_report(args: Any, pairs: List[tuple]) -> Optional[float]:
     f1 = _f1(precision, recall)
     denominator = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     mcc = (tp * tn - fp * fn) / denominator if denominator else None
-    _metric_table(args, [["positives", tp + fn], ["tp", tp], ["fp", fp], ["fn", fn], ["tn", tn],
-                         ["accuracy", _r((tp + tn) / len(pairs))], ["precision", _r(precision)], ["recall", _r(recall)],
-                         ["specificity", _r(_ratio(tn, tn + fp))], ["npv", _r(_ratio(tn, tn + fn))], ["f1", _r(f1)],
-                         ["mcc", _r(mcc)]])
+    _metric_table(
+        args,
+        [
+            ["positives", tp + fn],
+            ["tp", tp],
+            ["fp", fp],
+            ["fn", fn],
+            ["tn", tn],
+            ["accuracy", _r((tp + tn) / len(pairs))],
+            ["precision", _r(precision)],
+            ["recall", _r(recall)],
+            ["specificity", _r(_ratio(tn, tn + fp))],
+            ["npv", _r(_ratio(tn, tn + fn))],
+            ["f1", _r(f1)],
+            ["mcc", _r(mcc)],
+        ],
+    )
     return f1
 
 
@@ -602,7 +661,9 @@ def run_metrics(args: Any) -> int:
         count = len(categories)
         rows.append(["macro avg", n, n] + [_r(value / count) for value in sums])
         rows.append(["weighted avg", n, n] + [_r(value / n) for value in weighted])
-        rows.append(["accuracy", n, n, None, None, _r(sum(1 for label, prediction in pairs if label == prediction) / n)])
+        rows.append(
+            ["accuracy", n, n, None, None, _r(sum(1 for label, prediction in pairs if label == prediction) / n)]
+        )
         kit.emit(args, ["class", "support", "predicted", "precision", "recall", "f1"], rows)
     if low:
         print("F1 below %g: %s" % (args.min_f1, ", ".join(low)), file=sys.stderr)
@@ -634,10 +695,18 @@ def _bins_argument(value: int) -> int:
 
 def _configure_calibration(parser: Any) -> None:
     _add_file(parser, "probability,outcome")
-    parser.add_argument("--bins", type=int, default=10, metavar="N", help="bins for the calibration error (default: 10)")
-    parser.add_argument("--strategy", choices=("uniform", "quantile"), default="uniform",
-                        help="equal-width bins (uniform) or bins with equal row counts (quantile)")
-    parser.add_argument("--max-ece", type=float, metavar="X", help="exit 1 when the expected calibration error is above X")
+    parser.add_argument(
+        "--bins", type=int, default=10, metavar="N", help="bins for the calibration error (default: 10)"
+    )
+    parser.add_argument(
+        "--strategy",
+        choices=("uniform", "quantile"),
+        default="uniform",
+        help="equal-width bins (uniform) or bins with equal row counts (quantile)",
+    )
+    parser.add_argument(
+        "--max-ece", type=float, metavar="X", help="exit 1 when the expected calibration error is above X"
+    )
     _add_columns(parser, "probability and outcome")
     kit.add_format(parser)
 
@@ -649,15 +718,36 @@ def run_calibration(args: Any) -> int:
     n = len(pairs)
     positives = sum(y for _p, y in pairs)
     brier = sum((p - y) ** 2 for p, y in pairs) / n
-    loss = -sum(math.log(min(max(p, LOG_LOSS_CLIP), 1 - LOG_LOSS_CLIP)) if y
-                else math.log(1 - min(max(p, LOG_LOSS_CLIP), 1 - LOG_LOSS_CLIP)) for p, y in pairs) / n
-    gaps = [(len(group), abs(sum(p for p, _y in group) / len(group) - sum(y for _p, y in group) / len(group)))
-            for group in _bins_of(pairs, bins, args.strategy) if group]
+    loss = (
+        -sum(
+            math.log(min(max(p, LOG_LOSS_CLIP), 1 - LOG_LOSS_CLIP))
+            if y
+            else math.log(1 - min(max(p, LOG_LOSS_CLIP), 1 - LOG_LOSS_CLIP))
+            for p, y in pairs
+        )
+        / n
+    )
+    gaps = [
+        (len(group), abs(sum(p for p, _y in group) / len(group) - sum(y for _p, y in group) / len(group)))
+        for group in _bins_of(pairs, bins, args.strategy)
+        if group
+    ]
     ece = sum(size * gap for size, gap in gaps) / n
     mce = max(gap for _size, gap in gaps)
-    _metric_table(args, [["rows", n], ["positives", positives], ["base rate", _r(positives / n)],
-                         ["mean probability", _r(sum(p for p, _y in pairs) / n)], ["brier score", _r(brier)],
-                         ["log loss", _r(loss)], ["ece", _r(ece)], ["mce", _r(mce)], ["bins", bins]])
+    _metric_table(
+        args,
+        [
+            ["rows", n],
+            ["positives", positives],
+            ["base rate", _r(positives / n)],
+            ["mean probability", _r(sum(p for p, _y in pairs) / n)],
+            ["brier score", _r(brier)],
+            ["log loss", _r(loss)],
+            ["ece", _r(ece)],
+            ["mce", _r(mce)],
+            ["bins", bins],
+        ],
+    )
     if args.max_ece is not None and ece > args.max_ece:
         print("expected calibration error %.4f is above --max-ece %g" % (ece, args.max_ece), file=sys.stderr)
         return 1
@@ -671,8 +761,12 @@ def _edge(value: float) -> str:
 def _configure_reliability(parser: Any) -> None:
     _add_file(parser, "probability,outcome")
     parser.add_argument("--bins", type=int, default=10, metavar="N", help="number of bins (default: 10)")
-    parser.add_argument("--strategy", choices=("uniform", "quantile"), default="uniform",
-                        help="equal-width bins (uniform) or bins with equal row counts (quantile)")
+    parser.add_argument(
+        "--strategy",
+        choices=("uniform", "quantile"),
+        default="uniform",
+        help="equal-width bins (uniform) or bins with equal row counts (quantile)",
+    )
     _add_confidence(parser)
     _add_columns(parser, "probability and outcome")
     kit.add_format(parser)
@@ -721,7 +815,7 @@ def auc(pairs: List[Tuple[float, int]]) -> float:
         while end + 1 < len(ordered) and ordered[end + 1][0] == ordered[index][0]:
             end += 1
         average = (index + end) / 2 + 1
-        rank_sum += average * sum(y for _p, y in ordered[index:end + 1])
+        rank_sum += average * sum(y for _p, y in ordered[index : end + 1])
         index = end + 1
     positives = sum(y for _p, y in pairs)
     negatives = len(pairs) - positives
@@ -734,14 +828,27 @@ def run_auc(args: Any) -> int:
     positives = sum(y for _p, y in pairs)
     negatives = len(pairs) - positives
     if not positives or not negatives:
-        raise kit.CliError("AUC needs rows of both outcomes; this file has %s only" % ("positives" if positives else "negatives"))
+        raise kit.CliError(
+            "AUC needs rows of both outcomes; this file has %s only" % ("positives" if positives else "negatives")
+        )
     area = auc(pairs)
     q1, q2 = area / (2 - area), 2 * area * area / (1 + area)
-    variance = (area * (1 - area) + (positives - 1) * (q1 - area * area) + (negatives - 1) * (q2 - area * area)) \
-        / (positives * negatives)
+    variance = (area * (1 - area) + (positives - 1) * (q1 - area * area) + (negatives - 1) * (q2 - area * area)) / (
+        positives * negatives
+    )
     half = _z(confidence) * math.sqrt(max(variance, 0.0))
-    _metric_table(args, [["rows", len(pairs)], ["positives", positives], ["negatives", negatives], ["auc", _r(area)],
-                         ["low", _r(max(0.0, area - half))], ["high", _r(min(1.0, area + half))], ["gini", _r(2 * area - 1)]])
+    _metric_table(
+        args,
+        [
+            ["rows", len(pairs)],
+            ["positives", positives],
+            ["negatives", negatives],
+            ["auc", _r(area)],
+            ["low", _r(max(0.0, area - half))],
+            ["high", _r(min(1.0, area + half))],
+            ["gini", _r(2 * area - 1)],
+        ],
+    )
     return 0
 
 
@@ -761,14 +868,29 @@ def _thresholds(start: float, step: float) -> List[float]:
         index += 1
 
 
-SWEEP = ["threshold", "predicted positive", "tp", "fp", "fn", "tn", "precision", "recall", "specificity", "f1", "accuracy"]
+SWEEP = [
+    "threshold",
+    "predicted positive",
+    "tp",
+    "fp",
+    "fn",
+    "tn",
+    "precision",
+    "recall",
+    "specificity",
+    "f1",
+    "accuracy",
+]
 
 
 def _configure_sweep(parser: Any) -> None:
     _add_file(parser, "probability,outcome")
     parser.add_argument("--step", type=float, default=0.1, metavar="S", help="threshold step (default: 0.1)")
-    parser.add_argument("--best", choices=("f1", "youden", "accuracy"),
-                        help="print only the threshold with the best F1, Youden's J or accuracy (the lowest on a tie)")
+    parser.add_argument(
+        "--best",
+        choices=("f1", "youden", "accuracy"),
+        help="print only the threshold with the best F1, Youden's J or accuracy (the lowest on a tie)",
+    )
     _add_columns(parser, "probability and outcome")
     kit.add_format(parser)
 
@@ -801,8 +923,12 @@ def run_sweep(args: Any) -> int:
 
 def _configure_coverage(parser: Any) -> None:
     _add_file(parser, "probability,outcome")
-    parser.add_argument("--min-accuracy", type=float, metavar="A",
-                        help="print the lowest threshold whose accuracy lower bound reaches A; exit 1 when none does")
+    parser.add_argument(
+        "--min-accuracy",
+        type=float,
+        metavar="A",
+        help="print the lowest threshold whose accuracy lower bound reaches A; exit 1 when none does",
+    )
     parser.add_argument("--step", type=float, default=0.05, metavar="S", help="threshold step from 0.5 (default: 0.05)")
     _add_confidence(parser)
     _add_columns(parser, "probability and outcome")
@@ -837,76 +963,175 @@ def run_coverage(args: Any) -> int:
 
 CONFIDENCE = "--confidence LEVEL sets the confidence level of the %s"
 
-PACK = kit.define_pack({
-    "id": "cli-stats",
-    "surface": "python.cli",
-    "title": "Statistics from counts and pair files",
-    "about": "Offline statistics for evaluation numbers: proportion intervals, sample sizes, two-proportion and McNemar "
-             "tests, Cohen's kappa, confusion matrices and per-class metrics from label,prediction files, and "
-             "calibration, reliability, AUC, threshold sweeps and coverage from probability,outcome files. "
-             "Numerics come from jev/lab/mathx.py; nothing reads Workbench data or calls the model.",
-    "features": [
-        {"id": "interval", "kind": "cli", "command": ["stats", "interval"], "configure": _configure_interval, "run": run_interval,
-         "title": "Print Wilson, Clopper-Pearson and Jeffreys intervals for K successes in N trials",
-         "options": [{"id": "method", "title": "--method wilson|clopper-pearson|jeffreys prints one interval only"},
-                     {"id": "confidence", "title": CONFIDENCE % "intervals"},
-                     dict(FORMAT)]},
-        {"id": "sample_size", "kind": "cli", "command": ["stats", "sample-size"], "configure": _configure_sample_size,
-         "run": run_sample_size,
-         "title": "Work out how many labeled rows an accuracy estimate needs for a chosen margin of error",
-         "options": [{"id": "confidence", "title": CONFIDENCE % "margin"},
-                     {"id": "expected", "title": "--expected P plans for an expected proportion instead of 0.5"},
-                     {"id": "population", "title": "--population N applies the finite-population correction"},
-                     {"id": "method", "title": "--method wilson finds the smallest size whose Wilson interval meets the margin"}]},
-        {"id": "two_proportions", "kind": "cli", "command": ["stats", "two-proportions"], "configure": _configure_two,
-         "run": run_two,
-         "title": "Compare two proportions: the difference with a Newcombe interval, a pooled z test and its p-value",
-         "options": [{"id": "confidence", "title": CONFIDENCE % "difference's interval"},
-                     {"id": "alternative", "title": "--alternative greater|less runs a one-sided test"},
-                     {"id": "alpha", "title": "--alpha A exits 1 when the difference is significant at A"}]},
-        {"id": "mcnemar", "kind": "cli", "command": ["stats", "mcnemar"], "configure": _configure_mcnemar, "run": run_mcnemar,
-         "title": "McNemar's test for two systems on the same rows from their discordant counts: chi-square and exact p",
-         "options": [{"id": "file", "title": "--file PATH counts the discordant rows from label,a,b triples"},
-                     {"id": "alpha", "title": "--alpha A exits 1 when the exact p-value is below A"}]},
-        {"id": "kappa", "kind": "cli", "command": ["stats", "kappa"], "configure": _configure_kappa, "run": run_kappa,
-         "title": "Cohen's kappa for two people's labels of the same rows, with an interval and Landis-Koch strength",
-         "options": [{"id": "weighted", "title": "--weighted linear|quadratic gives weighted kappa for ordinal labels"},
-                     {"id": "confidence", "title": CONFIDENCE % "kappa interval"},
-                     {"id": "columns", "title": "--columns A,B reads two named columns of a wider file"}]},
-        {"id": "confusion", "kind": "cli", "command": ["stats", "confusion"], "configure": _configure_confusion,
-         "run": run_confusion,
-         "title": "Build a confusion matrix with row and column totals from a label,prediction file",
-         "options": [{"id": "normalize", "title": "--normalize shows each cell as a percent of its label's row"},
-                     dict(FORMAT)]},
-        {"id": "metrics", "kind": "cli", "command": ["stats", "metrics"], "configure": _configure_metrics, "run": run_metrics,
-         "title": "Per-class precision, recall and F1 with macro and weighted averages and accuracy from label,prediction pairs",
-         "options": [{"id": "positive", "title": "--positive CLASS prints a binary report: counts, specificity, NPV, F1, MCC"},
-                     {"id": "min_f1", "title": "--min-f1 X exits 1 naming the classes whose F1 is below X"},
-                     dict(FORMAT)]},
-        {"id": "calibration", "kind": "cli", "command": ["stats", "calibration"], "configure": _configure_calibration,
-         "run": run_calibration,
-         "title": "Score probability,outcome pairs: Brier score, log loss, expected and maximum calibration error",
-         "options": [{"id": "bins", "title": "--bins N sets how many bins the calibration error uses"},
-                     {"id": "strategy", "title": "--strategy quantile bins rows into equal-count bins by rank"},
-                     {"id": "max_ece", "title": "--max-ece X exits 1 when the expected calibration error is above X"}]},
-        {"id": "reliability", "kind": "cli", "command": ["stats", "reliability"], "configure": _configure_reliability,
-         "run": run_reliability,
-         "title": "Print a reliability table: per bin the rows, mean probability, observed rate, gap and its interval",
-         "options": [{"id": "bins", "title": "--bins N sets the number of reliability bins"},
-                     {"id": "confidence", "title": CONFIDENCE % "observed rates' intervals"},
-                     dict(FORMAT)]},
-        {"id": "auc", "kind": "cli", "command": ["stats", "auc"], "configure": _configure_auc, "run": run_auc,
-         "title": "ROC AUC of probability,outcome pairs with a Hanley-McNeil interval and the Gini coefficient",
-         "options": [{"id": "confidence", "title": CONFIDENCE % "AUC interval"}, dict(FORMAT)]},
-        {"id": "sweep", "kind": "cli", "command": ["stats", "sweep"], "configure": _configure_sweep, "run": run_sweep,
-         "title": "Sweep decision thresholds: counts, precision, recall, specificity, F1 and accuracy at each",
-         "options": [{"id": "step", "title": "--step S sets the spacing of the swept thresholds"},
-                     {"id": "best", "title": "--best f1|youden|accuracy prints only the best threshold"},
-                     dict(FORMAT)]},
-        {"id": "coverage", "kind": "cli", "command": ["stats", "coverage"], "configure": _configure_coverage,
-         "run": run_coverage,
-         "title": "Coverage and accuracy kept at each confidence threshold, with the accuracy's lower bound",
-         "options": [{"id": "min_accuracy", "title": "--min-accuracy A picks the lowest threshold whose lower bound reaches A"},
-                     {"id": "confidence", "title": CONFIDENCE % "accuracy lower bounds"}]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-stats",
+        "surface": "python.cli",
+        "title": "Statistics from counts and pair files",
+        "about": "Offline statistics for evaluation numbers: proportion intervals, sample sizes, two-proportion and McNemar "
+        "tests, Cohen's kappa, confusion matrices and per-class metrics from label,prediction files, and "
+        "calibration, reliability, AUC, threshold sweeps and coverage from probability,outcome files. "
+        "Numerics come from jev/lab/mathx.py; nothing reads Workbench data or calls the model.",
+        "features": [
+            {
+                "id": "interval",
+                "kind": "cli",
+                "command": ["stats", "interval"],
+                "configure": _configure_interval,
+                "run": run_interval,
+                "title": "Print Wilson, Clopper-Pearson and Jeffreys intervals for K successes in N trials",
+                "options": [
+                    {"id": "method", "title": "--method wilson|clopper-pearson|jeffreys prints one interval only"},
+                    {"id": "confidence", "title": CONFIDENCE % "intervals"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "sample_size",
+                "kind": "cli",
+                "command": ["stats", "sample-size"],
+                "configure": _configure_sample_size,
+                "run": run_sample_size,
+                "title": "Work out how many labeled rows an accuracy estimate needs for a chosen margin of error",
+                "options": [
+                    {"id": "confidence", "title": CONFIDENCE % "margin"},
+                    {"id": "expected", "title": "--expected P plans for an expected proportion instead of 0.5"},
+                    {"id": "population", "title": "--population N applies the finite-population correction"},
+                    {
+                        "id": "method",
+                        "title": "--method wilson finds the smallest size whose Wilson interval meets the margin",
+                    },
+                ],
+            },
+            {
+                "id": "two_proportions",
+                "kind": "cli",
+                "command": ["stats", "two-proportions"],
+                "configure": _configure_two,
+                "run": run_two,
+                "title": "Compare two proportions: the difference with a Newcombe interval, a pooled z test and its p-value",
+                "options": [
+                    {"id": "confidence", "title": CONFIDENCE % "difference's interval"},
+                    {"id": "alternative", "title": "--alternative greater|less runs a one-sided test"},
+                    {"id": "alpha", "title": "--alpha A exits 1 when the difference is significant at A"},
+                ],
+            },
+            {
+                "id": "mcnemar",
+                "kind": "cli",
+                "command": ["stats", "mcnemar"],
+                "configure": _configure_mcnemar,
+                "run": run_mcnemar,
+                "title": "McNemar's test for two systems on the same rows from their discordant counts: chi-square and exact p",
+                "options": [
+                    {"id": "file", "title": "--file PATH counts the discordant rows from label,a,b triples"},
+                    {"id": "alpha", "title": "--alpha A exits 1 when the exact p-value is below A"},
+                ],
+            },
+            {
+                "id": "kappa",
+                "kind": "cli",
+                "command": ["stats", "kappa"],
+                "configure": _configure_kappa,
+                "run": run_kappa,
+                "title": "Cohen's kappa for two people's labels of the same rows, with an interval and Landis-Koch strength",
+                "options": [
+                    {"id": "weighted", "title": "--weighted linear|quadratic gives weighted kappa for ordinal labels"},
+                    {"id": "confidence", "title": CONFIDENCE % "kappa interval"},
+                    {"id": "columns", "title": "--columns A,B reads two named columns of a wider file"},
+                ],
+            },
+            {
+                "id": "confusion",
+                "kind": "cli",
+                "command": ["stats", "confusion"],
+                "configure": _configure_confusion,
+                "run": run_confusion,
+                "title": "Build a confusion matrix with row and column totals from a label,prediction file",
+                "options": [
+                    {"id": "normalize", "title": "--normalize shows each cell as a percent of its label's row"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "metrics",
+                "kind": "cli",
+                "command": ["stats", "metrics"],
+                "configure": _configure_metrics,
+                "run": run_metrics,
+                "title": "Per-class precision, recall and F1 with macro and weighted averages and accuracy from label,prediction pairs",
+                "options": [
+                    {
+                        "id": "positive",
+                        "title": "--positive CLASS prints a binary report: counts, specificity, NPV, F1, MCC",
+                    },
+                    {"id": "min_f1", "title": "--min-f1 X exits 1 naming the classes whose F1 is below X"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "calibration",
+                "kind": "cli",
+                "command": ["stats", "calibration"],
+                "configure": _configure_calibration,
+                "run": run_calibration,
+                "title": "Score probability,outcome pairs: Brier score, log loss, expected and maximum calibration error",
+                "options": [
+                    {"id": "bins", "title": "--bins N sets how many bins the calibration error uses"},
+                    {"id": "strategy", "title": "--strategy quantile bins rows into equal-count bins by rank"},
+                    {"id": "max_ece", "title": "--max-ece X exits 1 when the expected calibration error is above X"},
+                ],
+            },
+            {
+                "id": "reliability",
+                "kind": "cli",
+                "command": ["stats", "reliability"],
+                "configure": _configure_reliability,
+                "run": run_reliability,
+                "title": "Print a reliability table: per bin the rows, mean probability, observed rate, gap and its interval",
+                "options": [
+                    {"id": "bins", "title": "--bins N sets the number of reliability bins"},
+                    {"id": "confidence", "title": CONFIDENCE % "observed rates' intervals"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "auc",
+                "kind": "cli",
+                "command": ["stats", "auc"],
+                "configure": _configure_auc,
+                "run": run_auc,
+                "title": "ROC AUC of probability,outcome pairs with a Hanley-McNeil interval and the Gini coefficient",
+                "options": [{"id": "confidence", "title": CONFIDENCE % "AUC interval"}, dict(FORMAT)],
+            },
+            {
+                "id": "sweep",
+                "kind": "cli",
+                "command": ["stats", "sweep"],
+                "configure": _configure_sweep,
+                "run": run_sweep,
+                "title": "Sweep decision thresholds: counts, precision, recall, specificity, F1 and accuracy at each",
+                "options": [
+                    {"id": "step", "title": "--step S sets the spacing of the swept thresholds"},
+                    {"id": "best", "title": "--best f1|youden|accuracy prints only the best threshold"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "coverage",
+                "kind": "cli",
+                "command": ["stats", "coverage"],
+                "configure": _configure_coverage,
+                "run": run_coverage,
+                "title": "Coverage and accuracy kept at each confidence threshold, with the accuracy's lower bound",
+                "options": [
+                    {
+                        "id": "min_accuracy",
+                        "title": "--min-accuracy A picks the lowest threshold whose lower bound reaches A",
+                    },
+                    {"id": "confidence", "title": CONFIDENCE % "accuracy lower bounds"},
+                ],
+            },
+        ],
+    }
+)

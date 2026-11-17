@@ -16,12 +16,28 @@
 //   behavior    a change that lives in existing page code; the pack records and tests it.
 // Packs never call the model and never read storage. They get everything through the ctx a surface passes in.
 
-export const KINDS = Object.freeze(["fact", "diagnostic", "transform", "metric", "exporter", "importer", "command", "tool", "panel", "behavior"]);
+export const KINDS = Object.freeze([
+  "fact",
+  "diagnostic",
+  "transform",
+  "metric",
+  "exporter",
+  "importer",
+  "command",
+  "tool",
+  "panel",
+  "behavior",
+]);
 export const FACT_TYPES = Object.freeze(["number", "flag", "text", "category"]);
 export const SEVERITIES = Object.freeze(["info", "advice", "problem"]);
 export const INPUT_TYPES = Object.freeze(["number", "integer", "text", "textarea", "select", "checkbox"]);
 export const FORMATS = Object.freeze(["number", "integer", "percent", "usd", "ms", "text"]);
-export const FACT_OPS = Object.freeze({ number: ["min", "max"], flag: ["with", "without"], text: ["contains"], category: ["is"] });
+export const FACT_OPS = Object.freeze({
+  number: ["min", "max"],
+  flag: ["with", "without"],
+  text: ["contains"],
+  category: ["is"],
+});
 
 const PACK_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const FEATURE_ID = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
@@ -35,27 +51,41 @@ function checkInputs(where, inputs) {
   if (!Array.isArray(inputs)) throw new Error(`${where}: inputs must be an array`);
   const names = new Set();
   for (const input of inputs) {
-    if (!input || !INPUT_NAME.test(input.name || "")) throw new Error(`${where}: every input needs a name of letters, digits and underscores`);
+    if (!input || !INPUT_NAME.test(input.name || ""))
+      throw new Error(`${where}: every input needs a name of letters, digits and underscores`);
     if (names.has(input.name)) throw new Error(`${where}: input ${input.name} is declared twice`);
     names.add(input.name);
     if (!isText(input.label)) throw new Error(`${where}: input ${input.name} needs a label`);
     if (!INPUT_TYPES.includes(input.type)) throw new Error(`${where}: input ${input.name} has an unknown type`);
-    if (input.type === "select" && !(Array.isArray(input.options) && input.options.length)) throw new Error(`${where}: select ${input.name} needs options`);
+    if (input.type === "select" && !(Array.isArray(input.options) && input.options.length))
+      throw new Error(`${where}: select ${input.name} needs options`);
   }
 }
 
 const REQUIRED = {
   fact: (f) => isText(f.label) && FACT_TYPES.includes(f.type) && isFn(f.value),
-  diagnostic: (f) => isText(f.label) && isFn(f.check) && SEVERITIES.includes(f.severity || "advice") && ["item", "list"].includes(f.scope || "item"),
-  transform: (f) => isText(f.label) && (isFn(f.each) !== isFn(f.all)),
+  diagnostic: (f) =>
+    isText(f.label) &&
+    isFn(f.check) &&
+    SEVERITIES.includes(f.severity || "advice") &&
+    ["item", "list"].includes(f.scope || "item"),
+  transform: (f) => isText(f.label) && isFn(f.each) !== isFn(f.all),
   metric: (f) => isText(f.label) && isFn(f.compute) && FORMATS.includes(f.format || "number"),
   exporter: (f) => isText(f.label) && isFn(f.build) && (isText(f.filename) || isFn(f.filename)),
   importer: (f) => isText(f.label) && isFn(f.parse),
-  command: (f) => isText(f.title) && isFn(f.run) && (f.keys === undefined || isText(f.keys)) && (f.when === undefined || isFn(f.when)),
+  command: (f) =>
+    isText(f.title) &&
+    isFn(f.run) &&
+    (f.keys === undefined || isText(f.keys)) &&
+    (f.when === undefined || isFn(f.when)),
   tool: (f) => isText(f.title) && isText(f.group) && isText(f.help) && isFn(f.compute) && Array.isArray(f.inputs),
-  panel: (f) => isText(f.title) && isFn(f.render) && Array.isArray(f.improvements) && f.improvements.length > 0
-    && f.improvements.every((item) => item && FEATURE_ID.test(item.id || "") && isText(item.title))
-    && new Set(f.improvements.map((item) => item.id)).size === f.improvements.length,
+  panel: (f) =>
+    isText(f.title) &&
+    isFn(f.render) &&
+    Array.isArray(f.improvements) &&
+    f.improvements.length > 0 &&
+    f.improvements.every((item) => item && FEATURE_ID.test(item.id || "") && isText(item.title)) &&
+    new Set(f.improvements.map((item) => item.id)).size === f.improvements.length,
   behavior: (f) => isText(f.title) && isText(f.where),
 };
 
@@ -67,30 +97,53 @@ export function definePack(pack) {
   if (!isText(pack.surface)) throw new Error(`${where}: surface is required`);
   if (!isText(pack.title)) throw new Error(`${where}: title is required`);
   if (pack.about !== undefined && !isText(pack.about)) throw new Error(`${where}: about must be text`);
-  if (!Array.isArray(pack.features) || !pack.features.length) throw new Error(`${where}: features must be a nonempty array`);
+  if (!Array.isArray(pack.features) || !pack.features.length)
+    throw new Error(`${where}: features must be a nonempty array`);
   const seen = new Set();
   for (const feature of pack.features) {
     const at = `${where}, feature ${feature?.id || "(no id)"}`;
-    if (!feature || !FEATURE_ID.test(feature.id || "")) throw new Error(`${at}: id must be lowercase words joined by underscores`);
+    if (!feature || !FEATURE_ID.test(feature.id || ""))
+      throw new Error(`${at}: id must be lowercase words joined by underscores`);
     if (seen.has(feature.id)) throw new Error(`${at}: declared twice`);
     seen.add(feature.id);
     if (!KINDS.includes(feature.kind)) throw new Error(`${at}: unknown kind ${JSON.stringify(feature.kind)}`);
-    if (!REQUIRED[feature.kind](feature)) throw new Error(`${at}: a ${feature.kind} is missing a required field or has one of the wrong type`);
+    if (!REQUIRED[feature.kind](feature))
+      throw new Error(`${at}: a ${feature.kind} is missing a required field or has one of the wrong type`);
     if (feature.kind === "tool") checkInputs(at, feature.inputs);
     if (feature.kind === "transform" && feature.params !== undefined) checkInputs(at, feature.params);
   }
-  return Object.freeze({ ...pack, features: Object.freeze(pack.features.map((feature) => Object.freeze({ ...feature }))) });
+  return Object.freeze({
+    ...pack,
+    features: Object.freeze(pack.features.map((feature) => Object.freeze({ ...feature }))),
+  });
 }
 
-const PREFIX = { diagnostic: "Check: ", transform: "Transform: ", metric: "Metric: ", exporter: "Export: ", importer: "Import: ", command: "Command: ", tool: "Tool: ", behavior: "" };
+const PREFIX = {
+  diagnostic: "Check: ",
+  transform: "Transform: ",
+  metric: "Metric: ",
+  exporter: "Export: ",
+  importer: "Import: ",
+  command: "Command: ",
+  tool: "Tool: ",
+  behavior: "",
+};
 
 // Every numbered improvement a pack holds, as { id, title, kind, pack, surface, feature, facet }. A numeric fact is
 // three (minimum filter, maximum filter, sort), a flag one, text two (contains filter, sort), a category two (filter,
 // breakdown), a panel as many as it lists, and everything else one.
 export function improvementsOf(pack) {
   const out = [];
-  const add = (feature, suffix, title, facet = null) => out.push({ id: `${pack.id}/${feature.id}${suffix}`, title, kind: feature.kind,
-    pack: pack.id, surface: pack.surface, feature: feature.id, facet });
+  const add = (feature, suffix, title, facet = null) =>
+    out.push({
+      id: `${pack.id}/${feature.id}${suffix}`,
+      title,
+      kind: feature.kind,
+      pack: pack.id,
+      surface: pack.surface,
+      feature: feature.id,
+      facet,
+    });
   for (const feature of pack.features) {
     if (feature.kind === "fact") {
       const label = feature.label;
@@ -153,7 +206,11 @@ export function formatValue(value, format = "number") {
   if (format === "ms") return `${Math.round(value)} ms`;
   if (Number.isInteger(value)) return value.toLocaleString("en-US");
   const magnitude = Math.abs(value);
-  return magnitude >= 1000 ? value.toFixed(1) : magnitude >= 0.001 ? String(Number(value.toPrecision(5))) : value.toExponential(3);
+  return magnitude >= 1000
+    ? value.toFixed(1)
+    : magnitude >= 0.001
+      ? String(Number(value.toPrecision(5)))
+      : value.toExponential(3);
 }
 
 // ---------- facts: filters, sorting, summaries, table ----------
@@ -162,14 +219,19 @@ export function formatValue(value, format = "number") {
 // text -> string, category -> nonempty string or null. A fact that throws reads as unavailable.
 export function factValue(fact, item, ctx) {
   let value;
-  try { value = fact.value(item, ctx); } catch { value = null; }
+  try {
+    value = fact.value(item, ctx);
+  } catch {
+    value = null;
+  }
   if (fact.type === "number") return typeof value === "number" && Number.isFinite(value) ? value : null;
   if (fact.type === "flag") return value === true;
   if (fact.type === "text") return value === null || value === undefined ? "" : String(value);
   return value === null || value === undefined || value === "" ? null : String(value);
 }
 
-export const filterActive = (filter) => !!filter && (filter.op === "with" || filter.op === "without" || String(filter.value ?? "").trim() !== "");
+export const filterActive = (filter) =>
+  !!filter && (filter.op === "with" || filter.op === "without" || String(filter.value ?? "").trim() !== "");
 
 // Whether an item passes one filter { key, op, value }. A blank value is no filter. An unavailable number never
 // satisfies a bound, and a bound that is not a finite number matches nothing. Text matching is literal and ignores case.
@@ -212,7 +274,8 @@ export function sortByFact(items, sort, facts, ctx) {
   const direction = sort.dir === "desc" ? -1 : 1;
   const keyed = items.map((item, index) => ({ item, index, value: sortValue(fact, item, ctx) }));
   keyed.sort((a, b) => {
-    const aMissing = a.value === null, bMissing = b.value === null;
+    const aMissing = a.value === null,
+      bMissing = b.value === null;
     if (aMissing || bMissing) return aMissing === bMissing ? a.index - b.index : aMissing ? 1 : -1;
     const order = typeof a.value === "number" ? a.value - b.value : compareText(a.value, b.value);
     return order ? order * direction : a.index - b.index;
@@ -227,9 +290,16 @@ export function summarizeFact(fact, items, ctx) {
     const sum = known.reduce((total, value) => total + value, 0);
     const middle = known.length >> 1;
     const some = known.length > 0;
-    return { type: "number", count: known.length, missing: values.length - known.length, min: some ? known[0] : null,
-      max: some ? known[known.length - 1] : null, sum: some ? sum : null, mean: some ? sum / known.length : null,
-      median: !some ? null : known.length % 2 ? known[middle] : (known[middle - 1] + known[middle]) / 2 };
+    return {
+      type: "number",
+      count: known.length,
+      missing: values.length - known.length,
+      min: some ? known[0] : null,
+      max: some ? known[known.length - 1] : null,
+      sum: some ? sum : null,
+      mean: some ? sum / known.length : null,
+      median: !some ? null : known.length % 2 ? known[middle] : (known[middle - 1] + known[middle]) / 2,
+    };
   }
   if (fact.type === "flag") {
     const yes = values.filter(Boolean).length;
@@ -237,7 +307,12 @@ export function summarizeFact(fact, items, ctx) {
   }
   if (fact.type === "text") {
     const filled = values.filter((value) => value.trim() !== "");
-    return { type: "text", filled: filled.length, empty: values.length - filled.length, distinct: new Set(filled).size };
+    return {
+      type: "text",
+      filled: filled.length,
+      empty: values.length - filled.length,
+      distinct: new Set(filled).size,
+    };
   }
   const groups = new Map();
   let missing = 0;
@@ -250,11 +325,16 @@ export function summarizeFact(fact, items, ctx) {
 
 // The shown items as a table of fact values: { columns, rows }. entries: [[key, fact], ...] in column order.
 export function factsTable(entries, items, ctx, name = (item, index) => String(index + 1)) {
-  return { columns: ["item", ...entries.map(([, fact]) => fact.label)],
-    rows: items.map((item, index) => [name(item, index), ...entries.map(([, fact]) => {
-      const value = factValue(fact, item, ctx);
-      return value === null ? "" : fact.type === "flag" ? (value ? "yes" : "no") : value;
-    })]) };
+  return {
+    columns: ["item", ...entries.map(([, fact]) => fact.label)],
+    rows: items.map((item, index) => [
+      name(item, index),
+      ...entries.map(([, fact]) => {
+        const value = factValue(fact, item, ctx);
+        return value === null ? "" : fact.type === "flag" ? (value ? "yes" : "no") : value;
+      }),
+    ]),
+  };
 }
 
 export function describeFilter(fact, filter) {
@@ -264,8 +344,16 @@ export function describeFilter(fact, filter) {
 
 // ---------- diagnostics ----------
 
-const messagesOf = (result, fallback) => (result === true ? [fallback] : typeof result === "string" ? (result ? [result] : [])
-  : Array.isArray(result) ? result.filter((entry) => typeof entry === "string" && entry) : []);
+const messagesOf = (result, fallback) =>
+  result === true
+    ? [fallback]
+    : typeof result === "string"
+      ? result
+        ? [result]
+        : []
+      : Array.isArray(result)
+        ? result.filter((entry) => typeof entry === "string" && entry)
+        : [];
 
 // entries: [[key, diagnostic], ...]. A check returns nothing, true (its label is the message), a message, or
 // several messages. Item checks get (item, ctx, index); list checks get (items, ctx). Findings carry a 0-based
@@ -274,12 +362,23 @@ export function runDiagnostics(entries, items, ctx) {
   const findings = [];
   for (const [key, diagnostic] of entries) {
     const push = (index, result) => {
-      for (const message of messagesOf(result, diagnostic.label)) findings.push({ key, label: diagnostic.label, severity: diagnostic.severity || "advice", index, message });
+      for (const message of messagesOf(result, diagnostic.label))
+        findings.push({ key, label: diagnostic.label, severity: diagnostic.severity || "advice", index, message });
     };
     if ((diagnostic.scope || "item") === "list") {
-      try { push(null, diagnostic.check(items, ctx)); } catch { /* reports nothing */ }
+      try {
+        push(null, diagnostic.check(items, ctx));
+      } catch {
+        /* reports nothing */
+      }
     } else {
-      items.forEach((item, index) => { try { push(index, diagnostic.check(item, ctx, index)); } catch { /* reports nothing */ } });
+      items.forEach((item, index) => {
+        try {
+          push(index, diagnostic.check(item, ctx, index));
+        } catch {
+          /* reports nothing */
+        }
+      });
     }
   }
   return findings;
@@ -287,7 +386,8 @@ export function runDiagnostics(entries, items, ctx) {
 
 // ---------- typed inputs (tools and transform parameters) ----------
 
-const optionValues = (input) => input.options.map((option) => (Array.isArray(option) ? String(option[0]) : String(option)));
+const optionValues = (input) =>
+  input.options.map((option) => (Array.isArray(option) ? String(option[0]) : String(option)));
 
 // Reads raw control values into typed parameters, applying defaults. Throws an Error a person can act on.
 export function readInputs(inputs, values = {}) {
@@ -295,7 +395,10 @@ export function readInputs(inputs, values = {}) {
   for (const input of inputs || []) {
     const raw = values[input.name] === undefined ? input.default : values[input.name];
     const blank = raw === undefined || raw === null || String(raw).trim() === "";
-    if (input.type === "checkbox") { out[input.name] = raw === true || raw === "true" || raw === "on"; continue; }
+    if (input.type === "checkbox") {
+      out[input.name] = raw === true || raw === "true" || raw === "on";
+      continue;
+    }
     if (input.type === "select") {
       const options = optionValues(input);
       const value = blank ? options[0] : String(raw);
@@ -309,12 +412,16 @@ export function readInputs(inputs, values = {}) {
       continue;
     }
     if (blank) {
-      if (input.optional) { out[input.name] = null; continue; }
+      if (input.optional) {
+        out[input.name] = null;
+        continue;
+      }
       throw new Error(`${input.label} is required.`);
     }
     const number = toNumber(raw);
     if (number === null) throw new Error(`${input.label} must be a number.`);
-    if (input.type === "integer" && !Number.isInteger(number)) throw new Error(`${input.label} must be a whole number.`);
+    if (input.type === "integer" && !Number.isInteger(number))
+      throw new Error(`${input.label} must be a whole number.`);
     if (input.min !== undefined && number < input.min) throw new Error(`${input.label} must be at least ${input.min}.`);
     if (input.max !== undefined && number > input.max) throw new Error(`${input.label} must be at most ${input.max}.`);
     out[input.name] = number;
@@ -328,10 +435,16 @@ export function readInputs(inputs, values = {}) {
 // The result is normalized to { rows, table, text, note }.
 export function runTool(tool, values = {}) {
   const result = tool.compute(readInputs(tool.inputs, values));
-  const shaped = Array.isArray(result) ? { rows: result } : (result && typeof result === "object" ? result : {});
+  const shaped = Array.isArray(result) ? { rows: result } : result && typeof result === "object" ? result : {};
   const rows = Array.isArray(shaped.rows) ? shaped.rows : [];
-  if (!rows.length && !shaped.table && typeof shaped.text !== "string") throw new Error(`${tool.title} returned no result.`);
-  return { rows, table: shaped.table || null, text: typeof shaped.text === "string" ? shaped.text : null, note: shaped.note || null };
+  if (!rows.length && !shaped.table && typeof shaped.text !== "string")
+    throw new Error(`${tool.title} returned no result.`);
+  return {
+    rows,
+    table: shaped.table || null,
+    text: typeof shaped.text === "string" ? shaped.text : null,
+    note: shaped.note || null,
+  };
 }
 
 // ---------- transforms ----------
@@ -365,19 +478,28 @@ export const previewChanges = (preview) => preview.changed.length > 0 || preview
 
 export function describePreview(preview) {
   const parts = [];
-  if (preview.changed.length) parts.push(`${preview.changed.length} item${preview.changed.length === 1 ? "" : "s"} would change (positions ${preview.changed.slice(0, 20).join(", ")}${preview.changed.length > 20 ? ", …" : ""})`);
-  if (preview.now !== preview.was) parts.push(`the list would go from ${preview.was} to ${preview.now} item${preview.now === 1 ? "" : "s"}`);
+  if (preview.changed.length)
+    parts.push(
+      `${preview.changed.length} item${preview.changed.length === 1 ? "" : "s"} would change (positions ${preview.changed.slice(0, 20).join(", ")}${preview.changed.length > 20 ? ", …" : ""})`,
+    );
+  if (preview.now !== preview.was)
+    parts.push(`the list would go from ${preview.was} to ${preview.now} item${preview.now === 1 ? "" : "s"}`);
   return parts.length ? `${preview.label}: ${parts.join("; ")}.` : `${preview.label}: nothing would change.`;
 }
 
 // Apply a preview to the list it was made from. Returns the next items and a one-step undo record.
 export function applyTransform(preview, items) {
-  if (!preview || preview.before !== snapshot(items)) throw new Error("The list changed after the preview. Preview again.");
-  return { items: clone(preview.next), undo: { label: preview.label, before: clone(items), after: snapshot(preview.next) } };
+  if (!preview || preview.before !== snapshot(items))
+    throw new Error("The list changed after the preview. Preview again.");
+  return {
+    items: clone(preview.next),
+    undo: { label: preview.label, before: clone(items), after: snapshot(preview.next) },
+  };
 }
 
 export function undoTransform(undo, items) {
-  if (!undo || undo.after !== snapshot(items)) throw new Error("The list changed after this edit. Undo would replace newer edits.");
+  if (!undo || undo.after !== snapshot(items))
+    throw new Error("The list changed after this edit. Undo would replace newer edits.");
   return clone(undo.before);
 }
 
@@ -390,9 +512,23 @@ export function runMetrics(entries, ctx) {
       const result = metric.compute(ctx);
       const shaped = result && typeof result === "object" ? result : { value: result };
       const value = shaped.value === undefined ? null : shaped.value;
-      return { key, label: metric.label, value, text: formatValue(value, metric.format || "number"), detail: shaped.detail || "", help: metric.help || "" };
+      return {
+        key,
+        label: metric.label,
+        value,
+        text: formatValue(value, metric.format || "number"),
+        detail: shaped.detail || "",
+        help: metric.help || "",
+      };
     } catch (error) {
-      return { key, label: metric.label, value: null, text: "—", detail: `Could not compute: ${error.message}`, help: metric.help || "" };
+      return {
+        key,
+        label: metric.label,
+        value: null,
+        text: "—",
+        detail: `Could not compute: ${error.message}`,
+        help: metric.help || "",
+      };
     }
   });
 }
@@ -422,12 +558,22 @@ export function searchCommands(entries, query = "") {
   entries.forEach((entry, index) => {
     const [, command, ctx] = entry;
     let available = true;
-    try { available = !command.when || command.when(ctx) !== false; } catch { available = false; }
+    try {
+      available = !command.when || command.when(ctx) !== false;
+    } catch {
+      available = false;
+    }
     if (!available) return;
     const title = command.title.toLowerCase();
     const haystack = `${title} ${String(command.group || "").toLowerCase()}`;
     if (!words.every((word) => haystack.includes(word))) return;
-    const rank = !words.length ? 2 : title.startsWith(words[0]) ? 0 : words.every((word) => new RegExp(`(?:^|[^a-z0-9])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(title)) ? 1 : 2;
+    const rank = !words.length
+      ? 2
+      : title.startsWith(words[0])
+        ? 0
+        : words.every((word) => new RegExp(`(?:^|[^a-z0-9])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(title))
+          ? 1
+          : 2;
     ranked.push({ entry, index, rank });
   });
   return ranked.sort((a, b) => a.rank - b.rank || a.index - b.index).map((item) => item.entry);
@@ -437,13 +583,23 @@ const MODIFIERS = ["Mod", "Ctrl", "Meta", "Alt", "Shift"];
 
 // "Mod+Shift+K" -> { key: "k", mod, ctrl, meta, alt, shift }. Mod is Ctrl or Cmd. One chord, no sequences.
 export function parseKeys(keys) {
-  const parts = String(keys || "").split("+").map((part) => part.trim()).filter(Boolean);
+  const parts = String(keys || "")
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (!parts.length) return null;
   const key = parts[parts.length - 1];
   const flags = parts.slice(0, -1);
   if (MODIFIERS.includes(key) || flags.some((flag) => !MODIFIERS.includes(flag))) return null;
-  return { key: key.length === 1 ? key.toLowerCase() : key, mod: flags.includes("Mod"), ctrl: flags.includes("Ctrl"), meta: flags.includes("Meta"),
-    alt: flags.includes("Alt"), shift: flags.includes("Shift"), bare: !flags.some((flag) => flag !== "Shift") };
+  return {
+    key: key.length === 1 ? key.toLowerCase() : key,
+    mod: flags.includes("Mod"),
+    ctrl: flags.includes("Ctrl"),
+    meta: flags.includes("Meta"),
+    alt: flags.includes("Alt"),
+    shift: flags.includes("Shift"),
+    bare: !flags.some((flag) => flag !== "Shift"),
+  };
 }
 
 // The letter or digit of the physical key ("KeyN" -> "n", "Digit2" -> "2"), or null.
@@ -461,9 +617,11 @@ export function keysMatch(event, keys) {
   const chord = typeof keys === "string" ? parseKeys(keys) : keys;
   if (!chord || !event || typeof event.key !== "string") return false;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  if (key !== chord.key && !(chord.alt && /^[a-z0-9]$/.test(chord.key) && physicalKey(event) === chord.key)) return false;
-  const ctrl = !!event.ctrlKey, meta = !!event.metaKey;
-  if (chord.mod ? !(ctrl || meta) : (ctrl !== chord.ctrl || meta !== chord.meta)) return false;
+  if (key !== chord.key && !(chord.alt && /^[a-z0-9]$/.test(chord.key) && physicalKey(event) === chord.key))
+    return false;
+  const ctrl = !!event.ctrlKey,
+    meta = !!event.metaKey;
+  if (chord.mod ? !(ctrl || meta) : ctrl !== chord.ctrl || meta !== chord.meta) return false;
   if (!!event.altKey !== chord.alt) return false;
   const symbol = chord.key.length === 1 && !/[a-z0-9]/.test(chord.key);
   return symbol || !!event.shiftKey === chord.shift;

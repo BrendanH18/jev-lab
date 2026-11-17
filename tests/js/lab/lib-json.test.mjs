@@ -18,9 +18,30 @@ const cyclic = () => {
 };
 
 test("the module exports exactly the documented names", () => {
-  assert.deepEqual(Object.keys(json).sort(), ["byteSize", "countLeaves", "deepEqual", "deletePath", "depth", "diffValues", "duplicateKeys", "flatten",
-    "formatPath", "getPath", "isPlainObject", "listPaths", "mergeDeep", "omit", "parsePath", "pick", "setPath", "sortKeys", "stableStringify", "typeName",
-    "unflatten", "walk"]);
+  assert.deepEqual(Object.keys(json).sort(), [
+    "byteSize",
+    "countLeaves",
+    "deepEqual",
+    "deletePath",
+    "depth",
+    "diffValues",
+    "duplicateKeys",
+    "flatten",
+    "formatPath",
+    "getPath",
+    "isPlainObject",
+    "listPaths",
+    "mergeDeep",
+    "omit",
+    "parsePath",
+    "pick",
+    "setPath",
+    "sortKeys",
+    "stableStringify",
+    "typeName",
+    "unflatten",
+    "walk",
+  ]);
 });
 
 // ---------- kinds of value ----------
@@ -35,15 +56,20 @@ test("typeName and isPlainObject", () => {
   assert.equal(json.typeName(NaN), "number");
   assert.equal(json.typeName(false), "boolean");
   assert.equal(json.typeName(undefined), null);
-  assert.equal(json.typeName(() => 1), null);
+  assert.equal(
+    json.typeName(() => 1),
+    null,
+  );
   assert.equal(json.typeName(Symbol("s")), null);
   assert.equal(json.typeName(1n), null);
-  for (const value of [null, true, 1.5, "s", [1], { a: 1 }]) assert.equal(json.typeName(JSON.parse(JSON.stringify(value))), json.typeName(value));
+  for (const value of [null, true, 1.5, "s", [1], { a: 1 }])
+    assert.equal(json.typeName(JSON.parse(JSON.stringify(value))), json.typeName(value));
 
   assert.equal(json.isPlainObject({}), true);
   assert.equal(json.isPlainObject(Object.create(null)), true);
   assert.equal(json.isPlainObject(JSON.parse('{"a":1}')), true);
-  for (const no of [null, undefined, [], "x", 1, new Date(0), new Map(), () => 1, new (class Box {})()]) assert.equal(json.isPlainObject(no), false);
+  for (const no of [null, undefined, [], "x", 1, new Date(0), new Map(), () => 1, new (class Box {})()])
+    assert.equal(json.isPlainObject(no), false);
 });
 
 // ---------- paths ----------
@@ -66,7 +92,7 @@ test("formatPath and parsePath follow the path grammar", () => {
     [['q"uote'], '["q\\"uote"]'],
     [["back\\slash"], '["back\\\\slash"]'],
     [["a]b"], '["a]b"]'],
-    [[cp(0xE9)], `["${cp(0xE9)}"]`],
+    [[cp(0xe9)], `["${cp(0xe9)}"]`],
     [["__proto__", "x"], "__proto__.x"],
   ];
   for (const [segments, path] of cases) {
@@ -74,15 +100,39 @@ test("formatPath and parsePath follow the path grammar", () => {
     assert.deepEqual(json.parsePath(path), segments, path);
     assert.deepEqual(json.parsePath(segments), segments);
   }
-  assert.notEqual(json.parsePath(cases[2][0]), cases[2][0]);                // a copy, not the same array
+  assert.notEqual(json.parsePath(cases[2][0]), cases[2][0]); // a copy, not the same array
   for (const bad of [[-1], [1.5], [null], [{}], [NaN], ["a", undefined]]) {
     assert.equal(json.formatPath(bad), null);
     assert.equal(json.parsePath(bad), null);
   }
   assert.equal(json.formatPath("a.b"), null);
   assert.equal(json.formatPath(null), null);
-  for (const bad of ["a..b", ".a", "a.", "a[", "a[]", "a[01]", "[-1]", "a[1", "a b", "a-b", "1a", "a[x]", 'a["x]', 'a["x"', "[0]a", "a.[0]", 'a."b"',
-    "a[1.5]", "a[99999999999999999999]", null, undefined, 5, {}]) assert.equal(json.parsePath(bad), null, JSON.stringify(bad));
+  for (const bad of [
+    "a..b",
+    ".a",
+    "a.",
+    "a[",
+    "a[]",
+    "a[01]",
+    "[-1]",
+    "a[1",
+    "a b",
+    "a-b",
+    "1a",
+    "a[x]",
+    'a["x]',
+    'a["x"',
+    "[0]a",
+    "a.[0]",
+    'a."b"',
+    "a[1.5]",
+    "a[99999999999999999999]",
+    null,
+    undefined,
+    5,
+    {},
+  ])
+    assert.equal(json.parsePath(bad), null, JSON.stringify(bad));
 });
 
 test("getPath reads a node and gives undefined for anything missing", () => {
@@ -96,7 +146,19 @@ test("getPath reads a node and gives undefined for anything missing", () => {
   assert.equal(json.getPath(value, ["a", "b", 1, "c"]), "x");
   assert.equal(json.getPath(value, []), value);
   assert.equal(json.getPath(5, ""), 5);
-  for (const missing of ["a.missing", "a.b[5]", "a.b[1].c.d", '["my key"][0]', 'a.b["0"]', "a.b.length", "constructor", "a.constructor", "n.x", "a..b", "a["]) {
+  for (const missing of [
+    "a.missing",
+    "a.b[5]",
+    "a.b[1].c.d",
+    '["my key"][0]',
+    'a.b["0"]',
+    "a.b.length",
+    "constructor",
+    "a.constructor",
+    "n.x",
+    "a..b",
+    "a[",
+  ]) {
     assert.equal(json.getPath(value, missing), undefined, missing);
   }
   assert.equal(json.getPath(null, "a"), undefined);
@@ -142,14 +204,20 @@ test("deletePath returns a copy without the node", () => {
   const before = JSON.stringify(value);
   assert.deepEqual(json.deletePath({ a: 1, b: 2 }, "a"), { b: 2 });
   assert.deepEqual(json.deletePath({ a: [1, 2, 3] }, "a[1]"), { a: [1, 3] });
-  assert.deepEqual(json.deletePath(value, "a.b[1].c"), { a: { b: [10, {}] }, "my key": { 0: "zero" }, list: [[1, 2], [3]], n: null });
+  assert.deepEqual(json.deletePath(value, "a.b[1].c"), {
+    a: { b: [10, {}] },
+    "my key": { 0: "zero" },
+    list: [[1, 2], [3]],
+    n: null,
+  });
   assert.deepEqual(json.deletePath(value, '["my key"]'), { a: { b: [10, { c: "x" }] }, list: [[1, 2], [3]], n: null });
   assert.deepEqual(json.deletePath([1, 2, 3], "[0]"), [2, 3]);
   assert.equal(JSON.stringify(value), before);
   const shared = json.deletePath(value, "list[0]");
   assert.deepEqual(shared.list, [[3]]);
   assert.equal(shared.a, value.a);
-  for (const missing of ["zzz", "a.b[9]", "a.b[0].x", "n.x", '["my key"][0]']) assert.equal(json.deletePath(value, missing), value, missing);
+  for (const missing of ["zzz", "a.b[9]", "a.b[0].x", "n.x", '["my key"][0]'])
+    assert.equal(json.deletePath(value, missing), value, missing);
   assert.equal(json.deletePath(value, ""), undefined);
   assert.equal(json.deletePath(value, "a["), null);
   assert.equal(json.deletePath(5, "a"), 5);
@@ -159,18 +227,39 @@ test("deletePath returns a copy without the node", () => {
 
 test("walk visits every node in document order", () => {
   const seen = [];
-  const count = json.walk({ a: { b: [1, 2] }, "my key": true }, (path, value) => { seen.push([path, json.typeName(value)]); });
-  assert.deepEqual(seen, [["", "object"], ["a", "object"], ["a.b", "array"], ["a.b[0]", "number"], ["a.b[1]", "number"], ['["my key"]', "boolean"]]);
+  const count = json.walk({ a: { b: [1, 2] }, "my key": true }, (path, value) => {
+    seen.push([path, json.typeName(value)]);
+  });
+  assert.deepEqual(seen, [
+    ["", "object"],
+    ["a", "object"],
+    ["a.b", "array"],
+    ["a.b[0]", "number"],
+    ["a.b[1]", "number"],
+    ['["my key"]', "boolean"],
+  ]);
   assert.equal(count, 6);
 
   const skipped = [];
-  assert.equal(json.walk({ a: { b: [1, 2] }, c: 3 }, (path) => { skipped.push(path); return path !== "a"; }), 3);
+  assert.equal(
+    json.walk({ a: { b: [1, 2] }, c: 3 }, (path) => {
+      skipped.push(path);
+      return path !== "a";
+    }),
+    3,
+  );
   assert.deepEqual(skipped, ["", "a", "c"]);
 
   const roots = [];
-  assert.equal(json.walk(5, (path, value) => roots.push([path, value])), 1);
+  assert.equal(
+    json.walk(5, (path, value) => roots.push([path, value])),
+    1,
+  );
   assert.deepEqual(roots, [["", 5]]);
-  assert.equal(json.walk([[], {}], () => {}), 3);
+  assert.equal(
+    json.walk([[], {}], () => {}),
+    3,
+  );
   assert.equal(json.walk({}, null), null);
   assert.equal(json.walk({}, "visit"), null);
 
@@ -189,7 +278,7 @@ test("depth, countLeaves and listPaths", () => {
   assert.equal(json.depth({ a: [1] }), 2);
   assert.equal(json.depth([[[]]]), 3);
   assert.equal(json.depth({ a: { b: { c: {} } }, d: 1 }), 4);
-  assert.equal(json.depth(doc()), 4);                               // a -> b -> [1] -> { c }
+  assert.equal(json.depth(doc()), 4); // a -> b -> [1] -> { c }
 
   assert.equal(json.countLeaves(5), 1);
   assert.equal(json.countLeaves(null), 1);
@@ -197,10 +286,18 @@ test("depth, countLeaves and listPaths", () => {
   assert.equal(json.countLeaves([]), 1);
   assert.equal(json.countLeaves({ a: 1, b: [2, {}] }), 3);
   assert.equal(json.countLeaves({ a: { b: [1, 2, 3] }, c: null }), 4);
-  assert.equal(json.countLeaves(doc()), 7);                         // 10, "x", "zero", 1, 2, 3, null
+  assert.equal(json.countLeaves(doc()), 7); // 10, "x", "zero", 1, 2, 3, null
 
   assert.deepEqual(json.listPaths({ a: 1, b: [2, { c: 3 }] }), ["a", "b[0]", "b[1].c"]);
-  assert.deepEqual(json.listPaths(doc()), ["a.b[0]", "a.b[1].c", '["my key"]["0"]', "list[0][0]", "list[0][1]", "list[1][0]", "n"]);
+  assert.deepEqual(json.listPaths(doc()), [
+    "a.b[0]",
+    "a.b[1].c",
+    '["my key"]["0"]',
+    "list[0][0]",
+    "list[0][1]",
+    "list[1][0]",
+    "n",
+  ]);
   assert.deepEqual(json.listPaths(5), [""]);
   assert.deepEqual(json.listPaths({}), [""]);
   assert.deepEqual(json.listPaths([[], { a: {} }]), ["[0]", "[1].a"]);
@@ -209,29 +306,41 @@ test("depth, countLeaves and listPaths", () => {
 test("byteSize is the UTF-8 size of compact JSON", () => {
   // Sizes from Python: len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).
   assert.equal(json.byteSize({ a: 1, b: [true, null, "x"] }), 27);
-  assert.equal(json.byteSize(`h${cp(0xE9)}`), 5);
-  assert.equal(json.byteSize({ k: `${cp(0x20AC)}${cp(0x1F600)}` }), 15);
+  assert.equal(json.byteSize(`h${cp(0xe9)}`), 5);
+  assert.equal(json.byteSize({ k: `${cp(0x20ac)}${cp(0x1f600)}` }), 15);
   assert.equal(json.byteSize([]), 2);
   assert.equal(json.byteSize(1.5), 3);
   assert.equal(json.byteSize(null), 4);
   assert.equal(json.byteSize(""), 2);
   assert.equal(json.byteSize(undefined), null);
-  assert.equal(json.byteSize(() => 1), null);
+  assert.equal(
+    json.byteSize(() => 1),
+    null,
+  );
   assert.equal(json.byteSize(1n), null);
   assert.equal(json.byteSize(cyclic()), null);
-  for (const value of [doc(), "plain", { text: `${cp(0xE9)}${cp(0x4E2D)}${cp(0x1F600)} "quoted"\n` }]) {
+  for (const value of [doc(), "plain", { text: `${cp(0xe9)}${cp(0x4e2d)}${cp(0x1f600)} "quoted"\n` }]) {
     assert.equal(json.byteSize(value), new TextEncoder().encode(JSON.stringify(value)).length);
   }
 });
 
 test("flatten and unflatten are inverses", () => {
-  assert.deepEqual(json.flatten({ a: { b: [1, {}] }, "x y": [], n: null }), { "a.b[0]": 1, "a.b[1]": {}, '["x y"]': [], n: null });
+  assert.deepEqual(json.flatten({ a: { b: [1, {}] }, "x y": [], n: null }), {
+    "a.b[0]": 1,
+    "a.b[1]": {},
+    '["x y"]': [],
+    n: null,
+  });
   assert.deepEqual(Object.keys(json.flatten({ b: 1, a: [2, 3] })), ["b", "a[0]", "a[1]"]);
   assert.deepEqual(json.flatten(5), { "": 5 });
   assert.deepEqual(json.flatten({}), { "": {} });
   assert.deepEqual(json.flatten([1, [2]]), { "[0]": 1, "[1][0]": 2 });
 
-  assert.deepEqual(json.unflatten({ "a.b[0]": 1, "a.b[1]": {}, '["x y"]': [], n: null }), { a: { b: [1, {}] }, "x y": [], n: null });
+  assert.deepEqual(json.unflatten({ "a.b[0]": 1, "a.b[1]": {}, '["x y"]': [], n: null }), {
+    a: { b: [1, {}] },
+    "x y": [],
+    n: null,
+  });
   assert.deepEqual(json.unflatten({ "": 5 }), 5);
   assert.deepEqual(json.unflatten({ "[0]": 1, "[1][0]": 2 }), [1, [2]]);
   assert.deepEqual(json.unflatten({ "a[2]": 1 }), { a: [null, null, 1] });
@@ -246,10 +355,20 @@ test("flatten and unflatten are inverses", () => {
   const leaf = { deep: [1] };
   const built = json.unflatten({ a: leaf, "a.more": 2 });
   assert.deepEqual(built, { a: { deep: [1], more: 2 } });
-  assert.deepEqual(leaf, { deep: [1] });                             // the caller's leaf was copied, not written into
+  assert.deepEqual(leaf, { deep: [1] }); // the caller's leaf was copied, not written into
 
-  const samples = [doc(), 5, null, "text", [], {}, [[1, [2, [3]]], { a: [] }],
-    JSON.parse('{"": 1, "a.b": 2, "0": 3, "q\\"uote": [{"__proto__": {"x": 1}}], "sp ace": {"k": [true, false, null]}}')];
+  const samples = [
+    doc(),
+    5,
+    null,
+    "text",
+    [],
+    {},
+    [[1, [2, [3]]], { a: [] }],
+    JSON.parse(
+      '{"": 1, "a.b": 2, "0": 3, "q\\"uote": [{"__proto__": {"x": 1}}], "sp ace": {"k": [true, false, null]}}',
+    ),
+  ];
   for (const sample of samples) {
     assert.deepEqual(json.unflatten(json.flatten(sample)), sample);
     assert.deepEqual(Object.keys(json.flatten(sample)), json.listPaths(sample));
@@ -270,7 +389,7 @@ test("sortKeys deep-copies with sorted keys", () => {
   assert.deepEqual(Object.keys(input), ["b", "a"]);
   assert.notEqual(sorted.a, input.a);
   assert.notEqual(sorted.a.c, input.a.c);
-  assert.deepEqual(Object.keys(json.sortKeys({ b: 1, B: 2, a: 3, _: 4 })), ["B", "_", "a", "b"]);    // UTF-16 order: capitals, then _, then lower case
+  assert.deepEqual(Object.keys(json.sortKeys({ b: 1, B: 2, a: 3, _: 4 })), ["B", "_", "a", "b"]); // UTF-16 order: capitals, then _, then lower case
   assert.equal(json.sortKeys(5), 5);
   assert.equal(json.sortKeys(null), null);
   assert.deepEqual(json.sortKeys([{ b: 1, a: 2 }]), [{ a: 2, b: 1 }]);
@@ -281,9 +400,12 @@ test("sortKeys deep-copies with sorted keys", () => {
 test("stableStringify sorts keys at every level", () => {
   // Expected texts written out by hand.
   assert.equal(json.stableStringify({ b: 1, a: 2 }), '{"a":2,"b":1}');
-  assert.equal(json.stableStringify({ z: [{ y: 1, x: 2 }], a: { c: null, b: "t" } }), '{"a":{"b":"t","c":null},"z":[{"x":2,"y":1}]}');
+  assert.equal(
+    json.stableStringify({ z: [{ y: 1, x: 2 }], a: { c: null, b: "t" } }),
+    '{"a":{"b":"t","c":null},"z":[{"x":2,"y":1}]}',
+  );
   assert.equal(json.stableStringify({ b: [1, 2], a: {} }, 2), '{\n  "a": {},\n  "b": [\n    1,\n    2\n  ]\n}');
-  assert.equal(json.stableStringify({ 10: "a", 9: "b", a: 1 }), '{"10":"a","9":"b","a":1}');           // text order, not the engine's numeric order
+  assert.equal(json.stableStringify({ 10: "a", 9: "b", a: 1 }), '{"10":"a","9":"b","a":1}'); // text order, not the engine's numeric order
   assert.equal(json.stableStringify({ a: 1, b: { c: 2, d: 3 } }), json.stableStringify({ b: { d: 3, c: 2 }, a: 1 }));
   assert.equal(json.stableStringify("x"), '"x"');
   assert.equal(json.stableStringify(5), "5");
@@ -297,7 +419,10 @@ test("stableStringify sorts keys at every level", () => {
   assert.equal(json.stableStringify({ when: new Date(0) }), '{"when":"1970-01-01T00:00:00.000Z"}');
   assert.equal(json.stableStringify({ big: 10n }), '{"big":10}');
   assert.equal(json.stableStringify(undefined), null);
-  assert.equal(json.stableStringify(() => 1), null);
+  assert.equal(
+    json.stableStringify(() => 1),
+    null,
+  );
   assert.equal(json.stableStringify(Symbol("s")), null);
   assert.equal(json.stableStringify(cyclic()), null);
 });
@@ -306,14 +431,29 @@ test("stableStringify matches JSON.stringify on values whose keys are already so
   // JSON.stringify is the independent reference: for keys already in sorted order the two must agree exactly.
   const samples = [
     { a: 1, b: [true, false, null, "x", 1.5, -2, 1e21, 1e-7, 0.1], c: { d: {}, e: [], f: [[]] } },
-    ["quote \" backslash \\ newline \n tab \t", cp(0x1F600), cp(0xE9), String.fromCharCode(1), String.fromCharCode(0x2028)],
+    [
+      'quote " backslash \\ newline \n tab \t',
+      cp(0x1f600),
+      cp(0xe9),
+      String.fromCharCode(1),
+      String.fromCharCode(0x2028),
+    ],
     { "": 0, " ": 1, "a b": 2, é: 3 },
     [[[[1]]], [{ a: [{ b: [] }] }]],
-    "text", 0, -1.25, null, false, [], {},
+    "text",
+    0,
+    -1.25,
+    null,
+    false,
+    [],
+    {},
   ];
   for (const sample of samples) {
     for (const indent of [0, 1, 2, 4, 10, 25, "\t", "--", undefined, null, -3, 2.9]) {
-      const reference = typeof indent === "number" || typeof indent === "string" ? JSON.stringify(sample, null, indent) : JSON.stringify(sample);
+      const reference =
+        typeof indent === "number" || typeof indent === "string"
+          ? JSON.stringify(sample, null, indent)
+          : JSON.stringify(sample);
       assert.equal(json.stableStringify(sample, indent), reference, JSON.stringify([sample, indent]));
     }
     assert.deepEqual(JSON.parse(json.stableStringify(sample)), sample);
@@ -349,9 +489,22 @@ test("pick and omit", () => {
 
 test("deepEqual compares JSON values", () => {
   const same = [
-    [1, 1], ["a", "a"], [null, null], [undefined, undefined], [NaN, NaN], [0, -0], [[], []], [{}, {}],
-    [{ a: 1, b: [1, { c: null }] }, { b: [1, { c: null }], a: 1 }],
-    [[1, [2, [3]]], [1, [2, [3]]]],
+    [1, 1],
+    ["a", "a"],
+    [null, null],
+    [undefined, undefined],
+    [NaN, NaN],
+    [0, -0],
+    [[], []],
+    [{}, {}],
+    [
+      { a: 1, b: [1, { c: null }] },
+      { b: [1, { c: null }], a: 1 },
+    ],
+    [
+      [1, [2, [3]]],
+      [1, [2, [3]]],
+    ],
     [new Date(5), new Date(5)],
     [doc(), doc()],
     [Object.create(null), {}],
@@ -361,9 +514,27 @@ test("deepEqual compares JSON values", () => {
     assert.equal(json.deepEqual(b, a), true);
   }
   const different = [
-    [1, 2], [1, "1"], [0, false], [null, undefined], [null, 0], [null, {}], [[], {}], [[1, 2], [2, 1]], [[1], [1, 2]],
-    [{ a: 1 }, { a: 2 }], [{ a: 1 }, { b: 1 }], [{ a: 1 }, { a: 1, b: undefined }], [{ a: undefined }, {}], [{ a: [1] }, { a: { 0: 1 } }],
-    [new Date(5), new Date(6)], [new Map(), new Map()], ["a", "A"], [{ a: { b: { c: 1 } } }, { a: { b: { c: 2 } } }],
+    [1, 2],
+    [1, "1"],
+    [0, false],
+    [null, undefined],
+    [null, 0],
+    [null, {}],
+    [[], {}],
+    [
+      [1, 2],
+      [2, 1],
+    ],
+    [[1], [1, 2]],
+    [{ a: 1 }, { a: 2 }],
+    [{ a: 1 }, { b: 1 }],
+    [{ a: 1 }, { a: 1, b: undefined }],
+    [{ a: undefined }, {}],
+    [{ a: [1] }, { a: { 0: 1 } }],
+    [new Date(5), new Date(6)],
+    [new Map(), new Map()],
+    ["a", "A"],
+    [{ a: { b: { c: 1 } } }, { a: { b: { c: 2 } } }],
   ];
   for (const [a, b] of different) {
     assert.equal(json.deepEqual(a, b), false, JSON.stringify([a, b]));
@@ -388,21 +559,32 @@ test("diffValues lists added, removed and changed nodes in path order", () => {
   assert.deepEqual(json.diffValues(1, 1), []);
   assert.deepEqual(json.diffValues(undefined, undefined), []);
   assert.deepEqual(json.diffValues(1, 2), [{ path: "", kind: "changed", before: 1, after: 2 }]);
-  assert.deepEqual(json.diffValues({ a: [1] }, { a: { 0: 1 } }), [{ path: "a", kind: "changed", before: [1], after: { 0: 1 } }]);
+  assert.deepEqual(json.diffValues({ a: [1] }, { a: { 0: 1 } }), [
+    { path: "a", kind: "changed", before: [1], after: { 0: 1 } },
+  ]);
   assert.deepEqual(json.diffValues([1], [1, 2]), [{ path: "[1]", kind: "added", before: undefined, after: 2 }]);
-  assert.deepEqual(json.diffValues({}, { "my key": { deep: [1] } }), [{ path: '["my key"]', kind: "added", before: undefined, after: { deep: [1] } }]);
+  assert.deepEqual(json.diffValues({}, { "my key": { deep: [1] } }), [
+    { path: '["my key"]', kind: "added", before: undefined, after: { deep: [1] } },
+  ]);
   assert.deepEqual(json.diffValues([{ id: 1 }, { id: 2 }], [{ id: 2 }]), [
     { path: "[0].id", kind: "changed", before: 1, after: 2 },
     { path: "[1]", kind: "removed", before: { id: 2 }, after: undefined },
   ]);
-  assert.deepEqual(json.diffValues({ b: 1, a: 1 }, { b: 2, a: 2 }).map((entry) => entry.path), ["a", "b"]);
-  assert.deepEqual(json.diffValues({ a: null }, { a: undefined }), [{ path: "a", kind: "changed", before: null, after: undefined }]);
+  assert.deepEqual(
+    json.diffValues({ b: 1, a: 1 }, { b: 2, a: 2 }).map((entry) => entry.path),
+    ["a", "b"],
+  );
+  assert.deepEqual(json.diffValues({ a: null }, { a: undefined }), [
+    { path: "a", kind: "changed", before: null, after: undefined },
+  ]);
 
   // Replaying the entries on the first value gives the second (removals last to first, so array indexes hold).
   let replayed = before;
   const entries = json.diffValues(before, after);
-  for (const entry of entries.filter((item) => item.kind !== "removed")) replayed = json.setPath(replayed, entry.path, entry.after);
-  for (const entry of entries.filter((item) => item.kind === "removed").reverse()) replayed = json.deletePath(replayed, entry.path);
+  for (const entry of entries.filter((item) => item.kind !== "removed"))
+    replayed = json.setPath(replayed, entry.path, entry.after);
+  for (const entry of entries.filter((item) => item.kind === "removed").reverse())
+    replayed = json.deletePath(replayed, entry.path);
   assert.deepEqual(replayed, after);
 });
 
@@ -435,24 +617,33 @@ test("mergeDeep merges objects and replaces everything else", () => {
 // ---------- JSON text ----------
 
 test("duplicateKeys finds keys JSON.parse silently drops", () => {
-  assert.equal(JSON.parse('{"a":1,"a":2}').a, 2);                   // the behavior this function exists to expose
+  assert.equal(JSON.parse('{"a":1,"a":2}').a, 2); // the behavior this function exists to expose
   assert.deepEqual(json.duplicateKeys('{"a":1,"b":2}'), []);
   assert.deepEqual(json.duplicateKeys('{"a":1,"a":2}'), ["a"]);
   assert.deepEqual(json.duplicateKeys('{"a":{"b":1,"b":2,"b":3},"c":[{"id":1},{"id":1,"id":2}]}'), ["a.b", "c[1].id"]);
   assert.deepEqual(json.duplicateKeys('{"my key":1,"my key":2}'), ['["my key"]']);
-  assert.deepEqual(json.duplicateKeys(`{"a":1,"${"\\"}u0061":2}`), ["a"]);                            // an escaped spelling of the same key
-  assert.deepEqual(json.duplicateKeys('{"a":"{\\"a\\":1,\\"a\\":2}","b":"}","c":"a"}'), []);        // text inside string values is not keys
+  assert.deepEqual(json.duplicateKeys(`{"a":1,"${"\\"}u0061":2}`), ["a"]); // an escaped spelling of the same key
+  assert.deepEqual(json.duplicateKeys('{"a":"{\\"a\\":1,\\"a\\":2}","b":"}","c":"a"}'), []); // text inside string values is not keys
   assert.deepEqual(json.duplicateKeys('{"a":{"a":{"a":1}}}'), []);
   assert.deepEqual(json.duplicateKeys('[{"a":1},{"a":2}]'), []);
   assert.deepEqual(json.duplicateKeys('{"a":{"x":1,"x":2},"a":{"y":1}}'), ["a.x", "a"]);
-  assert.deepEqual(json.duplicateKeys('{\n  "state": {"order": 1},\n  "questions": [],\n  "state": {"order": 2, "order": 3}\n}'), ["state", "state.order"]);
+  assert.deepEqual(
+    json.duplicateKeys('{\n  "state": {"order": 1},\n  "questions": [],\n  "state": {"order": 2, "order": 3}\n}'),
+    ["state", "state.order"],
+  );
   assert.deepEqual(json.duplicateKeys('[[{"k":1,"k":2}],[[{"k":1}],{"":0,"":1}]]'), ["[0][0].k", '[1][1][""]']);
   assert.deepEqual(json.duplicateKeys('{"a":[1,2,{"b":"x","c":[],"b":null}]}'), ["a[2].b"]);
   assert.deepEqual(json.duplicateKeys('{"a\\\\":1,"a\\\\":2,"q\\"":1,"q\\"":2}'), ['["a\\\\"]', '["q\\""]']);
-  for (const scalar of ["5", '"a"', "null", "[]", "{}", ' [1, "a,a", {"a": "a"}] ']) assert.deepEqual(json.duplicateKeys(scalar), [], scalar);
-  for (const invalid of ['{"a":1,}', "", "{", '{"a":1,"a":2', "{a:1,a:2}", null, undefined]) assert.equal(json.duplicateKeys(invalid), null, String(invalid));
+  for (const scalar of ["5", '"a"', "null", "[]", "{}", ' [1, "a,a", {"a": "a"}] '])
+    assert.deepEqual(json.duplicateKeys(scalar), [], scalar);
+  for (const invalid of ['{"a":1,}', "", "{", '{"a":1,"a":2', "{a:1,a:2}", null, undefined])
+    assert.equal(json.duplicateKeys(invalid), null, String(invalid));
   for (const path of json.duplicateKeys('{"a":{"b":1,"b":2},"c":[{"id":1},{"id":1,"id":2}]}')) {
-    assert.notEqual(json.getPath(JSON.parse('{"a":{"b":1,"b":2},"c":[{"id":1},{"id":1,"id":2}]}'), path), undefined, path);
+    assert.notEqual(
+      json.getPath(JSON.parse('{"a":{"b":1,"b":2},"c":[{"id":1},{"id":1,"id":2}]}'), path),
+      undefined,
+      path,
+    );
   }
 });
 
@@ -460,8 +651,11 @@ test("duplicateKeys finds keys JSON.parse silently drops", () => {
 
 test("cyclic values never loop forever", () => {
   const value = cyclic();
-  assert.equal(json.depth(value), 2);                               // the object and its items array; the cycle is not entered
-  assert.equal(json.walk(value, () => {}), 6);                      // root, name, items, items[0], items[1] (the cycle), self (the cycle)
+  assert.equal(json.depth(value), 2); // the object and its items array; the cycle is not entered
+  assert.equal(
+    json.walk(value, () => {}),
+    6,
+  ); // root, name, items, items[0], items[1] (the cycle), self (the cycle)
   assert.deepEqual(json.listPaths(value), ["name", "items[0]"]);
   assert.equal(json.sortKeys(value).self, value);
   assert.equal(json.deepEqual(value, value), true);

@@ -236,20 +236,33 @@
 import { clone } from "../kit.js";
 
 const WEEKDAYS = Object.freeze(["monday", "tuesday", "wednesday", "thursday", "friday"]);
-const BUSINESS_DOMAIN = "harborcoffee.example";  // jev/world.py BUSINESS["domain"]
-const REFUND_WINDOW_DAYS = 30;                   // jev/world.py REFUND_WINDOW_DAYS
-const MAX_COMMAND = 1000;                        // server.api_dispatch reads at most this many characters
+const BUSINESS_DOMAIN = "harborcoffee.example"; // jev/world.py BUSINESS["domain"]
+const REFUND_WINDOW_DAYS = 30; // jev/world.py REFUND_WINDOW_DAYS
+const MAX_COMMAND = 1000; // server.api_dispatch reads at most this many characters
 const HISTORY_SHOWN = 50;
 // Mirrors static/js/dispatch.js: which question ids belong to which action, and the values a clarify chip skips.
-const TOOL_PREFIX = Object.freeze({ refund_order: "refund.", reschedule_meeting: "reschedule.", pay_vendor: "pay.", create_task: "task.", send_info: "info." });
-const GROUP_TOOL = Object.freeze({ refund: "refund_order", reschedule: "reschedule_meeting", pay: "pay_vendor", task: "create_task", info: "send_info" });
+const TOOL_PREFIX = Object.freeze({
+  refund_order: "refund.",
+  reschedule_meeting: "reschedule.",
+  pay_vendor: "pay.",
+  create_task: "task.",
+  send_info: "info.",
+});
+const GROUP_TOOL = Object.freeze({
+  refund: "refund_order",
+  reschedule: "reschedule_meeting",
+  pay: "pay_vendor",
+  task: "create_task",
+  info: "send_info",
+});
 const MISSING_VALUES = new Set(["not_identified", "not_stated"]);
 const EMPTY = Object.freeze([]);
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const textOrNull = (value) => (typeof value === "string" && value !== "" ? value : null);
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : JSON.stringify(value) ?? "");
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const entriesOf = (value) => (isObject(value) ? Object.entries(value) : []);
 
 function deepFreeze(value) {
@@ -263,7 +276,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -280,14 +297,16 @@ function dayNumber(iso) {
   return Number.isFinite(time) ? Math.round(time / 86400000) : null;
 }
 function daysBetween(from, to) {
-  const a = dayNumber(from), b = dayNumber(to);
+  const a = dayNumber(from),
+    b = dayNumber(to);
   return a === null || b === null ? null : b - a;
 }
 
 function minutesOf(time) {
   const match = typeof time === "string" ? time.match(/^(\d{1,2}):(\d{2})$/) : null;
   if (!match) return null;
-  const hours = Number(match[1]), minutes = Number(match[2]);
+  const hours = Number(match[1]),
+    minutes = Number(match[2]);
   return hours <= 23 && minutes <= 59 ? hours * 60 + minutes : null;
 }
 
@@ -302,11 +321,16 @@ export function dispatchValueLabel(name, value, world) {
       const customer = w.orders[value].customer;
       return has("customers", customer) ? `${value} · ${asText(w.customers[customer].name)}` : String(value);
     }
-    case "meeting": return has("meetings", value) && w.meetings[value].title ? asText(w.meetings[value].title) : String(value);
-    case "vendor": return has("vendors", value) && w.vendors[value].name ? asText(w.vendors[value].name) : String(value);
-    case "customer": return has("customers", value) && w.customers[value].name ? asText(w.customers[value].name) : String(value);
-    case "day": return String(value).replace(/^\w/, (c) => c.toUpperCase());
-    default: return String(value).replace(/_/g, " ");
+    case "meeting":
+      return has("meetings", value) && w.meetings[value].title ? asText(w.meetings[value].title) : String(value);
+    case "vendor":
+      return has("vendors", value) && w.vendors[value].name ? asText(w.vendors[value].name) : String(value);
+    case "customer":
+      return has("customers", value) && w.customers[value].name ? asText(w.customers[value].name) : String(value);
+    case "day":
+      return String(value).replace(/^\w/, (c) => c.toUpperCase());
+    default:
+      return String(value).replace(/_/g, " ");
   }
 }
 
@@ -317,40 +341,106 @@ function worldView(world) {
   if (WORLD_VIEWS.has(world)) return WORLD_VIEWS.get(world);
   const customers = isObject(world.customers) ? world.customers : {};
   const today = textOrNull(world.today);
-  const orders = entriesOf(world.orders).filter(([, order]) => isObject(order)).map(([id, order], index) => {
-    const customer = isObject(customers[order.customer]) ? customers[order.customer] : null;
-    const delivered = textOrNull(order.delivered_on);
-    return { id, position: index + 1, customer_id: textOrNull(order.customer), customer: customer ? textOrNull(customer.name) : null,
-      email: customer ? textOrNull(customer.email) : null, items: asText(order.items), total: finite(order.total), status: textOrNull(order.status),
-      delivered_on: delivered, days_since_delivery: delivered ? daysBetween(delivered, today) : null, refunded: order.refunded === true,
-      refund_reason: textOrNull(order.refund_reason) };
-  });
+  const orders = entriesOf(world.orders)
+    .filter(([, order]) => isObject(order))
+    .map(([id, order], index) => {
+      const customer = isObject(customers[order.customer]) ? customers[order.customer] : null;
+      const delivered = textOrNull(order.delivered_on);
+      return {
+        id,
+        position: index + 1,
+        customer_id: textOrNull(order.customer),
+        customer: customer ? textOrNull(customer.name) : null,
+        email: customer ? textOrNull(customer.email) : null,
+        items: asText(order.items),
+        total: finite(order.total),
+        status: textOrNull(order.status),
+        delivered_on: delivered,
+        days_since_delivery: delivered ? daysBetween(delivered, today) : null,
+        refunded: order.refunded === true,
+        refund_reason: textOrNull(order.refund_reason),
+      };
+    });
   const vendorList = entriesOf(world.vendors).filter(([, vendor]) => isObject(vendor));
-  const invoices = vendorList.flatMap(([vendorId, vendor]) => entriesOf(vendor.invoices).filter(([, invoice]) => isObject(invoice)).map(([id, invoice]) => ({
-    id, vendor_id: vendorId, vendor: asText(vendor.name), vendor_about: asText(vendor.about), vendor_domain: textOrNull(vendor.domain),
-    amount: finite(invoice.amount), paid: invoice.paid === true })))
+  const invoices = vendorList
+    .flatMap(([vendorId, vendor]) =>
+      entriesOf(vendor.invoices)
+        .filter(([, invoice]) => isObject(invoice))
+        .map(([id, invoice]) => ({
+          id,
+          vendor_id: vendorId,
+          vendor: asText(vendor.name),
+          vendor_about: asText(vendor.about),
+          vendor_domain: textOrNull(vendor.domain),
+          amount: finite(invoice.amount),
+          paid: invoice.paid === true,
+        })),
+    )
     .map((item, index) => ({ id: item.id, position: index + 1, ...item }));
-  const meetings = entriesOf(world.meetings).filter(([, meeting]) => isObject(meeting)).map(([id, meeting], index) => {
-    const day = textOrNull(meeting.day);
-    const dayIndex = day === null ? -1 : WEEKDAYS.indexOf(day);
-    return { id, position: index + 1, title: asText(meeting.title), day, day_index: dayIndex === -1 ? null : dayIndex, on_calendar: dayIndex !== -1,
-      time: textOrNull(meeting.time), minutes: minutesOf(meeting.time), with_domain: textOrNull(meeting.with_domain), moved: meeting.moved === true };
-  });
+  const meetings = entriesOf(world.meetings)
+    .filter(([, meeting]) => isObject(meeting))
+    .map(([id, meeting], index) => {
+      const day = textOrNull(meeting.day);
+      const dayIndex = day === null ? -1 : WEEKDAYS.indexOf(day);
+      return {
+        id,
+        position: index + 1,
+        title: asText(meeting.title),
+        day,
+        day_index: dayIndex === -1 ? null : dayIndex,
+        on_calendar: dayIndex !== -1,
+        time: textOrNull(meeting.time),
+        minutes: minutesOf(meeting.time),
+        with_domain: textOrNull(meeting.with_domain),
+        moved: meeting.moved === true,
+      };
+    });
   const log = Array.isArray(world.activity) ? world.activity.filter(isObject) : [];
-  const activity = log.map((entry, index) => ({ n: log.length - index, position: index + 1, kind: textOrNull(entry.kind), text: asText(entry.text),
-    amount: finite(entry.amount), via: textOrNull(entry.via), destination: textOrNull(entry.destination) }));
+  const activity = log.map((entry, index) => ({
+    n: log.length - index,
+    position: index + 1,
+    kind: textOrNull(entry.kind),
+    text: asText(entry.text),
+    amount: finite(entry.amount),
+    via: textOrNull(entry.via),
+    destination: textOrNull(entry.destination),
+  }));
   const list = (value) => (Array.isArray(value) ? value.filter(isObject) : []);
   const view = deepFreeze({
-    orders, invoices, meetings, activity,
+    orders,
+    invoices,
+    meetings,
+    activity,
     today,
     balance: finite(world.balance),
-    customers: entriesOf(customers).filter(([, customer]) => isObject(customer))
+    customers: entriesOf(customers)
+      .filter(([, customer]) => isObject(customer))
       .map(([id, customer]) => ({ id, name: asText(customer.name), email: textOrNull(customer.email) })),
-    vendors: vendorList.map(([id, vendor]) => ({ id, name: asText(vendor.name), about: asText(vendor.about), domain: textOrNull(vendor.domain) })),
-    tasks: list(world.tasks).map((task) => ({ area: textOrNull(task.area), priority: textOrNull(task.priority), text: asText(task.text), via: textOrNull(task.via) })),
-    payments: list(world.payments).map((payment) => ({ to: textOrNull(payment.to), amount: finite(payment.amount), memo: textOrNull(payment.memo),
-      destination: textOrNull(payment.destination), via: textOrNull(payment.via) })),
-    outbox: list(world.outbox).map((mail) => ({ to: textOrNull(mail.to), template: textOrNull(mail.template), label: textOrNull(mail.label), via: textOrNull(mail.via) })),
+    vendors: vendorList.map(([id, vendor]) => ({
+      id,
+      name: asText(vendor.name),
+      about: asText(vendor.about),
+      domain: textOrNull(vendor.domain),
+    })),
+    tasks: list(world.tasks).map((task) => ({
+      area: textOrNull(task.area),
+      priority: textOrNull(task.priority),
+      text: asText(task.text),
+      via: textOrNull(task.via),
+    })),
+    payments: list(world.payments).map((payment) => ({
+      to: textOrNull(payment.to),
+      amount: finite(payment.amount),
+      memo: textOrNull(payment.memo),
+      destination: textOrNull(payment.destination),
+      via: textOrNull(payment.via),
+    })),
+    outbox: list(world.outbox).map((mail) => ({
+      to: textOrNull(mail.to),
+      template: textOrNull(mail.template),
+      label: textOrNull(mail.label),
+      via: textOrNull(mail.via),
+    })),
     snapshot: clone(world),
   });
   WORLD_VIEWS.set(world, view);
@@ -373,13 +463,20 @@ function planSummary(source) {
   const last = lastOf(source);
   if (!last) return null;
   const plan = last.plan;
-  return deepFreeze({ text: typeof last.text === "string" ? last.text : "", tool: textOrNull(plan.tool), decision: textOrNull(plan.decision),
-    signature: asText(plan.signature), exec_args: isObject(plan.exec_args) ? clone(plan.exec_args) : {}, done: last.done === true });
+  return deepFreeze({
+    text: typeof last.text === "string" ? last.text : "",
+    tool: textOrNull(plan.tool),
+    decision: textOrNull(plan.decision),
+    signature: asText(plan.signature),
+    exec_args: isObject(plan.exec_args) ? clone(plan.exec_args) : {},
+    done: last.done === true,
+  });
 }
 
 function draftText(text) {
   if (typeof text !== "string" || !text.trim()) throw new Error("There is no command to put in the box.");
-  if (Array.from(text).length > MAX_COMMAND) throw new Error(`A command can be at most ${MAX_COMMAND.toLocaleString("en-US")} characters.`);
+  if (Array.from(text).length > MAX_COMMAND)
+    throw new Error(`A command can be at most ${MAX_COMMAND.toLocaleString("en-US")} characters.`);
   return text;
 }
 
@@ -404,18 +501,42 @@ function sharedActions(source) {
 function worldData(source) {
   const view = () => currentWorld(source);
   return {
-    get today() { return view()?.today ?? null; },
-    get balance() { return view()?.balance ?? null; },
-    get business_domain() { return BUSINESS_DOMAIN; },
-    get refund_window_days() { return REFUND_WINDOW_DAYS; },
-    get weekdays() { return WEEKDAYS; },
-    get customers() { return view()?.customers || EMPTY; },
-    get vendors() { return view()?.vendors || EMPTY; },
-    get tasks() { return view()?.tasks || EMPTY; },
-    get payments() { return view()?.payments || EMPTY; },
-    get outbox() { return view()?.outbox || EMPTY; },
-    get plan() { return planSummary(source); },
-    get busy() { return busyOf(source); },
+    get today() {
+      return view()?.today ?? null;
+    },
+    get balance() {
+      return view()?.balance ?? null;
+    },
+    get business_domain() {
+      return BUSINESS_DOMAIN;
+    },
+    get refund_window_days() {
+      return REFUND_WINDOW_DAYS;
+    },
+    get weekdays() {
+      return WEEKDAYS;
+    },
+    get customers() {
+      return view()?.customers || EMPTY;
+    },
+    get vendors() {
+      return view()?.vendors || EMPTY;
+    },
+    get tasks() {
+      return view()?.tasks || EMPTY;
+    },
+    get payments() {
+      return view()?.payments || EMPTY;
+    },
+    get outbox() {
+      return view()?.outbox || EMPTY;
+    },
+    get plan() {
+      return planSummary(source);
+    },
+    get busy() {
+      return busyOf(source);
+    },
   };
 }
 
@@ -424,13 +545,17 @@ function worldCtx(source, id, listName, pageShows = () => true, name = (item) =>
   const ctx = {
     items,
     shown() {
-      const list = items().filter((item) => pageShows(item) && (!source.matches || source.matches(id, item, ctx) !== false));
+      const list = items().filter(
+        (item) => pageShows(item) && (!source.matches || source.matches(id, item, ctx) !== false),
+      );
       const arranged = source.arrange ? source.arrange(id, list, ctx) : list;
       return Array.isArray(arranged) ? arranged : list;
     },
     data: worldData(source),
     actions: sharedActions(source),
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(id); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh(id);
+    },
     itemName: (item, index) => {
       const label = item && typeof item === "object" ? name(item) : null;
       return label === null || label === undefined || label === "" ? String(index + 1) : String(label);
@@ -463,7 +588,13 @@ export function dispatchCalendarCtx(source = {}) {
 }
 
 export function dispatchActivityCtx(source = {}) {
-  return worldCtx(source, "dispatch.activity", "activity", () => true, (item) => (Number.isInteger(item.n) ? `#${item.n}` : null));
+  return worldCtx(
+    source,
+    "dispatch.activity",
+    "activity",
+    () => true,
+    (item) => (Number.isInteger(item.n) ? `#${item.n}` : null),
+  );
 }
 
 // ---------- dispatch.plan ----------
@@ -474,14 +605,20 @@ function criteriaOf(type, question, answer) {
     if (Array.isArray(criteria)) return criteria.map((text, index) => ({ key: String(index), text: asText(text) }));
     return entriesOf(answer.legend).map(([key, text]) => ({ key, text: asText(text) }));
   }
-  if ((type === "choice" || type === "noul") && isObject(criteria)) return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
+  if ((type === "choice" || type === "noul") && isObject(criteria))
+    return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
   return [];
 }
 
 function probabilitiesOf(type, answer) {
   if (type === "noul") {
     const yes = finite(answer.noul);
-    return yes === null ? [] : [{ key: "yes", p: yes }, { key: "no", p: 1 - yes }];
+    return yes === null
+      ? []
+      : [
+          { key: "yes", p: yes },
+          { key: "no", p: 1 - yes },
+        ];
   }
   if (type !== "choice" && type !== "score") return [];
   return entriesOf(answer.probabilities).flatMap(([key, p]) => (finite(p) === null ? [] : [{ key, p }]));
@@ -493,9 +630,16 @@ function answerRow(id, answer, question, position, planTool) {
   const group = id === "tool" || dot === -1 ? (id === "tool" ? "tool" : id) : id.slice(0, dot);
   const prefix = TOOL_PREFIX[planTool];
   const probabilities = probabilitiesOf(type, answer);
-  const ranked = probabilities.map((entry, index) => ({ entry, index })).sort((a, b) => b.entry.p - a.entry.p || a.index - b.index).map(({ entry }) => ({ ...entry }));
+  const ranked = probabilities
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => b.entry.p - a.entry.p || a.index - b.index)
+    .map(({ entry }) => ({ ...entry }));
   const criteria = criteriaOf(type, question, answer);
-  let value = null, display = "", p = null, score = null, scale = null;
+  let value = null,
+    display = "",
+    p = null,
+    score = null,
+    scale = null;
   if (type === "choice") {
     value = answer.choice === null || answer.choice === undefined ? null : String(answer.choice);
     if (value !== null) {
@@ -507,30 +651,54 @@ function answerRow(id, answer, question, position, planTool) {
     value = score;
     if (score !== null) display = `score ${score.toFixed(2)}`;
     p = finite(answer.confidence);
-    const levels = isObject(answer.legend) && Object.keys(answer.legend).length ? Object.keys(answer.legend).length : criteria.length;
+    const levels =
+      isObject(answer.legend) && Object.keys(answer.legend).length
+        ? Object.keys(answer.legend).length
+        : criteria.length;
     scale = levels ? levels - 1 : null;
   } else if (type === "noul") {
     value = finite(answer.noul);
     if (value !== null) display = value >= 0.5 ? "yes" : "no";
     p = value;
   }
-  return { id, position, group, tool: id === "tool" ? null : GROUP_TOOL[group] || null, arg: id === "tool" || dot === -1 ? null : id.slice(dot + 1),
-    type, used: id === "tool" || (!!prefix && id.startsWith(prefix)), value, display, p, probabilities, ranked, top: ranked[0] ? { ...ranked[0] } : null,
-    confidence: type === "noul" ? null : finite(answer.confidence), score, scale, instructions: isObject(question) ? asText(question.instructions) : "",
-    criteria, answer: clone(answer) };
+  return {
+    id,
+    position,
+    group,
+    tool: id === "tool" ? null : GROUP_TOOL[group] || null,
+    arg: id === "tool" || dot === -1 ? null : id.slice(dot + 1),
+    type,
+    used: id === "tool" || (!!prefix && id.startsWith(prefix)),
+    value,
+    display,
+    p,
+    probabilities,
+    ranked,
+    top: ranked[0] ? { ...ranked[0] } : null,
+    confidence: type === "noul" ? null : finite(answer.confidence),
+    score,
+    scale,
+    instructions: isObject(question) ? asText(question.instructions) : "",
+    criteria,
+    answer: clone(answer),
+  };
 }
 
 // Rows are kept per (response, plan) pair: a re-plan can change the planned tool and so which rows are used.
 const PLAN_VIEWS = new WeakMap();
 function planView(last) {
   let byPlan = PLAN_VIEWS.get(last.res);
-  if (!byPlan) { byPlan = new WeakMap(); PLAN_VIEWS.set(last.res, byPlan); }
+  if (!byPlan) {
+    byPlan = new WeakMap();
+    PLAN_VIEWS.set(last.res, byPlan);
+  }
   if (byPlan.has(last.plan)) return byPlan.get(last.plan);
   const res = last.res;
   const trace = isObject(res.trace) ? res.trace : {};
   const request = isObject(trace.request) ? trace.request : null;
   const questions = request && isObject(request.questions) ? request.questions : null;
-  const rows = entriesOf(res.answers).filter(([, answer]) => isObject(answer))
+  const rows = entriesOf(res.answers)
+    .filter(([, answer]) => isObject(answer))
     .map(([id, answer], index) => answerRow(id, answer, questions ? questions[id] : null, index + 1, last.plan.tool));
   const view = deepFreeze({
     rows,
@@ -548,14 +716,28 @@ function clarifyOf(plan, world) {
   if (!isObject(plan) || plan.decision !== "clarify") return null;
   const meta = isObject(plan.tool_meta) ? plan.tool_meta : {};
   const prob = finite(plan.tool_prob);
-  const tools = prob !== null && prob < 0.5 && Array.isArray(plan.tool_ranking)
-    ? plan.tool_ranking.filter((entry) => isObject(entry) && entry.value !== "none").slice(0, 3)
-      .map((entry) => ({ value: String(entry.value), label: asText(meta[entry.value]?.label || entry.value), prob: finite(entry.prob) }))
-    : [];
-  const args = (Array.isArray(plan.missing) ? plan.missing : []).map((name) => ({ name: String(name),
+  const tools =
+    prob !== null && prob < 0.5 && Array.isArray(plan.tool_ranking)
+      ? plan.tool_ranking
+          .filter((entry) => isObject(entry) && entry.value !== "none")
+          .slice(0, 3)
+          .map((entry) => ({
+            value: String(entry.value),
+            label: asText(meta[entry.value]?.label || entry.value),
+            prob: finite(entry.prob),
+          }))
+      : [];
+  const args = (Array.isArray(plan.missing) ? plan.missing : []).map((name) => ({
+    name: String(name),
     options: (Array.isArray(plan.args?.[name]?.options) ? plan.args[name].options : [])
-      .filter((option) => isObject(option) && !MISSING_VALUES.has(option.value) && option.value !== "open_invoice").slice(0, 3)
-      .map((option) => ({ value: String(option.value), label: dispatchValueLabel(name, option.value, world), prob: finite(option.prob) })) }));
+      .filter((option) => isObject(option) && !MISSING_VALUES.has(option.value) && option.value !== "open_invoice")
+      .slice(0, 3)
+      .map((option) => ({
+        value: String(option.value),
+        label: dispatchValueLabel(name, option.value, world),
+        prob: finite(option.prob),
+      })),
+  }));
   return { tools, args };
 }
 
@@ -564,9 +746,16 @@ function historyEntry(raw) {
   if (HISTORY_ENTRIES.has(raw)) return HISTORY_ENTRIES.get(raw);
   const res = raw.res;
   const plan = isObject(res.plan) ? res.plan : {};
-  const entry = deepFreeze({ call: finite(raw.call), at: finite(raw.at), text: typeof raw.text === "string" ? raw.text : "",
-    tool: textOrNull(plan.tool), decision: textOrNull(plan.decision), confidence: finite(plan.confidence), signature: asText(plan.signature),
-    meta: isObject(res.meta) ? clone(res.meta) : null });
+  const entry = deepFreeze({
+    call: finite(raw.call),
+    at: finite(raw.at),
+    text: typeof raw.text === "string" ? raw.text : "",
+    tool: textOrNull(plan.tool),
+    decision: textOrNull(plan.decision),
+    confidence: finite(plan.confidence),
+    signature: asText(plan.signature),
+    meta: isObject(res.meta) ? clone(res.meta) : null,
+  });
   HISTORY_ENTRIES.set(raw, entry);
   return entry;
 }
@@ -585,27 +774,65 @@ export function dispatchPlanCtx(source = {}) {
   const ctx = {
     items: () => view()?.rows || EMPTY,
     shown() {
-      const list = ctx.items().filter((item) => !source.matches || source.matches("dispatch.plan", item, ctx) !== false);
+      const list = ctx
+        .items()
+        .filter((item) => !source.matches || source.matches("dispatch.plan", item, ctx) !== false);
       const arranged = source.arrange ? source.arrange("dispatch.plan", list, ctx) : list;
       return Array.isArray(arranged) ? arranged : list;
     },
     data: {
-      get text() { const last = lastOf(source); return last && typeof last.text === "string" ? last.text : null; },
-      get draft() { return draft(); },
-      get stale() { const text = ctx.data.text; return text !== null && draft().trim() !== text; },
-      get busy() { return read(source, "busy", false) === true; },
-      get executing() { return read(source, "executing", false) === true; },
-      get live() { return read(source, "live", false) === true; },
-      get plan() { return view()?.plan ?? null; },
-      get done() { return lastOf(source)?.done === true; },
-      get override() { const value = lastOf(source)?.override; return isObject(value) ? deepFreeze(clone(value)) : null; },
-      get replan_ms() { return finite(lastOf(source)?.replanMs); },
-      get meta() { return view()?.meta ?? null; },
-      get trace() { return view()?.trace ?? null; },
-      get request() { return view()?.request ?? null; },
-      get candidates() { return view()?.candidates ?? null; },
-      get clarify() { const plan = view()?.plan; return plan ? deepFreeze(clarifyOf(plan, currentWorld(source)?.snapshot)) : null; },
-      get examples() { return Object.freeze(examples()); },
+      get text() {
+        const last = lastOf(source);
+        return last && typeof last.text === "string" ? last.text : null;
+      },
+      get draft() {
+        return draft();
+      },
+      get stale() {
+        const text = ctx.data.text;
+        return text !== null && draft().trim() !== text;
+      },
+      get busy() {
+        return read(source, "busy", false) === true;
+      },
+      get executing() {
+        return read(source, "executing", false) === true;
+      },
+      get live() {
+        return read(source, "live", false) === true;
+      },
+      get plan() {
+        return view()?.plan ?? null;
+      },
+      get done() {
+        return lastOf(source)?.done === true;
+      },
+      get override() {
+        const value = lastOf(source)?.override;
+        return isObject(value) ? deepFreeze(clone(value)) : null;
+      },
+      get replan_ms() {
+        return finite(lastOf(source)?.replanMs);
+      },
+      get meta() {
+        return view()?.meta ?? null;
+      },
+      get trace() {
+        return view()?.trace ?? null;
+      },
+      get request() {
+        return view()?.request ?? null;
+      },
+      get candidates() {
+        return view()?.candidates ?? null;
+      },
+      get clarify() {
+        const plan = view()?.plan;
+        return plan ? deepFreeze(clarifyOf(plan, currentWorld(source)?.snapshot)) : null;
+      },
+      get examples() {
+        return Object.freeze(examples());
+      },
       get calls() {
         const count = read(source, "calls", null);
         return Number.isInteger(count) && count >= 0 ? count : ctx.data.history.length;
@@ -613,9 +840,16 @@ export function dispatchPlanCtx(source = {}) {
       get history() {
         const list = read(source, "history", EMPTY);
         if (!Array.isArray(list)) return EMPTY;
-        return Object.freeze(list.filter((raw) => isObject(raw) && isObject(raw.res)).slice(-HISTORY_SHOWN).map(historyEntry));
+        return Object.freeze(
+          list
+            .filter((raw) => isObject(raw) && isObject(raw.res))
+            .slice(-HISTORY_SHOWN)
+            .map(historyEntry),
+        );
       },
-      get world() { return currentWorld(source)?.snapshot ?? null; },
+      get world() {
+        return currentWorld(source)?.snapshot ?? null;
+      },
     },
     actions: {
       ...shared,
@@ -625,13 +859,15 @@ export function dispatchPlanCtx(source = {}) {
       },
       pickTool(tool) {
         const options = ctx.data.clarify?.tools || [];
-        if (!options.some((option) => option.value === tool)) throw new Error("That action is not one of the options offered for this command.");
+        if (!options.some((option) => option.value === tool))
+          throw new Error("That action is not one of the options offered for this command.");
         if (ctx.data.busy) throw new Error("Wait for the current command to finish.");
         return call(source, "pickTool", tool);
       },
       pickArg(name, value) {
         const entry = (ctx.data.clarify?.args || []).find((arg) => arg.name === name);
-        if (!entry || !entry.options.some((option) => option.value === value)) throw new Error("That value is not one of the options offered for this command.");
+        if (!entry || !entry.options.some((option) => option.value === value))
+          throw new Error("That value is not one of the options offered for this command.");
         if (ctx.data.busy) throw new Error("Wait for the current command to finish.");
         return call(source, "pickArg", name, value);
       },
@@ -639,15 +875,20 @@ export function dispatchPlanCtx(source = {}) {
         const last = lastOf(source);
         if (!last) throw new Error("There is no plan to run yet.");
         if (last.done === true) throw new Error("This plan has already run.");
-        if (ctx.data.stale) throw new Error("The command box no longer holds this plan's command. Run the command again first.");
+        if (ctx.data.stale)
+          throw new Error("The command box no longer holds this plan's command. Run the command again first.");
         if (busyOf(source)) throw new Error("Wait for the current command to finish.");
         const decision = last.plan.decision;
-        if (decision === "confirm" && options?.confirm !== true) throw new Error("This plan needs your confirmation: use Confirm & run.");
-        if (decision !== "execute" && decision !== "confirm") throw new Error(`This plan's decision is "${asText(decision)}", so there is nothing to run.`);
+        if (decision === "confirm" && options?.confirm !== true)
+          throw new Error("This plan needs your confirmation: use Confirm & run.");
+        if (decision !== "execute" && decision !== "confirm")
+          throw new Error(`This plan's decision is "${asText(decision)}", so there is nothing to run.`);
         return call(source, "runPlan", last.plan);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh("dispatch.plan"); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh("dispatch.plan");
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;

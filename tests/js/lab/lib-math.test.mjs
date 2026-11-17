@@ -826,20 +826,88 @@ const REFERENCE = JSON.parse(String.raw`
 `);
 // END REFERENCE TABLE
 
-const EXPORTS = ["isProbability", "isCount", "clamp", "logit", "expit", "round", "logGamma", "logFactorial", "logChoose", "choose", "erf", "erfc",
-  "normalPdf", "normalCdf", "normalSf", "normalQuantile", "incompleteBeta", "betaQuantile", "incompleteGammaP", "incompleteGammaQ", "chiSquareCdf",
-  "chiSquareSf", "chiSquareQuantile", "studentTCdf", "studentTSf", "studentTQuantile", "binomialPmf", "binomialCdf", "binomialSf", "hypergeometricPmf",
-  "poissonPmf", "poissonCdf", "poissonSf", "sum", "mean", "variance", "stdev", "median", "quantile", "minOf", "maxOf", "mulberry32", "shuffled",
-  "sampleIndexes"];
+const EXPORTS = [
+  "isProbability",
+  "isCount",
+  "clamp",
+  "logit",
+  "expit",
+  "round",
+  "logGamma",
+  "logFactorial",
+  "logChoose",
+  "choose",
+  "erf",
+  "erfc",
+  "normalPdf",
+  "normalCdf",
+  "normalSf",
+  "normalQuantile",
+  "incompleteBeta",
+  "betaQuantile",
+  "incompleteGammaP",
+  "incompleteGammaQ",
+  "chiSquareCdf",
+  "chiSquareSf",
+  "chiSquareQuantile",
+  "studentTCdf",
+  "studentTSf",
+  "studentTQuantile",
+  "binomialPmf",
+  "binomialCdf",
+  "binomialSf",
+  "hypergeometricPmf",
+  "poissonPmf",
+  "poissonCdf",
+  "poissonSf",
+  "sum",
+  "mean",
+  "variance",
+  "stdev",
+  "median",
+  "quantile",
+  "minOf",
+  "maxOf",
+  "mulberry32",
+  "shuffled",
+  "sampleIndexes",
+];
 
 // The number of arguments each numeric function takes, and a valid set of them.
 const VALID = {
-  isProbability: [0.5], isCount: [3], clamp: [5, 0, 10], logit: [0.3], expit: [0.3], round: [1.25, 1], logGamma: [2.5], logFactorial: [5],
-  logChoose: [10, 3], choose: [10, 3], erf: [0.5], erfc: [0.5], normalPdf: [0.5], normalCdf: [0.5], normalSf: [0.5], normalQuantile: [0.3],
-  incompleteBeta: [0.3, 2, 3], betaQuantile: [0.3, 2, 3], incompleteGammaP: [2, 1.5], incompleteGammaQ: [2, 1.5], chiSquareCdf: [3, 4],
-  chiSquareSf: [3, 4], chiSquareQuantile: [0.3, 4], studentTCdf: [1.5, 4], studentTSf: [1.5, 4], studentTQuantile: [0.3, 4],
-  binomialPmf: [3, 10, 0.3], binomialCdf: [3, 10, 0.3], binomialSf: [3, 10, 0.3], hypergeometricPmf: [2, 20, 7, 5], poissonPmf: [3, 2.5],
-  poissonCdf: [3, 2.5], poissonSf: [3, 2.5],
+  isProbability: [0.5],
+  isCount: [3],
+  clamp: [5, 0, 10],
+  logit: [0.3],
+  expit: [0.3],
+  round: [1.25, 1],
+  logGamma: [2.5],
+  logFactorial: [5],
+  logChoose: [10, 3],
+  choose: [10, 3],
+  erf: [0.5],
+  erfc: [0.5],
+  normalPdf: [0.5],
+  normalCdf: [0.5],
+  normalSf: [0.5],
+  normalQuantile: [0.3],
+  incompleteBeta: [0.3, 2, 3],
+  betaQuantile: [0.3, 2, 3],
+  incompleteGammaP: [2, 1.5],
+  incompleteGammaQ: [2, 1.5],
+  chiSquareCdf: [3, 4],
+  chiSquareSf: [3, 4],
+  chiSquareQuantile: [0.3, 4],
+  studentTCdf: [1.5, 4],
+  studentTSf: [1.5, 4],
+  studentTQuantile: [0.3, 4],
+  binomialPmf: [3, 10, 0.3],
+  binomialCdf: [3, 10, 0.3],
+  binomialSf: [3, 10, 0.3],
+  hypergeometricPmf: [2, 20, 7, 5],
+  poissonPmf: [3, 2.5],
+  poissonCdf: [3, 2.5],
+  poissonSf: [3, 2.5],
 };
 const PROBABILITIES = /Cdf|Sf|Pmf|incomplete/;
 
@@ -850,7 +918,10 @@ function near(actual, expected, tolerance, label) {
   }
   assert.equal(typeof actual, "number", `${label}: got ${actual}, expected ${expected}`);
   const error = Math.abs(actual - expected) / Math.abs(expected);
-  assert.ok(error <= tolerance, `${label}: got ${actual}, expected ${expected} (relative error ${error.toExponential(2)} > ${tolerance})`);
+  assert.ok(
+    error <= tolerance,
+    `${label}: got ${actual}, expected ${expected} (relative error ${error.toExponential(2)} > ${tolerance})`,
+  );
 }
 
 // ---------- exact arithmetic helpers (BigInt) ----------
@@ -862,10 +933,10 @@ function exactRational(x) {
   const view = new DataView(new ArrayBuffer(8));
   view.setFloat64(0, x);
   const bits = view.getBigUint64(0);
-  const exponent = Number((bits >> 52n) & 0x7FFn);
+  const exponent = Number((bits >> 52n) & 0x7ffn);
   const fraction = bits & ((1n << 52n) - 1n);
   if (exponent === 0) return [fraction, 1n << 1074n];
-  const power = exponent - 1075;   // x = (2^52 + fraction) * 2^power
+  const power = exponent - 1075; // x = (2^52 + fraction) * 2^power
   const mantissa = fraction | (1n << 52n);
   return power >= 0 ? [mantissa << BigInt(power), 1n] : [mantissa, 1n << BigInt(-power)];
 }
@@ -884,11 +955,15 @@ function lnBig(value) {
   return Math.log(Number(`0.${digits.slice(0, 18)}`)) + digits.length * Math.LN10;
 }
 
-const factorialBig = (n) => { let out = 1n; for (let i = 2n; i <= BigInt(n); i++) out *= i; return out; };
+const factorialBig = (n) => {
+  let out = 1n;
+  for (let i = 2n; i <= BigInt(n); i++) out *= i;
+  return out;
+};
 function chooseBig(n, k) {
   if (k < 0 || k > n) return 0n;
   let out = 1n;
-  for (let i = 1; i <= k; i++) out = out * BigInt(n - k + i) / BigInt(i);
+  for (let i = 1; i <= k; i++) out = (out * BigInt(n - k + i)) / BigInt(i);
   return out;
 }
 
@@ -896,7 +971,8 @@ function chooseBig(n, k) {
 function binomialSumExact(n, p, from, to) {
   const [num, den] = exactRational(p);
   let total = 0n;
-  for (let j = Math.max(0, from); j <= Math.min(n, to); j++) total += chooseBig(n, j) * num ** BigInt(j) * (den - num) ** BigInt(n - j);
+  for (let j = Math.max(0, from); j <= Math.min(n, to); j++)
+    total += chooseBig(n, j) * num ** BigInt(j) * (den - num) ** BigInt(n - j);
   return ratioToNumber(total, den ** BigInt(n));
 }
 
@@ -922,23 +998,45 @@ test("every row of the shared reference table", () => {
 test("mulberry32, shuffled and sampleIndexes reproduce the shared sequences", () => {
   for (const [seed, values] of REFERENCE.sequences) {
     const next = math.mulberry32(seed);
-    assert.deepEqual(values.map(() => next()), values, `mulberry32(${seed})`);
+    assert.deepEqual(
+      values.map(() => next()),
+      values,
+      `mulberry32(${seed})`,
+    );
   }
-  for (const [seed, order] of REFERENCE.shuffles) assert.deepEqual(math.shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], seed), order, `shuffled(seed ${seed})`);
-  for (const [count, size, seed, chosen] of REFERENCE.samples) assert.deepEqual(math.sampleIndexes(count, size, seed), chosen, `sampleIndexes(${count}, ${size}, ${seed})`);
+  for (const [seed, order] of REFERENCE.shuffles)
+    assert.deepEqual(math.shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], seed), order, `shuffled(seed ${seed})`);
+  for (const [count, size, seed, chosen] of REFERENCE.samples)
+    assert.deepEqual(math.sampleIndexes(count, size, seed), chosen, `sampleIndexes(${count}, ${size}, ${seed})`);
 });
 
 // ---------- domain rules: null, never NaN, never a throw ----------
 
 test("a non-number in any position gives null (false for the predicates), never NaN and never a throw", () => {
-  const bad = [NaN, Infinity, -Infinity, "1", "", null, undefined, true, false, 1n, {}, [], [1], () => 1, new Number(1)];
+  const bad = [
+    NaN,
+    Infinity,
+    -Infinity,
+    "1",
+    "",
+    null,
+    undefined,
+    true,
+    false,
+    1n,
+    {},
+    [],
+    [1],
+    () => 1,
+    new Number(1),
+  ];
   for (const [name, args] of Object.entries(VALID)) {
     const fallback = name.startsWith("is") ? false : null;
     assert.notEqual(math[name](...args), fallback, `${name}(${args}) is valid`);
     for (let position = 0; position < args.length; position++) {
       for (const value of bad) {
-        if (name === "clamp" && position > 0 && (value === Infinity || value === -Infinity)) continue;   // an infinite bound means no bound
-        if (name === "round" && position === 1 && value === undefined) continue;   // digits defaults to 0
+        if (name === "clamp" && position > 0 && (value === Infinity || value === -Infinity)) continue; // an infinite bound means no bound
+        if (name === "round" && position === 1 && value === undefined) continue; // digits defaults to 0
         const call = args.slice();
         call[position] = value;
         assert.equal(math[name](...call), fallback, `${name} with ${String(value)} at position ${position}`);
@@ -946,11 +1044,25 @@ test("a non-number in any position gives null (false for the predicates), never 
     }
   }
   for (const name of ["sum", "mean", "variance", "stdev", "median", "minOf", "maxOf"]) {
-    for (const value of [[], [1, NaN], [1, Infinity], [1, "2"], [1, null], "12", null, undefined, 5, { 0: 1, length: 1 }, [1, , 3]]) {   // eslint-disable-line no-sparse-arrays
+    for (const value of [
+      [],
+      [1, NaN],
+      [1, Infinity],
+      [1, "2"],
+      [1, null],
+      "12",
+      null,
+      undefined,
+      5,
+      { 0: 1, length: 1 },
+      [1, , 3],
+    ]) {
+      // eslint-disable-line no-sparse-arrays
       assert.equal(math[name](value), null, `${name}(${JSON.stringify(value)})`);
     }
   }
-  for (const value of [NaN, Infinity, -0.1, 1.1, "0.5", null]) assert.equal(math.quantile([1, 2, 3], value), null, `quantile q = ${value}`);
+  for (const value of [NaN, Infinity, -0.1, 1.1, "0.5", null])
+    assert.equal(math.quantile([1, 2, 3], value), null, `quantile q = ${value}`);
   for (const seed of [1.5, NaN, Infinity, "1", null, undefined, 2 ** 53, -(2 ** 53), 1n]) {
     assert.equal(math.mulberry32(seed), null, `mulberry32(${String(seed)})`);
     assert.equal(math.shuffled([1, 2], seed), null, `shuffled seed ${String(seed)}`);
@@ -959,8 +1071,29 @@ test("a non-number in any position gives null (false for the predicates), never 
 });
 
 test("over a grid of edge values every result is null or finite, and every probability lies in [0, 1]", () => {
-  const edge = [0, 5e-324, 1e-300, 1e-20, 0.001, 0.1, 0.5, 0.9, 0.999, 0.9999999999999999, 1, 2.5, 7, 30, 1000, 1e9, 2 ** 53 - 1, 1e20, 1e154, 1e300,
-    1.7976931348623157e308];
+  const edge = [
+    0,
+    5e-324,
+    1e-300,
+    1e-20,
+    0.001,
+    0.1,
+    0.5,
+    0.9,
+    0.999,
+    0.9999999999999999,
+    1,
+    2.5,
+    7,
+    30,
+    1000,
+    1e9,
+    2 ** 53 - 1,
+    1e20,
+    1e154,
+    1e300,
+    1.7976931348623157e308,
+  ];
   const values = [...edge, ...edge.filter((v) => v !== 0).map((v) => -v)];
   const few = values.filter((_, i) => i % 3 === 0);
   for (const [name, args] of Object.entries(VALID)) {
@@ -968,7 +1101,8 @@ test("over a grid of edge values every result is null or finite, and every proba
     const visit = (call) => {
       if (call.length === args.length) {
         const result = math[name](...call);
-        const ok = result === null || typeof result === "boolean" || (typeof result === "number" && Number.isFinite(result));
+        const ok =
+          result === null || typeof result === "boolean" || (typeof result === "number" && Number.isFinite(result));
         assert.ok(ok, `${name}(${call.join(", ")}) gave ${result}`);
         if (typeof result === "number" && (PROBABILITIES.test(name) || name === "betaQuantile")) {
           assert.ok(result >= 0 && result <= 1, `${name}(${call.join(", ")}) gave ${result}, outside [0, 1]`);
@@ -996,27 +1130,57 @@ test("isProbability, isCount, clamp, logit and expit", () => {
   assert.equal(math.clamp(5, -Infinity, Infinity), 5);
   assert.equal(math.clamp(-5, 0, Infinity), 0);
   assert.equal(math.clamp(5, -Infinity, 1), 1);
-  assert.equal(math.clamp(5, Infinity, Infinity), null);   // the result would be infinite
+  assert.equal(math.clamp(5, Infinity, Infinity), null); // the result would be infinite
   assert.equal(math.clamp(5, 2, 1), null);
   assert.equal(math.logit(0.5), 0);
   for (const p of [1e-300, 0.01, 0.2, 0.3, 0.6, 0.8, 0.99]) {
-    near(math.logit(p), Math.log(p / (1 - p)), 1e-14, `logit(${p})`);   // ln(p / (1 - p)) is well conditioned here
-    near(math.expit(math.logit(p)), p, 1e-14 * Math.max(1, Math.abs(math.logit(p))), `expit(logit(${p}))`);   // exp magnifies by |logit p|
+    near(math.logit(p), Math.log(p / (1 - p)), 1e-14, `logit(${p})`); // ln(p / (1 - p)) is well conditioned here
+    near(math.expit(math.logit(p)), p, 1e-14 * Math.max(1, Math.abs(math.logit(p))), `expit(logit(${p}))`); // exp magnifies by |logit p|
   }
-  for (const p of [2 ** -40, 2 ** -10, 0.125, 0.25, 0.375]) near(math.logit(1 - p), -math.logit(p), 1e-15, `logit(1 - p) = -logit(p) at ${p}`);
+  for (const p of [2 ** -40, 2 ** -10, 0.125, 0.25, 0.375])
+    near(math.logit(1 - p), -math.logit(p), 1e-15, `logit(1 - p) = -logit(p) at ${p}`);
   assert.equal(math.expit(0), 0.5);
   assert.equal(math.expit(800), 1);
   assert.equal(math.expit(-800), 0);
   near(math.expit(-700), Math.exp(-700), 1e-15, "expit(-700) = e^-700 / (1 + e^-700)");
-  for (const x of [-30, -3, -0.5, 0.25, 2, 30]) near(math.expit(x) + math.expit(-x), 1, 4.5e-16, `expit(${x}) + expit(${-x})`);
+  for (const x of [-30, -3, -0.5, 0.25, 2, 30])
+    near(math.expit(x) + math.expit(-x), 1, 4.5e-16, `expit(${x}) + expit(${-x})`);
 });
 
 test("round works on the shortest decimal text and rounds halves away from zero", () => {
   // Each expected value is the decimal text of x rounded by hand.
-  const cases = [[1.005, 2, 1.01], [2.675, 2, 2.68], [-1.5, 0, -2], [1.5, 0, 2], [0.5, 0, 1], [-0.5, 0, -1], [2.5, 0, 3], [-2.5, 0, -3],
-    [1.45, 1, 1.5], [1.44999, 1, 1.4], [1234.5678, -2, 1200], [1250, -2, 1300], [-1250, -2, -1300], [5, -1, 10], [4.9, -1, 0], [49, -2, 0],
-    [0.0049, 2, 0], [0.005, 2, 0.01], [-0.005, 2, -0.01], [8.345, 2, 8.35], [1.0000000000000002, 15, 1], [9.995, 2, 10], [0.1 + 0.2, 15, 0.3],
-    [123.456, 10, 123.456], [1e21, 2, 1e21], [5e-324, 323, 1e-323], [5e-324, 324, 5e-324], [5e-324, 322, 0], [12, 0, 12], [-7, 3, -7]];
+  const cases = [
+    [1.005, 2, 1.01],
+    [2.675, 2, 2.68],
+    [-1.5, 0, -2],
+    [1.5, 0, 2],
+    [0.5, 0, 1],
+    [-0.5, 0, -1],
+    [2.5, 0, 3],
+    [-2.5, 0, -3],
+    [1.45, 1, 1.5],
+    [1.44999, 1, 1.4],
+    [1234.5678, -2, 1200],
+    [1250, -2, 1300],
+    [-1250, -2, -1300],
+    [5, -1, 10],
+    [4.9, -1, 0],
+    [49, -2, 0],
+    [0.0049, 2, 0],
+    [0.005, 2, 0.01],
+    [-0.005, 2, -0.01],
+    [8.345, 2, 8.35],
+    [1.0000000000000002, 15, 1],
+    [9.995, 2, 10],
+    [0.1 + 0.2, 15, 0.3],
+    [123.456, 10, 123.456],
+    [1e21, 2, 1e21],
+    [5e-324, 323, 1e-323],
+    [5e-324, 324, 5e-324],
+    [5e-324, 322, 0],
+    [12, 0, 12],
+    [-7, 3, -7],
+  ];
   for (const [x, digits, expected] of cases) assert.equal(math.round(x, digits), expected, `round(${x}, ${digits})`);
   assert.equal(math.round(2.5), 3);
   assert.equal(math.round(-0.4), 0);
@@ -1050,8 +1214,12 @@ test("logGamma at half-integers is ln((2n)! sqrt(pi) / (4^n n!)) from exact fact
 
 test("logGamma satisfies ln gamma(x + 1) = ln gamma(x) + ln x and is exact enough at its zeros and edges", () => {
   for (const x of [1e-300, 1e-8, 0.01, 0.3, 0.9, 1.3, 1.7, 2.2, 3.4, 5.5, 9.5, 9.99, 10.5, 33.3, 150.25, 1e4 + 0.5]) {
-    const left = math.logGamma(x + 1), right = math.logGamma(x) + Math.log(x);
-    assert.ok(Math.abs(left - right) <= 4e-15 * Math.max(1, Math.abs(math.logGamma(x)), Math.abs(Math.log(x))), `recurrence at ${x}: ${left} vs ${right}`);
+    const left = math.logGamma(x + 1),
+      right = math.logGamma(x) + Math.log(x);
+    assert.ok(
+      Math.abs(left - right) <= 4e-15 * Math.max(1, Math.abs(math.logGamma(x)), Math.abs(Math.log(x))),
+      `recurrence at ${x}: ${left} vs ${right}`,
+    );
   }
   // gamma(1 + h) = 1 - Euler h + ..., so ln gamma(1 + h) is about -Euler h: relative accuracy right next to the zeros
   const EULER = 0.5772156649015329;
@@ -1072,7 +1240,7 @@ test("choose is the exact integer (BigInt) up to 2^53, the correctly rounded dou
       near(math.logChoose(n, k), logExact, 2e-15, `logChoose(${n}, ${k})`);
     }
   }
-  near(math.choose(2 ** 53 - 1, 2), Number((2n ** 53n - 1n) * (2n ** 53n - 2n) / 2n), 0, "choose(2^53 - 1, 2)");
+  near(math.choose(2 ** 53 - 1, 2), Number(((2n ** 53n - 1n) * (2n ** 53n - 2n)) / 2n), 0, "choose(2^53 - 1, 2)");
   assert.equal(math.choose(1029, 514), Number(chooseBig(1029, 514)), "C(1029, 514) is about 2^1023.6");
   assert.equal(math.choose(1030, 515), null, "C(1030, 515) is about 2^1024.6");
   assert.equal(math.choose(5000, 4990), Number(chooseBig(5000, 10)));
@@ -1098,8 +1266,14 @@ test("erf, erfc and the normal functions: exact points, symmetry and complements
   }
   // the two-factor exp keeps full accuracy in the tail: erfc(x) ~ e^-x^2 / (x sqrt(pi)) (1 - 1/(2x^2) + 3/(4x^4) - ...),
   // whose next term here is below 2e-15
-  const x = 26, series = 1 - 1 / (2 * x * x) + 3 / (4 * x ** 4) - 15 / (8 * x ** 6) + 105 / (16 * x ** 8) - 945 / (32 * x ** 10);
-  near(math.erfc(x), Math.exp(-x * x) / (x * Math.sqrt(Math.PI)) * series, 1e-14, "erfc(26) by the asymptotic series");
+  const x = 26,
+    series = 1 - 1 / (2 * x * x) + 3 / (4 * x ** 4) - 15 / (8 * x ** 6) + 105 / (16 * x ** 8) - 945 / (32 * x ** 10);
+  near(
+    math.erfc(x),
+    (Math.exp(-x * x) / (x * Math.sqrt(Math.PI))) * series,
+    1e-14,
+    "erfc(26) by the asymptotic series",
+  );
   for (const huge of [28, 40, 1e10, 1e300, 1.7976931348623157e308]) {
     assert.equal(math.erf(huge), 1);
     assert.equal(math.erf(-huge), -1);
@@ -1114,7 +1288,7 @@ test("erf, erfc and the normal functions: exact points, symmetry and complements
     assert.equal(math.normalSf(huge), 0);
     assert.equal(math.normalSf(-huge), 1);
   }
-  assert.equal(math.erf(5e-324), 5e-324);   // erf(x) = 2x / sqrt(pi) rounds back to the smallest double
+  assert.equal(math.erf(5e-324), 5e-324); // erf(x) = 2x / sqrt(pi) rounds back to the smallest double
   near(math.erf(1e-300), 2e-300 / Math.sqrt(Math.PI), 4e-16, "erf(x) = 2x / sqrt(pi) for tiny x");
 });
 
@@ -1126,7 +1300,8 @@ test("normalQuantile inverts normalCdf and matches published values", () => {
   near(math.normalQuantile(0.995), 2.5758293035489004, 1e-15, "z 0.995");
   near(math.normalQuantile(0.999), 3.090232306167813, 1e-15, "z 0.999");
   assert.equal(math.normalQuantile(0.5), 0);
-  for (const p of [2 ** -50, 2 ** -30, 2 ** -10, 0.0625, 0.125, 0.25, 0.375, 0.4375]) {   // 1 - p is exact for these
+  for (const p of [2 ** -50, 2 ** -30, 2 ** -10, 0.0625, 0.125, 0.25, 0.375, 0.4375]) {
+    // 1 - p is exact for these
     near(math.normalQuantile(1 - p), -math.normalQuantile(p), 1e-15, `symmetry at ${p}`);
   }
   for (const p of [1e-300, 1e-100, 1e-20, 1e-8, 0.001, 0.02, 0.0749, 0.0751, 0.2, 0.4, 0.45]) {
@@ -1154,7 +1329,11 @@ test("incompleteBeta with integer shapes is the exact binomial sum P[Binomial(a 
   near(math.incompleteBeta(0.3, 3.5, 1), 0.3 ** 3.5, 1e-15, "I_x(a, 1) = x^a");
   assert.equal(math.incompleteBeta(0, 2, 3), 0);
   assert.equal(math.incompleteBeta(1, 2, 3), 1);
-  assert.equal(math.incompleteBeta(0.5, 1.7976931348623157e308, 1.7976931348623157e308), null, "far beyond the continued fraction");
+  assert.equal(
+    math.incompleteBeta(0.5, 1.7976931348623157e308, 1.7976931348623157e308),
+    null,
+    "far beyond the continued fraction",
+  );
 });
 
 test("binomial pmf, cdf and sf are the exact rational sums (BigInt)", () => {
@@ -1162,7 +1341,12 @@ test("binomial pmf, cdf and sf are the exact rational sums (BigInt)", () => {
     for (const n of [1, 7, 20, 60]) {
       for (let k = -1; k <= n + 1; k++) {
         near(math.binomialPmf(k, n, p), binomialSumExact(n, p, k, k), 5e-14, `binomialPmf(${k}, ${n}, ${p})`);
-        near(math.binomialCdf(k, n, p), k < 0 ? 0 : binomialSumExact(n, p, 0, k), 1e-13, `binomialCdf(${k}, ${n}, ${p})`);
+        near(
+          math.binomialCdf(k, n, p),
+          k < 0 ? 0 : binomialSumExact(n, p, 0, k),
+          1e-13,
+          `binomialCdf(${k}, ${n}, ${p})`,
+        );
         near(math.binomialSf(k, n, p), k > n ? 0 : binomialSumExact(n, p, k, n), 1e-13, `binomialSf(${k}, ${n}, ${p})`);
       }
     }
@@ -1177,10 +1361,23 @@ test("binomial pmf, cdf and sf are the exact rational sums (BigInt)", () => {
 });
 
 test("hypergeometricPmf is the exact ratio C(K, k) C(N - K, n - k) / C(N, n) and sums to 1", () => {
-  for (const [population, successes, draws] of [[10, 5, 3], [52, 4, 5], [52, 13, 13], [100, 30, 20], [500, 7, 250], [1000, 500, 100], [60, 0, 10], [60, 60, 10], [60, 20, 60]]) {
+  for (const [population, successes, draws] of [
+    [10, 5, 3],
+    [52, 4, 5],
+    [52, 13, 13],
+    [100, 30, 20],
+    [500, 7, 250],
+    [1000, 500, 100],
+    [60, 0, 10],
+    [60, 60, 10],
+    [60, 20, 60],
+  ]) {
     let total = 0;
     for (let k = -1; k <= draws + 1; k++) {
-      const exact = ratioToNumber(chooseBig(successes, k) * chooseBig(population - successes, draws - k), chooseBig(population, draws));
+      const exact = ratioToNumber(
+        chooseBig(successes, k) * chooseBig(population - successes, draws - k),
+        chooseBig(population, draws),
+      );
       const got = math.hypergeometricPmf(k, population, successes, draws);
       near(got, exact, 2e-14, `hypergeometricPmf(${k}, ${population}, ${successes}, ${draws})`);
       total += got;
@@ -1193,7 +1390,15 @@ test("hypergeometricPmf is the exact ratio C(K, k) C(N - K, n - k) / C(N, n) and
 
 test("incompleteGamma, chiSquare and poisson agree with the Poisson sum identity and closed forms", () => {
   // Q(k, x) = e^-x (1 + x + x^2/2! + ... + x^(k-1)/(k-1)!) for a whole k: chi-square with 2k degrees of freedom at 2x.
-  const poissonSum = (k, x) => { let term = 1, total = 1; for (let j = 1; j < k; j++) { term *= x / j; total += term; } return Math.exp(-x) * total; };
+  const poissonSum = (k, x) => {
+    let term = 1,
+      total = 1;
+    for (let j = 1; j < k; j++) {
+      term *= x / j;
+      total += term;
+    }
+    return Math.exp(-x) * total;
+  };
   for (let k = 1; k <= 25; k++) {
     for (const x of [0.01, 0.5, 1, 3, 7.5, 20, 60]) {
       const q = poissonSum(k, x);
@@ -1206,15 +1411,26 @@ test("incompleteGamma, chiSquare and poisson agree with the Poisson sum identity
     }
   }
   for (const x of [1e-10, 0.3, 4, 50, 700]) {
-    near(math.chiSquareSf(x, 2), Math.exp(-x / 2), 4e-15 + 1e-16 * x, `chiSquareSf(${x}, 2) = e^(-x/2)`);   // e^-350 from a logarithm
+    near(math.chiSquareSf(x, 2), Math.exp(-x / 2), 4e-15 + 1e-16 * x, `chiSquareSf(${x}, 2) = e^(-x/2)`); // e^-350 from a logarithm
     near(math.chiSquareCdf(x, 2), -Math.expm1(-x / 2), 4e-15, `chiSquareCdf(${x}, 2) = 1 - e^(-x/2)`);
     near(math.incompleteGammaP(1, x), -Math.expm1(-x), 4e-15, `P(1, ${x})`);
   }
-  for (const x of [0.01, 0.2, 1, 3, 6]) near(math.chiSquareSf(x * x, 1), math.erfc(x / Math.SQRT2), 1e-14, `chiSquareSf(x^2, 1) = erfc(x / sqrt 2) at ${x}`);
-  for (const [k, mean] of [[0, 2.5], [3, 2.5], [10, 4], [7, 0.1]]) {
+  for (const x of [0.01, 0.2, 1, 3, 6])
+    near(
+      math.chiSquareSf(x * x, 1),
+      math.erfc(x / Math.SQRT2),
+      1e-14,
+      `chiSquareSf(x^2, 1) = erfc(x / sqrt 2) at ${x}`,
+    );
+  for (const [k, mean] of [
+    [0, 2.5],
+    [3, 2.5],
+    [10, 4],
+    [7, 0.1],
+  ]) {
     let factorial = 1;
     for (let j = 2; j <= k; j++) factorial *= j;
-    near(math.poissonPmf(k, mean), Math.exp(-mean) * mean ** k / factorial, 1e-14, `poissonPmf(${k}, ${mean})`);
+    near(math.poissonPmf(k, mean), (Math.exp(-mean) * mean ** k) / factorial, 1e-14, `poissonPmf(${k}, ${mean})`);
   }
   assert.equal(math.poissonPmf(0, 0), 1);
   assert.equal(math.poissonCdf(0, 0), 1);
@@ -1228,7 +1444,11 @@ test("incompleteGamma, chiSquare and poisson agree with the Poisson sum identity
   assert.equal(math.incompleteGammaP(5e-324, 0.9), 1);
   assert.equal(math.incompleteGammaQ(5e-324, 0.9), 0);
   assert.equal(math.incompleteGammaP(1e-310, 2), 1);
-  assert.equal(math.chiSquareCdf(1, 5e-324), 1, "half of the smallest double underflows to a shape of 0: all mass at 0");
+  assert.equal(
+    math.chiSquareCdf(1, 5e-324),
+    1,
+    "half of the smallest double underflows to a shape of 0: all mass at 0",
+  );
   assert.equal(math.chiSquareQuantile(0.9, 5e-324), 0);
 });
 
@@ -1239,7 +1459,8 @@ test("Student's t with 1 and 2 degrees of freedom matches its closed forms", () 
     near(math.studentTCdf(t, 1), t <= 0 ? (t === 0 ? 0.5 : cauchyTail) : 1 - cauchyTail, 5e-15, `studentTCdf(${t}, 1)`);
     near(math.studentTSf(t, 1), t >= 0 ? (t === 0 ? 0.5 : cauchyTail) : 1 - cauchyTail, 5e-15, `studentTSf(${t}, 1)`);
     // df = 2: F(t) = 1/2 + t / (2 sqrt(2 + t^2)); the tail is 1 / (s (s + |t|)) with s = sqrt(2 + t^2)
-    const s = Math.sqrt(2 + t * t), tail2 = 1 / (s * (s + Math.abs(t)));
+    const s = Math.sqrt(2 + t * t),
+      tail2 = 1 / (s * (s + Math.abs(t)));
     near(math.studentTCdf(t, 2), t <= 0 ? tail2 : 1 - tail2, 5e-15, `studentTCdf(${t}, 2)`);
     near(math.studentTSf(-t, 2), t <= 0 ? tail2 : 1 - tail2, 5e-15, `studentTSf(${-t}, 2)`);
   }
@@ -1248,7 +1469,8 @@ test("Student's t with 1 and 2 degrees of freedom matches its closed forms", () 
   near(math.studentTSf(1e300, 1), 1 / (Math.PI * 1e300), 1e-13, "studentTSf(1e300, 1)");
   near(math.studentTCdf(-1e155, 2), 5e-311, 1e-9, "studentTCdf(-1e155, 2), a subnormal tail");
   // far beyond any table the logarithms of the shape (about 690) cost a few digits, as math.js's header allows
-  for (const t of [-6, -1.5, 0.5, 2.5]) near(math.studentTCdf(t, 1e300), math.normalCdf(t), 1e-12, `df = 1e300 is the normal at ${t}`);
+  for (const t of [-6, -1.5, 0.5, 2.5])
+    near(math.studentTCdf(t, 1e300), math.normalCdf(t), 1e-12, `df = 1e300 is the normal at ${t}`);
   assert.equal(math.studentTCdf(1, 5e-324), 0.5, "the limit df -> 0 puts all mass at +-infinity");
   assert.equal(math.studentTQuantile(0.9, 5e-324), null);
 });
@@ -1262,17 +1484,38 @@ test("the quantile functions invert their distribution functions", () => {
     const target = p <= 0.5 ? p : 1 - p;
     const elasticity = Math.abs(Math.log(tailOf(x * (1 + 1e-6)) / tailOf(x * (1 - 1e-6)))) / 2e-6;
     const error = Math.abs(Math.log(tailOf(x) / target));
-    assert.ok(error <= 1e-12 * Math.max(1, elasticity) + 2.3e-16 / target * (p > 0.5 ? 1 : 0), `${label} = ${x}: tail ${tailOf(x)} vs ${target}`);
+    assert.ok(
+      error <= 1e-12 * Math.max(1, elasticity) + (2.3e-16 / target) * (p > 0.5 ? 1 : 0),
+      `${label} = ${x}: tail ${tailOf(x)} vs ${target}`,
+    );
   };
   for (const p of ps) {
-    for (const [a, b] of [[0.5, 0.5], [1, 1], [2, 3], [0.3, 4], [10, 20], [50, 2.5], [200, 300]]) {
+    for (const [a, b] of [
+      [0.5, 0.5],
+      [1, 1],
+      [2, 3],
+      [0.3, 4],
+      [10, 20],
+      [50, 2.5],
+      [200, 300],
+    ]) {
       const tailOf = p <= 0.5 ? (v) => math.incompleteBeta(v, a, b) : (v) => 1 - math.incompleteBeta(v, a, b);
       check(tailOf, math.betaQuantile(p, a, b), p, `betaQuantile(${p}, ${a}, ${b})`);
     }
     for (const df of [0.5, 1, 2, 5, 30, 1000, 1e6]) {
-      check(p <= 0.5 ? (v) => math.chiSquareCdf(v, df) : (v) => math.chiSquareSf(v, df), math.chiSquareQuantile(p, df), p, `chiSquareQuantile(${p}, ${df})`);
-      if (p === 0.5) continue;   // the t quantile is exactly 0 there
-      check(p < 0.5 ? (v) => math.studentTCdf(v, df) : (v) => math.studentTSf(v, df), math.studentTQuantile(p, df), p, `studentTQuantile(${p}, ${df})`);
+      check(
+        p <= 0.5 ? (v) => math.chiSquareCdf(v, df) : (v) => math.chiSquareSf(v, df),
+        math.chiSquareQuantile(p, df),
+        p,
+        `chiSquareQuantile(${p}, ${df})`,
+      );
+      if (p === 0.5) continue; // the t quantile is exactly 0 there
+      check(
+        p < 0.5 ? (v) => math.studentTCdf(v, df) : (v) => math.studentTSf(v, df),
+        math.studentTQuantile(p, df),
+        p,
+        `studentTQuantile(${p}, ${df})`,
+      );
     }
   }
   assert.equal(math.betaQuantile(0, 2, 3), 0);
@@ -1295,11 +1538,21 @@ test("published and closed-form quantiles", () => {
   for (const p of [0.001, 0.2, 0.6, 0.975, 0.999999]) {
     near(math.chiSquareQuantile(p, 2), -2 * Math.log1p(-p), 1e-15, `chi-square 2 df: -2 ln(1 - p) at ${p}`);
     // tan(pi (p - 1/2)), written as -1 / tan(pi p) or 1 / tan(pi (1 - p)) so the closed form itself stays accurate
-    near(math.studentTQuantile(p, 1), p < 0.5 ? -1 / Math.tan(Math.PI * p) : 1 / Math.tan(Math.PI * (1 - p)), 1e-14, `t 1 df at ${p}`);
+    near(
+      math.studentTQuantile(p, 1),
+      p < 0.5 ? -1 / Math.tan(Math.PI * p) : 1 / Math.tan(Math.PI * (1 - p)),
+      1e-14,
+      `t 1 df at ${p}`,
+    );
     near(math.studentTQuantile(p, 2), (2 * p - 1) / Math.sqrt(2 * p * (1 - p)), 1e-13, `t 2 df closed form at ${p}`);
     near(math.betaQuantile(p, 3.5, 1), p ** (1 / 3.5), 1e-15, `Beta(a, 1): p^(1/a) at ${p}`);
-    near(math.betaQuantile(p, 1, 2.5), -Math.expm1(Math.log1p(-p) / 2.5), 1e-14, `Beta(1, b): 1 - (1 - p)^(1/b) at ${p}`);
-    near(math.betaQuantile(p, 0.5, 0.5), Math.sin(Math.PI * p / 2) ** 2, 1e-14, `arcsine: sin^2(pi p / 2) at ${p}`);
+    near(
+      math.betaQuantile(p, 1, 2.5),
+      -Math.expm1(Math.log1p(-p) / 2.5),
+      1e-14,
+      `Beta(1, b): 1 - (1 - p)^(1/b) at ${p}`,
+    );
+    near(math.betaQuantile(p, 0.5, 0.5), Math.sin((Math.PI * p) / 2) ** 2, 1e-14, `arcsine: sin^2(pi p / 2) at ${p}`);
   }
   near(math.studentTQuantile(0.975, 1), 12.706204736174705, 1e-14, "t 0.975, 1 df: cot(0.025 pi), the printed value");
 });
@@ -1307,7 +1560,7 @@ test("published and closed-form quantiles", () => {
 // ---------- descriptive statistics ----------
 
 test("descriptive statistics on lists worked out by hand", () => {
-  const data = [2, 4, 4, 4, 5, 5, 7, 9];   // mean 5, squared deviations sum to 32
+  const data = [2, 4, 4, 4, 5, 5, 7, 9]; // mean 5, squared deviations sum to 32
   assert.equal(math.sum(data), 40);
   assert.equal(math.mean(data), 5);
   near(math.variance(data), 32 / 7, 1e-16, "sample variance");
@@ -1317,7 +1570,7 @@ test("descriptive statistics on lists worked out by hand", () => {
   assert.equal(math.median(data), 4.5);
   assert.equal(math.minOf(data), 2);
   assert.equal(math.maxOf(data), 9);
-  assert.equal(math.sum([0.1, 0.2, 0.3]), 0.6);   // naive left-to-right addition gives 0.6000000000000001
+  assert.equal(math.sum([0.1, 0.2, 0.3]), 0.6); // naive left-to-right addition gives 0.6000000000000001
   assert.equal(math.sum([1e100, 1, -1e100]), 1);
   assert.equal(math.variance([1e9 + 1, 1e9 + 2, 1e9 + 3]), 1);
   assert.equal(math.variance([7]), null);
@@ -1325,12 +1578,12 @@ test("descriptive statistics on lists worked out by hand", () => {
   // type 7: position (n - 1) q between the sorted values
   const sorted = [1, 2, 3, 4];
   assert.equal(math.quantile(sorted, 0), 1);
-  assert.equal(math.quantile(sorted, 0.25), 1.75);   // position 0.75: 1 + 0.75 (2 - 1)
+  assert.equal(math.quantile(sorted, 0.25), 1.75); // position 0.75: 1 + 0.75 (2 - 1)
   assert.equal(math.quantile(sorted, 0.5), 2.5);
-  assert.equal(math.quantile(sorted, 0.9), 3.7);     // position 2.7: 3 + 0.7 (4 - 3)
+  assert.equal(math.quantile(sorted, 0.9), 3.7); // position 2.7: 3 + 0.7 (4 - 3)
   assert.equal(math.quantile(sorted, 1), 4);
   assert.equal(math.quantile([4, 1, 3, 2], 0.25), 1.75, "the list is sorted first");
-  assert.equal(math.quantile([10, 20, 30, 40, 50], 0.9), 46);   // position 3.6
+  assert.equal(math.quantile([10, 20, 30, 40, 50], 0.9), 46); // position 3.6
   assert.equal(math.quantile([5], 0.3), 5);
   assert.equal(math.median([3, 1, 2]), 2);
   assert.equal(math.median([-1.7e308, 1.7e308]), 0, "no overflow between the middle values");
@@ -1350,16 +1603,18 @@ function mulberryReference(seed) {
   const M = 2n ** 32n;
   let state = ((BigInt(seed) % M) + M) % M;
   return () => {
-    state = (state + 0x6D2B79F5n) % M;
+    state = (state + 0x6d2b79f5n) % M;
     let t = ((state ^ (state >> 15n)) * (state | 1n)) % M;
-    t ^= (t + ((t ^ (t >> 7n)) * (t | 61n))) % M;
+    t ^= (t + (t ^ (t >> 7n)) * (t | 61n)) % M;
     return Number(t ^ (t >> 14n)) / 2 ** 32;
   };
 }
 
 test("mulberry32 follows the published algorithm and is deterministic", () => {
   for (const seed of [0, 1, 7, 42, -1, -123456, 2 ** 31, 2 ** 32 - 1, 2 ** 32, 2 ** 53 - 1, -(2 ** 53 - 1)]) {
-    const next = math.mulberry32(seed), again = math.mulberry32(seed), reference = mulberryReference(seed);
+    const next = math.mulberry32(seed),
+      again = math.mulberry32(seed),
+      reference = mulberryReference(seed);
     for (let i = 0; i < 1000; i++) {
       const value = next();
       assert.equal(value, reference(), `mulberry32(${seed}) draw ${i}`);
@@ -1367,7 +1622,8 @@ test("mulberry32 follows the published algorithm and is deterministic", () => {
       assert.ok(value >= 0 && value < 1);
     }
   }
-  const a = math.mulberry32(1), b = math.mulberry32(2);
+  const a = math.mulberry32(1),
+    b = math.mulberry32(2);
   assert.notEqual(a(), b(), "different seeds give different sequences");
   assert.equal(math.mulberry32(2 ** 32 + 5)(), math.mulberry32(5)(), "the seed is taken modulo 2^32");
 });
@@ -1375,7 +1631,8 @@ test("mulberry32 follows the published algorithm and is deterministic", () => {
 test("shuffled is a seeded permutation and leaves its input alone", () => {
   const input = Array.from({ length: 50 }, (_, i) => `item ${i}`);
   const copy = input.slice();
-  const once = math.shuffled(input, 99), twice = math.shuffled(input, 99);
+  const once = math.shuffled(input, 99),
+    twice = math.shuffled(input, 99);
   assert.deepEqual(input, copy, "the input is unchanged");
   assert.notEqual(once, input, "a new array");
   assert.deepEqual(once, twice, "deterministic for a seed");
@@ -1386,14 +1643,26 @@ test("shuffled is a seeded permutation and leaves its input alone", () => {
   assert.deepEqual(math.shuffled(["only"], 1), ["only"]);
   // a uniform shuffle puts each item in each place about equally often
   const counts = Array.from({ length: 4 }, () => [0, 0, 0, 0]);
-  for (let seed = 0; seed < 4000; seed++) math.shuffled([0, 1, 2, 3], seed).forEach((item, place) => { counts[item][place]++; });
-  for (const row of counts) for (const count of row) assert.ok(count > 850 && count < 1150, `position counts ${JSON.stringify(counts)}`);
+  for (let seed = 0; seed < 4000; seed++)
+    math.shuffled([0, 1, 2, 3], seed).forEach((item, place) => {
+      counts[item][place]++;
+    });
+  for (const row of counts)
+    for (const count of row) assert.ok(count > 850 && count < 1150, `position counts ${JSON.stringify(counts)}`);
   assert.equal(math.shuffled("abc", 1), null);
   assert.equal(math.shuffled(null, 1), null);
 });
 
 test("sampleIndexes draws sorted, distinct indexes in range, reproducibly", () => {
-  for (const [count, size] of [[10, 3], [100, 100], [1000, 1], [2 ** 32, 20], [7, 0], [1, 1], [500, 250]]) {
+  for (const [count, size] of [
+    [10, 3],
+    [100, 100],
+    [1000, 1],
+    [2 ** 32, 20],
+    [7, 0],
+    [1, 1],
+    [500, 250],
+  ]) {
     for (const seed of [0, 5, -9]) {
       const chosen = math.sampleIndexes(count, size, seed);
       assert.equal(chosen.length, size);

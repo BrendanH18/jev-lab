@@ -27,13 +27,17 @@ def row(index, answers, labels):
 
 # Gate signals (dept confidence, refund |2p - 1|) and whether each answer is right:
 ROWS = [
-    row(0, {"dept": dept("billing", 0.9), "refund": noul(0.95)}, {"dept": "billing", "refund": True}),   # .9 .9 right
-    row(1, {"dept": dept("billing", 0.8), "refund": noul(0.1)}, {"dept": "billing", "refund": False}),   # .8 .8 right
-    row(2, {"dept": dept("shipping", 0.3), "refund": noul(0.9)}, {"dept": "billing", "refund": "yes"}),  # .3 .8 dept wrong
-    row(3, {"dept": dept("billing", 0.9), "refund": noul(0.6)}, {"dept": "billing", "refund": "no"}),    # .9 .2 refund wrong
-    row(4, {"dept": dept("none", 0.7), "refund": noul(0.05)}, {"dept": "none", "refund": False}),        # .7 .9 right
-    row(5, {"dept": dept("billing", 0.9), "refund": noul(0.9)}, {"dept": "billing"}),                    # refund unlabeled
-    row(6, {"dept": dept("billing", 0.9), "refund": noul(0.95)}, {"dept": "refunds", "refund": True}),   # bad label
+    row(0, {"dept": dept("billing", 0.9), "refund": noul(0.95)}, {"dept": "billing", "refund": True}),  # .9 .9 right
+    row(1, {"dept": dept("billing", 0.8), "refund": noul(0.1)}, {"dept": "billing", "refund": False}),  # .8 .8 right
+    row(
+        2, {"dept": dept("shipping", 0.3), "refund": noul(0.9)}, {"dept": "billing", "refund": "yes"}
+    ),  # .3 .8 dept wrong
+    row(
+        3, {"dept": dept("billing", 0.9), "refund": noul(0.6)}, {"dept": "billing", "refund": "no"}
+    ),  # .9 .2 refund wrong
+    row(4, {"dept": dept("none", 0.7), "refund": noul(0.05)}, {"dept": "none", "refund": False}),  # .7 .9 right
+    row(5, {"dept": dept("billing", 0.9), "refund": noul(0.9)}, {"dept": "billing"}),  # refund unlabeled
+    row(6, {"dept": dept("billing", 0.9), "refund": noul(0.95)}, {"dept": "refunds", "refund": True}),  # bad label
 ]
 
 
@@ -61,7 +65,10 @@ class EvaluateTests(unittest.TestCase):
         self.assertAlmostEqual(per["dept"]["accuracy"], 0.8)
         wrong = [x for x in r["rows"] if x["automated"] and not x["correct"]]
         self.assertEqual([(x["index"], x["wrong"]) for x in wrong], [(3, ["refund"])])
-        self.assertEqual(wrong[0]["answers"]["refund"], {"answer": "yes", "label": "no", "signal": wrong[0]["answers"]["refund"]["signal"]})
+        self.assertEqual(
+            wrong[0]["answers"]["refund"],
+            {"answer": "yes", "label": "no", "signal": wrong[0]["answers"]["refund"]["signal"]},
+        )
 
     def test_a_signal_equal_to_its_threshold_clears_it(self):
         r = policy.evaluate(ROWS, {"dept": 0.3})
@@ -73,14 +80,24 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(policy.evaluate(ROWS, {"dept": 0.81}, "top_probability")["automated"], 0)
 
     def test_a_row_without_a_readable_answer_is_skipped(self):
-        broken = ROWS + [row(7, {"dept": dept("billing", 0.9)}, {"dept": "billing", "refund": True}),
-                         row(8, {"dept": dept("billing", 0.9), "refund": noul(2)}, {})]
+        broken = ROWS + [
+            row(7, {"dept": dept("billing", 0.9)}, {"dept": "billing", "refund": True}),
+            row(8, {"dept": dept("billing", 0.9), "refund": noul(2)}, {}),
+        ]
         r = policy.evaluate(broken, {"dept": 0.5, "refund": 0.5})
         self.assertEqual((r["skipped"], r["routed"], r["labeled"]), (2, 7, 5))
 
     def test_refusals(self):
-        bad_gates = (None, {}, {"dept": True}, {"dept": 1.5}, {"dept": float("nan")}, {"dept": "0.5"},
-                     {"q%d" % i: 0.5 for i in range(policy.MAX_GATES + 1)}, {"missing": 0.5})
+        bad_gates = (
+            None,
+            {},
+            {"dept": True},
+            {"dept": 1.5},
+            {"dept": float("nan")},
+            {"dept": "0.5"},
+            {"q%d" % i: 0.5 for i in range(policy.MAX_GATES + 1)},
+            {"missing": 0.5},
+        )
         for gates in bad_gates:
             with self.subTest(gates=gates), self.assertRaises(policy.CalibrationError):
                 policy.evaluate(ROWS, gates)
@@ -112,8 +129,10 @@ class TuneTests(unittest.TestCase):
     def test_lowers_a_threshold_that_another_gate_made_unnecessary(self):
         # The search first drops row 0 with q1, then drops row 1 with q2, which also drops row 0. q1 then returns to 0.
         right = [row(i, {"q1": noul(0.97), "q2": noul(0.97)}, {"q1": True, "q2": True}) for i in range(2, 8)]
-        rows = [row(0, {"q1": noul(0.55), "q2": noul(0.55)}, {"q1": False, "q2": True}),
-                row(1, {"q1": noul(0.97), "q2": noul(0.65)}, {"q1": True, "q2": False})] + right
+        rows = [
+            row(0, {"q1": noul(0.55), "q2": noul(0.55)}, {"q1": False, "q2": True}),
+            row(1, {"q1": noul(0.97), "q2": noul(0.65)}, {"q1": True, "q2": False}),
+        ] + right
         t = policy.tune(rows, ["q1", "q2"])["targets"][0]
         self.assertEqual(t["gates"], {"q1": 0.0, "q2": 0.31})
         self.assertEqual((t["automated"], t["accuracy"]), (6, 1.0))
@@ -169,8 +188,13 @@ class TuneTests(unittest.TestCase):
             rows = []
             for i in range(150):
                 signals = [rng.random() for _ in range(2)]
-                rows.append(row(i, {q: noul((1 + c) / 2) for q, c in zip("ab", signals)},
-                                {q: rng.random() < 0.7 + 0.3 * c ** 0.5 for q, c in zip("ab", signals)}))
+                rows.append(
+                    row(
+                        i,
+                        {q: noul((1 + c) / 2) for q, c in zip("ab", signals)},
+                        {q: rng.random() < 0.7 + 0.3 * c**0.5 for q, c in zip("ab", signals)},
+                    )
+                )
             levels = [[policy._level(abs(2 * r["answers"][q]["noul"] - 1)) for q in "ab"] for r in rows]
             right = [all(r["labels"].values()) for r in rows]
             for bound in policy.calibrate.BOUNDS:

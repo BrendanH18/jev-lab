@@ -18,8 +18,12 @@ def noul(p):
 
 
 def choice(pick, options=("billing", "shipping")):
-    return {"type": "choice", "choice": pick, "probabilities": {o: (0.9 if o == pick else 0.1) for o in options},
-            "confidence": 0.8}
+    return {
+        "type": "choice",
+        "choice": pick,
+        "probabilities": {o: (0.9 if o == pick else 0.1) for o in options},
+        "confidence": 0.8,
+    }
 
 
 def rows(*triples):
@@ -37,16 +41,18 @@ class McNemarTests(unittest.TestCase):
 
 class EvaluateTests(unittest.TestCase):
     def setUp(self):
-        self.report = compare.evaluate(rows(
-            (noul(0.9), noul(0.8), "yes"),    # both right, agree
-            (noul(0.9), noul(0.2), "yes"),    # only A right
-            (noul(0.6), noul(0.3), "yes"),    # only A right
-            (noul(0.4), noul(0.7), "yes"),    # only B right
-            (noul(0.1), noul(0.9), "yes"),    # only B right
-            (noul(0.2), noul(0.3), "yes"),    # both wrong, agree
-            (noul(0.8), noul(0.1), None),     # unlabeled disagreement
-            (noul(0.7), None, "yes"),         # B failed on this row: left out of both
-        ))
+        self.report = compare.evaluate(
+            rows(
+                (noul(0.9), noul(0.8), "yes"),  # both right, agree
+                (noul(0.9), noul(0.2), "yes"),  # only A right
+                (noul(0.6), noul(0.3), "yes"),  # only A right
+                (noul(0.4), noul(0.7), "yes"),  # only B right
+                (noul(0.1), noul(0.9), "yes"),  # only B right
+                (noul(0.2), noul(0.3), "yes"),  # both wrong, agree
+                (noul(0.8), noul(0.1), None),  # unlabeled disagreement
+                (noul(0.7), None, "yes"),  # B failed on this row: left out of both
+            )
+        )
 
     def test_both_variants_are_scored_on_the_rows_both_answered(self):
         a, b = self.report["variants"]
@@ -74,10 +80,12 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual([x["correct"] for x in unlabeled["answers"]], [None, None])
 
     def test_choice_options_may_differ_between_variants(self):
-        report = compare.evaluate(rows(
-            (choice("billing"), choice("billing", ("billing", "other")), "billing"),
-            (choice("shipping"), choice("other", ("billing", "other")), "shipping"),
-        ))
+        report = compare.evaluate(
+            rows(
+                (choice("billing"), choice("billing", ("billing", "other")), "billing"),
+                (choice("shipping"), choice("other", ("billing", "other")), "shipping"),
+            )
+        )
         a, b = report["variants"]
         # "shipping" is not one of B's options, so row 1's label is left out of both variants.
         self.assertEqual(b["invalid"][0]["index"], 1)
@@ -126,10 +134,10 @@ class CascadeTests(unittest.TestCase):
     # Confidence for a Noul is |2p - 1|. Labels are all yes.
     ROWS = (
         (noul(0.95), noul(0.9), "yes"),  # A sure and right
-        (noul(0.6), noul(0.8), "yes"),   # A unsure (0.2) and right; B right
-        (noul(0.4), noul(0.9), "yes"),   # A unsure (0.2) and wrong; B right
-        (noul(0.1), noul(0.2), "yes"),   # A sure and wrong; B wrong
-        (noul(0.3), noul(0.7), "yes"),   # A fairly unsure (0.4) and wrong; B right
+        (noul(0.6), noul(0.8), "yes"),  # A unsure (0.2) and right; B right
+        (noul(0.4), noul(0.9), "yes"),  # A unsure (0.2) and wrong; B right
+        (noul(0.1), noul(0.2), "yes"),  # A sure and wrong; B wrong
+        (noul(0.3), noul(0.7), "yes"),  # A fairly unsure (0.4) and wrong; B right
     )
 
     def test_sweep_escalates_rows_below_the_threshold(self):
@@ -185,8 +193,11 @@ Q = {"urgent": {"type": "noul", "instructions": "Does this need attention today?
 TERSE = {"urgent": {"type": "noul", "instructions": "Urgent?"}}
 
 
-DEPT = {"type": "choice", "instructions": "Which team?",
-        "criteria": {"billing": "Money", "shipping": "Parcels", "other": "Anything else"}}
+DEPT = {
+    "type": "choice",
+    "instructions": "Which team?",
+    "criteria": {"billing": "Money", "shipping": "Parcels", "other": "Anything else"},
+}
 REVERSED = dict(DEPT, criteria=dict(reversed(list(DEPT["criteria"].items()))))
 
 
@@ -199,27 +210,60 @@ class AgreementTests(unittest.TestCase):
         self.assertTrue(compare.reordered(DEPT, REVERSED))
         self.assertFalse(compare.reordered(DEPT, DEPT))
         self.assertFalse(compare.reordered(DEPT, dict(REVERSED, instructions="Which department?")))
-        self.assertFalse(compare.reordered(DEPT, dict(REVERSED, criteria={"other": "Anything", "shipping": "Parcels", "billing": "Money"})))
-        self.assertFalse(compare.reordered(DEPT, {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "Money", "other": "Anything else"}}))
+        self.assertFalse(
+            compare.reordered(
+                DEPT, dict(REVERSED, criteria={"other": "Anything", "shipping": "Parcels", "billing": "Money"})
+            )
+        )
+        self.assertFalse(
+            compare.reordered(
+                DEPT,
+                {
+                    "type": "choice",
+                    "instructions": "Which team?",
+                    "criteria": {"billing": "Money", "other": "Anything else"},
+                },
+            )
+        )
         score = {"type": "score", "instructions": "How bad?", "criteria": ["mild", "bad"]}
         self.assertFalse(compare.reordered(score, dict(score, criteria=["bad", "mild"])))
 
     def test_counts_changed_answers_per_shared_question_without_labels(self):
         opts = ("billing", "shipping", "other")
         results = [
-            {"runs": [outcome(dept=choice("billing", opts), urgent=noul(0.9)), outcome(dept=choice("billing", opts), urgent=noul(0.2))]},
+            {
+                "runs": [
+                    outcome(dept=choice("billing", opts), urgent=noul(0.9)),
+                    outcome(dept=choice("billing", opts), urgent=noul(0.2)),
+                ]
+            },
             # A picked its first option and B its first option: same position, different option
-            {"runs": [outcome(dept=choice("billing", opts), urgent=noul(0.9)), outcome(dept=choice("other", opts), urgent=noul(0.8))]},
+            {
+                "runs": [
+                    outcome(dept=choice("billing", opts), urgent=noul(0.9)),
+                    outcome(dept=choice("other", opts), urgent=noul(0.8)),
+                ]
+            },
             # Picked last in A and the middle in B: changed, but not by keeping the position
             {"runs": [outcome(dept=choice("other", opts)), outcome(dept=choice("shipping", opts))]},
             {"runs": [outcome(dept=choice("billing", opts)), {"error": "boom"}]},
-            {"runs": [outcome(dept={"type": "choice", "choice": "nope", "probabilities": {}}), outcome(dept=choice("billing", opts))]},
+            {
+                "runs": [
+                    outcome(dept={"type": "choice", "choice": "nope", "probabilities": {}}),
+                    outcome(dept=choice("billing", opts)),
+                ]
+            },
         ]
         urgent = {"type": "noul", "instructions": "Urgent?"}
         rows = compare.agreement(results, [{"dept": DEPT, "urgent": urgent}, {"dept": REVERSED, "urgent": urgent}])
         self.assertEqual([r["qid"] for r in rows], ["dept", "urgent"])
-        mixed = compare.agreement(results, [{"dept": DEPT, "urgent": urgent, "only_a": urgent},
-                                            {"urgent": urgent, "dept": REVERSED, "only_b": urgent}])
+        mixed = compare.agreement(
+            results,
+            [
+                {"dept": DEPT, "urgent": urgent, "only_a": urgent},
+                {"urgent": urgent, "dept": REVERSED, "only_b": urgent},
+            ],
+        )
         self.assertEqual([r["qid"] for r in mixed], ["dept", "urgent"])
         dept, urg = rows
         self.assertEqual((dept["answered"], dept["changed"], dept["reordered"], dept["same_position"]), (3, 2, True, 1))
@@ -231,44 +275,94 @@ class AgreementTests(unittest.TestCase):
         other_model = compare.agreement(results, [{"dept": DEPT}, {"dept": REVERSED}], same_model=False)
         self.assertEqual((other_model[0]["changed"], other_model[0]["reordered"]), (2, False))
         # Every question goes out in one call, so any other change to the request rules out an order check.
-        for b in ({"dept": REVERSED, "urgent": dict(urgent, instructions="Due today?")},
-                  {"dept": REVERSED}, {"urgent": urgent, "dept": REVERSED}):
+        for b in (
+            {"dept": REVERSED, "urgent": dict(urgent, instructions="Due today?")},
+            {"dept": REVERSED},
+            {"urgent": urgent, "dept": REVERSED},
+        ):
             with self.subTest(b=list(b)):
                 self.assertFalse(compare.agreement(results, [{"dept": DEPT, "urgent": urgent}, b])[0]["reordered"])
-        self.assertTrue(compare.agreement(results, [{"dept": DEPT, "urgent": urgent}, {"dept": REVERSED, "urgent": urgent}])[0]["reordered"])
+        self.assertTrue(
+            compare.agreement(results, [{"dept": DEPT, "urgent": urgent}, {"dept": REVERSED, "urgent": urgent}])[0][
+                "reordered"
+            ]
+        )
 
     def test_a_question_with_another_type_in_b_or_no_answers_is_handled(self):
         urgent = {"type": "noul", "instructions": "Urgent?"}
-        rows = compare.agreement([{"runs": [{"skipped": True}, {"skipped": True}]}],
-                                 [{"dept": DEPT, "urgent": urgent}, {"dept": urgent, "urgent": urgent}])
-        self.assertEqual(rows, [{"qid": "urgent", "type": "noul", "answered": 0, "changed": 0, "rate": None,
-                                 "low": None, "high": None, "reordered": False, "perturbed": False}])
+        rows = compare.agreement(
+            [{"runs": [{"skipped": True}, {"skipped": True}]}],
+            [{"dept": DEPT, "urgent": urgent}, {"dept": urgent, "urgent": urgent}],
+        )
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "qid": "urgent",
+                    "type": "noul",
+                    "answered": 0,
+                    "changed": 0,
+                    "rate": None,
+                    "low": None,
+                    "high": None,
+                    "reordered": False,
+                    "perturbed": False,
+                }
+            ],
+        )
 
     def test_run_compare_reports_agreement_for_reversed_options(self):
         # The fake picks the last option it is offered, so reversing the list changes every answer.
-        report = workbench.run_compare(FakeClient(), ["a", "b", "c"], [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}}])
-        preview = workbench.run_compare(FakeClient(), ["a"], [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}, "model": "jev-preview"}])
+        report = workbench.run_compare(
+            FakeClient(), ["a", "b", "c"], [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}}]
+        )
+        preview = workbench.run_compare(
+            FakeClient(),
+            ["a"],
+            [{"questions": {"dept": DEPT}}, {"questions": {"dept": REVERSED}, "model": "jev-preview"}],
+        )
         self.assertFalse(preview["agreement"][0]["reordered"])
-        self.assertEqual(report["agreement"], [{"qid": "dept", "type": "choice", "answered": 3, "changed": 3, "rate": 1.0,
-                                                "low": calibrate.wilson(3, 3)[0], "high": 1.0, "reordered": True, "perturbed": False,
-                                                "same_position": 3, "options": 3}])
+        self.assertEqual(
+            report["agreement"],
+            [
+                {
+                    "qid": "dept",
+                    "type": "choice",
+                    "answered": 3,
+                    "changed": 3,
+                    "rate": 1.0,
+                    "low": calibrate.wilson(3, 3)[0],
+                    "high": 1.0,
+                    "reordered": True,
+                    "perturbed": False,
+                    "same_position": 3,
+                    "options": 3,
+                }
+            ],
+        )
 
     def test_an_input_check_needs_the_same_request_with_only_the_rows_perturbed(self):
         rewritten = lambda **answers: dict(outcome(**answers), input={"text": "rewritten"})  # noqa: E731
-        results = [{"runs": [outcome(dept=choice("billing")), rewritten(dept=choice("shipping"))]},
-                   {"runs": [outcome(dept=choice("billing")), rewritten(dept=choice("billing"))]},
-                   # the rewrite left this row as it was: a plain repeat, left out of the input check
-                   {"runs": [outcome(dept=choice("billing")), outcome(dept=choice("shipping"))]}]
+        results = [
+            {"runs": [outcome(dept=choice("billing")), rewritten(dept=choice("shipping"))]},
+            {"runs": [outcome(dept=choice("billing")), rewritten(dept=choice("billing"))]},
+            # the rewrite left this row as it was: a plain repeat, left out of the input check
+            {"runs": [outcome(dept=choice("billing")), outcome(dept=choice("shipping"))]},
+        ]
         urgent = {"type": "noul", "instructions": "Urgent?"}
         same = {"dept": DEPT, "urgent": urgent}
         rows = compare.agreement(results, [same, same], perturbs=[None, "typos"])
-        self.assertEqual([(r["qid"], r["perturbed"], r["reordered"]) for r in rows], [("dept", True, False), ("urgent", True, False)])
+        self.assertEqual(
+            [(r["qid"], r["perturbed"], r["reordered"]) for r in rows], [("dept", True, False), ("urgent", True, False)]
+        )
         self.assertEqual((rows[0]["answered"], rows[0]["changed"]), (2, 1))
         # Without a perturbation it is a plain agreement table; with another model, another question, or
         # another option order in B, a changed answer need not come from the rows.
         plain = compare.agreement(results, [same, same], perturbs=[None, None])[0]
         self.assertEqual((plain["perturbed"], plain["answered"], plain["changed"]), (False, 3, 2))
-        self.assertFalse(compare.agreement(results, [same, same], same_model=False, perturbs=[None, "typos"])[0]["perturbed"])
+        self.assertFalse(
+            compare.agreement(results, [same, same], same_model=False, perturbs=[None, "typos"])[0]["perturbed"]
+        )
         for b in ({"dept": REVERSED, "urgent": urgent}, {"urgent": urgent, "dept": DEPT}, {"dept": DEPT}):
             with self.subTest(b=list(b)):
                 row = compare.agreement(results, [same, b], perturbs=[None, "typos"])[0]
@@ -278,8 +372,10 @@ class AgreementTests(unittest.TestCase):
         client = FakeClient(lambda state, q: {"urgent": 0.9 if state["text"].islower() else 0.1})
         rows = ["Ship it today", {"text": "where is it", "_expect": {"urgent": True}}]
         report = workbench.run_compare(client, rows, [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}])
-        self.assertEqual(sorted(state["text"] for state, _ in client.calls),  # calls run concurrently
-                         ["Ship it today", "ship it today", "where is it", "where is it"])
+        self.assertEqual(
+            sorted(state["text"] for state, _ in client.calls),  # calls run concurrently
+            ["Ship it today", "ship it today", "where is it", "where is it"],
+        )
         self.assertEqual([v["perturb"] for v in report["variants"]], [None, "lowercase"])
         # One row was lowercase already, so B sent it as written: a repeat, left out of the input check.
         self.assertEqual([(v["perturbed_rows"], v["unperturbed_rows"]) for v in report["variants"]], [(0, 0), (1, 1)])
@@ -290,8 +386,11 @@ class AgreementTests(unittest.TestCase):
         self.assertNotIn("input", second["runs"][1])
         urgent = report["agreement"][0]
         self.assertEqual((urgent["perturbed"], urgent["answered"], urgent["changed"]), (True, 1, 1))
-        labeled = workbench.run_compare(client, [{"text": "Now", "_expect": {"urgent": True}}],
-                                        [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}])
+        labeled = workbench.run_compare(
+            client,
+            [{"text": "Now", "_expect": {"urgent": True}}],
+            [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}],
+        )
         self.assertEqual(labeled["results"][0]["runs"][1]["input"], {"text": "now"})  # labels never reach the model
 
     def test_a_budget_stop_counts_only_rows_sent_rewritten(self):
@@ -302,7 +401,9 @@ class AgreementTests(unittest.TestCase):
                 return super().system_one(state, questions, model=model)
 
         with patch.object(workbench, "BULK_CONCURRENCY", 1):
-            report = workbench.run_compare(Budget(), ["A", "B", "C"], [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}])
+            report = workbench.run_compare(
+                Budget(), ["A", "B", "C"], [{"questions": Q}, {"questions": Q, "perturb": "lowercase"}]
+            )
         self.assertEqual(report["stopped"], "budget")
         self.assertEqual((report["variants"][1]["perturbed_rows"], report["variants"][1]["unperturbed_rows"]), (1, 0))
 
@@ -310,8 +411,11 @@ class AgreementTests(unittest.TestCase):
 class RunTests(unittest.TestCase):
     def test_runs_each_row_once_per_variant_with_its_model(self):
         client = FakeClient(lambda s, q: {"urgent": 0.9 if "today" in q["urgent"]["instructions"] else 0.1})
-        report = workbench.run_compare(client, ["ship it", {"text": "now", "_expect": {"urgent": True}}],
-                                       [{"questions": Q}, {"questions": TERSE, "model": " jev-preview "}])
+        report = workbench.run_compare(
+            client,
+            ["ship it", {"text": "now", "_expect": {"urgent": True}}],
+            [{"questions": Q}, {"questions": TERSE, "model": " jev-preview "}],
+        )
         self.assertEqual(len(client.calls), 4)
         self.assertEqual(sorted(client.models), ["jev-fake", "jev-fake", "jev-preview", "jev-preview"])
         self.assertEqual([v["model"] for v in report["variants"]], ["jev-fake", "jev-preview"])
@@ -360,19 +464,37 @@ class RunTests(unittest.TestCase):
                 return super().system_one(state, questions, model=model)
 
         with patch.object(workbench, "BULK_CONCURRENCY", 1):
-            run = workbench.run_compare(Budget(), [{"text": t, "_expect": {"urgent": True}} for t in "ab"],
-                                        [{"questions": Q}, {"questions": TERSE}])
+            run = workbench.run_compare(
+                Budget(),
+                [{"text": t, "_expect": {"urgent": True}} for t in "ab"],
+                [{"questions": Q}, {"questions": TERSE}],
+            )
         self.assertEqual([v["completed"] for v in run["variants"]], [2, 1])
-        report = compare.evaluate([{"index": r["index"], "label": r["expect"]["urgent"],
-                                    "answers": [x.get("answers", {}).get("urgent") for x in r["runs"]]}
-                                   for r in run["results"]])
-        self.assertEqual((report["only_a"], report["variants"][0]["labeled"], report["variants"][1]["labeled"]), (1, 1, 1))
+        report = compare.evaluate(
+            [
+                {
+                    "index": r["index"],
+                    "label": r["expect"]["urgent"],
+                    "answers": [x.get("answers", {}).get("urgent") for x in r["runs"]],
+                }
+                for r in run["results"]
+            ]
+        )
+        self.assertEqual(
+            (report["only_a"], report["variants"][0]["labeled"], report["variants"][1]["labeled"]), (1, 1, 1)
+        )
 
     def test_variant_validation(self):
         good = {"questions": Q}
-        for variants in (None, [good], [good, good, good], [good, "x"], [good, {"questions": {}}],
-                         [good, {"questions": Q, "model": 3}],
-                         [good, {"questions": {"b": {"type": "box", "instructions": "x"}}}]):
+        for variants in (
+            None,
+            [good],
+            [good, good, good],
+            [good, "x"],
+            [good, {"questions": {}}],
+            [good, {"questions": Q, "model": 3}],
+            [good, {"questions": {"b": {"type": "box", "instructions": "x"}}}],
+        ):
             with self.subTest(variants=variants), self.assertRaises(workbench.WorkbenchError):
                 workbench.run_compare(FakeClient(), ["row"], variants)
         with self.assertRaisesRegex(workbench.WorkbenchError, "Variant B"):

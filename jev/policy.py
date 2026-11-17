@@ -128,8 +128,12 @@ def _prepare(rows: List[dict], qids: List[str], signal: str, rules: Any = None) 
         if len(signals) < len(qids):
             skipped += 1
             continue
-        item = {"index": index, "signals": signals, "key": row.get("key"),  # key: the row's input, for Holdout's folds
-                "rules": rulebook.holding(parsed, row["answers"]) if parsed else []}
+        item = {
+            "index": index,
+            "signals": signals,
+            "key": row.get("key"),  # key: the row's input, for Holdout's folds
+            "rules": rulebook.holding(parsed, row["answers"]) if parsed else [],
+        }
         routed.append(item)
         if reason:
             invalid.append({"index": index, "reason": reason})
@@ -138,8 +142,15 @@ def _prepare(rows: List[dict], qids: List[str], signal: str, rules: Any = None) 
         else:
             item.update(right=right, shown=shown)
             scored.append(item)
-    return {"types": types, "rules": [r["text"] for r in parsed], "routed": routed, "scored": scored, "invalid": invalid,
-            "unlabeled": unlabeled, "skipped": skipped}
+    return {
+        "types": types,
+        "rules": [r["text"] for r in parsed],
+        "routed": routed,
+        "scored": scored,
+        "invalid": invalid,
+        "unlabeled": unlabeled,
+        "skipped": skipped,
+    }
 
 
 def _clears(item: dict, gates: Dict[str, float]) -> bool:
@@ -155,8 +166,18 @@ def evaluate(rows: Any, gates: Any, signal: str = "confidence", rules: Any = Non
     qids = list(gates)
     data = _prepare(_rows(rows), qids, signal, rules)
     scored = data["scored"]
-    per = {q: {"qid": q, "type": data["types"][q], "threshold": gates[q], "correct": 0,
-               "holds": 0, "only": 0, "wrong_automated": 0} for q in qids}
+    per = {
+        q: {
+            "qid": q,
+            "type": data["types"][q],
+            "threshold": gates[q],
+            "correct": 0,
+            "holds": 0,
+            "only": 0,
+            "wrong_automated": 0,
+        }
+        for q in qids
+    }
     out_rows = []
     automated = correct = all_right = by_rules = 0
     for item in scored:
@@ -177,10 +198,20 @@ def evaluate(rows: Any, gates: Any, signal: str = "confidence", rules: Any = Non
             correct += ok
             for q in wrong:
                 per[q]["wrong_automated"] += 1
-        out_rows.append({"index": item["index"], "automated": auto, "correct": ok, "held": held, "wrong": wrong,
-                         "rules": item["rules"],
-                         "answers": {q: {"answer": item["shown"][q][0], "label": item["shown"][q][1],
-                                         "signal": item["signals"][q]} for q in qids}})
+        out_rows.append(
+            {
+                "index": item["index"],
+                "automated": auto,
+                "correct": ok,
+                "held": held,
+                "wrong": wrong,
+                "rules": item["rules"],
+                "answers": {
+                    q: {"answer": item["shown"][q][0], "label": item["shown"][q][1], "signal": item["signals"][q]}
+                    for q in qids
+                },
+            }
+        )
     n = len(scored)
     low, high = calibrate.wilson(correct, automated)
     all_low, all_high = calibrate.wilson(all_right, n)
@@ -189,14 +220,27 @@ def evaluate(rows: Any, gates: Any, signal: str = "confidence", rules: Any = Non
         p["accuracy_low"], p["accuracy_high"] = calibrate.wilson(p["correct"], n)
     routed_auto = sum(1 for item in data["routed"] if _clears(item, gates))
     return {
-        "signal": signal, "gates": gates, "questions": [per[q] for q in qids],
-        "labeled": n, "unlabeled": data["unlabeled"], "invalid": data["invalid"], "skipped": data["skipped"],
-        "accuracy_all": all_right / n if n else None, "accuracy_all_low": all_low, "accuracy_all_high": all_high,
-        "automated": automated, "correct": correct, "review": n - automated,
-        "coverage": automated / n if n else 0.0, "accuracy": correct / automated if automated else None,
-        "accuracy_low": low, "accuracy_high": high,
-        "routed": len(data["routed"]), "routed_automated": routed_auto,
-        "rules": data["rules"], "held_by_rules": by_rules,
+        "signal": signal,
+        "gates": gates,
+        "questions": [per[q] for q in qids],
+        "labeled": n,
+        "unlabeled": data["unlabeled"],
+        "invalid": data["invalid"],
+        "skipped": data["skipped"],
+        "accuracy_all": all_right / n if n else None,
+        "accuracy_all_low": all_low,
+        "accuracy_all_high": all_high,
+        "automated": automated,
+        "correct": correct,
+        "review": n - automated,
+        "coverage": automated / n if n else 0.0,
+        "accuracy": correct / automated if automated else None,
+        "accuracy_low": low,
+        "accuracy_high": high,
+        "routed": len(data["routed"]),
+        "routed_automated": routed_auto,
+        "rules": data["rules"],
+        "held_by_rules": by_rules,
         "routed_held_by_rules": sum(1 for item in data["routed"] if item["rules"]),
         "rows": out_rows,
     }
@@ -258,8 +302,8 @@ def _relax(levels: List[List[int]], right: List[bool], steps: List[int], target:
                 if ok:
                     total[lv] += 1
                     hits[lv] += hit
-            auto = sum(total[steps[q]:])
-            good = sum(hits[steps[q]:])
+            auto = sum(total[steps[q] :])
+            good = sum(hits[steps[q] :])
             best = steps[q]
             for s in range(steps[q] - 1, -1, -1):
                 auto += total[s]
@@ -272,7 +316,9 @@ def _relax(levels: List[List[int]], right: List[bool], steps: List[int], target:
     return steps
 
 
-def _pairs(levels: List[List[int]], right: List[bool], steps: List[int], target: float, bound: str) -> Optional[List[int]]:
+def _pairs(
+    levels: List[List[int]], right: List[bool], steps: List[int], target: float, bound: str
+) -> Optional[List[int]]:
     """Re-choose two thresholds at a time, exactly, with the others held, and keep any change that automates more
     rows at the target. Repeat until no pair improves. `steps` need not reach the target; None if nothing does.
 
@@ -338,8 +384,9 @@ def _pairs(levels: List[List[int]], right: List[bool], steps: List[int], target:
     return best
 
 
-def search(levels: List[List[int]], right: List[bool], bound: str = "estimate",
-           targets: Tuple[float, ...] = TARGETS) -> List[Optional[List[int]]]:
+def search(
+    levels: List[List[int]], right: List[bool], bound: str = "estimate", targets: Tuple[float, ...] = TARGETS
+) -> List[Optional[List[int]]]:
     """For each target accuracy (TARGETS unless given), the grid steps (threshold * STEPS per question) that automate the most rows the
     search finds, or None when no thresholds reach the target. levels[i][q] is _level() of row i's signal on
     question q; right[i] says whether every gated answer on row i is right."""
@@ -371,7 +418,9 @@ def admitted(levels: List[List[int]], steps: List[int]) -> List[int]:
     return [i for i, lv in enumerate(levels) if all(v >= s for v, s in zip(lv, steps))]
 
 
-def prepared(rows: Any, qids: Any, signal: str, rules: Any = None) -> Tuple[List[str], dict, List[List[int]], List[bool]]:
+def prepared(
+    rows: Any, qids: Any, signal: str, rules: Any = None
+) -> Tuple[List[str], dict, List[List[int]], List[bool]]:
     """(question ids, _prepare's result, grid levels per scored row, whether every gated answer is right).
 
     With rules, scored rows a rule holds are moved from data["scored"] to data["held"]: no threshold can automate
@@ -395,8 +444,17 @@ def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimat
     path = None
     for target, steps in zip(TARGETS, search(levels, right, bound)):
         if steps is None:
-            entry = {"target": target, "gates": None, "automated": 0, "coverage": 0.0, "accuracy": None,
-                     "low": None, "high": None, "needed": calibrate.rows_needed(target), "plan": None}
+            entry = {
+                "target": target,
+                "gates": None,
+                "automated": 0,
+                "coverage": 0.0,
+                "accuracy": None,
+                "low": None,
+                "high": None,
+                "needed": calibrate.rows_needed(target),
+                "plan": None,
+            }
             if bound == "lower" and levels:
                 # How many more labeled rows would show it, for the thresholds along the greedy search's path.
                 path = path or _greedy(levels, right, len(qids))
@@ -410,7 +468,17 @@ def tune(rows: Any, qids: Any, signal: str = "confidence", bound: str = "estimat
         auto = admitted(levels, steps)
         good = sum(right[i] for i in auto)
         low, high = calibrate.wilson(good, len(auto))
-        out.append({"target": target, "gates": {q: steps[j] / STEPS for j, q in enumerate(qids)},
-                    "automated": len(auto), "coverage": len(auto) / n, "accuracy": good / len(auto),
-                    "low": low, "high": high, "needed": calibrate.rows_needed(target), "plan": None})
+        out.append(
+            {
+                "target": target,
+                "gates": {q: steps[j] / STEPS for j, q in enumerate(qids)},
+                "automated": len(auto),
+                "coverage": len(auto) / n,
+                "accuracy": good / len(auto),
+                "low": low,
+                "high": high,
+                "needed": calibrate.rows_needed(target),
+                "plan": None,
+            }
+        )
     return {"signal": signal, "bound": bound, "labeled": n, "targets": out}

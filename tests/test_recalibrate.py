@@ -1,4 +1,5 @@
 """Probability mapping math, held-out selection and HTTP validation; no model calls."""
+
 import http.client
 import json
 import math
@@ -20,10 +21,19 @@ def rows(n=200, overconfident=False):
     out = []
     for i in range(n):
         p = 0.2 + 0.6 * (i % 5) / 4
-        out.append({"index": i, "key": str(i), "answer": {
-            "type": "choice", "choice": "a", "confidence": 0.99 if overconfident else p,
-            "probabilities": {"a": 0.99 if overconfident else p, "b": 0.01 if overconfident else 1 - p}},
-            "label": "a" if rng.random() < p else "b"})
+        out.append(
+            {
+                "index": i,
+                "key": str(i),
+                "answer": {
+                    "type": "choice",
+                    "choice": "a",
+                    "confidence": 0.99 if overconfident else p,
+                    "probabilities": {"a": 0.99 if overconfident else p, "b": 0.01 if overconfident else 1 - p},
+                },
+                "label": "a" if rng.random() < p else "b",
+            }
+        )
     return out
 
 
@@ -95,16 +105,24 @@ class MappingTests(unittest.TestCase):
         self.assertEqual(rc.evaluate(rows())["recommendation"], "raw")
         rep = rc.evaluate(rows(overconfident=True))
         self.assertNotEqual(rep["recommendation"], "raw")
-        self.assertLess(rep["methods"][rep["recommendation"]]["cv"]["log_loss"],
-                        rep["methods"]["raw"]["cv"]["log_loss"] - rep["margin"])
+        self.assertLess(
+            rep["methods"][rep["recommendation"]]["cv"]["log_loss"],
+            rep["methods"]["raw"]["cv"]["log_loss"] - rep["margin"],
+        )
 
     def test_test_rows_excluded(self):
         data = rows(40)
         self.assertEqual(rc.evaluate(data), rc.evaluate(data + [dict(r, _test=True) for r in rows(20)]))
 
     def test_minimum_and_degenerate_and_bad_input(self):
-        for data in (None, {}, [], rows(19), [dict(r, label="a") for r in rows(25)],
-                     [dict(r, label="b") for r in rows(25)]):
+        for data in (
+            None,
+            {},
+            [],
+            rows(19),
+            [dict(r, label="a") for r in rows(25)],
+            [dict(r, label="b") for r in rows(25)],
+        ):
             with self.subTest(data_type=type(data)), self.assertRaises(WorkbenchError):
                 rc.evaluate(data)
         with self.assertRaises(WorkbenchError):
@@ -113,11 +131,10 @@ class MappingTests(unittest.TestCase):
             rc.evaluate([{"answer": {"type": "box"}, "label": None}])
 
     def test_readers_and_metrics(self):
-        data = [{"index": i, "answer": {"type": "noul", "noul": 0.9}, "label": i % 2 == 0}
-                for i in range(20)]
+        data = [{"index": i, "answer": {"type": "noul", "noul": 0.9}, "label": i % 2 == 0} for i in range(20)]
         rep = rc.evaluate(data)
         raw = rep["methods"]["raw"]["fit"]
-        self.assertAlmostEqual(raw["brier"], (0.8 ** 2 + 0.2 ** 2) / 2)
+        self.assertAlmostEqual(raw["brier"], (0.8**2 + 0.2**2) / 2)
         self.assertAlmostEqual(raw["log_loss"], -(math.log(0.8) + math.log(0.2)) / 2)
         self.assertAlmostEqual(rc.evaluate(data, "top_probability")["methods"]["raw"]["fit"]["brier"], 0.41)
 
@@ -133,10 +150,13 @@ class MappingTests(unittest.TestCase):
         class Quiet(server.Handler):
             def log_message(self, *_args):
                 pass
+
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        for attribute, value in [("PROJECT_ROOT", Path(temp.name)),
-                                 ("settings", server.Settings(env_file=Path(temp.name) / ".env"))]:
+        for attribute, value in [
+            ("PROJECT_ROOT", Path(temp.name)),
+            ("settings", server.Settings(env_file=Path(temp.name) / ".env")),
+        ]:
             patcher = patch.object(server, attribute, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -150,8 +170,12 @@ class MappingTests(unittest.TestCase):
         try:
             for data, expected in [(None, 400), (rows(10), 400), (rows(40), 200)]:
                 conn = http.client.HTTPConnection("127.0.0.1", Quiet.port)
-                conn.request("POST", "/api/workbench/recalibrate", json.dumps({"rows": data}),
-                             {"Content-Type": "application/json", "X-Jev-Token": server.SESSION_TOKEN})
+                conn.request(
+                    "POST",
+                    "/api/workbench/recalibrate",
+                    json.dumps({"rows": data}),
+                    {"Content-Type": "application/json", "X-Jev-Token": server.SESSION_TOKEN},
+                )
                 response = conn.getresponse()
                 self.assertEqual(response.status, expected)
                 response.read()

@@ -8,8 +8,14 @@ from unittest.mock import patch
 from jev import checks, dataset_changes, workbench
 
 Q = {"urgent": {"type": "noul", "instructions": "Urgent?"}}
-CHECK = {"gates": {"urgent": 0.8}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-         "min_accuracy": 0.9, "min_coverage": 0.5}
+CHECK = {
+    "gates": {"urgent": 0.8},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.14.0",
+    "min_accuracy": 0.9,
+    "min_coverage": 0.5,
+}
 
 
 class DatasetChangeTests(unittest.TestCase):
@@ -22,8 +28,11 @@ class DatasetChangeTests(unittest.TestCase):
         self.addCleanup(self.patch.stop)
 
     def spec(self, rows=None):
-        return {"name": "Tickets", "questions": copy.deepcopy(Q),
-                "rows": rows or [{"text": "late", "_expect": {"urgent": True}}]}
+        return {
+            "name": "Tickets",
+            "questions": copy.deepcopy(Q),
+            "rows": rows or [{"text": "late", "_expect": {"urgent": True}}],
+        }
 
     def test_new_preview_is_read_only_and_save_checks_missing_revision(self):
         spec = self.spec()
@@ -37,15 +46,23 @@ class DatasetChangeTests(unittest.TestCase):
             dataset_changes.save(spec, report["revision"])
 
     def test_input_and_label_counts_preserve_duplicate_occurrences(self):
-        initial = self.spec([{"text": "same", "_expect": {"urgent": True}},
-                             {"text": "same", "_expect": {"urgent": False}},
-                             {"text": "gone", "_expect": {"urgent": True}}])
+        initial = self.spec(
+            [
+                {"text": "same", "_expect": {"urgent": True}},
+                {"text": "same", "_expect": {"urgent": False}},
+                {"text": "gone", "_expect": {"urgent": True}},
+            ]
+        )
         saved = workbench.save_dataset(initial)
         path = workbench._dataset_path(saved["id"])
         before = path.read_bytes()
-        replacement = self.spec([{"text": "same", "_expect": {"urgent": False}},
-                                 {"text": "same", "_expect": {"other": 1}},
-                                 {"text": "new", "_expect": {"urgent": False}}])
+        replacement = self.spec(
+            [
+                {"text": "same", "_expect": {"urgent": False}},
+                {"text": "same", "_expect": {"other": 1}},
+                {"text": "new", "_expect": {"urgent": False}},
+            ]
+        )
         report = dataset_changes.preview(replacement)
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(report["rows"]["added"], 1)
@@ -56,8 +73,12 @@ class DatasetChangeTests(unittest.TestCase):
         self.assertEqual(workbench.load_dataset("tickets")["rows"], replacement["rows"])
 
     def test_check_and_test_implications_match_save_without_label_values(self):
-        initial = self.spec([{"text": "secret-input", "_expect": {"urgent": "secret-label"}, "_test": True},
-                             {"text": "open", "_expect": {"urgent": True}}])
+        initial = self.spec(
+            [
+                {"text": "secret-input", "_expect": {"urgent": "secret-label"}, "_test": True},
+                {"text": "open", "_expect": {"urgent": True}},
+            ]
+        )
         saved = workbench.save_dataset(initial)
         saved = checks.save_check(saved["id"], CHECK)
         saved["test"]["looks"] = [{"at": "earlier"}]
@@ -97,8 +118,11 @@ class DatasetChangeTests(unittest.TestCase):
 
     def test_choice_order_picture_identity_and_split_movement(self):
         q = {"kind": {"type": "choice", "instructions": "Which?", "criteria": {"a": "a", "b": "b"}}}
-        spec = {"name": "Tickets", "questions": q,
-                "rows": [{"text": "x", "_image": "torn-bag"}, {"text": "y", "_test": True}]}
+        spec = {
+            "name": "Tickets",
+            "questions": q,
+            "rows": [{"text": "x", "_image": "torn-bag"}, {"text": "y", "_test": True}],
+        }
         workbench.save_dataset(spec)
         spec["questions"]["kind"]["criteria"] = {"b": "b", "a": "a"}
         spec["rows"] = [{"text": "x", "_image": "intact-bag"}, {"text": "y"}]

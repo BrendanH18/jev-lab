@@ -6,8 +6,9 @@ export function matchesSaved(item, query = "") {
 
 export function matchesDataset(item, { query = "", check = "all", labels = "all" } = {}) {
   if (!matchesSaved(item, query)) return false;
-  if (check === "with" && !item.check || check === "without" && item.check) return false;
-  const labeled = Number(item.labeled || 0), rows = Number(item.rows || 0);
+  if ((check === "with" && !item.check) || (check === "without" && item.check)) return false;
+  const labeled = Number(item.labeled || 0),
+    rows = Number(item.rows || 0);
   if (labels === "none") return labeled === 0;
   if (labels === "some") return labeled > 0 && labeled < rows;
   if (labels === "every") return rows > 0 && labeled === rows;

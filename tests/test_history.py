@@ -13,14 +13,21 @@ from jev import bundles, checks, dataset_changes, drift, guidelines, history, te
 from jev.workbench import WorkbenchError
 
 Q = {"urgent": {"type": "noul", "instructions": "Urgent?"}}
-CHECK = {"gates": {"urgent": 0.8}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-         "min_accuracy": 0.9, "min_coverage": 0.5}
+CHECK = {
+    "gates": {"urgent": 0.8},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.14.0",
+    "min_accuracy": 0.9,
+    "min_coverage": 0.5,
+}
 JEV = Path(__file__).resolve().parent.parent / "jev"
 
 
 def rows(n=6, label="secret-label"):
-    return [{"text": "ticket %d" % i, "_expect": {"urgent": i % 2 == 0}} for i in range(n)] + \
-           [{"text": "private-input", "_expect": {"urgent": True}, "note": label}]
+    return [{"text": "ticket %d" % i, "_expect": {"urgent": i % 2 == 0}} for i in range(n)] + [
+        {"text": "private-input", "_expect": {"urgent": True}, "note": label}
+    ]
 
 
 class HistoryTests(unittest.TestCase):
@@ -58,10 +65,17 @@ class HistoryTests(unittest.TestCase):
         bundle = bundles.export_bundle("tickets")["data"]  # replacing later, after other writes, is a real change
         writers = [
             ("save", lambda: workbench.save_dataset(self.spec(notes="edit"))),
-            ("preview save", lambda: dataset_changes.save(self.spec(notes="again"),
-                                                          dataset_changes.preview(self.spec(notes="again"))["revision"])),
+            (
+                "preview save",
+                lambda: dataset_changes.save(
+                    self.spec(notes="again"), dataset_changes.preview(self.spec(notes="again"))["revision"]
+                ),
+            ),
             ("check save", lambda: checks.save_check("tickets", CHECK)),
-            ("drift labels", lambda: drift.append_labels("tickets", [{"row": {"text": "new"}, "labels": {"urgent": True}}], Q)),
+            (
+                "drift labels",
+                lambda: drift.append_labels("tickets", [{"row": {"text": "new"}, "labels": {"urgent": True}}], Q),
+            ),
             ("check remove", lambda: checks.remove_check("tickets")),
             ("test lock", lambda: testsplit.lock("tickets", 0.3, seed=1)),
             ("test remove", lambda: testsplit.remove("tickets")),
@@ -179,8 +193,10 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(report["guidelines"]["changed"], ["urgent"])
         self.assertNotIn("Urgent means", json.dumps(report))
         history.restore("tickets", target, report["revision"])
-        self.assertEqual(workbench.load_dataset("tickets")["guidelines"]["urgent"]["note"],
-                         "Urgent means a customer is blocked today.")
+        self.assertEqual(
+            workbench.load_dataset("tickets")["guidelines"]["urgent"]["note"],
+            "Urgent means a customer is blocked today.",
+        )
         # A revision whose guideline names a question the restore no longer has: dropped, reported, never written.
         raw = json.loads((history.history_dir() / "tickets" / (target + ".json")).read_text())
         raw["guidelines"]["gone"] = {"note": "for a removed question"}
@@ -211,7 +227,9 @@ class HistoryTests(unittest.TestCase):
         workbench.save_dataset(self.spec(notes="after split", data=workbench.load_dataset("tickets")["rows"]))
         target = self.kept()[-1]
         dataset = workbench.load_dataset("tickets")
-        dataset["test"]["looks"].append({"at": "2026-11-01T00:00:00Z", "gates": {"urgent": 0.5}, "signal": "confidence"})
+        dataset["test"]["looks"].append(
+            {"at": "2026-11-01T00:00:00Z", "gates": {"urgent": 0.5}, "signal": "confidence"}
+        )
         workbench.write_dataset(dataset)
         report = history.preview("tickets", target)
         history.restore("tickets", target, report["revision"])
@@ -223,7 +241,9 @@ class HistoryTests(unittest.TestCase):
         workbench.save_dataset(self.spec(notes="after split", data=workbench.load_dataset("tickets")["rows"]))
         target = self.kept()[-1]  # the split, with no looks yet
         dataset = workbench.load_dataset("tickets")
-        dataset["test"]["looks"].append({"at": "2026-11-01T00:00:00Z", "gates": {"urgent": 0.5}, "signal": "confidence"})
+        dataset["test"]["looks"].append(
+            {"at": "2026-11-01T00:00:00Z", "gates": {"urgent": 0.5}, "signal": "confidence"}
+        )
         workbench.write_dataset(dataset)
         workbench.delete_dataset("tickets")
         report = history.preview("tickets", target)
@@ -233,6 +253,7 @@ class HistoryTests(unittest.TestCase):
     def test_deleted_restore_keeps_the_newest_looks_in_order_at_the_cap(self):
         workbench.save_dataset(self.spec())
         testsplit.lock("tickets", 0.3, seed=1)
+
         def look(n):
             return {"at": "2026-11-01T00:00:%02dZ" % (n % 60), "n": n, "gates": {"urgent": 0.5}, "signal": "confidence"}
 
@@ -302,6 +323,7 @@ class HistoryTests(unittest.TestCase):
         exported = bundles.export_bundle("tickets")
         import io
         import zipfile
+
         with zipfile.ZipFile(io.BytesIO(base64.b64decode(exported["data"]))) as archive:
             self.assertEqual(archive.namelist(), ["dataset.json"])
             self.assertNotIn(".history", archive.read("dataset.json").decode())
@@ -310,8 +332,18 @@ class HistoryTests(unittest.TestCase):
         workbench.save_dataset(self.spec())
         checks.save_check("tickets", CHECK)
         testsplit.lock("tickets", 0.3, seed=1)
-        drift.append_labels("tickets", [{"row": {"text": "new one"}, "labels": {"urgent": True},
-                                         "answers": {"urgent": 0.97}, "candidates": {"urgent": [True]}}], Q)
+        drift.append_labels(
+            "tickets",
+            [
+                {
+                    "row": {"text": "new one"},
+                    "labels": {"urgent": True},
+                    "answers": {"urgent": 0.97},
+                    "candidates": {"urgent": [True]},
+                }
+            ],
+            Q,
+        )
         workbench.delete_dataset("tickets")
         allowed = {"id", "name", "notes", "saved_at", "questions", "rules", "check", "test", "rows"}
         for path in (history.history_dir() / "tickets").glob("*.json"):

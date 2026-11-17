@@ -40,23 +40,34 @@ class PathTests(unittest.TestCase):
             with self.subTest(path=path):
                 q = {"x": noul("Does `%s` mention a refund?" % path, yes="Yes", no="No")}
                 (finding,) = lint.check(state, q)["findings"]
-                self.assertEqual((finding["level"], finding["code"], finding["question"]), ("problem", "missing_path", "x"))
+                self.assertEqual(
+                    (finding["level"], finding["code"], finding["question"]), ("problem", "missing_path", "x")
+                )
                 self.assertIn("`%s`" % path, finding["message"])
                 self.assertTrue(finding["guide"].startswith(lint.GUIDE + "#"))
 
     def test_paths_in_criteria_and_structured_instructions_count(self):
-        q = {"x": choice({"question": "Which team owns `ticket`?", "context": "See `notes`"},
-                         {"a": "Mentions `sku`", "b": "Anything else"})}
-        self.assertEqual(codes({"ticket": "Hi"}, q),
-                         [("missing_path", "x"), ("missing_path", "x")])
+        q = {
+            "x": choice(
+                {"question": "Which team owns `ticket`?", "context": "See `notes`"},
+                {"a": "Mentions `sku`", "b": "Anything else"},
+            )
+        }
+        self.assertEqual(codes({"ticket": "Hi"}, q), [("missing_path", "x"), ("missing_path", "x")])
 
     def test_a_text_state_has_no_fields(self):
-        (finding,) = lint.check("My order arrived damaged.", {"x": noul("Is `message` angry?", yes="Y", no="N")})["findings"]
+        (finding,) = lint.check("My order arrived damaged.", {"x": noul("Is `message` angry?", yes="Y", no="N")})[
+            "findings"
+        ]
         self.assertEqual(finding["code"], "missing_path")
         self.assertIn("the state is text", finding["message"])
 
     def test_picture_references_and_code_in_backticks_are_not_paths(self):
-        q = {"x": noul("Is the bag in `photo-3fa9c1d2e7` torn? Compare with `datetime(year, month, day)`.", yes="Y", no="N")}
+        q = {
+            "x": noul(
+                "Is the bag in `photo-3fa9c1d2e7` torn? Compare with `datetime(year, month, day)`.", yes="Y", no="N"
+            )
+        }
         self.assertEqual(codes({"note": "torn"}, q, ["photo-3fa9c1d2e7"]), [])
 
 
@@ -67,9 +78,12 @@ class InstructionTests(unittest.TestCase):
 
     def test_question_marks_in_quoted_data_do_not_count(self):
         state = {"document": "L000 We roast on Mondays."}
-        for text in ("Does any line of `document` answer: “When do we roast?”?",
-                     "Does `document` say 'Where is my order? Can I get a refund?'?",
-                     "Does `document` say ‘Where is it?’?", "Doesn't `document` say when we roast?"):
+        for text in (
+            "Does any line of `document` answer: “When do we roast?”?",
+            "Does `document` say 'Where is my order? Can I get a refund?'?",
+            "Does `document` say ‘Where is it?’?",
+            "Doesn't `document` say when we roast?",
+        ):
             with self.subTest(text=text):
                 self.assertEqual(codes(state, {"x": noul(text, yes="Y", no="N")}), [])
 
@@ -80,14 +94,20 @@ class InstructionTests(unittest.TestCase):
         self.assertEqual(codes("hi", q), [])
 
     def test_the_same_question_twice_is_a_problem(self):
-        q = {"a": DESCRIBED, "b": noul("is it URGENT ?", yes="a deadline today.", no="No deadline"), "c": noul("Is it late?", yes="Y", no="N")}
+        q = {
+            "a": DESCRIBED,
+            "b": noul("is it URGENT ?", yes="a deadline today.", no="No deadline"),
+            "c": noul("Is it late?", yes="Y", no="N"),
+        }
         findings = lint.check("hi", q)["findings"]
         self.assertEqual([(f["code"], f["question"]) for f in findings], [("same_question", "a")])
         self.assertIn("`a` and `b`", findings[0]["message"])
 
     def test_structured_criteria_differing_in_a_field_or_number_are_not_duplicates(self):
-        q = {"a": noul("Is it urgent?", yes="Due today", no="No deadline"),
-             "b": noul("Is it urgent?", yes="No deadline", no="Due today")}
+        q = {
+            "a": noul("Is it urgent?", yes="Due today", no="No deadline"),
+            "b": noul("Is it urgent?", yes="No deadline", no="Due today"),
+        }
         self.assertEqual(codes("hi", q), [])
         q = {"x": choice("How much?", {"small": {"max": 10}, "large": {"max": 100}})}
         self.assertEqual(codes("hi", q), [])
@@ -101,19 +121,32 @@ class InstructionTests(unittest.TestCase):
         self.assertEqual(codes("hi", q), [])
 
     def test_the_same_fields_in_another_order_are_the_same_description(self):
-        q = {"x": choice("Which team?", {"billing": {"covers": "Charges", "excludes": "Refunds"},
-                                         "refunds": {"excludes": "Refunds", "covers": "Charges"}})}
+        q = {
+            "x": choice(
+                "Which team?",
+                {
+                    "billing": {"covers": "Charges", "excludes": "Refunds"},
+                    "refunds": {"excludes": "Refunds", "covers": "Charges"},
+                },
+            )
+        }
         self.assertEqual(codes("hi", q), [("same_options", "x")])
 
     def test_the_same_wording_with_different_criteria_is_not_a_duplicate(self):
-        q = {"a": choice("Which team?", {"billing": "Charges", "shipping": "Parcels"}),
-             "b": choice("Which team?", {"sales": "Pricing", "support": "Bugs"})}
+        q = {
+            "a": choice("Which team?", {"billing": "Charges", "shipping": "Parcels"}),
+            "b": choice("Which team?", {"sales": "Pricing", "support": "Bugs"}),
+        }
         self.assertEqual(codes("hi", q), [])
 
 
 class CriteriaTests(unittest.TestCase):
     def test_choice_options_with_the_same_description_are_a_problem(self):
-        q = {"x": choice("Which team?", {"billing": "Money issues", "refunds": "money issues.", "other": "Anything else"})}
+        q = {
+            "x": choice(
+                "Which team?", {"billing": "Money issues", "refunds": "money issues.", "other": "Anything else"}
+            )
+        }
         findings = lint.check("hi", q)["findings"]
         self.assertEqual([(f["level"], f["code"]) for f in findings], [("problem", "same_options")])
         self.assertIn("`billing` and `refunds`", findings[0]["message"])
@@ -129,8 +162,12 @@ class CriteriaTests(unittest.TestCase):
         self.assertEqual(codes("hi", q), [])
 
     def test_options_described_with_different_fields_are_advice(self):
-        q = {"x": choice("Which team?", {"billing": {"covers": "Charges", "not_for": "Parcels"},
-                                         "shipping": {"covers": "Parcels"}})}
+        q = {
+            "x": choice(
+                "Which team?",
+                {"billing": {"covers": "Charges", "not_for": "Parcels"}, "shipping": {"covers": "Parcels"}},
+            )
+        }
         self.assertEqual(codes("hi", q), [("mixed_option_fields", "x")])
         q = {"x": choice("Which team?", {"billing": {"covers": "Charges"}, "shipping": "Parcels"})}
         self.assertEqual(codes("hi", q), [("mixed_option_fields", "x")])
@@ -162,15 +199,19 @@ class ReportTests(unittest.TestCase):
     def test_problems_come_first_then_questions_in_order(self):
         q = {"a": noul("Is it urgent?"), "b": noul("Does `missing` say so?", yes="Y", no="N")}
         report = lint.check("From: a\nTo: b\n", q)
-        self.assertEqual([(f["level"], f["code"], f["question"]) for f in report["findings"]],
-                         [("problem", "missing_path", "b"), ("advice", "fields_in_text", None), ("advice", "noul_criteria", "a")])
+        self.assertEqual(
+            [(f["level"], f["code"], f["question"]) for f in report["findings"]],
+            [("problem", "missing_path", "b"), ("advice", "fields_in_text", None), ("advice", "noul_criteria", "a")],
+        )
         self.assertEqual(report["counts"], {"problem": 1, "advice": 2})
 
     def test_the_route_validates_and_takes_picture_references(self):
         self.assertIs(server.ROUTES[("POST", "/api/workbench/lint")], server.api_wb_lint)
         q = {"x": noul("Is the bag in `photo-3fa9c1d2e7` torn?", yes="Y", no="N")}
         self.assertEqual(server.api_wb_lint({"state": "torn", "questions": q})["counts"]["problem"], 1)
-        report = server.api_wb_lint({"state": "torn", "questions": q, "images": {"photo-3fa9c1d2e7": {"sample": "torn-bag"}}})
+        report = server.api_wb_lint(
+            {"state": "torn", "questions": q, "images": {"photo-3fa9c1d2e7": {"sample": "torn-bag"}}}
+        )
         self.assertEqual(report["findings"], [])
         for body in ({"state": "torn", "questions": {}}, {"state": "", "questions": q}):
             with self.subTest(body=body), self.assertRaises(workbench.WorkbenchError):
@@ -185,10 +226,17 @@ class BuiltInRequestTests(unittest.TestCase):
 
         def post(payload):
             self.sent.append(payload)
-            return {"model": "jev-1.14.0", "answers": fake_answers(payload["questions"]), "usage": {"input_tokens": 100}}
+            return {
+                "model": "jev-1.14.0",
+                "answers": fake_answers(payload["questions"]),
+                "usage": {"input_tokens": 100},
+            }
 
-        for target, attr, value in ((server.client, "_post_system_one", post), (server.client, "_memory_key", "sk-test"),
-                                    (server.client, "guard", SpendGuard(budget_usd=100, rpm=1000))):
+        for target, attr, value in (
+            (server.client, "_post_system_one", post),
+            (server.client, "_memory_key", "sk-test"),
+            (server.client, "guard", SpendGuard(budget_usd=100, rpm=1000)),
+        ):
             patcher = patch.object(target, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -208,20 +256,36 @@ class BuiltInRequestTests(unittest.TestCase):
         yield "dispatch", last(lambda: server.api_dispatch({"text": "Pay PackRight's open invoice"}))
         yield "find", last(lambda: server.api_find({"queries": ["When do we roast?", "Who handles refunds?"]}))
         yield "play", last(lambda: server.api_play_ask({"id": game["id"], "text": "Is it alive?"}))
-        yield "claims", last(lambda: server.api_claims_check({"order": order, "note": "The bag tore.", "image": {"sample": "torn-bag"}}))
+        yield (
+            "claims",
+            last(
+                lambda: server.api_claims_check(
+                    {"order": order, "note": "The bag tore.", "image": {"sample": "torn-bag"}}
+                )
+            ),
+        )
         for ex in counter.EXAMPLES:
-            yield "counter " + ex["label"], last(lambda: server.api_counter_turn({"transcript": [{"speaker": "customer", "text": ex["turns"][0]}]}))
+            yield (
+                "counter " + ex["label"],
+                last(
+                    lambda: server.api_counter_turn({"transcript": [{"speaker": "customer", "text": ex["turns"][0]}]})
+                ),
+            )
         for ex in reviews.EXAMPLES:
             yield "reviews " + ex["label"], last(lambda: server.api_reviews_check({"review": ex}))
 
     def test_no_demo_or_example_has_a_problem(self):
         requests = list(self.demo_requests())
-        requests += [("example " + e["id"], {"state": e["state"], "questions": e["questions"], "assets": e.get("images") or {}})
-                     for e in examples.EXAMPLES]
+        requests += [
+            ("example " + e["id"], {"state": e["state"], "questions": e["questions"], "assets": e.get("images") or {}})
+            for e in examples.EXAMPLES
+        ]
         for row in workbench.load_sample_rows():
             state = workbench.split_labels(row, 0)[0]
-            requests += [("bulk sample", {"state": state, "questions": examples.BULK_QUESTIONS}),
-                         ("terse bulk sample", {"state": state, "questions": examples.TERSE_BULK_QUESTIONS})]
+            requests += [
+                ("bulk sample", {"state": state, "questions": examples.BULK_QUESTIONS}),
+                ("terse bulk sample", {"state": state, "questions": examples.TERSE_BULK_QUESTIONS}),
+            ]
         self.assertGreater(len(requests), 20)
         for name, request in requests:
             with self.subTest(request=name):

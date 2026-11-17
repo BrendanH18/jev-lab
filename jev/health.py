@@ -30,11 +30,21 @@ def _label(question: dict, value: Any) -> tuple:
 
 
 def _slice_counts(rows: List[dict], questions: Dict[str, dict]) -> dict:
-    return {"rows": len(rows), "unique_inputs": len({row["key"] for row in rows}),
-            "questions": [{"qid": qid, "type": question["type"],
-                           **{status: sum(row["labels"][qid] == status for row in rows)
-                              for status in ("labeled", "missing", "invalid")}}
-                          for qid, question in questions.items()]}
+    return {
+        "rows": len(rows),
+        "unique_inputs": len({row["key"] for row in rows}),
+        "questions": [
+            {
+                "qid": qid,
+                "type": question["type"],
+                **{
+                    status: sum(row["labels"][qid] == status for row in rows)
+                    for status in ("labeled", "missing", "invalid")
+                },
+            }
+            for qid, question in questions.items()
+        ],
+    }
 
 
 def _by_slice(rows: List[dict], questions: Dict[str, dict], field: Any) -> dict:
@@ -46,12 +56,20 @@ def _by_slice(rows: List[dict], questions: Dict[str, dict], field: Any) -> dict:
         for row in rows:
             groups.setdefault(slices._value(row["row"], field), []).append(row)
     ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0] == slices.NONE, item[0]))
-    return {"fields": fields, "field": field,
-            "slices": [{"value": slices._shown(value), "rows": len(group),
-                        "unique_inputs": len({row["key"] for row in group}),
-                        "tuning": _slice_counts([row for row in group if not row["test"]], questions),
-                        "test": _slice_counts([row for row in group if row["test"]], questions)}
-                       for value, group in ordered]}
+    return {
+        "fields": fields,
+        "field": field,
+        "slices": [
+            {
+                "value": slices._shown(value),
+                "rows": len(group),
+                "unique_inputs": len({row["key"] for row in group}),
+                "tuning": _slice_counts([row for row in group if not row["test"]], questions),
+                "test": _slice_counts([row for row in group if row["test"]], questions),
+            }
+            for value, group in ordered
+        ],
+    }
 
 
 def analyze(rows: Any, questions: Any = None, field: Any = None) -> dict:
@@ -78,8 +96,10 @@ def analyze(rows: Any, questions: Any = None, field: Any = None) -> dict:
     slice_rows = []
     tests = set()
     invalid_labels = []
-    reports = {qid: {"qid": qid, "type": question["type"], "labeled": 0, "missing": 0,
-                     "missing_rows": [], "invalid": []} for qid, question in asked.items()}
+    reports = {
+        qid: {"qid": qid, "type": question["type"], "labeled": 0, "missing": 0, "missing_rows": [], "invalid": []}
+        for qid, question in asked.items()
+    }
     for number, row in enumerate(rows, 1):
         state, raw = workbench.split_labels(row, number)
         if workbench.row_test(state):
@@ -89,8 +109,12 @@ def analyze(rows: Any, questions: Any = None, field: Any = None) -> dict:
         key = decisions._key(row)
         groups.setdefault(key, []).append(number)
         clean = workbench.without_marks(state)
-        entry = {"row": {"text": clean} if isinstance(clean, str) else clean,
-                 "key": key, "test": number in tests, "labels": {}}
+        entry = {
+            "row": {"text": clean} if isinstance(clean, str) else clean,
+            "key": key,
+            "test": number in tests,
+            "labels": {},
+        }
         slice_rows.append(entry)
         normalized = {}
         raw = raw or {}
@@ -111,8 +135,9 @@ def analyze(rows: Any, questions: Any = None, field: Any = None) -> dict:
                 report["labeled"] += 1
                 normalized[qid] = value
         if asked:
-            invalid_labels.extend({"row": number, "question": qid}
-                                  for qid, value in raw.items() if qid not in asked and value is not None)
+            invalid_labels.extend(
+                {"row": number, "question": qid} for qid, value in raw.items() if qid not in asked and value is not None
+            )
         labels.append(normalized)
     duplicates, conflicts, overlap = [], [], []
     for positions in groups.values():
@@ -130,7 +155,14 @@ def analyze(rows: Any, questions: Any = None, field: Any = None) -> dict:
                 conflicts.append({"rows": labeled, "question": qid})
     # "lab": extra advisory findings from Lab packs (jev/lab/packs, kind health_check), as titles, row numbers and
     # messages. Like everything above, they never carry a label value or an input.
-    return {"rows": len(rows), "unique_inputs": len(groups), "duplicate_groups": duplicates,
-            "conflicts": conflicts, "overlap": overlap, "questions": list(reports.values()),
-            "invalid_labels": invalid_labels, "by_slice": _by_slice(slice_rows, asked, field),
-            "lab": lab.health_findings(rows, asked)}
+    return {
+        "rows": len(rows),
+        "unique_inputs": len(groups),
+        "duplicate_groups": duplicates,
+        "conflicts": conflicts,
+        "overlap": overlap,
+        "questions": list(reports.values()),
+        "invalid_labels": invalid_labels,
+        "by_slice": _by_slice(slice_rows, asked, field),
+        "lab": lab.health_findings(rows, asked),
+    }

@@ -46,7 +46,9 @@ def _positive(text: str) -> int:
 
 def _since(text: str) -> str:
     if not _DATE.fullmatch(text):
-        raise argparse.ArgumentTypeError("expected a date such as 2026-11-01 or a UTC time such as 2026-11-01T09:30:00Z")
+        raise argparse.ArgumentTypeError(
+            "expected a date such as 2026-11-01 or a UTC time such as 2026-11-01T09:30:00Z"
+        )
     return text.rstrip("Z")
 
 
@@ -123,7 +125,9 @@ def _pick(dataset_id: str, word: str) -> dict:
             if not matches:
                 raise kit.CliError("No kept revision of %r matches %r" % (dataset_id, word))
             if len(matches) > 1:
-                raise kit.CliError("%r matches %d revisions of %r; give more of the revision id" % (word, len(matches), dataset_id))
+                raise kit.CliError(
+                    "%r matches %d revisions of %r; give more of the revision id" % (word, len(matches), dataset_id)
+                )
             found = matches[0]
     if found["dataset"] is None:
         raise kit.CliError("Revision %s of %r is not a readable dataset file" % (found["revision"], dataset_id))
@@ -176,6 +180,7 @@ def _question_order(datasets: List[dict]) -> List[str]:
 def _label_changes(before: dict, after: dict) -> Dict[str, Dict[str, List[int]]]:
     """{question: {"tuning": [added, removed, changed], "test": [...]}}, pairing rows as a replacement preview does
     (jev/dataset_changes.py): the same input in row order, labels and test markers ignored."""
+
     def groups(rows: list) -> Dict[str, list]:
         out: Dict[str, list] = {}
         for row in rows:
@@ -219,11 +224,19 @@ def _keep_since(args, rows: List[list], at: int = 1) -> List[list]:
 
 def _configure_datasets(parser) -> None:
     kit.add_format(parser)
-    parser.add_argument("--sort", choices=("id", "revisions", "newest", "bytes"), default="id",
-                        help="order: id (default), most revisions, newest revision first, most bytes kept")
-    parser.add_argument("--min", type=_positive, metavar="N",
-                        help="keep datasets with at least N kept revisions (%d is the limit: the next save drops the oldest)"
-                             % history.KEEP)
+    parser.add_argument(
+        "--sort",
+        choices=("id", "revisions", "newest", "bytes"),
+        default="id",
+        help="order: id (default), most revisions, newest revision first, most bytes kept",
+    )
+    parser.add_argument(
+        "--min",
+        type=_positive,
+        metavar="N",
+        help="keep datasets with at least N kept revisions (%d is the limit: the next save drops the oldest)"
+        % history.KEEP,
+    )
     parser.add_argument("--totals", action="store_true", help="add a row summing revisions and bytes")
 
 
@@ -239,8 +252,17 @@ def run_datasets(args) -> int:
         newest = _parse(kept[-1].read_bytes()) or {}
         name = newest.get("name") if isinstance(newest.get("name"), str) else None
         size = sum(path.stat().st_size for path in kept)
-        rows.append([folder.name, name, len(kept), _when(kept[0].stem), _when(kept[-1].stem), size,
-                     workbench._dataset_path(folder.name).exists()])
+        rows.append(
+            [
+                folder.name,
+                name,
+                len(kept),
+                _when(kept[0].stem),
+                _when(kept[-1].stem),
+                size,
+                workbench._dataset_path(folder.name).exists(),
+            ]
+        )
     if args.min:
         rows = [row for row in rows if row[2] >= args.min]
     if args.sort == "revisions":
@@ -251,10 +273,23 @@ def run_datasets(args) -> int:
     elif args.sort == "bytes":
         rows.sort(key=lambda row: (-row[5], row[0]))
     if args.totals and rows:
-        rows.append(["(total)", None, sum(row[2] for row in rows), min(row[3] for row in rows),
-                     max(row[4] for row in rows), sum(row[5] for row in rows), None])
-    _emit_or(args, ["dataset", "name", "revisions", "oldest", "newest", "bytes", "file"], rows,
-             "No dataset history matches in this data directory.")
+        rows.append(
+            [
+                "(total)",
+                None,
+                sum(row[2] for row in rows),
+                min(row[3] for row in rows),
+                max(row[4] for row in rows),
+                sum(row[5] for row in rows),
+                None,
+            ]
+        )
+    _emit_or(
+        args,
+        ["dataset", "name", "revisions", "oldest", "newest", "bytes", "file"],
+        rows,
+        "No dataset history matches in this data directory.",
+    )
     return 0
 
 
@@ -267,8 +302,11 @@ def _configure_show(parser) -> None:
     kit.add_format(parser)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--questions", action="store_true", help="list the revision's questions with labeled-row counts")
-    group.add_argument("--restore-preview", action="store_true",
-                       help="what restoring this revision would change, as counts; nothing is restored")
+    group.add_argument(
+        "--restore-preview",
+        action="store_true",
+        help="what restoring this revision would change, as counts; nothing is restored",
+    )
 
 
 def _summary(dataset_id: str, version: dict) -> List[list]:
@@ -279,13 +317,24 @@ def _summary(dataset_id: str, version: dict) -> List[list]:
     current = _current(dataset_id)
     same = None if current is None else current["data"] == version["data"]
     guides = dataset.get("guidelines")
-    return [["revision", version["revision"]], ["at", version["at"]], ["name", dataset.get("name")],
-            ["saved_at", dataset.get("saved_at")], ["bytes", len(version["data"])], ["rows", len(rows)],
-            ["tuning_rows", len(tuning)], ["held_out_rows", len(held)],
-            ["labeled_tuning", sum(_labeled(row) for row in tuning)], ["labeled_held_out", sum(_labeled(row) for row in held)],
-            ["questions", len(_questions(dataset))], ["rules", bool(str(dataset.get("rules") or "").strip())],
-            ["check", _check(dataset) is not None], ["guidelines", len(guides) if isinstance(guides, dict) else 0],
-            ["test_looks", _looks(dataset)], ["same_as_current", same]]
+    return [
+        ["revision", version["revision"]],
+        ["at", version["at"]],
+        ["name", dataset.get("name")],
+        ["saved_at", dataset.get("saved_at")],
+        ["bytes", len(version["data"])],
+        ["rows", len(rows)],
+        ["tuning_rows", len(tuning)],
+        ["held_out_rows", len(held)],
+        ["labeled_tuning", sum(_labeled(row) for row in tuning)],
+        ["labeled_held_out", sum(_labeled(row) for row in held)],
+        ["questions", len(_questions(dataset))],
+        ["rules", bool(str(dataset.get("rules") or "").strip())],
+        ["check", _check(dataset) is not None],
+        ["guidelines", len(guides) if isinstance(guides, dict) else 0],
+        ["test_looks", _looks(dataset)],
+        ["same_as_current", same],
+    ]
 
 
 def _question_rows(dataset: dict) -> List[list]:
@@ -294,7 +343,9 @@ def _question_rows(dataset: dict) -> List[list]:
     for qid in _question_order([dataset]):
         spec = asked.get(qid) if isinstance(asked.get(qid), dict) else {}
         criteria = spec.get("criteria")
-        options = len(criteria) if spec.get("type") in ("choice", "score") and isinstance(criteria, (dict, list)) else None
+        options = (
+            len(criteria) if spec.get("type") in ("choice", "score") and isinstance(criteria, (dict, list)) else None
+        )
         tuning = sum(_labeled(row, qid) for row in dataset["rows"] if not workbench.row_test(row))
         held = sum(_labeled(row, qid) for row in dataset["rows"] if workbench.row_test(row))
         out.append([qid, spec.get("type") if qid in asked else "(labels only)", options, tuning, held])
@@ -304,24 +355,40 @@ def _question_rows(dataset: dict) -> List[list]:
 def _restore_rows(dataset_id: str, revision: str) -> List[list]:
     summary = history.preview(dataset_id, revision)  # read-only, the same validation as a restore
     rows, labels, test, guides = summary["rows"], summary["labels"], summary["test"], summary["guidelines"]
-    return [["restoring", revision], ["file_exists", summary["exists"]], ["rows_before", rows["before"]],
-            ["rows_after", rows["after"]], ["rows_added", rows["added"]], ["rows_removed", rows["removed"]],
-            ["order_changed", rows["order_changed"]], ["labels_added", labels["added"]],
-            ["labels_removed", labels["removed"]], ["labels_changed", labels["changed"]],
-            ["questions_changed", summary["questions_changed"]], ["rules_changed", summary["rules_changed"]],
-            ["name_or_notes_changed", summary["metadata_changed"]], ["check", summary["check"]],
-            ["check_changed", summary["check_changed"]],
-            ["guidelines_changed", len(guides["added"]) + len(guides["removed"]) + len(guides["changed"])],
-            ["guidelines_dropped", len(guides.get("dropped") or [])], ["held_out_before", test["before"]],
-            ["held_out_after", test["after"]], ["held_out_moved", test["changed_membership"]],
-            ["test_history", test["history"]]]
+    return [
+        ["restoring", revision],
+        ["file_exists", summary["exists"]],
+        ["rows_before", rows["before"]],
+        ["rows_after", rows["after"]],
+        ["rows_added", rows["added"]],
+        ["rows_removed", rows["removed"]],
+        ["order_changed", rows["order_changed"]],
+        ["labels_added", labels["added"]],
+        ["labels_removed", labels["removed"]],
+        ["labels_changed", labels["changed"]],
+        ["questions_changed", summary["questions_changed"]],
+        ["rules_changed", summary["rules_changed"]],
+        ["name_or_notes_changed", summary["metadata_changed"]],
+        ["check", summary["check"]],
+        ["check_changed", summary["check_changed"]],
+        ["guidelines_changed", len(guides["added"]) + len(guides["removed"]) + len(guides["changed"])],
+        ["guidelines_dropped", len(guides.get("dropped") or [])],
+        ["held_out_before", test["before"]],
+        ["held_out_after", test["after"]],
+        ["held_out_moved", test["changed_membership"]],
+        ["test_history", test["history"]],
+    ]
 
 
 def run_show(args) -> int:
     version = _pick(args.dataset, args.revision)
     if args.questions:
-        _emit_or(args, ["question", "type", "options", "labeled_tuning", "labeled_held_out"],
-                 _question_rows(version["dataset"]), "Revision %s asks no questions." % version["revision"])
+        _emit_or(
+            args,
+            ["question", "type", "options", "labeled_tuning", "labeled_held_out"],
+            _question_rows(version["dataset"]),
+            "Revision %s asks no questions." % version["revision"],
+        )
         return 0
     if args.restore_preview:
         if version["revision"] == CURRENT:
@@ -354,18 +421,42 @@ def _diff_rows(old: dict, new: dict) -> tuple:
     rows, labels, test = summary["rows"], summary["labels"], summary["test"]
     guides = guidelines.changes(before.get("guidelines"), after.get("guidelines"))
     guides_changed = len(guides["added"]) + len(guides["removed"]) + len(guides["changed"])
-    out = [["from", old["revision"]], ["to", new["revision"]], ["rows_before", rows["before"]], ["rows_after", rows["after"]],
-           ["rows_added", rows["added"]], ["rows_removed", rows["removed"]], ["order_changed", rows["order_changed"]],
-           ["labels_added", labels["added"]], ["labels_removed", labels["removed"]], ["labels_changed", labels["changed"]],
-           ["held_out_before", test["before"]], ["held_out_after", test["after"]],
-           ["held_out_moved", test["changed_membership"]], ["test_looks_before", _looks(before)],
-           ["test_looks_after", _looks(after)], ["questions_changed", summary["questions_changed"]],
-           ["rules_changed", summary["rules_changed"]], ["name_or_notes_changed", summary["metadata_changed"]],
-           ["check_changed", summary["check_changed"]], ["guidelines_changed", guides_changed]]
-    differs = bool(rows["added"] or rows["removed"] or rows["order_changed"] or any(labels.values())
-                   or test["before"] != test["after"] or test["changed_membership"] or _looks(before) != _looks(after)
-                   or summary["questions_changed"] or summary["rules_changed"] or summary["metadata_changed"]
-                   or summary["check_changed"] or guides_changed)
+    out = [
+        ["from", old["revision"]],
+        ["to", new["revision"]],
+        ["rows_before", rows["before"]],
+        ["rows_after", rows["after"]],
+        ["rows_added", rows["added"]],
+        ["rows_removed", rows["removed"]],
+        ["order_changed", rows["order_changed"]],
+        ["labels_added", labels["added"]],
+        ["labels_removed", labels["removed"]],
+        ["labels_changed", labels["changed"]],
+        ["held_out_before", test["before"]],
+        ["held_out_after", test["after"]],
+        ["held_out_moved", test["changed_membership"]],
+        ["test_looks_before", _looks(before)],
+        ["test_looks_after", _looks(after)],
+        ["questions_changed", summary["questions_changed"]],
+        ["rules_changed", summary["rules_changed"]],
+        ["name_or_notes_changed", summary["metadata_changed"]],
+        ["check_changed", summary["check_changed"]],
+        ["guidelines_changed", guides_changed],
+    ]
+    differs = bool(
+        rows["added"]
+        or rows["removed"]
+        or rows["order_changed"]
+        or any(labels.values())
+        or test["before"] != test["after"]
+        or test["changed_membership"]
+        or _looks(before) != _looks(after)
+        or summary["questions_changed"]
+        or summary["rules_changed"]
+        or summary["metadata_changed"]
+        or summary["check_changed"]
+        or guides_changed
+    )
     return out, differs
 
 
@@ -438,8 +529,9 @@ def run_labels(args) -> int:
         raise kit.CliError("No kept revision of %r asks or labels %r" % (args.dataset, args.question))
     rows, found = [], False
     for previous, version in zip(versions, versions[1:]):
-        counts = _label_changes(previous["dataset"], version["dataset"]).get(args.question,
-                                                                            {"tuning": [0, 0, 0], "test": [0, 0, 0]})
+        counts = _label_changes(previous["dataset"], version["dataset"]).get(
+            args.question, {"tuning": [0, 0, 0], "test": [0, 0, 0]}
+        )
         total = [counts["tuning"][i] + counts["test"][i] for i in range(3)]
         if args.kind and not total[KINDS.index(args.kind)]:
             continue
@@ -449,8 +541,11 @@ def run_labels(args) -> int:
         rows.append(line)
     rows = _keep_since(args, rows)
     found = any(any(line[2:]) for line in rows)
-    columns = ["revision", "at"] + (["tuning_added", "tuning_removed", "tuning_changed", "test_added", "test_removed",
-                                     "test_changed"] if args.split else list(KINDS))
+    columns = ["revision", "at"] + (
+        ["tuning_added", "tuning_removed", "tuning_changed", "test_added", "test_removed", "test_changed"]
+        if args.split
+        else list(KINDS)
+    )
     _emit_or(args, columns, rows, "No kept revision changed the labels of %r." % args.question)
     return 1 if found else 0
 
@@ -461,7 +556,9 @@ def run_labels(args) -> int:
 def _configure_coverage(parser) -> None:
     parser.add_argument("dataset", help="dataset id")
     kit.add_format(parser)
-    parser.add_argument("--share", action="store_true", help="print each question's share of labeled rows instead of counts")
+    parser.add_argument(
+        "--share", action="store_true", help="print each question's share of labeled rows instead of counts"
+    )
     parser.add_argument("--tuning", action="store_true", help="count tuning rows only, leaving held-out rows out")
 
 
@@ -501,12 +598,21 @@ def _changed_parts(before: dict, after: dict) -> List[str]:
         return json.dumps(before.get(key), sort_keys=sort) == json.dumps(after.get(key), sort_keys=sort)
 
     moved = dataset_changes.summarize(before, dict(after, id="-"), "-")["test"]
-    split = (sum(map(workbench.row_test, before["rows"])) != sum(map(workbench.row_test, after["rows"]))
-             or moved["changed_membership"] or _test(before).get("locked_at") != _test(after).get("locked_at"))
-    flags = {"name": before.get("name") != after.get("name"), "notes": (before.get("notes") or "") != (after.get("notes") or ""),
-             "questions": not same("questions", sort=False), "rules": (before.get("rules") or "") != (after.get("rules") or ""),
-             "check": not same("check"), "guidelines": not same("guidelines"), "split": bool(split),
-             "looks": _looks(before) != _looks(after)}
+    split = (
+        sum(map(workbench.row_test, before["rows"])) != sum(map(workbench.row_test, after["rows"]))
+        or moved["changed_membership"]
+        or _test(before).get("locked_at") != _test(after).get("locked_at")
+    )
+    flags = {
+        "name": before.get("name") != after.get("name"),
+        "notes": (before.get("notes") or "") != (after.get("notes") or ""),
+        "questions": not same("questions", sort=False),
+        "rules": (before.get("rules") or "") != (after.get("rules") or ""),
+        "check": not same("check"),
+        "guidelines": not same("guidelines"),
+        "split": bool(split),
+        "looks": _looks(before) != _looks(after),
+    }
     return [part for part in PARTS if flags[part]]
 
 
@@ -517,8 +623,12 @@ def run_config(args) -> int:
         parts = _changed_parts(previous["dataset"], version["dataset"])
         if parts and (args.part is None or args.part in parts):
             rows.append([version["revision"], version["at"], ", ".join(parts)])
-    _emit_or(args, ["revision", "at", "changed"], rows,
-             "No kept revision changed %s." % ("the %s" % args.part if args.part else "the configuration"))
+    _emit_or(
+        args,
+        ["revision", "at", "changed"],
+        rows,
+        "No kept revision changed %s." % ("the %s" % args.part if args.part else "the configuration"),
+    )
     return 0
 
 
@@ -529,8 +639,11 @@ def _configure_checks(parser) -> None:
     parser.add_argument("dataset", help="dataset id")
     kit.add_format(parser)
     parser.add_argument("--gates", action="store_true", help="add one column per gated question with its threshold")
-    parser.add_argument("--changes", action="store_true",
-                        help="keep the oldest revision and those whose check differs from the revision before")
+    parser.add_argument(
+        "--changes",
+        action="store_true",
+        help="keep the oldest revision and those whose check differs from the revision before",
+    )
 
 
 def _count(value: Any) -> int:
@@ -546,22 +659,43 @@ def run_checks(args) -> int:
     rows, previous = [], None
     for index, version in enumerate(versions):
         check = _check(version["dataset"])
-        config = json.dumps({k: v for k, v in (check or {}).items() if k != "saved_at"}, sort_keys=True) if check else None
+        config = (
+            json.dumps({k: v for k, v in (check or {}).items() if k != "saved_at"}, sort_keys=True) if check else None
+        )
         if args.changes and index and config == previous:
             continue
         previous = config
         spec = check or {}
         gates = spec.get("gates") if isinstance(spec.get("gates"), dict) else {}
-        line: List[Any] = [version["revision"], version["at"], check is not None, spec.get("model"), spec.get("tuned_on"),
-                           spec.get("signal", "confidence") if check else None, _count(gates) if check else None,
-                           spec.get("min_accuracy"), spec.get("min_coverage"),
-                           _count(spec.get("slice_targets")) if check else None,
-                           _count(spec.get("answer_sets")) if check else None]
+        line: List[Any] = [
+            version["revision"],
+            version["at"],
+            check is not None,
+            spec.get("model"),
+            spec.get("tuned_on"),
+            spec.get("signal", "confidence") if check else None,
+            _count(gates) if check else None,
+            spec.get("min_accuracy"),
+            spec.get("min_coverage"),
+            _count(spec.get("slice_targets")) if check else None,
+            _count(spec.get("answer_sets")) if check else None,
+        ]
         if args.gates:
             line += [gates.get(qid) for qid in gated]
         rows.append(line)
-    columns = ["revision", "at", "check", "model", "tuned_on", "signal", "gates", "min_accuracy", "min_coverage",
-               "slice_targets", "answer_sets"]
+    columns = [
+        "revision",
+        "at",
+        "check",
+        "model",
+        "tuned_on",
+        "signal",
+        "gates",
+        "min_accuracy",
+        "min_coverage",
+        "slice_targets",
+        "answer_sets",
+    ]
     kit.emit(args, columns + (["gate:%s" % qid for qid in gated] if args.gates else []), rows)
     return 0
 
@@ -585,7 +719,7 @@ def _file_problems(folder: Path, path: Path, previous: Optional[bytes]) -> List[
         datetime.datetime.strptime(match.group(1), _STAMP)
     except ValueError:
         problems.append("the time in its name is not a valid time")
-    if hashlib.sha256(data).hexdigest()[:history.HASH_CHARS] != match.group(2):
+    if hashlib.sha256(data).hexdigest()[: history.HASH_CHARS] != match.group(2):
         problems.append("its content does not match the hash in its name")
     dataset = _parse(data)
     if dataset is None:
@@ -619,7 +753,11 @@ def run_verify(args) -> int:
             continue
         previous = None
         entries = sorted(folder.iterdir())
-        kept = [path for path in entries if path.is_file() and path.suffix == ".json" and history.REVISION.fullmatch(path.stem)]
+        kept = [
+            path
+            for path in entries
+            if path.is_file() and path.suffix == ".json" and history.REVISION.fullmatch(path.stem)
+        ]
         for path in entries:
             found = _file_problems(folder, path, previous)
             if path in kept:
@@ -629,7 +767,9 @@ def run_verify(args) -> int:
             if found or args.all:
                 rows.append([folder.name, path.name, "; ".join(found) or "ok"])
         if len(kept) > history.KEEP:
-            rows.append([folder.name, "", "%d revisions kept, more than the %d the Workbench keeps" % (len(kept), history.KEEP)])
+            rows.append(
+                [folder.name, "", "%d revisions kept, more than the %d the Workbench keeps" % (len(kept), history.KEEP)]
+            )
             problems += 1
     if not problems and not args.all and args.format == "table":
         print("All %d kept revisions of %d datasets check out." % (files, len(folders)))
@@ -640,66 +780,130 @@ def run_verify(args) -> int:
 
 FORMAT = {"id": "format", "title": "--format json|csv|markdown prints the history list for scripts and docs"}
 
-PACK = kit.define_pack({
-    "id": "cli-history",
-    "surface": "python.cli",
-    "title": "Dataset revision history",
-    "about": "Offline `lab.py history` commands over the revisions kept under data/workbench/datasets/.history: list "
-             "datasets with history, summarize or preview restoring a revision, diff two revisions, trace when a "
-             "question's labels changed, track label coverage, configuration and saved checks over time, and verify "
-             "the kept files. Counts and configuration only, never a label value; nothing is restored or written.",
-    "features": [
-        {"id": "datasets", "kind": "cli", "command": ["history", "datasets"], "configure": _configure_datasets,
-         "run": run_datasets,
-         "title": "list datasets with kept history: revision count, oldest and newest revision, bytes kept, whether the file exists",
-         "options": [
-             FORMAT,
-             {"id": "sort", "title": "--sort id|revisions|newest|bytes orders datasets with kept history"},
-             {"id": "min", "title": "--min N keeps datasets with at least N kept revisions"},
-             {"id": "totals", "title": "--totals adds a row summing kept revisions and bytes"},
-         ]},
-        {"id": "show", "kind": "cli", "command": ["history", "show"], "configure": _configure_show, "run": run_show,
-         "title": "summarize one revision (latest, oldest, ~N, an id prefix or current) as row, label, question and check counts",
-         "options": [
-             {"id": "questions", "title": "--questions lists the revision's questions with tuning and held-out labeled-row counts"},
-             {"id": "restore_preview", "title": "--restore-preview shows what restoring the revision would change, restoring nothing"},
-         ]},
-        {"id": "diff", "kind": "cli", "command": ["history", "diff"], "configure": _configure_diff, "run": run_diff,
-         "title": "compare two revisions, or one with the current file, by row, label, held-out and configuration counts",
-         "options": [
-             {"id": "by_question", "title": "--by-question counts labels added, removed and changed per question"},
-             {"id": "questions", "title": "--questions lists questions added, removed, moved or whose type, options or wording changed"},
-             {"id": "exit_code", "title": "--exit-code exits 1 when the two revisions differ"},
-         ]},
-        {"id": "labels", "kind": "cli", "command": ["history", "labels"], "configure": _configure_labels, "run": run_labels,
-         "title": "find the revisions that changed one question's labels, with counts, exiting 1 when one did",
-         "options": [
-             {"id": "all", "title": "--all also lists revisions that left the question's labels alone"},
-             {"id": "split", "title": "--split counts tuning and held-out label changes separately"},
-             {"id": "kind", "title": "--kind added|removed|changed keeps revisions with that kind of label change"},
-             {"id": "since", "title": "--since DATE keeps revisions at or after a date"},
-         ]},
-        {"id": "coverage", "kind": "cli", "command": ["history", "coverage"], "configure": _configure_coverage,
-         "run": run_coverage, "title": "track each question's labeled-row count across kept revisions and the current file",
-         "options": [
-             {"id": "share", "title": "--share prints each question's share of labeled rows instead of counts"},
-             {"id": "tuning", "title": "--tuning counts tuning rows only, leaving held-out rows out"},
-         ]},
-        {"id": "config", "kind": "cli", "command": ["history", "config"], "configure": _configure_config, "run": run_config,
-         "title": "list the revisions that changed the name, notes, questions, rules, check, guidelines, test split or looks",
-         "options": [
-             {"id": "part", "title": "--part PART keeps revisions that changed one part of the configuration"},
-         ]},
-        {"id": "checks", "kind": "cli", "command": ["history", "checks"], "configure": _configure_checks, "run": run_checks,
-         "title": "track the saved check across revisions: model, tuned-on version, targets and gate, slice and cut counts",
-         "options": [
-             {"id": "gates", "title": "--gates adds each gated question's threshold per revision"},
-             {"id": "changes", "title": "--changes keeps only the revisions whose saved check changed"},
-         ]},
-        {"id": "verify", "kind": "cli", "command": ["history", "verify"], "configure": _configure_verify, "run": run_verify,
-         "title": "verify kept revision files: name, hash, readable JSON, dataset name, repeats and the keep limit; exits 1 on a problem",
-         "options": [
-             {"id": "all", "title": "--all lists every kept file with its status, not only problems"},
-         ]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-history",
+        "surface": "python.cli",
+        "title": "Dataset revision history",
+        "about": "Offline `lab.py history` commands over the revisions kept under data/workbench/datasets/.history: list "
+        "datasets with history, summarize or preview restoring a revision, diff two revisions, trace when a "
+        "question's labels changed, track label coverage, configuration and saved checks over time, and verify "
+        "the kept files. Counts and configuration only, never a label value; nothing is restored or written.",
+        "features": [
+            {
+                "id": "datasets",
+                "kind": "cli",
+                "command": ["history", "datasets"],
+                "configure": _configure_datasets,
+                "run": run_datasets,
+                "title": "list datasets with kept history: revision count, oldest and newest revision, bytes kept, whether the file exists",
+                "options": [
+                    FORMAT,
+                    {"id": "sort", "title": "--sort id|revisions|newest|bytes orders datasets with kept history"},
+                    {"id": "min", "title": "--min N keeps datasets with at least N kept revisions"},
+                    {"id": "totals", "title": "--totals adds a row summing kept revisions and bytes"},
+                ],
+            },
+            {
+                "id": "show",
+                "kind": "cli",
+                "command": ["history", "show"],
+                "configure": _configure_show,
+                "run": run_show,
+                "title": "summarize one revision (latest, oldest, ~N, an id prefix or current) as row, label, question and check counts",
+                "options": [
+                    {
+                        "id": "questions",
+                        "title": "--questions lists the revision's questions with tuning and held-out labeled-row counts",
+                    },
+                    {
+                        "id": "restore_preview",
+                        "title": "--restore-preview shows what restoring the revision would change, restoring nothing",
+                    },
+                ],
+            },
+            {
+                "id": "diff",
+                "kind": "cli",
+                "command": ["history", "diff"],
+                "configure": _configure_diff,
+                "run": run_diff,
+                "title": "compare two revisions, or one with the current file, by row, label, held-out and configuration counts",
+                "options": [
+                    {
+                        "id": "by_question",
+                        "title": "--by-question counts labels added, removed and changed per question",
+                    },
+                    {
+                        "id": "questions",
+                        "title": "--questions lists questions added, removed, moved or whose type, options or wording changed",
+                    },
+                    {"id": "exit_code", "title": "--exit-code exits 1 when the two revisions differ"},
+                ],
+            },
+            {
+                "id": "labels",
+                "kind": "cli",
+                "command": ["history", "labels"],
+                "configure": _configure_labels,
+                "run": run_labels,
+                "title": "find the revisions that changed one question's labels, with counts, exiting 1 when one did",
+                "options": [
+                    {"id": "all", "title": "--all also lists revisions that left the question's labels alone"},
+                    {"id": "split", "title": "--split counts tuning and held-out label changes separately"},
+                    {
+                        "id": "kind",
+                        "title": "--kind added|removed|changed keeps revisions with that kind of label change",
+                    },
+                    {"id": "since", "title": "--since DATE keeps revisions at or after a date"},
+                ],
+            },
+            {
+                "id": "coverage",
+                "kind": "cli",
+                "command": ["history", "coverage"],
+                "configure": _configure_coverage,
+                "run": run_coverage,
+                "title": "track each question's labeled-row count across kept revisions and the current file",
+                "options": [
+                    {"id": "share", "title": "--share prints each question's share of labeled rows instead of counts"},
+                    {"id": "tuning", "title": "--tuning counts tuning rows only, leaving held-out rows out"},
+                ],
+            },
+            {
+                "id": "config",
+                "kind": "cli",
+                "command": ["history", "config"],
+                "configure": _configure_config,
+                "run": run_config,
+                "title": "list the revisions that changed the name, notes, questions, rules, check, guidelines, test split or looks",
+                "options": [
+                    {"id": "part", "title": "--part PART keeps revisions that changed one part of the configuration"},
+                ],
+            },
+            {
+                "id": "checks",
+                "kind": "cli",
+                "command": ["history", "checks"],
+                "configure": _configure_checks,
+                "run": run_checks,
+                "title": "track the saved check across revisions: model, tuned-on version, targets and gate, slice and cut counts",
+                "options": [
+                    {"id": "gates", "title": "--gates adds each gated question's threshold per revision"},
+                    {"id": "changes", "title": "--changes keeps only the revisions whose saved check changed"},
+                ],
+            },
+            {
+                "id": "verify",
+                "kind": "cli",
+                "command": ["history", "verify"],
+                "configure": _configure_verify,
+                "run": run_verify,
+                "title": "verify kept revision files: name, hash, readable JSON, dataset name, repeats and the keep limit; exits 1 on a problem",
+                "options": [
+                    {"id": "all", "title": "--all lists every kept file with its status, not only problems"},
+                ],
+            },
+        ],
+    }
+)

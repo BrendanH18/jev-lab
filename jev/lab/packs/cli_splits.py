@@ -27,10 +27,17 @@ LABEL_TYPES = ("choice", "noul", "score")
 
 def _configure_plan(parser: Any) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset without a test split")
-    parser.add_argument("--share", type=float, default=testsplit.DEFAULT_SHARE, metavar="X",
-                        help="the share of labeled rows to hold out, from %g to %g (default %g)"
-                        % (testsplit.MIN_SHARE, testsplit.MAX_SHARE, testsplit.DEFAULT_SHARE))
-    parser.add_argument("--seed", type=int, metavar="N", help="draw with this seed, the split lock() draws with the same seed")
+    parser.add_argument(
+        "--share",
+        type=float,
+        default=testsplit.DEFAULT_SHARE,
+        metavar="X",
+        help="the share of labeled rows to hold out, from %g to %g (default %g)"
+        % (testsplit.MIN_SHARE, testsplit.MAX_SHARE, testsplit.DEFAULT_SHARE),
+    )
+    parser.add_argument(
+        "--seed", type=int, metavar="N", help="draw with this seed, the split lock() draws with the same seed"
+    )
     parser.add_argument("--rows", action="store_true", help="also list the row numbers the draw would hold out")
     parser.add_argument("--json", action="store_true", help="print the plan as one JSON object")
 
@@ -45,16 +52,24 @@ def run_plan(args: Any) -> int:
     labeled, chosen = plan(dataset, args.share, args.seed)
     held = sorted(i for positions in chosen for i in positions)
     held_labeled = sum(testsplit._labeled(dataset["rows"][i]) for i in held)
-    facts = {"dataset": dataset["id"], "labeled_rows": len(labeled), "requested_share": args.share,
-             "held_out_labeled_rows": held_labeled, "actual_share": round(held_labeled / len(labeled), 6),
-             "tuning_labeled_rows": len(labeled) - held_labeled, "input_groups_held_out": len(chosen),
-             "rows_held_out": len(held)}
+    facts = {
+        "dataset": dataset["id"],
+        "labeled_rows": len(labeled),
+        "requested_share": args.share,
+        "held_out_labeled_rows": held_labeled,
+        "actual_share": round(held_labeled / len(labeled), 6),
+        "tuning_labeled_rows": len(labeled) - held_labeled,
+        "input_groups_held_out": len(chosen),
+        "rows_held_out": len(held),
+    }
     if args.rows:
         facts["held_out_row_numbers"] = [i + 1 for i in held]
     if args.json:
         print(json.dumps(facts, ensure_ascii=False))
         return 0
-    rows = [[key.replace("_", " "), value] for key, value in facts.items() if key not in ("dataset", "held_out_row_numbers")]
+    rows = [
+        [key.replace("_", " "), value] for key, value in facts.items() if key not in ("dataset", "held_out_row_numbers")
+    ]
     print("test split plan for %s (nothing written)" % dataset["id"])
     kit.emit(args, ["fact", "value"], rows)
     if args.rows:
@@ -90,9 +105,16 @@ def run_shares(args: Any) -> int:
 
 def _configure_folds(parser: Any) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset")
-    parser.add_argument("--folds", type=int, default=holdout.FOLDS, metavar="K",
-                        help="the number of folds, from %d to %d (default %d)" % (holdout.MIN_FOLDS, holdout.MAX_FOLDS, holdout.FOLDS))
-    parser.add_argument("--question", metavar="ID", help="only rows with a valid label for this question (default: any question)")
+    parser.add_argument(
+        "--folds",
+        type=int,
+        default=holdout.FOLDS,
+        metavar="K",
+        help="the number of folds, from %d to %d (default %d)" % (holdout.MIN_FOLDS, holdout.MAX_FOLDS, holdout.FOLDS),
+    )
+    parser.add_argument(
+        "--question", metavar="ID", help="only rows with a valid label for this question (default: any question)"
+    )
     kit.add_format(parser)
 
 
@@ -109,7 +131,9 @@ def run_folds(args: Any) -> int:
     questions = {qid: q for qid, q in raw.items() if isinstance(q, dict) and q.get("type") in LABEL_TYPES}
     if args.question:
         if args.question not in questions:
-            raise kit.CliError("%s is not a Choice, Noul or Score question of dataset %r" % (args.question, dataset["id"]))
+            raise kit.CliError(
+                "%s is not a Choice, Noul or Score question of dataset %r" % (args.question, dataset["id"])
+            )
         questions = {args.question: questions[args.question]}
     keys = []
     for row in workbench.tuning_rows(dataset):
@@ -121,8 +145,10 @@ def run_folds(args: Any) -> int:
         print("cannot cross-validate with %d folds: %s" % (args.folds, problem))
         return 1
     folds = holdout.assign(keys, list(range(len(keys))), args.folds)
-    rows = [[fold + 1, sum(f == fold for f in folds), len({key for key, f in zip(keys, folds) if f == fold})]
-            for fold in range(args.folds)]
+    rows = [
+        [fold + 1, sum(f == fold for f in folds), len({key for key, f in zip(keys, folds) if f == fold})]
+        for fold in range(args.folds)
+    ]
     kit.emit(args, ["fold", "labeled rows", "distinct inputs"], rows)
     return 0
 
@@ -147,37 +173,81 @@ def run_looks(args: Any) -> int:
         if args.since and at < args.since:
             continue
         gates = look.get("gates") if isinstance(look.get("gates"), dict) else {}
-        rows.append([number, at, look.get("model"), look.get("signal"),
-                     ", ".join("%s %s" % (qid, kit.cell_text(value)) for qid, value in gates.items())])
-    cli_gates._table_or(args, ["look", "at", "model", "signal", "gates"], rows,
-                        "no looks at the held-out rows%s" % (" since %s" % args.since if args.since else ""))
+        rows.append(
+            [
+                number,
+                at,
+                look.get("model"),
+                look.get("signal"),
+                ", ".join("%s %s" % (qid, kit.cell_text(value)) for qid, value in gates.items()),
+            ]
+        )
+    cli_gates._table_or(
+        args,
+        ["look", "at", "model", "signal", "gates"],
+        rows,
+        "no looks at the held-out rows%s" % (" since %s" % args.since if args.since else ""),
+    )
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-splits",
-    "surface": "python.cli",
-    "title": "Split previews",
-    "about": "Offline `lab.py splits` commands that preview a test split before it is locked (counts, or row numbers "
-             "for a seed), the cross-validation folds labeled tuning rows fall into, and the looks recorded at a "
-             "dataset's held-out rows. Nothing is written, and held-out rows are only counted.",
-    "features": [
-        {"id": "plan", "kind": "cli", "command": ["splits", "plan"], "configure": _configure_plan, "run": run_plan,
-         "title": "Preview the test split a share would draw, without writing it: labeled rows held out, actual share, groups and rows",
-         "options": [{"id": "share", "title": "--share X previews another share of labeled rows, from 0.1 to 0.5"},
-                     {"id": "seed", "title": "--seed N draws with a seed, the same split the Workbench would lock with it"},
-                     {"id": "rows", "title": "--rows lists the row numbers the draw would hold out"},
-                     {"id": "json", "title": "--json prints the plan as one JSON object"}]},
-        {"id": "shares", "kind": "cli", "command": ["splits", "shares"], "configure": _configure_shares, "run": run_shares,
-         "title": "Show, for each share from 0.1 to 0.5, how many labeled rows a test split would hold out and the share it would reach",
-         "options": [dict(FORMAT)]},
-        {"id": "folds", "kind": "cli", "command": ["splits", "folds"], "configure": _configure_folds, "run": run_folds,
-         "title": "Preview the cross-validation folds of labeled tuning rows, exact copies kept together; exit 1 when the rows cannot fill them",
-         "options": [{"id": "folds", "title": "--folds K previews K folds, from 2 to 10"},
-                     {"id": "question", "title": "--question ID counts only rows with a valid label for one question"},
-                     dict(FORMAT)]},
-        {"id": "looks", "kind": "cli", "command": ["splits", "looks"], "configure": _configure_looks, "run": run_looks,
-         "title": "List the recorded looks at a dataset's held-out rows: when, which model and signal, and which gates; never a result",
-         "options": [{"id": "since", "title": "--since DATE keeps the looks at or after a date"}, dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-splits",
+        "surface": "python.cli",
+        "title": "Split previews",
+        "about": "Offline `lab.py splits` commands that preview a test split before it is locked (counts, or row numbers "
+        "for a seed), the cross-validation folds labeled tuning rows fall into, and the looks recorded at a "
+        "dataset's held-out rows. Nothing is written, and held-out rows are only counted.",
+        "features": [
+            {
+                "id": "plan",
+                "kind": "cli",
+                "command": ["splits", "plan"],
+                "configure": _configure_plan,
+                "run": run_plan,
+                "title": "Preview the test split a share would draw, without writing it: labeled rows held out, actual share, groups and rows",
+                "options": [
+                    {"id": "share", "title": "--share X previews another share of labeled rows, from 0.1 to 0.5"},
+                    {
+                        "id": "seed",
+                        "title": "--seed N draws with a seed, the same split the Workbench would lock with it",
+                    },
+                    {"id": "rows", "title": "--rows lists the row numbers the draw would hold out"},
+                    {"id": "json", "title": "--json prints the plan as one JSON object"},
+                ],
+            },
+            {
+                "id": "shares",
+                "kind": "cli",
+                "command": ["splits", "shares"],
+                "configure": _configure_shares,
+                "run": run_shares,
+                "title": "Show, for each share from 0.1 to 0.5, how many labeled rows a test split would hold out and the share it would reach",
+                "options": [dict(FORMAT)],
+            },
+            {
+                "id": "folds",
+                "kind": "cli",
+                "command": ["splits", "folds"],
+                "configure": _configure_folds,
+                "run": run_folds,
+                "title": "Preview the cross-validation folds of labeled tuning rows, exact copies kept together; exit 1 when the rows cannot fill them",
+                "options": [
+                    {"id": "folds", "title": "--folds K previews K folds, from 2 to 10"},
+                    {"id": "question", "title": "--question ID counts only rows with a valid label for one question"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "looks",
+                "kind": "cli",
+                "command": ["splits", "looks"],
+                "configure": _configure_looks,
+                "run": run_looks,
+                "title": "List the recorded looks at a dataset's held-out rows: when, which model and signal, and which gates; never a result",
+                "options": [{"id": "since", "title": "--since DATE keeps the looks at or after a date"}, dict(FORMAT)],
+            },
+        ],
+    }
+)

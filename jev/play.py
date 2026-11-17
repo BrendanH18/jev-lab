@@ -35,8 +35,10 @@ def load_words() -> List[dict]:
 def questions() -> Dict[str, dict]:
     return {
         "answer_is_yes": noul(
-            {"question": "For the thing named in `secret`, is the honest answer to `player_question` yes?",
-             "focus": "Judge the real-world properties of the secret thing, not the wording."},
+            {
+                "question": "For the thing named in `secret`, is the honest answer to `player_question` yes?",
+                "focus": "Judge the real-world properties of the secret thing, not the wording.",
+            },
             yes="The answer to the player's question is yes for this thing",
             no="The answer is no, or the question does not apply to this thing",
         ),
@@ -48,7 +50,10 @@ def questions() -> Dict[str, dict]:
         "names_a_guess": noul(
             "Does `player_question` name one specific thing as a guess for what the secret is?",
             yes={"what": "Names a specific thing", "examples": ["Is it a giraffe?", "penguin", "It's a toaster!"]},
-            no={"what": "Asks about a property or category", "examples": ["Is it an animal?", "Is it bigger than a car?"]},
+            no={
+                "what": "Asks about a property or category",
+                "examples": ["Is it an animal?", "Is it bigger than a car?"],
+            },
         ),
         "guess_matches": noul(
             "Does the thing named in `player_question` refer to the same thing as `secret`? Treat synonyms, "
@@ -81,8 +86,16 @@ class Games:
     def new(self, seed: Optional[int] = None) -> dict:
         rng = random.Random(seed)
         pick = rng.choice(self.words)
-        game = {"id": secrets.token_urlsafe(8), "secret": pick["word"], "category": pick["category"],
-                "turns": [], "traces": [], "over": False, "won": False, "started": time.time()}
+        game = {
+            "id": secrets.token_urlsafe(8),
+            "secret": pick["word"],
+            "category": pick["category"],
+            "turns": [],
+            "traces": [],
+            "over": False,
+            "won": False,
+            "started": time.time(),
+        }
         with self._lock:
             if len(self._games) >= MAX_GAMES:
                 oldest = min(self._games.values(), key=lambda g: g["started"])

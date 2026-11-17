@@ -87,8 +87,11 @@ def _describe(value: Any) -> str:
 
 
 def _configure_list(parser: Any) -> None:
-    parser.add_argument("--missing", action="store_true",
-                        help="only datasets with a labeled question that has no guideline; exit 1 if any")
+    parser.add_argument(
+        "--missing",
+        action="store_true",
+        help="only datasets with a labeled question that has no guideline; exit 1 if any",
+    )
     kit.add_format(parser)
 
 
@@ -103,11 +106,20 @@ def run_list(args: Any) -> int:
         without = [qid for qid in questions if qid not in guides]
         if args.missing and not without:
             continue
-        rows.append([dataset["id"], len(questions), sum(bool(guides.get(q, {}).get("note")) for q in questions),
-                     sum(bool(_examples(guides.get(q, {}))) for q in questions),
-                     sum(len(_examples(guides.get(q, {}))) for q in questions), ", ".join(without)])
+        rows.append(
+            [
+                dataset["id"],
+                len(questions),
+                sum(bool(guides.get(q, {}).get("note")) for q in questions),
+                sum(bool(_examples(guides.get(q, {}))) for q in questions),
+                sum(len(_examples(guides.get(q, {}))) for q in questions),
+                ", ".join(without),
+            ]
+        )
     empty = "every dataset's questions have guidelines" if args.missing else "no saved dataset has questions"
-    cli_gates._table_or(args, ["dataset", "questions", "with a note", "with examples", "examples", "without guidelines"], rows, empty)
+    cli_gates._table_or(
+        args, ["dataset", "questions", "with a note", "with examples", "examples", "without guidelines"], rows, empty
+    )
     return 1 if args.missing and rows else 0
 
 
@@ -135,12 +147,18 @@ def run_show(args: Any) -> int:
     guides = _guides(dataset)
     picked = _picked(dataset, args.question)
     if args.examples:
-        rows = [[qid, number, example.get("input"), _shown(question, example.get("label")) or "", example.get("why", "")]
-                for qid, question in picked.items() for number, example in enumerate(_examples(guides.get(qid, {})), 1)]
+        rows = [
+            [qid, number, example.get("input"), _shown(question, example.get("label")) or "", example.get("why", "")]
+            for qid, question in picked.items()
+            for number, example in enumerate(_examples(guides.get(qid, {})), 1)
+        ]
         cli_gates._table_or(args, ["question", "#", "input", "label", "why"], rows, "no labeling examples")
         return 0
-    rows = [[qid, question.get("type"), guides.get(qid, {}).get("note", ""), len(_examples(guides.get(qid, {})))]
-            for qid, question in picked.items() if qid in guides]
+    rows = [
+        [qid, question.get("type"), guides.get(qid, {}).get("note", ""), len(_examples(guides.get(qid, {})))]
+        for qid, question in picked.items()
+        if qid in guides
+    ]
     cli_gates._table_or(args, ["question", "type", "note", "examples"], rows, "no labeling guidelines")
     return 0
 
@@ -185,18 +203,32 @@ def run_lint(args: Any) -> int:
         seen: Dict[str, Tuple[int, Optional[str]]] = {}
         for number, example in enumerate(_examples(entry), 1):
             if question.get("type") not in LABEL_TYPES:
-                rows.append([qid, number, "%s questions take a note, not label examples" % str(question.get("type")).capitalize()])
+                rows.append(
+                    [
+                        qid,
+                        number,
+                        "%s questions take a note, not label examples" % str(question.get("type")).capitalize(),
+                    ]
+                )
                 continue
             label = _shown(question, example.get("label"))
             if label is None:
-                rows.append([qid, number, "the label is not a valid answer for this %s question" % question.get("type")])
+                rows.append(
+                    [qid, number, "the label is not a valid answer for this %s question" % question.get("type")]
+                )
             text = _norm(example.get("input") or "")
             if not text:
                 rows.append([qid, number, "has no input"])
                 continue
             if text in tuning:
-                rows.append([qid, number, "repeats the input of tuning row %s; examples should be generic, not taken from rows"
-                             % ", ".join(map(str, tuning[text]))])
+                rows.append(
+                    [
+                        qid,
+                        number,
+                        "repeats the input of tuning row %s; examples should be generic, not taken from rows"
+                        % ", ".join(map(str, tuning[text])),
+                    ]
+                )
             if text in held:
                 rows.append([qid, number, "repeats the input of a held-out row; write a generic example instead"])
             if text in seen and label is not None and seen[text][1] is not None and seen[text][1] != label:
@@ -211,7 +243,9 @@ def run_lint(args: Any) -> int:
 
 def _configure_coverage(parser: Any) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset")
-    parser.add_argument("--missing-only", action="store_true", help="only questions with an answer no example shows; exit 1 if any")
+    parser.add_argument(
+        "--missing-only", action="store_true", help="only questions with an answer no example shows; exit 1 if any"
+    )
     kit.add_format(parser)
 
 
@@ -227,10 +261,24 @@ def run_coverage(args: Any) -> int:
         missing = [answer for answer in answers if answer not in shown]
         if args.missing_only and not missing:
             continue
-        rows.append([qid, question.get("type"), bool(guides.get(qid, {}).get("note")), len(answers), len(answers) - len(missing),
-                     ", ".join(missing)])
-    empty = "every answer has a labeling example" if args.missing_only else "the dataset has no Choice, Noul or Score questions"
-    cli_gates._table_or(args, ["question", "type", "note", "answers", "with an example", "without an example"], rows, empty)
+        rows.append(
+            [
+                qid,
+                question.get("type"),
+                bool(guides.get(qid, {}).get("note")),
+                len(answers),
+                len(answers) - len(missing),
+                ", ".join(missing),
+            ]
+        )
+    empty = (
+        "every answer has a labeling example"
+        if args.missing_only
+        else "the dataset has no Choice, Noul or Score questions"
+    )
+    cli_gates._table_or(
+        args, ["question", "type", "note", "answers", "with an example", "without an example"], rows, empty
+    )
     return 1 if args.missing_only and rows else 0
 
 
@@ -240,7 +288,9 @@ def run_coverage(args: Any) -> int:
 def _configure_export(parser: Any) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset")
     parser.add_argument("--question", action="append", metavar="ID", help="only these questions (repeat the flag)")
-    parser.add_argument("--out", metavar="PATH", help="write the guide to this file, outside the Workbench data directory")
+    parser.add_argument(
+        "--out", metavar="PATH", help="write the guide to this file, outside the Workbench data directory"
+    )
     parser.add_argument("--force", action="store_true", help="replace the --out file if it exists")
 
 
@@ -258,12 +308,24 @@ def _guide(dataset: dict, qids: Optional[List[str]]) -> str:
         lines += ["## %s (%s)" % (qid, qtype), "", _describe(question.get("instructions") or ""), ""]
         criteria = question.get("criteria")
         if qtype == "choice" and isinstance(criteria, dict):
-            lines += ["Answers:", ""] + ["- `%s`: %s" % (key, _describe(value)) for key, value in criteria.items()] + [""]
+            lines += (
+                ["Answers:", ""] + ["- `%s`: %s" % (key, _describe(value)) for key, value in criteria.items()] + [""]
+            )
         elif qtype == "score" and isinstance(criteria, list):
-            lines += ["Levels:", ""] + ["- %d: %s" % (level, _describe(value)) for level, value in enumerate(criteria)] + [""]
+            lines += (
+                ["Levels:", ""]
+                + ["- %d: %s" % (level, _describe(value)) for level, value in enumerate(criteria)]
+                + [""]
+            )
         elif qtype == "noul" and isinstance(criteria, dict):
-            lines += ["Answers:", ""] + ["- %s: %s" % ({"true": "yes", "false": "no"}.get(key, key), _describe(value))
-                                         for key, value in criteria.items()] + [""]
+            lines += (
+                ["Answers:", ""]
+                + [
+                    "- %s: %s" % ({"true": "yes", "false": "no"}.get(key, key), _describe(value))
+                    for key, value in criteria.items()
+                ]
+                + [""]
+            )
         entry = guides.get(qid, {})
         if entry.get("note"):
             lines += ["Note: %s" % entry["note"], ""]
@@ -272,7 +334,10 @@ def _guide(dataset: dict, qids: Optional[List[str]]) -> str:
             lines += ["Examples:", ""]
             for example in examples:
                 why = " (%s)" % example["why"] if example.get("why") else ""
-                lines.append("- \"%s\" is labeled %s%s" % (example.get("input"), _shown(question, example.get("label")) or "?", why))
+                lines.append(
+                    '- "%s" is labeled %s%s'
+                    % (example.get("input"), _shown(question, example.get("label")) or "?", why)
+                )
             lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 
@@ -303,13 +368,22 @@ def run_diff(args: Any) -> int:
     changes = guidelines.changes(ga, gb)
     rows = []
     for qid in dict.fromkeys(list(ga) + list(gb)):
-        status = ("added" if qid in changes["added"] else "removed" if qid in changes["removed"]
-                  else "changed" if qid in changes["changed"] else "same")
+        status = (
+            "added"
+            if qid in changes["added"]
+            else "removed"
+            if qid in changes["removed"]
+            else "changed"
+            if qid in changes["changed"]
+            else "same"
+        )
         if status == "same":
             continue
         a, b = ga.get(qid, {}), gb.get(qid, {})
         rows.append([qid, status, (a.get("note") or "") != (b.get("note") or ""), len(_examples(a)), len(_examples(b))])
-    cli_gates._table_or(args, ["question", "status", "note differs", "examples A", "examples B"], rows, "same guidelines")
+    cli_gates._table_or(
+        args, ["question", "status", "note differs", "examples A", "examples B"], rows, "same guidelines"
+    )
     return 1 if rows else 0
 
 
@@ -337,43 +411,107 @@ def run_search(args: Any) -> int:
                 text = " ".join(str(example.get(field) or "") for field in ("input", "why"))
                 if needle in _norm(text):
                     rows.append([dataset_id, qid, "example %d" % number, example.get("input")])
-    cli_gates._table_or(args, ["dataset", "question", "where", "text"], rows, "no labeling guideline mentions %r" % args.text)
+    cli_gates._table_or(
+        args, ["dataset", "question", "where", "text"], rows, "no labeling guideline mentions %r" % args.text
+    )
     return 1 if rows else 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-guidelines",
-    "surface": "python.cli",
-    "title": "Labeling guideline commands",
-    "about": "Offline `lab.py guidelines` commands for the human-only labeling guidelines saved with datasets: list "
-             "them, show notes and examples, lint them, find answers without an example, write a Markdown labeling "
-             "guide, and diff two datasets' guidelines by question. Held-out rows are never shown with a label.",
-    "features": [
-        {"id": "list", "kind": "cli", "command": ["guidelines", "list"], "configure": _configure_list, "run": run_list,
-         "title": "List datasets with their labeled questions, how many have a note or examples, and the ones without guidelines",
-         "options": [{"id": "missing", "title": "--missing keeps datasets with a question that has no guideline and exits 1 if any"},
-                     dict(FORMAT)]},
-        {"id": "show", "kind": "cli", "command": ["guidelines", "show"], "configure": _configure_show, "run": run_show,
-         "title": "Show a dataset's labeling guidelines: each question's type, note and example count",
-         "options": [{"id": "question", "title": "--question ID shows one question's guideline"},
-                     {"id": "examples", "title": "--examples lists every example with its input, label and why"}, dict(FORMAT)]},
-        {"id": "lint", "kind": "cli", "command": ["guidelines", "lint"], "configure": _configure_lint, "run": run_lint,
-         "title": "Lint labeling guidelines: stale questions, labels that no longer fit, examples copied from rows, one input labeled two ways; exit 1 on any",
-         "options": [{"id": "question", "title": "--question ID lints one question's guideline"}, dict(FORMAT)]},
-        {"id": "coverage", "kind": "cli", "command": ["guidelines", "coverage"], "configure": _configure_coverage, "run": run_coverage,
-         "title": "Show which answers of each Choice, Noul and Score question have a labeling example, and which have none",
-         "options": [{"id": "missing_only", "title": "--missing-only keeps questions with an answer no example shows and exits 1 if any"},
-                     dict(FORMAT)]},
-        {"id": "export", "kind": "cli", "command": ["guidelines", "export"], "configure": _configure_export, "run": run_export,
-         "title": "Write a Markdown labeling guide: each question's instructions, answers, note and examples",
-         "options": [{"id": "question", "title": "--question ID keeps chosen questions in the guide (repeat the flag)"},
-                     {"id": "out", "title": "--out PATH writes the guide to a file outside the Workbench data directory"},
-                     {"id": "force", "title": "--force replaces an existing --out file"}]},
-        {"id": "diff", "kind": "cli", "command": ["guidelines", "diff"], "configure": _configure_diff, "run": run_diff,
-         "title": "Diff two datasets' guidelines by question: added, removed or changed, whether the note differs and example counts; exit 1 if any",
-         "options": [dict(FORMAT)]},
-        {"id": "search", "kind": "cli", "command": ["guidelines", "search"], "configure": _configure_search, "run": run_search,
-         "title": "Find labeling-guideline notes and examples that mention some text, across datasets; exit 1 on a match",
-         "options": [{"id": "dataset", "title": "--dataset ID searches one dataset's guidelines"}, dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-guidelines",
+        "surface": "python.cli",
+        "title": "Labeling guideline commands",
+        "about": "Offline `lab.py guidelines` commands for the human-only labeling guidelines saved with datasets: list "
+        "them, show notes and examples, lint them, find answers without an example, write a Markdown labeling "
+        "guide, and diff two datasets' guidelines by question. Held-out rows are never shown with a label.",
+        "features": [
+            {
+                "id": "list",
+                "kind": "cli",
+                "command": ["guidelines", "list"],
+                "configure": _configure_list,
+                "run": run_list,
+                "title": "List datasets with their labeled questions, how many have a note or examples, and the ones without guidelines",
+                "options": [
+                    {
+                        "id": "missing",
+                        "title": "--missing keeps datasets with a question that has no guideline and exits 1 if any",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "show",
+                "kind": "cli",
+                "command": ["guidelines", "show"],
+                "configure": _configure_show,
+                "run": run_show,
+                "title": "Show a dataset's labeling guidelines: each question's type, note and example count",
+                "options": [
+                    {"id": "question", "title": "--question ID shows one question's guideline"},
+                    {"id": "examples", "title": "--examples lists every example with its input, label and why"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "lint",
+                "kind": "cli",
+                "command": ["guidelines", "lint"],
+                "configure": _configure_lint,
+                "run": run_lint,
+                "title": "Lint labeling guidelines: stale questions, labels that no longer fit, examples copied from rows, one input labeled two ways; exit 1 on any",
+                "options": [{"id": "question", "title": "--question ID lints one question's guideline"}, dict(FORMAT)],
+            },
+            {
+                "id": "coverage",
+                "kind": "cli",
+                "command": ["guidelines", "coverage"],
+                "configure": _configure_coverage,
+                "run": run_coverage,
+                "title": "Show which answers of each Choice, Noul and Score question have a labeling example, and which have none",
+                "options": [
+                    {
+                        "id": "missing_only",
+                        "title": "--missing-only keeps questions with an answer no example shows and exits 1 if any",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "export",
+                "kind": "cli",
+                "command": ["guidelines", "export"],
+                "configure": _configure_export,
+                "run": run_export,
+                "title": "Write a Markdown labeling guide: each question's instructions, answers, note and examples",
+                "options": [
+                    {"id": "question", "title": "--question ID keeps chosen questions in the guide (repeat the flag)"},
+                    {
+                        "id": "out",
+                        "title": "--out PATH writes the guide to a file outside the Workbench data directory",
+                    },
+                    {"id": "force", "title": "--force replaces an existing --out file"},
+                ],
+            },
+            {
+                "id": "diff",
+                "kind": "cli",
+                "command": ["guidelines", "diff"],
+                "configure": _configure_diff,
+                "run": run_diff,
+                "title": "Diff two datasets' guidelines by question: added, removed or changed, whether the note differs and example counts; exit 1 if any",
+                "options": [dict(FORMAT)],
+            },
+            {
+                "id": "search",
+                "kind": "cli",
+                "command": ["guidelines", "search"],
+                "configure": _configure_search,
+                "run": run_search,
+                "title": "Find labeling-guideline notes and examples that mention some text, across datasets; exit 1 on a match",
+                "options": [{"id": "dataset", "title": "--dataset ID searches one dataset's guidelines"}, dict(FORMAT)],
+            },
+        ],
+    }
+)

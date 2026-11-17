@@ -63,15 +63,22 @@ def _slice_targets(spec: Any) -> List[dict]:
             raise WorkbenchError("Each slice target must be an object")
         field, value = target.get("field"), target.get("value")
         if not isinstance(field, str) or not field.strip() or len(field) > 100 or field in ("_expect", "_test"):
-            raise WorkbenchError("A slice target field must name an input field, up to 100 characters; labels and test markers cannot be sliced")
+            raise WorkbenchError(
+                "A slice target field must name an input field, up to 100 characters; labels and test markers cannot be sliced"
+            )
         if not isinstance(value, str) or len(value) > 500:
             raise WorkbenchError("A slice target value must be a string up to 500 characters")
         if (field, value) in seen:
             raise WorkbenchError("Duplicate slice target for %r = %r" % (field, value))
         seen.add((field, value))
-        out.append({"field": field, "value": value,
-                    "min_accuracy": _unit(target.get("min_accuracy"), "slice min_accuracy", 0.5),
-                    "min_coverage": _unit(target.get("min_coverage", 0), "slice min_coverage")})
+        out.append(
+            {
+                "field": field,
+                "value": value,
+                "min_accuracy": _unit(target.get("min_accuracy"), "slice min_accuracy", 0.5),
+                "min_coverage": _unit(target.get("min_coverage", 0), "slice min_coverage"),
+            }
+        )
     return out
 
 
@@ -103,9 +110,14 @@ def validate_check(spec: Any, questions: Any) -> dict:
     model = (model or "").strip()
     if not model or len(model) > MAX_MODEL_CHARS:
         raise WorkbenchError("Name the model the check asks, up to %d characters" % MAX_MODEL_CHARS)
-    out = {"gates": gates, "signal": signal, "bound": bound, "model": model,
-           "min_accuracy": _unit(spec.get("min_accuracy"), "min_accuracy", 0.5),
-           "min_coverage": _unit(spec.get("min_coverage", 0), "min_coverage")}
+    out = {
+        "gates": gates,
+        "signal": signal,
+        "bound": bound,
+        "model": model,
+        "min_accuracy": _unit(spec.get("min_accuracy"), "min_accuracy", 0.5),
+        "min_coverage": _unit(spec.get("min_coverage", 0), "min_coverage"),
+    }
     targets = _slice_targets(spec.get("slice_targets"))
     if targets:
         out["slice_targets"] = targets
@@ -124,7 +136,9 @@ def validate_check(spec: Any, questions: Any) -> dict:
     tuned_on = spec.get("tuned_on")
     if tuned_on is not None:  # checks saved before this field existed have none
         if not isinstance(tuned_on, str) or not is_versioned(tuned_on.strip()):
-            raise WorkbenchError("tuned_on must be the versioned model id that answered the tuning run, such as jev-1.14.0")
+            raise WorkbenchError(
+                "tuned_on must be the versioned model id that answered the tuning run, such as jev-1.14.0"
+            )
         out["tuned_on"] = tuned_on.strip()
     return out
 
@@ -136,12 +150,16 @@ def run_notes(check: dict, answered_by: List[str]) -> List[str]:
     if not answered_by:
         return []
     if tuned_on and answered_by != [tuned_on]:
-        return ["Answered by %s, but these thresholds were tuned on answers from %s. To see whether the check can move "
-                "to the new version, and with which thresholds, use Try a new version under the dataset, or "
-                "scripts/check.py --upgrade-to." % (", ".join(answered_by), tuned_on)]
+        return [
+            "Answered by %s, but these thresholds were tuned on answers from %s. To see whether the check can move "
+            "to the new version, and with which thresholds, use Try a new version under the dataset, or "
+            "scripts/check.py --upgrade-to." % (", ".join(answered_by), tuned_on)
+        ]
     if not is_versioned(check["model"]):
-        return ["Asks %s, an alias; this run was answered by %s. To keep the check on that version, run the dataset "
-                "in Bulk and save the check again." % (check["model"], ", ".join(answered_by))]
+        return [
+            "Asks %s, an alias; this run was answered by %s. To keep the check on that version, run the dataset "
+            "in Bulk and save the check again." % (check["model"], ", ".join(answered_by))
+        ]
     return []
 
 
@@ -184,9 +202,15 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
     check: some rows got no answer, or no row is labeled for every gated question."""
     gates = check["gates"]
     qids = list(gates)
-    rows = [{"index": r["index"], "answers": r["answers"],  # every answer: a rule may read a question no gate does
-             "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates}}
-            for r in results if isinstance(r.get("answers"), dict)]
+    rows = [
+        {
+            "index": r["index"],
+            "answers": r["answers"],  # every answer: a rule may read a question no gate does
+            "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates},
+        }
+        for r in results
+        if isinstance(r.get("answers"), dict)
+    ]
     missing = [r["index"] for r in results if not isinstance(r.get("answers"), dict)]
     errors = [{"index": r["index"], "error": r["error"]} for r in results if r.get("error")]
     reasons: List[str] = []
@@ -194,21 +218,27 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
     if stopped:
         reasons.append("The run stopped early: %s" % stopped)
     if missing:
-        reasons.append("%d of %d rows got no answer, so the check was not measured on every row. Run it again."
-                       % (len(missing), len(results)))
+        reasons.append(
+            "%d of %d rows got no answer, so the check was not measured on every row. Run it again."
+            % (len(missing), len(results))
+        )
     if rows:
         try:
             rep = policy.evaluate(rows, gates, check["signal"], check.get("rules"))
         except CalibrationError as err:
             reasons.append(str(err))
     if rep is not None and rep["skipped"]:
-        reasons.append("%d of %d rows have no readable answer to a gated question, so the check was not measured "
-                       "on every row. Run it again." % (rep["skipped"], len(results)))
+        reasons.append(
+            "%d of %d rows have no readable answer to a gated question, so the check was not measured "
+            "on every row. Run it again." % (rep["skipped"], len(results))
+        )
     if rep is not None and not rep["labeled"]:
         reasons.append("No row is labeled for every gated question (%s), so accuracy is unknown." % ", ".join(qids))
     if rep is not None and rep["invalid"]:
-        reasons.append("%d rows have invalid labels. Fix them before judging the check: %s"
-                       % (len(rep["invalid"]), rep["invalid"][0]["reason"]))
+        reasons.append(
+            "%d rows have invalid labels. Fix them before judging the check: %s"
+            % (len(rep["invalid"]), rep["invalid"][0]["reason"])
+        )
     targets: Dict[str, dict] = {}
     if rep is not None and rep["labeled"]:
         bound = check["bound"]
@@ -222,41 +252,93 @@ def evaluate(results: List[dict], check: dict, stopped: Optional[str] = None) ->
         if not rep["automated"]:
             reasons.append("The gate automated none of the %d labeled rows." % rep["labeled"])
         elif not accuracy_ok:
-            reasons.append("Accuracy on automated rows is %s%s, below the %s target."
-                           % (_pct(rep["accuracy"]), " (95%% lower bound %s)" % _pct(rep["accuracy_low"])
-                              if bound == "lower" else "", _pct(check["min_accuracy"])))
+            reasons.append(
+                "Accuracy on automated rows is %s%s, below the %s target."
+                % (
+                    _pct(rep["accuracy"]),
+                    " (95%% lower bound %s)" % _pct(rep["accuracy_low"]) if bound == "lower" else "",
+                    _pct(check["min_accuracy"]),
+                )
+            )
         if not coverage_ok:
-            reasons.append("It automated %s of labeled rows, below the %s minimum."
-                           % (_pct(rep["coverage"]), _pct(check["min_coverage"])))
+            reasons.append(
+                "It automated %s of labeled rows, below the %s minimum."
+                % (_pct(rep["coverage"]), _pct(check["min_coverage"]))
+            )
     if stopped or missing or not targets or rep["skipped"] or rep["invalid"]:
         status = "error"
     else:
         status = "pass" if all(t["ok"] for t in targets.values()) else "fail"
     by_index = {r["index"]: r.get("row") for r in results}
     wrong = [r for r in (rep["rows"] if rep else []) if r["automated"] and not r["correct"]]
-    mistakes = [{"index": r["index"], "row": _row_text(by_index.get(r["index"])),
-                 "wrong": {q: r["answers"][q] for q in r["wrong"]}} for r in wrong[:MISTAKES_SHOWN]]
-    out = {"status": status, "reasons": reasons, "targets": targets, "errors": errors[:MISTAKES_SHOWN],
-           "rows": len(results), "answered": len(rows), "mistakes": mistakes, "mistakes_total": len(wrong)}
+    mistakes = [
+        {
+            "index": r["index"],
+            "row": _row_text(by_index.get(r["index"])),
+            "wrong": {q: r["answers"][q] for q in r["wrong"]},
+        }
+        for r in wrong[:MISTAKES_SHOWN]
+    ]
+    out = {
+        "status": status,
+        "reasons": reasons,
+        "targets": targets,
+        "errors": errors[:MISTAKES_SHOWN],
+        "rows": len(results),
+        "answered": len(rows),
+        "mistakes": mistakes,
+        "mistakes_total": len(wrong),
+    }
     if rep is not None:
-        out.update({k: rep[k] for k in ("labeled", "unlabeled", "invalid", "skipped", "automated", "correct", "coverage",
-                                        "accuracy", "accuracy_low", "accuracy_high", "routed", "routed_automated",
-                                        "questions")})
+        out.update(
+            {
+                k: rep[k]
+                for k in (
+                    "labeled",
+                    "unlabeled",
+                    "invalid",
+                    "skipped",
+                    "automated",
+                    "correct",
+                    "coverage",
+                    "accuracy",
+                    "accuracy_low",
+                    "accuracy_high",
+                    "routed",
+                    "routed_automated",
+                    "questions",
+                )
+            }
+        )
     if check.get("slice_targets"):
         out["slice_targets"] = []
         base = {k: v for k, v in check.items() if k != "slice_targets"}
-        keys = ("status", "reasons", "targets", "rows", "labeled", "automated", "correct", "coverage",
-                "accuracy", "accuracy_low", "accuracy_high")
+        keys = (
+            "status",
+            "reasons",
+            "targets",
+            "rows",
+            "labeled",
+            "automated",
+            "correct",
+            "coverage",
+            "accuracy",
+            "accuracy_low",
+            "accuracy_high",
+        )
         for target in check["slice_targets"]:
             selected = [r for r in results if slices._value(r.get("row"), target["field"]) == target["value"]]
-            report = evaluate(selected, dict(base, min_accuracy=target["min_accuracy"],
-                                             min_coverage=target["min_coverage"]), stopped)
+            report = evaluate(
+                selected, dict(base, min_accuracy=target["min_accuracy"], min_coverage=target["min_coverage"]), stopped
+            )
             if not selected:
                 report["reasons"].append("No rows match this required slice.")
-            out["slice_targets"].append(dict({k: report.get(k) for k in keys},
-                                             field=target["field"], value=target["value"]))
-            out["reasons"].extend("Slice %r = %r: %s" % (target["field"], target["value"], reason)
-                                  for reason in report["reasons"])
+            out["slice_targets"].append(
+                dict({k: report.get(k) for k in keys}, field=target["field"], value=target["value"])
+            )
+            out["reasons"].extend(
+                "Slice %r = %r: %s" % (target["field"], target["value"], reason) for reason in report["reasons"]
+            )
             if report["status"] == "error" or (report["status"] == "fail" and out["status"] == "pass"):
                 out["status"] = report["status"]
     return out
@@ -289,10 +371,18 @@ def run(client: JevClient, dataset_id: str, model: Optional[str] = None) -> dict
     latencies = [r["meta"]["latency_ms"] for r in done]
     report = evaluate(bulk["results"], check, bulk["stopped"])
     answered_by = sorted({r["meta"].get("model") for r in done if r["meta"].get("model")})
-    report.update({
-        "id": dataset_id, "name": dataset.get("name") or dataset_id, "check": check, "model": asked,
-        "answered_by": answered_by, "notes": run_notes(check, answered_by),
-        "cost_usd": bulk["cost_usd"], "input_tokens": bulk["input_tokens"], "wall_ms": bulk["wall_ms"],
-        "latency_ms_median": statistics.median(latencies) if latencies else None,
-    })
+    report.update(
+        {
+            "id": dataset_id,
+            "name": dataset.get("name") or dataset_id,
+            "check": check,
+            "model": asked,
+            "answered_by": answered_by,
+            "notes": run_notes(check, answered_by),
+            "cost_usd": bulk["cost_usd"],
+            "input_tokens": bulk["input_tokens"],
+            "wall_ms": bulk["wall_ms"],
+            "latency_ms_median": statistics.median(latencies) if latencies else None,
+        }
+    )
     return report

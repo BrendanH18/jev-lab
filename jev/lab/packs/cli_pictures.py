@@ -25,17 +25,29 @@ FORMAT = {"id": "format", "title": "--format table|json|csv|markdown prints the 
 KINDS = ("sample", "saved")
 IMAGE = workbench.IMAGE_KEY
 PNG_COLORS = {0: "grayscale", 2: "RGB", 3: "palette", 4: "grayscale with alpha", 6: "RGB with alpha"}
-JPEG_FRAMES = {0xC0: "baseline", 0xC1: "extended sequential", 0xC2: "progressive", 0xC3: "lossless",
-               0xC5: "differential sequential", 0xC6: "differential progressive", 0xC7: "differential lossless",
-               0xC9: "arithmetic sequential", 0xCA: "arithmetic progressive", 0xCB: "arithmetic lossless"}
+JPEG_FRAMES = {
+    0xC0: "baseline",
+    0xC1: "extended sequential",
+    0xC2: "progressive",
+    0xC3: "lossless",
+    0xC5: "differential sequential",
+    0xC6: "differential progressive",
+    0xC7: "differential lossless",
+    0xC9: "arithmetic sequential",
+    0xCA: "arithmetic progressive",
+    0xCB: "arithmetic lossless",
+}
 
 
 # ---------- the pictures and their references ----------
 
 
 def _samples() -> List[Tuple[str, str, Path]]:
-    return [(name, "sample", images.SAMPLES_DIR / ("%s.png" % name)) for name in images.SAMPLES
-            if (images.SAMPLES_DIR / ("%s.png" % name)).is_file()]
+    return [
+        (name, "sample", images.SAMPLES_DIR / ("%s.png" % name))
+        for name in images.SAMPLES
+        if (images.SAMPLES_DIR / ("%s.png" % name)).is_file()
+    ]
 
 
 def _saved() -> List[Tuple[str, str, Path]]:
@@ -131,7 +143,9 @@ def _history_refs() -> Iterable[str]:
 
 def _referenced(keep_history: bool = False) -> set:
     names = {name for _test, _ref, _key, name in _test_refs()}
-    names |= {name for dataset in _datasets() for _n, _held, name in _row_refs(dataset["rows"]) if isinstance(name, str)}
+    names |= {
+        name for dataset in _datasets() for _n, _held, name in _row_refs(dataset["rows"]) if isinstance(name, str)
+    }
     if keep_history:
         names |= set(_history_refs())
     return names
@@ -161,7 +175,14 @@ def _missing(source: Optional[str] = None) -> List[list]:
                 text = name if isinstance(name, str) else json.dumps(name)
                 problem = _present(text, text in images.SAMPLES) if isinstance(name, str) else "not a picture name"
                 if problem:
-                    rows.append(["dataset %s" % dataset["id"], "row %d%s" % (number, " (held-out)" if held else ""), text, problem])
+                    rows.append(
+                        [
+                            "dataset %s" % dataset["id"],
+                            "row %d%s" % (number, " (held-out)" if held else ""),
+                            text,
+                            problem,
+                        ]
+                    )
     return rows
 
 
@@ -190,8 +211,11 @@ def _table_or(args: Any, columns: List[str], rows: List[list], empty: str) -> No
 
 def _configure_list(parser: Any) -> None:
     parser.add_argument("--kind", choices=KINDS, help="only sample pictures or only saved ones")
-    parser.add_argument("--sort", choices=("name", "bytes", "pixels"),
-                        help="order by name, or largest first by file size or pixel count (default: samples, then saved by name)")
+    parser.add_argument(
+        "--sort",
+        choices=("name", "bytes", "pixels"),
+        help="order by name, or largest first by file size or pixel count (default: samples, then saved by name)",
+    )
     kit.add_format(parser)
 
 
@@ -232,8 +256,11 @@ def run_check(args: Any) -> int:
 
 
 def _configure_unused(parser: Any) -> None:
-    parser.add_argument("--keep-history", action="store_true",
-                        help="count pictures that dataset revisions (the undo history) reference as used")
+    parser.add_argument(
+        "--keep-history",
+        action="store_true",
+        help="count pictures that dataset revisions (the undo history) reference as used",
+    )
     kit.add_format(parser)
 
 
@@ -244,7 +271,9 @@ def run_unused(args: Any) -> int:
 
 
 def _configure_missing(parser: Any) -> None:
-    parser.add_argument("--source", choices=("tests", "datasets"), help="only references from saved tests or only from datasets")
+    parser.add_argument(
+        "--source", choices=("tests", "datasets"), help="only references from saved tests or only from datasets"
+    )
     kit.add_format(parser)
 
 
@@ -266,8 +295,11 @@ def _configure_show(parser: Any) -> None:
 def _png_facts(data: bytes) -> List[list]:
     if len(data) < 29:
         return []
-    return [["bit depth", data[24]], ["color type", PNG_COLORS.get(data[25], "type %d" % data[25])],
-            ["interlaced", "yes" if data[28] == 1 else "no"]]
+    return [
+        ["bit depth", data[24]],
+        ["color type", PNG_COLORS.get(data[25], "type %d" % data[25])],
+        ["interlaced", "yes" if data[28] == 1 else "no"],
+    ]
 
 
 def _jpeg_facts(data: bytes) -> List[list]:
@@ -280,10 +312,13 @@ def _jpeg_facts(data: bytes) -> List[list]:
         if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7 or marker == 0xFF:
             i += 1 if marker == 0xFF else 2
             continue
-        (length,) = struct.unpack(">H", data[i + 2:i + 4])
+        (length,) = struct.unpack(">H", data[i + 2 : i + 4])
         if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-            return [["encoding", JPEG_FRAMES.get(marker, "SOF%X" % (marker - 0xC0))], ["bit depth", data[i + 4]],
-                    ["components", data[i + 9] if i + 9 < len(data) else None]]
+            return [
+                ["encoding", JPEG_FRAMES.get(marker, "SOF%X" % (marker - 0xC0))],
+                ["bit depth", data[i + 4]],
+                ["components", data[i + 9] if i + 9 < len(data) else None],
+            ]
         i += 2 + length
     return []
 
@@ -302,16 +337,26 @@ def run_show(args: Any) -> int:
     else:
         path, kind, name = workbench.images_dir() / args.name, "saved", args.name
         if "/" in args.name or "\\" in args.name or not path.is_file():
-            raise kit.CliError("no picture %r: name a sample (%s) or a file in the Workbench images folder"
-                               % (args.name, ", ".join(images.SAMPLES)))
+            raise kit.CliError(
+                "no picture %r: name a sample (%s) or a file in the Workbench images folder"
+                % (args.name, ", ".join(images.SAMPLES))
+            )
     data = path.read_bytes()
     fmt, width, height, problem = _header(data)
     if problem:
         raise kit.CliError("%s is not a picture the Workbench reads: %s" % (name, problem))
-    rows: List[list] = [["picture", name], ["kind", kind], ["format", fmt], ["width", width], ["height", height],
-                        ["pixels", width * height], ["aspect ratio", round(width / height, 3) if height else None],
-                        ["bytes", len(data)], ["sha256", hashlib.sha256(data).hexdigest()],
-                        ["within limits", _limits(data) or "yes"]]
+    rows: List[list] = [
+        ["picture", name],
+        ["kind", kind],
+        ["format", fmt],
+        ["width", width],
+        ["height", height],
+        ["pixels", width * height],
+        ["aspect ratio", round(width / height, 3) if height else None],
+        ["bytes", len(data)],
+        ["sha256", hashlib.sha256(data).hexdigest()],
+        ["within limits", _limits(data) or "yes"],
+    ]
     rows += _png_facts(data) if fmt == "png" else _jpeg_facts(data)
     if kind == "saved":
         rows.append(["name matches content", "no" if _hash_problems(name, data) else "yes"])
@@ -334,8 +379,12 @@ def _verified() -> List[list]:
 def run_verify(args: Any) -> int:
     rows = _verified()
     bad = [row for row in rows if row[1] != "ok"]
-    _table_or(args, ["picture", "status"], rows if args.all else bad,
-              "every saved picture matches the content hash in its name (%d files)" % len(rows))
+    _table_or(
+        args,
+        ["picture", "status"],
+        rows if args.all else bad,
+        "every saved picture matches the content hash in its name (%d files)" % len(rows),
+    )
     return 1 if bad else 0
 
 
@@ -364,8 +413,11 @@ def run_usage(args: Any) -> int:
             item = entry(name, "missing")
             item["datasets"].add(dataset["id"])
             item["test" if held else "tuning"] += 1
-    rows = [[name, item["kind"], len(item["tests"]), len(item["datasets"]), item["tuning"], item["test"]]
-            for name, item in counts.items() if not args.name or name == args.name]
+    rows = [
+        [name, item["kind"], len(item["tests"]), len(item["datasets"]), item["tuning"], item["test"]]
+        for name, item in counts.items()
+        if not args.name or name == args.name
+    ]
     if args.name and not rows:
         raise kit.CliError("no picture %r is saved or referenced" % args.name)
     kit.emit(args, ["picture", "kind", "tests", "datasets", "tuning rows", "test rows"], rows)
@@ -383,52 +435,124 @@ def run_summary(args: Any) -> int:
     saved = _saved()
     sizes = [(path.stat().st_size, name) for name, _kind, path in saved]
     largest = sorted(sizes, key=lambda pair: (-pair[0], pair[1]))[0] if sizes else None
-    rows = [["sample pictures", len(_samples())], ["saved pictures", len(saved)], ["saved bytes", sum(size for size, _ in sizes)],
-            ["largest saved picture", largest[1] if largest else None],
-            ["outside the limits", sum(row[2] != "ok" for row in _violations())],
-            ["unused saved pictures", len(_unused())], ["missing references", len(_missing())],
-            ["names that do not match", sum(row[1] != "ok" for row in _verified())]]
+    rows = [
+        ["sample pictures", len(_samples())],
+        ["saved pictures", len(saved)],
+        ["saved bytes", sum(size for size, _ in sizes)],
+        ["largest saved picture", largest[1] if largest else None],
+        ["outside the limits", sum(row[2] != "ok" for row in _violations())],
+        ["unused saved pictures", len(_unused())],
+        ["missing references", len(_missing())],
+        ["names that do not match", sum(row[1] != "ok" for row in _verified())],
+    ]
     kit.emit(args, ["metric", "value"], rows)
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-pictures",
-    "surface": "python.cli",
-    "title": "Picture commands",
-    "about": "Offline, read-only commands for the sample pictures and the pictures saved in the Workbench data directory: "
-             "dimensions and sizes, the 280 to 1568 pixel limits, unused files, missing references, one picture's header "
-             "facts, content-hash checks of saved names, where each picture is used, and a summary.",
-    "features": [
-        {"id": "list", "kind": "cli", "command": ["pictures", "list"], "configure": _configure_list, "run": run_list,
-         "title": "List the sample and saved pictures with their format, width, height and size in bytes",
-         "options": [{"id": "kind", "title": "--kind sample|saved lists one kind of picture"},
-                     {"id": "sort", "title": "--sort orders pictures by name, largest file or most pixels"},
-                     dict(FORMAT)]},
-        {"id": "check", "kind": "cli", "command": ["pictures", "check"], "configure": _configure_check, "run": run_check,
-         "title": "Check every picture against the 280 to 1568 pixel and 16 MiB limits; exit 1 on a violation",
-         "options": [{"id": "kind", "title": "--kind sample|saved checks one kind of picture"},
-                     {"id": "all", "title": "--all lists every picture, ok or not"},
-                     dict(FORMAT)]},
-        {"id": "unused", "kind": "cli", "command": ["pictures", "unused"], "configure": _configure_unused, "run": run_unused,
-         "title": "Find saved pictures no saved test or dataset row references, with their sizes; exit 1 if any",
-         "options": [{"id": "keep_history", "title": "--keep-history counts pictures dataset revisions reference as used"},
-                     dict(FORMAT)]},
-        {"id": "missing", "kind": "cli", "command": ["pictures", "missing"], "configure": _configure_missing, "run": run_missing,
-         "title": "Find saved tests and dataset rows that name a picture whose file is missing or unknown; exit 1 if any",
-         "options": [{"id": "source", "title": "--source tests|datasets looks at one kind of reference"}, dict(FORMAT)]},
-        {"id": "show", "kind": "cli", "command": ["pictures", "show"], "configure": _configure_show, "run": run_show,
-         "title": "Show one picture's header facts: format, size, aspect ratio, sha256, limits, PNG or JPEG encoding details",
-         "options": [{"id": "path", "title": "--path FILE inspects a picture file anywhere on disk, for example before upload"},
-                     dict(FORMAT)]},
-        {"id": "verify", "kind": "cli", "command": ["pictures", "verify"], "configure": _configure_verify, "run": run_verify,
-         "title": "Verify that every saved picture's content hash and format match its file name; exit 1 on a mismatch",
-         "options": [{"id": "all", "title": "--all lists every saved file, ok or not"}, dict(FORMAT)]},
-        {"id": "usage", "kind": "cli", "command": ["pictures", "usage"], "configure": _configure_usage, "run": run_usage,
-         "title": "Count where each picture is used: saved tests, datasets, tuning rows and held-out rows",
-         "options": [{"id": "name", "title": "--name NAME counts one picture's uses"}, dict(FORMAT)]},
-        {"id": "summary", "kind": "cli", "command": ["pictures", "summary"], "configure": _configure_summary, "run": run_summary,
-         "title": "Summarize pictures: samples, saved files and bytes, the largest, limit violations, unused, missing and mismatched",
-         "options": [dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-pictures",
+        "surface": "python.cli",
+        "title": "Picture commands",
+        "about": "Offline, read-only commands for the sample pictures and the pictures saved in the Workbench data directory: "
+        "dimensions and sizes, the 280 to 1568 pixel limits, unused files, missing references, one picture's header "
+        "facts, content-hash checks of saved names, where each picture is used, and a summary.",
+        "features": [
+            {
+                "id": "list",
+                "kind": "cli",
+                "command": ["pictures", "list"],
+                "configure": _configure_list,
+                "run": run_list,
+                "title": "List the sample and saved pictures with their format, width, height and size in bytes",
+                "options": [
+                    {"id": "kind", "title": "--kind sample|saved lists one kind of picture"},
+                    {"id": "sort", "title": "--sort orders pictures by name, largest file or most pixels"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "check",
+                "kind": "cli",
+                "command": ["pictures", "check"],
+                "configure": _configure_check,
+                "run": run_check,
+                "title": "Check every picture against the 280 to 1568 pixel and 16 MiB limits; exit 1 on a violation",
+                "options": [
+                    {"id": "kind", "title": "--kind sample|saved checks one kind of picture"},
+                    {"id": "all", "title": "--all lists every picture, ok or not"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "unused",
+                "kind": "cli",
+                "command": ["pictures", "unused"],
+                "configure": _configure_unused,
+                "run": run_unused,
+                "title": "Find saved pictures no saved test or dataset row references, with their sizes; exit 1 if any",
+                "options": [
+                    {
+                        "id": "keep_history",
+                        "title": "--keep-history counts pictures dataset revisions reference as used",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "missing",
+                "kind": "cli",
+                "command": ["pictures", "missing"],
+                "configure": _configure_missing,
+                "run": run_missing,
+                "title": "Find saved tests and dataset rows that name a picture whose file is missing or unknown; exit 1 if any",
+                "options": [
+                    {"id": "source", "title": "--source tests|datasets looks at one kind of reference"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "show",
+                "kind": "cli",
+                "command": ["pictures", "show"],
+                "configure": _configure_show,
+                "run": run_show,
+                "title": "Show one picture's header facts: format, size, aspect ratio, sha256, limits, PNG or JPEG encoding details",
+                "options": [
+                    {
+                        "id": "path",
+                        "title": "--path FILE inspects a picture file anywhere on disk, for example before upload",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "verify",
+                "kind": "cli",
+                "command": ["pictures", "verify"],
+                "configure": _configure_verify,
+                "run": run_verify,
+                "title": "Verify that every saved picture's content hash and format match its file name; exit 1 on a mismatch",
+                "options": [{"id": "all", "title": "--all lists every saved file, ok or not"}, dict(FORMAT)],
+            },
+            {
+                "id": "usage",
+                "kind": "cli",
+                "command": ["pictures", "usage"],
+                "configure": _configure_usage,
+                "run": run_usage,
+                "title": "Count where each picture is used: saved tests, datasets, tuning rows and held-out rows",
+                "options": [{"id": "name", "title": "--name NAME counts one picture's uses"}, dict(FORMAT)],
+            },
+            {
+                "id": "summary",
+                "kind": "cli",
+                "command": ["pictures", "summary"],
+                "configure": _configure_summary,
+                "run": run_summary,
+                "title": "Summarize pictures: samples, saved files and bytes, the largest, limit violations, unused, missing and mismatched",
+                "options": [dict(FORMAT)],
+            },
+        ],
+    }
+)

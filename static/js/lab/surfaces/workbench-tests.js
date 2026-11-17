@@ -149,17 +149,30 @@
 import { clone } from "../kit.js";
 import { selectedTestIds, testResultStatus } from "../../test-selection.js";
 
-const TESTS_LIMITS = Object.freeze({ max_questions: 100, max_choice_options: 255, max_score_levels: 25, max_state_chars: 120000,
-  max_pictures_per_request: 4, max_saved_pictures: 20, max_id_chars: 60, max_notes_chars: 2000 });
+const TESTS_LIMITS = Object.freeze({
+  max_questions: 100,
+  max_choice_options: 255,
+  max_score_levels: 25,
+  max_state_chars: 120000,
+  max_pictures_per_request: 4,
+  max_saved_pictures: 20,
+  max_id_chars: 60,
+  max_notes_chars: 2000,
+});
 const SAVED_AT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const integer = (value) => (Number.isInteger(value) ? value : null);
 const textOr = (value, fallback = null) => (typeof value === "string" && value !== "" ? value : fallback);
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? ""));
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const copy = (value) => {
-  try { return value === undefined ? null : clone(value); } catch { return null; }
+  try {
+    return value === undefined ? null : clone(value);
+  } catch {
+    return null;
+  }
 };
 
 function deepFreeze(value) {
@@ -173,14 +186,19 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
 function criteriaOf(type, question) {
   const criteria = question.criteria;
   if (Array.isArray(criteria)) return criteria.map((text, index) => ({ key: String(index), text: asText(text) }));
-  if (isObject(criteria) && type !== "box") return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
+  if (isObject(criteria) && type !== "box")
+    return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
   return [];
 }
 
@@ -189,8 +207,13 @@ function questionsOf(raw, expect) {
   return Object.entries(raw.questions).map(([id, question]) => {
     const q = isObject(question) ? question : {};
     const type = typeof q.type === "string" ? q.type : "";
-    return { id, type, instructions: asText(q.instructions), criteria: criteriaOf(type, q),
-      expect: Object.hasOwn(expect, id) ? copy(expect[id]) : null };
+    return {
+      id,
+      type,
+      instructions: asText(q.instructions),
+      criteria: criteriaOf(type, q),
+      expect: Object.hasOwn(expect, id) ? copy(expect[id]) : null,
+    };
   });
 }
 
@@ -218,18 +241,32 @@ function resultOf(run, questionIds) {
   return {
     ok: run.ok === true,
     error: run.error ? asText(run.error) : null,
-    meta: meta ? { model: textOr(meta.model), latency_ms: finite(meta.latency_ms), question_count: integer(meta.question_count),
-      input_tokens: integer(meta.input_tokens), output_tokens: integer(meta.output_tokens), cost_usd: finite(meta.cost_usd),
-      backend: textOr(meta.backend) } : null,
+    meta: meta
+      ? {
+          model: textOr(meta.model),
+          latency_ms: finite(meta.latency_ms),
+          question_count: integer(meta.question_count),
+          input_tokens: integer(meta.input_tokens),
+          output_tokens: integer(meta.output_tokens),
+          cost_usd: finite(meta.cost_usd),
+          backend: textOr(meta.backend),
+        }
+      : null,
     elapsed_ms: finite(run.elapsed_ms),
     has_trace: isObject(run.trace),
     checks: Object.entries(results).map(([id, verdict]) => {
       const v = isObject(verdict) ? verdict : {};
       const answer = isObject(v.answer) ? copy(v.answer) : null;
-      return { id, question: questionIds.has(id), ok: v.ok === true ? true : v.ok === false ? false : null,
+      return {
+        id,
+        question: questionIds.has(id),
+        ok: v.ok === true ? true : v.ok === false ? false : null,
         checks: Array.isArray(v.checks) ? v.checks.map(asText) : [],
         type: answer && typeof answer.type === "string" ? answer.type : null,
-        value: answerValue(answer), confidence: answer && answer.type !== "noul" ? finite(answer.confidence) : null, answer };
+        value: answerValue(answer),
+        confidence: answer && answer.type !== "noul" ? finite(answer.confidence) : null,
+        answer,
+      };
     }),
   };
 }
@@ -249,12 +286,16 @@ function testItem(raw, index, run) {
     saved_at: textOr(raw.saved_at),
     saved_ms: savedMs(raw.saved_at),
     state,
-    state_kind: typeof state === "string" ? "text" : Array.isArray(state) ? "array" : isObject(state) ? "object" : "other",
+    state_kind:
+      typeof state === "string" ? "text" : Array.isArray(state) ? "array" : isObject(state) ? "object" : "other",
     questions,
     expect: copy(expect) || {},
     orphan_expectations: Object.keys(expect).filter((key) => !ids.has(key)),
-    images: Object.entries(isObject(raw.images) ? raw.images : {}).map(([ref, entry]) => ({ ref,
-      sample: isObject(entry) ? textOr(entry.sample) : null, file: isObject(entry) ? textOr(entry.file) : null })),
+    images: Object.entries(isObject(raw.images) ? raw.images : {}).map(([ref, entry]) => ({
+      ref,
+      sample: isObject(entry) ? textOr(entry.sample) : null,
+      file: isObject(entry) ? textOr(entry.file) : null,
+    })),
     status: testResultStatus(run),
     result: resultOf(run, ids),
   });
@@ -263,17 +304,30 @@ function testItem(raw, index, run) {
 function sessionOf(results) {
   if (!isObject(results)) return null;
   const count = (value) => (Number.isInteger(value) && value >= 0 ? value : 0);
-  return { batches: count(results.batches), last_count: count(results.last_count), cost_usd: finite(results.cost_usd) ?? 0,
-    wall_ms: finite(results.wall_ms) ?? 0, passed: count(results.passed), failed: count(results.failed), errors: count(results.errors),
-    unrun: count(results.unrun) };
+  return {
+    batches: count(results.batches),
+    last_count: count(results.last_count),
+    cost_usd: finite(results.cost_usd) ?? 0,
+    wall_ms: finite(results.wall_ms) ?? 0,
+    passed: count(results.passed),
+    failed: count(results.failed),
+    errors: count(results.errors),
+    unrun: count(results.unrun),
+  };
 }
 
 function budgetOf(status) {
   const spend = isObject(status) && isObject(status.spend) ? status.spend : null;
   if (!spend) return null;
-  const budget = finite(spend.budget_usd), spent = finite(spend.spent_usd), reserved = finite(spend.reserved_usd);
-  return { budget_usd: budget, spent_usd: spent, reserved_usd: reserved,
-    remaining_usd: budget === null || spent === null ? null : Math.max(0, budget - spent - (reserved ?? 0)) };
+  const budget = finite(spend.budget_usd),
+    spent = finite(spend.spent_usd),
+    reserved = finite(spend.reserved_usd);
+  return {
+    budget_usd: budget,
+    spent_usd: spent,
+    reserved_usd: reserved,
+    remaining_usd: budget === null || spent === null ? null : Math.max(0, budget - spent - (reserved ?? 0)),
+  };
 }
 
 // source: {
@@ -296,7 +350,11 @@ export function testsItemsCtx(source = {}) {
     const length = Array.isArray(list) ? list.length : -1;
     if (memo && memo.list === list && memo.length === length && memo.results === results) return memo.value;
     const raws = Array.isArray(list) ? list.filter(isObject) : [];
-    const runs = new Map((isObject(results) && Array.isArray(results.runs) ? results.runs : []).filter(isObject).map((run) => [run.id, run]));
+    const runs = new Map(
+      (isObject(results) && Array.isArray(results.runs) ? results.runs : [])
+        .filter(isObject)
+        .map((run) => [run.id, run]),
+    );
     const position = new Map(raws.map((raw, index) => [raw, index]));
     // The same raw test, position and run give the same item object.
     const of = (raw) => {
@@ -318,7 +376,9 @@ export function testsItemsCtx(source = {}) {
     return raws.map(of);
   };
   const busy = () => read(source, "busy", false) === true;
-  const notBusy = () => { if (busy()) throw new Error("Wait for the current spend check or run to finish."); };
+  const notBusy = () => {
+    if (busy()) throw new Error("Wait for the current spend check or run to finish.");
+  };
   const rawById = (id) => {
     const raw = rawItems().find((entry) => entry.id === id);
     if (typeof id !== "string" || !raw) throw new Error(`There is no saved test “${String(id)}”.`);
@@ -326,7 +386,10 @@ export function testsItemsCtx(source = {}) {
   };
   const knownIds = (ids) => {
     if (!Array.isArray(ids)) throw new Error("Give a list of saved test IDs.");
-    return selectedTestIds(rawItems(), ids.filter((id) => typeof id === "string"));
+    return selectedTestIds(
+      rawItems(),
+      ids.filter((id) => typeof id === "string"),
+    );
   };
   const call = (name, ...args) => {
     if (typeof source[name] !== "function") throw new Error("The Tests tab cannot do that here.");
@@ -349,13 +412,18 @@ export function testsItemsCtx(source = {}) {
       }
       let active = 0;
       for (const [key, value] of Object.entries(typed)) {
-        if (key === "query") { if (value.trim()) active++; } else if (isObject(defaults) && Object.hasOwn(defaults, key) && String(defaults[key]) !== value) active++;
+        if (key === "query") {
+          if (value.trim()) active++;
+        } else if (isObject(defaults) && Object.hasOwn(defaults, key) && String(defaults[key]) !== value) active++;
       }
       const status = read(source, "status", null);
       const now = finite(read(source, "now", null));
       return deepFreeze({
         results: sessionOf(read(source, "results", null)),
-        selected: selectedTestIds(rawItems(), Array.isArray(read(source, "selected", [])) ? read(source, "selected", []) : []),
+        selected: selectedTestIds(
+          rawItems(),
+          Array.isArray(read(source, "selected", [])) ? read(source, "selected", []) : [],
+        ),
         can_undo_selection: read(source, "canUndoSelection", false) === true,
         busy: busy(),
         tab: asText(read(source, "tab", "")),
@@ -372,13 +440,23 @@ export function testsItemsCtx(source = {}) {
     actions: {
       select(ids, mode = "add") {
         notBusy();
-        if (!["add", "remove", "replace"].includes(mode)) throw new Error(`Unknown selection change “${String(mode)}”.`);
+        if (!["add", "remove", "replace"].includes(mode))
+          throw new Error(`Unknown selection change “${String(mode)}”.`);
         const known = knownIds(ids);
-        if (mode !== "replace" && !known.length) throw new Error("None of those IDs is a saved test. The selection is unchanged.");
+        if (mode !== "replace" && !known.length)
+          throw new Error("None of those IDs is a saved test. The selection is unchanged.");
         const raws = rawItems();
-        const current = selectedTestIds(raws, Array.isArray(read(source, "selected", [])) ? read(source, "selected", []) : []);
+        const current = selectedTestIds(
+          raws,
+          Array.isArray(read(source, "selected", [])) ? read(source, "selected", []) : [],
+        );
         const drop = new Set(known);
-        const next = mode === "replace" ? known : mode === "add" ? selectedTestIds(raws, [...current, ...known]) : current.filter((id) => !drop.has(id));
+        const next =
+          mode === "replace"
+            ? known
+            : mode === "add"
+              ? selectedTestIds(raws, [...current, ...known])
+              : current.filter((id) => !drop.has(id));
         call("setSelection", next);
         return next;
       },
@@ -393,14 +471,17 @@ export function testsItemsCtx(source = {}) {
       inspect(id) {
         const raw = rawById(id);
         const run = runsById().get(id);
-        if (!isObject(run) || !isObject(run.trace)) throw new Error(`Test “${id}” has no call to inspect in this session.`);
+        if (!isObject(run) || !isObject(run.trace))
+          throw new Error(`Test “${id}” has no call to inspect in this session.`);
         return call("inspect", run.trace, `Test · ${raw.name || id}`);
       },
       resetFilters() {
         return call("resetFilters");
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && typeof item.id === "string" ? item.id : "?"),
     // The page's hook (not for packs): Lab's filters and sort on the page's raw saved tests.
     page: {
@@ -418,7 +499,8 @@ export function testsItemsCtx(source = {}) {
           return item;
         });
         const arranged = source.arrange(list, ctx);
-        if (!Array.isArray(arranged) || arranged.length !== raws.length || !arranged.every((item) => pairs.has(item))) return raws;
+        if (!Array.isArray(arranged) || arranged.length !== raws.length || !arranged.every((item) => pairs.has(item)))
+          return raws;
         return arranged.map((item) => pairs.get(item));
       },
     },

@@ -35,16 +35,20 @@ def _write_or_print(args: Any, text: str, what: str) -> None:
 
 def _configure_merge(parser: Any) -> None:
     parser.add_argument("files", nargs="+", help="question or request JSON files, merged in order")
-    parser.add_argument("--out", metavar="PATH", help="write the merged questions to this new file instead of printing them")
+    parser.add_argument(
+        "--out", metavar="PATH", help="write the merged questions to this new file instead of printing them"
+    )
     parser.add_argument("--force", action="store_true", help="let --out replace an existing file")
 
 
 def _canonical(question: dict) -> str:
     """A question as text for comparison: field order ignored, but a Choice's option order kept, since it is
     configuration (decision provenance records it)."""
+
     def ordered(key: str, value: Any) -> Any:
         choice = key == "criteria" and question.get("type") == "choice" and isinstance(value, dict)
         return [list(pair) for pair in value.items()] if choice else value
+
     return json.dumps({key: ordered(key, value) for key, value in question.items()}, sort_keys=True)
 
 
@@ -81,7 +85,9 @@ def _configure_prefix(parser: Any) -> None:
     parser.add_argument("prefix", help="the prefix, such as shield.")
     parser.add_argument("--strip", action="store_true", help="remove the prefix from every id instead of adding it")
     parser.add_argument("--out", metavar="PATH", help="write the result to this new file instead of printing it")
-    parser.add_argument("--force", action="store_true", help="let --out replace an existing file, such as the input itself")
+    parser.add_argument(
+        "--force", action="store_true", help="let --out replace an existing file, such as the input itself"
+    )
 
 
 def run_prefix(args: Any) -> int:
@@ -91,8 +97,10 @@ def run_prefix(args: Any) -> int:
     if args.strip:
         lacking = [qid for qid in questions if not qid.startswith(args.prefix) or qid == args.prefix]
         if lacking:
-            raise kit.CliError("%s %s not start with %r" % (", ".join(lacking), "does" if len(lacking) == 1 else "do", args.prefix))
-        names = {qid: qid[len(args.prefix):] for qid in questions}
+            raise kit.CliError(
+                "%s %s not start with %r" % (", ".join(lacking), "does" if len(lacking) == 1 else "do", args.prefix)
+            )
+        names = {qid: qid[len(args.prefix) :] for qid in questions}
     else:
         names = {qid: args.prefix + qid for qid in questions}
     if len(set(names.values())) != len(names):
@@ -100,7 +108,10 @@ def run_prefix(args: Any) -> int:
     renamed = {names[qid]: question for qid, question in questions.items()}
     cli_questions._valid(args.file, renamed)
     text = cli_questions._json_text(cli_questions._rebuild(data, renamed, request, names))
-    what = ("removed %r from %s" if args.strip else "added %r to %s") % (args.prefix, cli_questions._count(len(renamed), "id"))
+    what = ("removed %r from %s" if args.strip else "added %r to %s") % (
+        args.prefix,
+        cli_questions._count(len(renamed), "id"),
+    )
     _write_or_print(args, text, what)
     return 0
 
@@ -129,8 +140,10 @@ def run_answers(args: Any) -> int:
             rows += [[qid, qtype, str(level), cli_guidelines._describe(value)] for level, value in enumerate(criteria)]
         elif qtype == "noul":
             given = criteria if isinstance(criteria, dict) else {}
-            rows += [[qid, qtype, answer, cli_guidelines._describe(given[key]) if key in given else ""]
-                     for answer, key in (("yes", "true"), ("no", "false"))]
+            rows += [
+                [qid, qtype, answer, cli_guidelines._describe(given[key]) if key in given else ""]
+                for answer, key in (("yes", "true"), ("no", "false"))
+            ]
         else:
             rows.append([qid, qtype, "a box", "left, top, right and bottom edges as fractions of the picture"])
     kit.emit(args, ["question", "type", "label", "meaning"], rows)
@@ -158,11 +171,23 @@ def schema(questions: Dict[str, dict]) -> dict:
         elif qtype == "score":
             properties[qid] = {"type": "integer", "minimum": 0, "maximum": len(question["criteria"]) - 1}
         else:
-            properties[qid] = {"type": "object", "required": list(workbench.EDGES), "additionalProperties": False,
-                               "properties": {edge: {"type": "number", "minimum": 0, "maximum": 1} for edge in workbench.EDGES}}
-        properties[qid] = {"description": "%s question" % qtype.capitalize(), "anyOf": [properties[qid], {"type": "null"}]}
-    return {"$schema": SCHEMA, "title": "Workbench labels (%s)" % workbench.LABEL_KEY, "type": "object",
-            "additionalProperties": False, "properties": properties}
+            properties[qid] = {
+                "type": "object",
+                "required": list(workbench.EDGES),
+                "additionalProperties": False,
+                "properties": {edge: {"type": "number", "minimum": 0, "maximum": 1} for edge in workbench.EDGES},
+            }
+        properties[qid] = {
+            "description": "%s question" % qtype.capitalize(),
+            "anyOf": [properties[qid], {"type": "null"}],
+        }
+    return {
+        "$schema": SCHEMA,
+        "title": "Workbench labels (%s)" % workbench.LABEL_KEY,
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+    }
 
 
 def run_schema(args: Any) -> int:
@@ -171,26 +196,54 @@ def run_schema(args: Any) -> int:
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-question-tools",
-    "surface": "python.cli",
-    "title": "More question set tools",
-    "about": "More offline `lab.py questions` commands: merge question files without silently redefining an id, add or "
-             "strip an id prefix as merged requests use, list every label each question accepts with its meaning, and "
-             "write a JSON Schema for rows' `_expect` labels.",
-    "features": [
-        {"id": "merge", "kind": "cli", "command": ["questions", "merge"], "configure": _configure_merge, "run": run_merge,
-         "title": "Merge question files in order, keeping one copy of identical questions; exit 1 naming ids defined differently",
-         "options": [dict(OUT, title="--out PATH writes the merged questions to a new file"),
-                     {"id": "force", "title": "--force lets --out replace an existing file"}]},
-        {"id": "prefix", "kind": "cli", "command": ["questions", "prefix"], "configure": _configure_prefix, "run": run_prefix,
-         "title": "Add a prefix to every question id, moving a request's expectations with them, as merged requests name questions",
-         "options": [{"id": "strip", "title": "--strip removes the prefix from every id instead"}, dict(OUT)]},
-        {"id": "answers", "kind": "cli", "command": ["questions", "answers"], "configure": _configure_answers, "run": run_answers,
-         "title": "List every label each question accepts (option keys, yes and no, level numbers) with what it means",
-         "options": [{"id": "question", "title": "--question ID lists one question's labels"}, dict(FORMAT)]},
-        {"id": "schema", "kind": "cli", "command": ["questions", "schema"], "configure": _configure_schema, "run": run_schema,
-         "title": "Write a JSON Schema for rows' _expect labels, so another labeling tool can check labels before import",
-         "options": [dict(OUT, title="--out PATH writes the schema to a new file")]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-question-tools",
+        "surface": "python.cli",
+        "title": "More question set tools",
+        "about": "More offline `lab.py questions` commands: merge question files without silently redefining an id, add or "
+        "strip an id prefix as merged requests use, list every label each question accepts with its meaning, and "
+        "write a JSON Schema for rows' `_expect` labels.",
+        "features": [
+            {
+                "id": "merge",
+                "kind": "cli",
+                "command": ["questions", "merge"],
+                "configure": _configure_merge,
+                "run": run_merge,
+                "title": "Merge question files in order, keeping one copy of identical questions; exit 1 naming ids defined differently",
+                "options": [
+                    dict(OUT, title="--out PATH writes the merged questions to a new file"),
+                    {"id": "force", "title": "--force lets --out replace an existing file"},
+                ],
+            },
+            {
+                "id": "prefix",
+                "kind": "cli",
+                "command": ["questions", "prefix"],
+                "configure": _configure_prefix,
+                "run": run_prefix,
+                "title": "Add a prefix to every question id, moving a request's expectations with them, as merged requests name questions",
+                "options": [{"id": "strip", "title": "--strip removes the prefix from every id instead"}, dict(OUT)],
+            },
+            {
+                "id": "answers",
+                "kind": "cli",
+                "command": ["questions", "answers"],
+                "configure": _configure_answers,
+                "run": run_answers,
+                "title": "List every label each question accepts (option keys, yes and no, level numbers) with what it means",
+                "options": [{"id": "question", "title": "--question ID lists one question's labels"}, dict(FORMAT)],
+            },
+            {
+                "id": "schema",
+                "kind": "cli",
+                "command": ["questions", "schema"],
+                "configure": _configure_schema,
+                "run": run_schema,
+                "title": "Write a JSON Schema for rows' _expect labels, so another labeling tool can check labels before import",
+                "options": [dict(OUT, title="--out PATH writes the schema to a new file")],
+            },
+        ],
+    }
+)

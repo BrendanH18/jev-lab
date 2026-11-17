@@ -26,8 +26,10 @@ class Temp(unittest.TestCase):
         self.dir = Path(tempfile.mkdtemp())
         self._orig = workbench.WORKBENCH_DIR
         workbench.WORKBENCH_DIR = self.dir
-        rows = [json.dumps({"text": ("refund %d" if i % 2 else "thanks %d") % i, "_expect": {"refund": bool(i % 2)}})
-                for i in range(20)] + ["unlabeled row"]
+        rows = [
+            json.dumps({"text": ("refund %d" if i % 2 else "thanks %d") % i, "_expect": {"refund": bool(i % 2)}})
+            for i in range(20)
+        ] + ["unlabeled row"]
         workbench.save_dataset({"name": "Tickets", "rows": "\n".join(rows), "questions": Q})
 
     def tearDown(self):
@@ -39,8 +41,13 @@ class Temp(unittest.TestCase):
         out = []
         for i, row in rows:
             state, labels = workbench.split_labels(row, i + 1)
-            out.append({"index": i, "answers": fake_answers(Q, picker(workbench.without_marks(state), Q)),
-                        "labels": labels or {}})
+            out.append(
+                {
+                    "index": i,
+                    "answers": fake_answers(Q, picker(workbench.without_marks(state), Q)),
+                    "labels": labels or {},
+                }
+            )
         return out
 
     def held_out(self):
@@ -64,13 +71,25 @@ class LockTests(Temp):
     def test_lock_rejects(self):
         with self.assertRaisesRegex(WorkbenchError, "share must be"):
             testsplit.lock("tickets", 0.9)
-        workbench.save_dataset({"name": "Few", "rows": "\n".join(json.dumps({"text": "x%d" % i, "_expect": {"refund": True}})
-                                                                 for i in range(3)), "questions": Q})
+        workbench.save_dataset(
+            {
+                "name": "Few",
+                "rows": "\n".join(json.dumps({"text": "x%d" % i, "_expect": {"refund": True}}) for i in range(3)),
+                "questions": Q,
+            }
+        )
         with self.assertRaisesRegex(WorkbenchError, "Label more rows first"):
             testsplit.lock("few", 0.2)
-        workbench.save_dataset({"name": "Ten", "rows": "\n".join(json.dumps({"text": "y%d" % i, "_expect": {"refund": True}})
-                                                                 for i in range(10)), "questions": Q})
-        self.assertEqual(len(testsplit.test_indexes(testsplit.lock("ten", 0.25, seed=1))), 3, "2.5 rounds up, as the page counts")
+        workbench.save_dataset(
+            {
+                "name": "Ten",
+                "rows": "\n".join(json.dumps({"text": "y%d" % i, "_expect": {"refund": True}}) for i in range(10)),
+                "questions": Q,
+            }
+        )
+        self.assertEqual(
+            len(testsplit.test_indexes(testsplit.lock("ten", 0.25, seed=1))), 3, "2.5 rounds up, as the page counts"
+        )
 
     def test_marker_must_be_true(self):
         with self.assertRaisesRegex(WorkbenchError, "_test must be true"):
@@ -81,8 +100,14 @@ class LockTests(Temp):
     def test_duplicates_and_unlabeled_copies_stay_on_the_same_side(self):
         rows = []
         for text in ("refund", "thanks"):
-            rows.extend([{"text": text, "_expect": {"refund": True}},
-                         {"_expect": {"refund": False}, "text": text}, text, {"text": text}])
+            rows.extend(
+                [
+                    {"text": text, "_expect": {"refund": True}},
+                    {"_expect": {"refund": False}, "text": text},
+                    text,
+                    {"text": text},
+                ]
+            )
         rows.append("unrelated unlabeled row")
         workbench.save_dataset({"name": "Copies", "rows": rows, "questions": Q})
         dataset = testsplit.lock("copies", 0.5, seed=1)
@@ -91,11 +116,15 @@ class LockTests(Temp):
         self.assertEqual((summary["labeled"], summary["share"]), (2, 0.5), "share counts labeled rows only")
         self.assertFalse(health.analyze(dataset["rows"], Q)["overlap"])
         self.assertFalse(workbench.row_test(dataset["rows"][-1]), "unrelated unlabeled inputs stay in tuning")
-        self.assertEqual([workbench.without_marks(row) for row in dataset["rows"] if isinstance(row, dict)
-                          and "_expect" in row],
-                         [{"text": "refund"}] * 2 + [{"text": "thanks"}] * 2)
-        self.assertEqual([row["_expect"] for row in dataset["rows"] if isinstance(row, dict) and "_expect" in row],
-                         [{"refund": True}, {"refund": False}] * 2, "conflicting labels do not change input identity")
+        self.assertEqual(
+            [workbench.without_marks(row) for row in dataset["rows"] if isinstance(row, dict) and "_expect" in row],
+            [{"text": "refund"}] * 2 + [{"text": "thanks"}] * 2,
+        )
+        self.assertEqual(
+            [row["_expect"] for row in dataset["rows"] if isinstance(row, dict) and "_expect" in row],
+            [{"refund": True}, {"refund": False}] * 2,
+            "conflicting labels do not change input identity",
+        )
 
     def test_grouped_split_uses_the_nearest_feasible_labeled_count(self):
         rows = [{"text": text, "_expect": {"refund": True}} for text in ("a", "b") for _ in range(3)]
@@ -110,16 +139,24 @@ class LockTests(Temp):
         self.assertEqual(len(testsplit.test_indexes(testsplit.lock("four", 0.25, seed=1))), 2)
 
     def test_grouped_split_compares_the_unrounded_requested_share(self):
-        rows = [{"text": text, "_expect": {"refund": True}}
-                for text, size in (("a", 4), ("b", 6), ("c", 4)) for _ in range(size)]
+        rows = [
+            {"text": text, "_expect": {"refund": True}}
+            for text, size in (("a", 4), ("b", 6), ("c", 4))
+            for _ in range(size)
+        ]
         workbench.save_dataset({"name": "Unrounded", "rows": rows, "questions": Q})
         self.assertEqual(len(testsplit.test_indexes(testsplit.lock("unrounded", 0.33, seed=2))), 4)
 
     def test_impossible_grouped_split_leaves_the_saved_dataset_untouched(self):
         for name, texts in (("One group", ["a"] * 8), ("Uneven groups", ["a"] * 7 + ["b"])):
             with self.subTest(name=name):
-                saved = workbench.save_dataset({"name": name, "rows": [
-                    {"text": text, "_expect": {"refund": True}} for text in texts], "questions": Q})
+                saved = workbench.save_dataset(
+                    {
+                        "name": name,
+                        "rows": [{"text": text, "_expect": {"refund": True}} for text in texts],
+                        "questions": Q,
+                    }
+                )
                 path = workbench._dataset_path(saved["id"])
                 before = path.read_bytes()
                 with self.assertRaisesRegex(WorkbenchError, "Exact duplicate inputs must stay together"):
@@ -160,7 +197,9 @@ class LockTests(Temp):
         testsplit.score("tickets", self.answered(rows), {"refund": 0.5})
         dataset = workbench.load_dataset("tickets")
         workbench.save_dataset({"name": "Tickets", "rows": dataset["rows"], "questions": Q})
-        self.assertEqual(len(workbench.load_dataset("tickets")["test"]["looks"]), 1, "re-saving the rows keeps the count")
+        self.assertEqual(
+            len(workbench.load_dataset("tickets")["test"]["looks"]), 1, "re-saving the rows keeps the count"
+        )
         fresh = workbench.save_dataset({"name": "Copy", "rows": dataset["rows"], "questions": Q})
         self.assertEqual(fresh["test"]["looks"], [], "rows saved with markers and no record start one")
 
@@ -181,7 +220,9 @@ class ModelTests(Temp):
         self.assertEqual(res["results"][0]["row"], {"text": "refund me", TEST_KEY: True}, "the browser sees the marker")
         fake.calls.clear()
         workbench.run_bulk(fake, [{"text": "refund me"}, {"text": "refund me", TEST_KEY: True}], Q, field="message")
-        self.assertEqual([state for state, _ in fake.calls], [{"text": "refund me"}] * 2, "a marked object keeps its fields")
+        self.assertEqual(
+            [state for state, _ in fake.calls], [{"text": "refund me"}] * 2, "a marked object keeps its fields"
+        )
 
     def test_compare_leaves_test_rows_out(self):
         fake = FakeClient(picker)
@@ -208,7 +249,9 @@ class ModelTests(Temp):
             drift.run(fake, "tickets", [{"text": "held", TEST_KEY: True}])
 
     def test_a_marked_row_is_the_same_row(self):
-        self.assertEqual(decisions._key({"text": "x", TEST_KEY: True, "_expect": {"refund": True}}), decisions._key("x"))
+        self.assertEqual(
+            decisions._key({"text": "x", TEST_KEY: True, "_expect": {"refund": True}}), decisions._key("x")
+        )
         self.assertEqual(agreement.row_id({"text": "x", TEST_KEY: True}), agreement.row_id({"text": "x"}))
 
 
@@ -217,9 +260,20 @@ class ScoreTests(Temp):
         testsplit.lock("tickets", 0.25, seed=1)
         rows = self.held_out()
         rep = testsplit.score("tickets", self.answered(rows), {"refund": 0.5}, model="jev-1.14.0")
-        self.assertEqual((rep["look"], rep["rows"], rep["labeled"], rep["automated"], rep["accuracy"]), (1, 5, 5, 5, 1.0))
-        self.assertEqual(rep["questions"], [{"qid": "refund", "accuracy": 1.0, "accuracy_low": rep["questions"][0]["accuracy_low"],
-                                             "accuracy_high": 1.0}])
+        self.assertEqual(
+            (rep["look"], rep["rows"], rep["labeled"], rep["automated"], rep["accuracy"]), (1, 5, 5, 5, 1.0)
+        )
+        self.assertEqual(
+            rep["questions"],
+            [
+                {
+                    "qid": "refund",
+                    "accuracy": 1.0,
+                    "accuracy_low": rep["questions"][0]["accuracy_low"],
+                    "accuracy_high": 1.0,
+                }
+            ],
+        )
         self.assertNotIn("rows", rep["questions"][0])
         look = workbench.load_dataset("tickets")["test"]["looks"][0]
         self.assertEqual(set(look), {"at", "gates", "signal", "model"})

@@ -58,15 +58,19 @@ def _dataset(raw: Any, name: Any = None) -> dict:
     if not isinstance(raw, dict):
         raise WorkbenchError("Bundle dataset must be an object")
     name = _text(raw.get("name") if name is None else name, "name", 120).strip()
-    out = {"id": workbench.slugify(name), "name": name,
-           "notes": _text(raw.get("notes"), "notes", 2000, optional=True),
-           "rows": workbench.validate_rows(raw.get("rows"))}
+    out = {
+        "id": workbench.slugify(name),
+        "name": name,
+        "notes": _text(raw.get("notes"), "notes", 2000, optional=True),
+        "rows": workbench.validate_rows(raw.get("rows")),
+    }
     if "saved_at" in raw:
         out["saved_at"] = _text(raw["saved_at"], "saved date", 100)
     if raw.get("questions"):
         out["questions"] = workbench.bulk_questions(raw["questions"])
-        workbench._need_pictures([workbench.split_labels(row, i + 1) for i, row in enumerate(out["rows"])],
-                                 out["questions"])
+        workbench._need_pictures(
+            [workbench.split_labels(row, i + 1) for i, row in enumerate(out["rows"])], out["questions"]
+        )
     if raw.get("rules"):
         try:
             parsed = rules.parse(raw["rules"])
@@ -98,8 +102,11 @@ def export_bundle(dataset_id: str) -> dict:
     """Return {filename, data}, with base64 ZIP bytes for a saved dataset and every referenced picture."""
     with workbench.dataset_update():
         dataset = _dataset(workbench.load_dataset(dataset_id))
-    files = {"dataset.json": json.dumps({"format": FORMAT, "version": VERSION, "dataset": dataset},
-                                       ensure_ascii=False, allow_nan=False).encode("utf-8")}
+    files = {
+        "dataset.json": json.dumps(
+            {"format": FORMAT, "version": VERSION, "dataset": dataset}, ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
+    }
     total = sum(map(len, files.values()))
     if total > MAX_BUNDLE_BYTES:
         raise WorkbenchError("Dataset bundle exceeds the 8 MiB limit; split the dataset")
@@ -145,7 +152,12 @@ def _read(data: Any, name: Any = None) -> Tuple[dict, Dict[str, bytes]]:
             if archive.getinfo("dataset.json").file_size > workbench.MAX_DATASET_CHARS * 4:
                 raise WorkbenchError("Bundle dataset.json is too large")
             manifest = json.loads(archive.read("dataset.json"), parse_constant=_reject_constant)
-            if not isinstance(manifest, dict) or manifest.get("format") != FORMAT or type(manifest.get("version")) is not int or manifest["version"] != VERSION:
+            if (
+                not isinstance(manifest, dict)
+                or manifest.get("format") != FORMAT
+                or type(manifest.get("version")) is not int
+                or manifest["version"] != VERSION
+            ):
                 raise WorkbenchError("Unsupported dataset bundle format or version")
             dataset = _dataset(manifest.get("dataset"), name)
             names = _names(dataset)
@@ -160,17 +172,28 @@ def _read(data: Any, name: Any = None) -> Tuple[dict, Dict[str, bytes]]:
                     raise WorkbenchError("Bundle image filename does not match its content: %s" % image)
                 pictures[stored] = entry["data"]
                 renamed[image] = stored
-            dataset["rows"] = [dict(row, **{workbench.IMAGE_KEY: renamed[row[workbench.IMAGE_KEY]]})
-                               if isinstance(row, dict) and workbench.IMAGE_KEY in row else row
-                               for row in dataset["rows"]]
+            dataset["rows"] = [
+                dict(row, **{workbench.IMAGE_KEY: renamed[row[workbench.IMAGE_KEY]]})
+                if isinstance(row, dict) and workbench.IMAGE_KEY in row
+                else row
+                for row in dataset["rows"]
+            ]
             for target in dataset.get("check", {}).get("slice_targets", []):
                 if target["field"] == workbench.IMAGE_KEY:
                     target["value"] = renamed.get(target["value"], target["value"])
             if len(workbench._dataset_text(dataset)) > workbench.MAX_DATASET_CHARS:
                 raise WorkbenchError("The bundle dataset is too large to save")
             return dataset, pictures
-    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, OSError, UnicodeError, ValueError,
-            RecursionError, zlib.error) as err:
+    except (
+        zipfile.BadZipFile,
+        RuntimeError,
+        NotImplementedError,
+        OSError,
+        UnicodeError,
+        ValueError,
+        RecursionError,
+        zlib.error,
+    ) as err:
         if isinstance(err, WorkbenchError):
             raise
         raise WorkbenchError("Invalid dataset bundle: %s" % err) from err
@@ -179,8 +202,12 @@ def _read(data: Any, name: Any = None) -> Tuple[dict, Dict[str, bytes]]:
 def preview_bundle(data: Any, name: Any = None) -> dict:
     """Validate without writing; return the dataset, list summary, picture count, and destination conflict."""
     dataset, pictures = _read(data, name)
-    return {"dataset": dataset, "summary": workbench.dataset_summary(dataset), "images": len(pictures),
-            "exists": workbench._dataset_path(dataset["id"]).exists()}
+    return {
+        "dataset": dataset,
+        "summary": workbench.dataset_summary(dataset),
+        "images": len(pictures),
+        "exists": workbench._dataset_path(dataset["id"]).exists(),
+    }
 
 
 @workbench.dataset_update()
@@ -190,8 +217,9 @@ def import_bundle(data: Any, name: Any = None, replace: Any = False) -> dict:
         raise WorkbenchError("replace must be true or false")
     dataset, pictures = _read(data, name)
     if workbench._dataset_path(dataset["id"]).exists() and not replace:
-        raise WorkbenchError("A dataset named %r already exists. Confirm replacement or choose another name."
-                             % dataset["name"])
+        raise WorkbenchError(
+            "A dataset named %r already exists. Confirm replacement or choose another name." % dataset["name"]
+        )
     dataset["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if len(workbench._dataset_text(dataset)) > workbench.MAX_DATASET_CHARS:
         raise WorkbenchError("The bundle dataset is too large to save")

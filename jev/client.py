@@ -26,12 +26,20 @@ from .config import Settings
 
 try:  # the official SDK needs Python >= 3.10
     import typesafe_sdk
-    from typesafe_sdk import (Image, RetryPolicy, TypeSafeAPIConnectionError, TypeSafeAPIError, TypeSafeClient,
-                              TypeSafeError)
+    from typesafe_sdk import (
+        Image,
+        RetryPolicy,
+        TypeSafeAPIConnectionError,
+        TypeSafeAPIError,
+        TypeSafeClient,
+        TypeSafeError,
+    )
+
     SDK_VERSION: Optional[str] = getattr(typesafe_sdk, "__version__", None)
     if SDK_VERSION is None:
         try:
             from importlib.metadata import version as _pkg_version
+
             SDK_VERSION = _pkg_version("typesafe-sdk")
         except Exception:  # noqa: BLE001
             SDK_VERSION = "unknown"
@@ -92,12 +100,16 @@ def pin_note(model: str, tuned_on: Optional[str] = None) -> Optional[str]:
         return None
     now = ALIASES.get(model)
     if tuned_on and now and now != tuned_on:
-        return ("%s now points to %s, but these thresholds were tuned on answers from %s. Run the check to see "
-                "whether the gate still holds on %s." % (model, now, tuned_on, now))
+        return (
+            "%s now points to %s, but these thresholds were tuned on answers from %s. Run the check to see "
+            "whether the gate still holds on %s." % (model, now, tuned_on, now)
+        )
     tuned = (" These thresholds were tuned on answers from %s." % tuned_on) if tuned_on else ""
-    return ("Asks %s, an alias that moves to a new version when TypeSafe ships one, and thresholds tuned on one "
-            "version may not hold on the next.%s To pin it, run the dataset in Bulk and save the check again."
-            % (model, tuned))
+    return (
+        "Asks %s, an alias that moves to a new version when TypeSafe ships one, and thresholds tuned on one "
+        "version may not hold on the next.%s To pin it, run the dataset in Bulk and save the check again."
+        % (model, tuned)
+    )
 
 
 def supports_box(model: str) -> bool:
@@ -194,13 +206,16 @@ class SpendGuard:
                     "This server run has spent its $%.2f budget ($%.4f recorded, $%.4f held by calls "
                     "still running, %d live calls). Restart it with JEV_LAB_BUDGET_USD=<amount> to allow more."
                     % (self.budget_usd, self.spent_usd, self.reserved_usd, self.live_calls),
-                    status=402)
+                    status=402,
+                )
             now = time.monotonic()
             while self._times and self._times[0] < now - 60:
                 self._times.popleft()
             if self.rpm > 0 and len(self._times) >= self.rpm:
-                raise JevError("Local rate limit: more than %d live calls in the last minute. Wait a moment."
-                               % self.rpm, status=429)
+                raise JevError(
+                    "Local rate limit: more than %d live calls in the last minute. Wait a moment." % self.rpm,
+                    status=429,
+                )
             self._times.append(now)
             self.reserved_usd += reserve_usd
 
@@ -218,13 +233,24 @@ class SpendGuard:
 
     def snapshot(self) -> dict:
         with self._lock:
-            return {"budget_usd": self.budget_usd, "spent_usd": self.spent_usd, "reserved_usd": self.reserved_usd,
-                    "live_calls": self.live_calls, "input_tokens": self.input_tokens, "rpm": self.rpm}
+            return {
+                "budget_usd": self.budget_usd,
+                "spent_usd": self.spent_usd,
+                "reserved_usd": self.reserved_usd,
+                "live_calls": self.live_calls,
+                "input_tokens": self.input_tokens,
+                "rpm": self.rpm,
+            }
 
 
 class JevClient:
-    def __init__(self, settings: Optional[Settings] = None, guard: Optional[SpendGuard] = None,
-                 api_key: Optional[str] = None, timeout: float = 30.0):
+    def __init__(
+        self,
+        settings: Optional[Settings] = None,
+        guard: Optional[SpendGuard] = None,
+        api_key: Optional[str] = None,
+        timeout: float = 30.0,
+    ):
         self.settings = settings or Settings()
         self.timeout = timeout
         self._memory_key = api_key
@@ -281,8 +307,13 @@ class JevClient:
 
     # --- calls ------------------------------------------------------------------------------
 
-    def system_one(self, state: Any, questions: Dict[str, dict], assets: Optional[Dict[str, dict]] = None,
-                   model: Optional[str] = None) -> JevResult:
+    def system_one(
+        self,
+        state: Any,
+        questions: Dict[str, dict],
+        assets: Optional[Dict[str, dict]] = None,
+        model: Optional[str] = None,
+    ) -> JevResult:
         """One call. `assets` maps reference -> entry from jev.images.asset(); each reference must
         appear in the state or questions. Images and Box questions send the images header."""
         model = model or self.model
@@ -293,8 +324,10 @@ class JevClient:
                 raise images.ImageError("Image %s is not referenced in the state or questions." % missing[0])
             payload["assets"] = assets
         if not self.api_key:
-            raise JevError("No TypeSafe API key yet. Click “Connect API key” in the top-right, or add "
-                           "TYPESAFE_API_KEY to .env.", status=401)
+            raise JevError(
+                "No TypeSafe API key yet. Click “Connect API key” in the top-right, or add TYPESAFE_API_KEY to .env.",
+                status=401,
+            )
         reserve = request_reserve_usd(state, questions, model, assets)
         self.guard.check(reserve)
         started = time.perf_counter()
@@ -332,9 +365,13 @@ class JevClient:
         with self._lock:
             key = self.api_key
             if self._sdk is None or self._sdk_key != key:
-                self._sdk = TypeSafeClient(api_key=key, model=self.model, base_url=self.base_url,
-                                           timeout=self.timeout,
-                                           retry=RetryPolicy(max_retries=3, timeout=self.timeout))
+                self._sdk = TypeSafeClient(
+                    api_key=key,
+                    model=self.model,
+                    base_url=self.base_url,
+                    timeout=self.timeout,
+                    retry=RetryPolicy(max_retries=3, timeout=self.timeout),
+                )
                 self._sdk_key = key
             return self._sdk
 
@@ -345,9 +382,12 @@ class JevClient:
             try:
                 # The SDK uploads each image as a multipart file part, the transport TypeSafe recommends.
                 response = self._sdk_client().system_one(
-                    payload["state"], payload["questions"], model=payload["model"],
+                    payload["state"],
+                    payload["questions"],
+                    model=payload["model"],
                     assets={ref: Image(entry["data"]) for ref, entry in assets.items()} or None,
-                    extra_headers=headers)
+                    extra_headers=headers,
+                )
                 return response.raw_http_response.json()
             except TypeSafeAPIError as err:
                 raise JevError(_error_message(err.status, err.body), status=err.status, body=err.body) from err
@@ -361,16 +401,29 @@ class JevClient:
         response, _ = self._stdlib_request("POST", "/v1/systemone", body, headers=headers)
         return response
 
-    def _stdlib_request(self, method: str, path: str, body: Optional[dict], max_attempts: int = 4,
-                        headers: Optional[Dict[str, str]] = None):
+    def _stdlib_request(
+        self,
+        method: str,
+        path: str,
+        body: Optional[dict],
+        max_attempts: int = 4,
+        headers: Optional[Dict[str, str]] = None,
+    ):
         data = json.dumps(body).encode() if body is not None else None
         attempt = 0
         while True:
             attempt += 1
             req = urllib.request.Request(
-                self.base_url + path, data=data, method=method,
-                headers={"Authorization": "Bearer " + (self.api_key or ""), "Content-Type": "application/json",
-                         "User-Agent": "jev-lab/1.0 (stdlib)", **(headers or {})})
+                self.base_url + path,
+                data=data,
+                method=method,
+                headers={
+                    "Authorization": "Bearer " + (self.api_key or ""),
+                    "Content-Type": "application/json",
+                    "User-Agent": "jev-lab/1.0 (stdlib)",
+                    **(headers or {}),
+                },
+            )
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     return json.loads(resp.read().decode()), attempt
@@ -442,6 +495,5 @@ def chosen(answer: dict) -> tuple:
 def ranked(answer: dict, limit: int = 3) -> list:
     probs = answer.get("probabilities", {})
     return [
-        {"value": k, "prob": float(v)}
-        for k, v in sorted(probs.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+        {"value": k, "prob": float(v)} for k, v in sorted(probs.items(), key=lambda kv: kv[1], reverse=True)[:limit]
     ]

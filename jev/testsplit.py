@@ -50,9 +50,11 @@ def choose(dataset: dict, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
     labeled = [i for i, row in enumerate(dataset["rows"]) if _labeled(row)]
     n = int(share * len(labeled) + 0.5)  # half up, as the page's Math.round counts it
     if len(labeled) < 2 * MIN_ROWS:
-        raise WorkbenchError("Label more rows first: a test split needs at least %d labeled rows on each side, and "
-                             "%d of %d labeled rows would leave %d and %d." % (MIN_ROWS, round(share * 100),
-                                                                               len(labeled), n, len(labeled) - n))
+        raise WorkbenchError(
+            "Label more rows first: a test split needs at least %d labeled rows on each side, and "
+            "%d of %d labeled rows would leave %d and %d."
+            % (MIN_ROWS, round(share * 100), len(labeled), n, len(labeled) - n)
+        )
     rng = random.Random(seed) if seed is not None else random.SystemRandom()
     groups: Dict[str, List[int]] = {}
     for i, row in enumerate(dataset["rows"]):
@@ -71,9 +73,10 @@ def choose(dataset: dict, share: Any = DEFAULT_SHARE, seed: Optional[int] = None
                 subsets[total] = chosen + [positions]
     feasible = [count for count in subsets if count >= MIN_ROWS]
     if not feasible:
-        raise WorkbenchError("Exact duplicate inputs must stay together: no split can leave at least %d labeled "
-                             "rows on each side. Add labeled rows with distinct inputs before drawing a split."
-                             % MIN_ROWS)
+        raise WorkbenchError(
+            "Exact duplicate inputs must stay together: no split can leave at least %d labeled "
+            "rows on each side. Add labeled rows with distinct inputs before drawing a split." % MIN_ROWS
+        )
     # Compare with the requested share before rounding; exact ties round up as before.
     count = min(feasible, key=lambda count: (abs(count - share * len(labeled)), -count))
     return labeled, subsets[count]
@@ -109,8 +112,9 @@ def remove(dataset_id: str) -> bool:
 
 
 @workbench.dataset_update()
-def score(dataset_id: str, rows: Any, gates: Any, signal: str = "confidence", rules: Any = None,
-          model: Optional[str] = None) -> dict:
+def score(
+    dataset_id: str, rows: Any, gates: Any, signal: str = "confidence", rules: Any = None, model: Optional[str] = None
+) -> dict:
     """Policy's report for `gates` over the test rows' answers, and the look recorded.
 
     rows: Policy's rows ({"index", "answers", "labels"}) for the test rows of a Bulk run of this dataset, as the
@@ -120,25 +124,46 @@ def score(dataset_id: str, rows: Any, gates: Any, signal: str = "confidence", ru
     if not expected:
         raise WorkbenchError("The dataset %r has no test rows. Lock a test split first." % dataset_id)
     if not isinstance(rows, list) or len(rows) != expected:
-        raise WorkbenchError("The dataset has %d test rows and %d came with answers. Load the dataset and run all "
-                             "of its rows in Bulk first." % (expected, len(rows) if isinstance(rows, list) else 0))
+        raise WorkbenchError(
+            "The dataset has %d test rows and %d came with answers. Load the dataset and run all "
+            "of its rows in Bulk first." % (expected, len(rows) if isinstance(rows, list) else 0)
+        )
     try:
         rep = policy.evaluate(rows, gates, signal, rules)
     except CalibrationError as err:
         raise WorkbenchError(str(err)) from err
     test = dataset.get("test") if isinstance(dataset.get("test"), dict) else {}
     earlier = [look for look in (test.get("looks") or []) if isinstance(look, dict)]
-    look: Dict[str, Any] = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "gates": rep["gates"],
-                            "signal": signal}
+    look: Dict[str, Any] = {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "gates": rep["gates"],
+        "signal": signal,
+    }
     if model:
         look["model"] = str(model)[:100]
     dataset["test"] = {"locked_at": test.get("locked_at"), "looks": (earlier + [look])[-MAX_LOOKS_KEPT:]}
     workbench.write_dataset(dataset)
-    keys = ("labeled", "unlabeled", "invalid", "skipped", "automated", "correct", "coverage", "accuracy",
-            "accuracy_low", "accuracy_high", "accuracy_all", "accuracy_all_low", "accuracy_all_high", "gates",
-            "held_by_rules")
+    keys = (
+        "labeled",
+        "unlabeled",
+        "invalid",
+        "skipped",
+        "automated",
+        "correct",
+        "coverage",
+        "accuracy",
+        "accuracy_low",
+        "accuracy_high",
+        "accuracy_all",
+        "accuracy_all_low",
+        "accuracy_all_high",
+        "gates",
+        "held_by_rules",
+    )
     out = {k: rep[k] for k in keys}
     # Per question, accuracy only: which rows were wrong stays hidden, so it cannot be fixed row by row.
-    out["questions"] = [{k: q[k] for k in ("qid", "accuracy", "accuracy_low", "accuracy_high")} for q in rep["questions"]]
+    out["questions"] = [
+        {k: q[k] for k in ("qid", "accuracy", "accuracy_low", "accuracy_high")} for q in rep["questions"]
+    ]
     out.update(look=len(earlier) + 1, earlier=earlier[-10:], rows=expected)
     return out

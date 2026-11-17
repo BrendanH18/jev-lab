@@ -2,13 +2,31 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
-  suiteInventoryText, suiteQuestionInventory, previewSuiteIds, applySuiteIds, firstVisibleSuiteIds,
-  testResultStatus, visibleTests, selectedTestIds, selectVisibleTests, testRunBody,
-  testRunSnapshot, pruneTestResults, mergeTestResults, testStatusSummary, testObservedSummary,
+  suiteInventoryText,
+  suiteQuestionInventory,
+  previewSuiteIds,
+  applySuiteIds,
+  firstVisibleSuiteIds,
+  testResultStatus,
+  visibleTests,
+  selectedTestIds,
+  selectVisibleTests,
+  testRunBody,
+  testRunSnapshot,
+  pruneTestResults,
+  mergeTestResults,
+  testStatusSummary,
+  testObservedSummary,
 } from "../../static/js/test-selection.js";
 
 const items = [
-  { id: "billing", name: "Billing", notes: "Vendor invoice", state: "bill", questions: { route: { type: "choice" }, urgent: { type: "noul" } } },
+  {
+    id: "billing",
+    name: "Billing",
+    notes: "Vendor invoice",
+    state: "bill",
+    questions: { route: { type: "choice" }, urgent: { type: "noul" } },
+  },
   { id: "quality", name: "Quality", state: "bag", questions: { quality: { type: "score" } } },
   { id: "damage", name: "Damage", state: "parcel", questions: { damage: { type: "box" }, urgent: { type: "noul" } } },
   { id: "unrun", name: "New ticket", state: "support", questions: { route: { type: "choice" } } },
@@ -56,7 +74,10 @@ test("run snapshots notice changed selected requests and list changes for Run al
   assert.notEqual(testRunSnapshot(changed, selected), initial);
   assert.notEqual(testRunSnapshot(items, testRunBody(items, ["damage"])), initial);
   assert.equal(testRunSnapshot([...items, { id: "later" }], selected), initial);
-  assert.notEqual(testRunSnapshot(items.slice(0, -1), testRunBody(items.slice(0, -1))), testRunSnapshot(items, testRunBody(items)));
+  assert.notEqual(
+    testRunSnapshot(items.slice(0, -1), testRunBody(items.slice(0, -1))),
+    testRunSnapshot(items, testRunBody(items)),
+  );
 });
 
 test("partial runs retain other answers and aggregate observed spend across attempts", () => {
@@ -67,8 +88,14 @@ test("partial runs retain other answers and aggregate observed spend across atte
   assert.equal(first.unrun, 1);
   const retry = { id: "quality", ok: true, results: { quality: { ok: true, checks: [] } } };
   const next = mergeTestResults(first, { runs: [retry], cost_usd: 0.01, wall_ms: 3 }, items);
-  assert.equal(next.runs.find((run) => run.id === "billing"), passed);
-  assert.equal(next.runs.find((run) => run.id === "quality"), retry);
+  assert.equal(
+    next.runs.find((run) => run.id === "billing"),
+    passed,
+  );
+  assert.equal(
+    next.runs.find((run) => run.id === "quality"),
+    retry,
+  );
   assert.equal(next.passed, 2);
   assert.equal(next.failed, 0);
   assert.equal(next.errors, 1);
@@ -76,7 +103,10 @@ test("partial runs retain other answers and aggregate observed spend across atte
   assert.equal(next.wall_ms, 15);
   assert.equal(next.batches, 2);
   assert.equal(next.last_count, 1);
-  assert.equal(first.runs.find((run) => run.id === "quality"), failed);
+  assert.equal(
+    first.runs.find((run) => run.id === "quality"),
+    failed,
+  );
 });
 
 test("deleted or changed tests lose obsolete answers, but their actual spend remains counted", () => {
@@ -96,27 +126,56 @@ const source = readFileSync(new URL("../../static/js/workbench-tests.js", import
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0];
 function runHarness(overrides = {}) {
   const W = { items: structuredClone(items), runResults: null };
-  const calls = [], messages = [], errors = [];
+  const calls = [],
+    messages = [],
+    errors = [];
   let previewDone, runDone;
   const confirmSpend = async (api, kind, request) => {
     calls.push(["preview", kind, request]);
-    return new Promise((resolve) => { previewDone = resolve; });
+    return new Promise((resolve) => {
+      previewDone = resolve;
+    });
   };
   const api = async (path, request) => {
     calls.push([path, request]);
-    return new Promise((resolve, reject) => { runDone = { resolve, reject }; });
+    return new Promise((resolve, reject) => {
+      runDone = { resolve, reject };
+    });
   };
-  const helpers = { W, testRunBody, testRunSnapshot, selectedTestIds, pruneTestResults, mergeTestResults,
-    confirmSpend, api, toast: (...args) => messages.push(args), handleError: (e) => errors.push(e), render: () => {}, ...overrides };
-  const harness = new Function(...Object.keys(helpers), `
+  const helpers = {
+    W,
+    testRunBody,
+    testRunSnapshot,
+    selectedTestIds,
+    pruneTestResults,
+    mergeTestResults,
+    confirmSpend,
+    api,
+    toast: (...args) => messages.push(args),
+    handleError: (e) => errors.push(e),
+    render: () => {},
+    ...overrides,
+  };
+  const harness = new Function(
+    ...Object.keys(helpers),
+    `
     const testView = { selected: [], busy: false };
     ${body("reconcileTests")}
     ${body("runTests")}
     ${body("deleteTest")}
     return { runTests, deleteTest, testView };
-  `)(...Object.values(helpers));
-  return { ...harness, W, calls, messages, errors, approve: (value = true) => previewDone(value),
-    finish: (value = result) => runDone.resolve(value), fail: (e) => runDone.reject(e) };
+  `,
+  )(...Object.values(helpers));
+  return {
+    ...harness,
+    W,
+    calls,
+    messages,
+    errors,
+    approve: (value = true) => previewDone(value),
+    finish: (value = result) => runDone.resolve(value),
+    fail: (e) => runDone.reject(e),
+  };
 }
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -149,9 +208,15 @@ test("empty selections make neither estimates nor paid calls", async () => {
 
 test("changed selection, changed saved request, or removed test during preview cancels the paid action", async () => {
   for (const change of [
-    (h) => { h.testView.selected = ["quality"]; },
-    (h) => { h.W.items[0].state = "changed"; },
-    (h) => { h.W.items = h.W.items.slice(1); },
+    (h) => {
+      h.testView.selected = ["quality"];
+    },
+    (h) => {
+      h.W.items[0].state = "changed";
+    },
+    (h) => {
+      h.W.items = h.W.items.slice(1);
+    },
   ]) {
     const h = runHarness();
     h.testView.selected = ["billing"];
@@ -185,10 +250,13 @@ test("preview cancellation and failed requests release busy state and preserve e
 });
 
 test("delete cleans selection and answers even if refreshing the saved list fails", async () => {
-  const h = runHarness({ api: async (path) => {
-    if (path === "/api/workbench/items") throw new Error("List unavailable");
-    return { deleted: "billing" };
-  }, confirm: () => true });
+  const h = runHarness({
+    api: async (path) => {
+      if (path === "/api/workbench/items") throw new Error("List unavailable");
+      return { deleted: "billing" };
+    },
+    confirm: () => true,
+  });
   h.testView.selected = ["billing", "quality"];
   h.W.runResults = mergeTestResults(null, result, items);
   await h.deleteTest("billing");
@@ -199,17 +267,37 @@ test("delete cleans selection and answers even if refreshing the saved list fail
 });
 
 const managed = [
-  { id: "zebra", name: "First", notes: "invoice", state: "private input", questions: { q: { type: "noul" } }, expect: { q: [0, 1] }, images: { photo: "private.png" } },
+  {
+    id: "zebra",
+    name: "First",
+    notes: "invoice",
+    state: "private input",
+    questions: { q: { type: "noul" } },
+    expect: { q: [0, 1] },
+    images: { photo: "private.png" },
+  },
   { id: "alpha", name: "Invoice", notes: "sample", questions: { q: { type: "choice" } }, expect: {}, images: {} },
-  { id: "middle", name: "Last", notes: "invoice followup", questions: {}, expect: { q: {}, r: {} }, images: { a: "a.png", b: "b.png" } },
+  {
+    id: "middle",
+    name: "Last",
+    notes: "invoice followup",
+    questions: {},
+    expect: { q: {}, r: {} },
+    images: { a: "a.png", b: "b.png" },
+  },
 ];
 
 test("scoped test search and exclusion combine without changing selection or inputs", () => {
   const before = JSON.stringify(managed);
   assert.deepEqual(ids(visibleTests(managed, null, { query: "invoice", searchField: "name" })), ["alpha"]);
-  assert.deepEqual(ids(visibleTests(managed, null, { query: "invoice", searchField: "notes", exclude: "followup" })), ["zebra"]);
+  assert.deepEqual(ids(visibleTests(managed, null, { query: "invoice", searchField: "notes", exclude: "followup" })), [
+    "zebra",
+  ]);
   assert.deepEqual(ids(visibleTests(managed, null, { query: "ALP", searchField: "id" })), ["alpha"]);
-  assert.deepEqual(ids(visibleTests(managed, null, { exclude: "invoice", selected: ["zebra"], selection: "selected" })), []);
+  assert.deepEqual(
+    ids(visibleTests(managed, null, { exclude: "invoice", selected: ["zebra"], selection: "selected" })),
+    [],
+  );
   assert.deepEqual(selectedTestIds(managed, ["zebra"]), ["zebra"]);
   assert.equal(JSON.stringify(managed), before);
 });
@@ -230,7 +318,10 @@ test("ID, picture and expectation sorts leave requests and result state unchange
   assert.deepEqual(ids(visibleTests(managed, result, { sort: "id" })), ["alpha", "middle", "zebra"]);
   assert.deepEqual(ids(visibleTests(managed, result, { sort: "images" })), ["middle", "zebra", "alpha"]);
   assert.deepEqual(ids(visibleTests(managed, result, { sort: "fewest-expectations" })), ["alpha", "zebra", "middle"]);
-  assert.deepEqual(ids(visibleTests([managed[0], { ...managed[0], id: "copy" }], null, { sort: "images" })), ["zebra", "copy"]);
+  assert.deepEqual(ids(visibleTests([managed[0], { ...managed[0], id: "copy" }], null, { sort: "images" })), [
+    "zebra",
+    "copy",
+  ]);
   assert.equal(JSON.stringify(managed), before);
 });
 
@@ -245,26 +336,75 @@ test("rendered test controls reset presentation filters and copy hidden selected
   const { selectedTestSummary } = await import("../../static/js/test-selection.js");
   const defaultsSource = source.match(/const testFilterDefaults = \(\) => \(\{[^]*?\}\);/)[0];
   const testFilterDefaults = new Function(`${defaultsSource}; return testFilterDefaults;`)();
-  const testView = { ...testFilterDefaults(), selected: ["zebra", "middle"], details: false, busy: false,
-    searchField: "name", exclude: "Last", minImages: "1", minExpectations: "1" };
+  const testView = {
+    ...testFilterDefaults(),
+    selected: ["zebra", "middle"],
+    details: false,
+    busy: false,
+    searchField: "name",
+    exclude: "Last",
+    minImages: "1",
+    minExpectations: "1",
+  };
   const W = { items: managed, runResults: null, testSearch: "First" };
   let copied;
   const downloads = [];
   const h = (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity).filter(Boolean) });
-  const helpers = { suiteInventoryText, suiteQuestionInventory, previewSuiteIds, applySuiteIds, firstVisibleSuiteIds, W, testView, testFilterDefaults, h, selectedTestSummary, testStatusSummary, testObservedSummary, selectedTestIds, visibleTests, testResultStatus,
-    reconcileTests: () => {}, shownTests: () => visibleTests(W.items, null, { ...testView, query: W.testSearch }),
-    unsuccessfulTestIds: () => [], render: () => {}, testCountText: () => "counts",
-    ms: String, usd: String, estimateLine: () => null, api: () => {}, icon: () => null, downloadTestMetadata: (rows, format) => downloads.push([rows.map((row) => row.id), format]), copyText: (value) => { copied = value; } };
-  const renderTests = new Function(...Object.keys(helpers), `${body("renderTests").replace("export ", "")}; return renderTests;`)(...Object.values(helpers));
+  const helpers = {
+    suiteInventoryText,
+    suiteQuestionInventory,
+    previewSuiteIds,
+    applySuiteIds,
+    firstVisibleSuiteIds,
+    W,
+    testView,
+    testFilterDefaults,
+    h,
+    selectedTestSummary,
+    testStatusSummary,
+    testObservedSummary,
+    selectedTestIds,
+    visibleTests,
+    testResultStatus,
+    reconcileTests: () => {},
+    shownTests: () => visibleTests(W.items, null, { ...testView, query: W.testSearch }),
+    unsuccessfulTestIds: () => [],
+    render: () => {},
+    testCountText: () => "counts",
+    ms: String,
+    usd: String,
+    estimateLine: () => null,
+    api: () => {},
+    icon: () => null,
+    downloadTestMetadata: (rows, format) => downloads.push([rows.map((row) => row.id), format]),
+    copyText: (value) => {
+      copied = value;
+    },
+  };
+  const renderTests = new Function(
+    ...Object.keys(helpers),
+    `${body("renderTests").replace("export ", "")}; return renderTests;`,
+  )(...Object.values(helpers));
   const tree = renderTests();
   const nodes = [];
   const walk = (node) => {
     if (typeof node !== "object" || !node) return;
-    nodes.push(node); node.children?.forEach(walk);
+    nodes.push(node);
+    node.children?.forEach(walk);
   };
   walk(tree);
-  for (const label of ["Search test field", "Exclude saved tests", "Minimum test expectations", "Maximum test expectations", "Minimum test pictures", "Maximum test pictures"]) {
-    assert.ok(nodes.some((node) => node.props?.["aria-label"] === label), label);
+  for (const label of [
+    "Search test field",
+    "Exclude saved tests",
+    "Minimum test expectations",
+    "Maximum test expectations",
+    "Minimum test pictures",
+    "Maximum test pictures",
+  ]) {
+    assert.ok(
+      nodes.some((node) => node.props?.["aria-label"] === label),
+      label,
+    );
   }
   const button = (label) => nodes.find((node) => node.tag === "button" && node.children.includes(label));
   button("Copy selected test IDs").props.onclick();
@@ -272,9 +412,16 @@ test("rendered test controls reset presentation filters and copy hidden selected
   button("Download visible metadata CSV").props.onclick();
   button("Download selected metadata JSON").props.onclick();
   button("Download selected metadata CSV").props.onclick();
-  assert.deepEqual(downloads, [[["zebra"], "csv"], [["zebra", "middle"], "json"], [["zebra", "middle"], "csv"]]);
+  assert.deepEqual(downloads, [
+    [["zebra"], "csv"],
+    [["zebra", "middle"], "json"],
+    [["zebra", "middle"], "csv"],
+  ]);
   for (const label of ["Test ID prefix", "Exclude question type", "Minimum state bytes", "Maximum state bytes"]) {
-    assert.ok(nodes.some((node) => node.props?.["aria-label"] === label), label);
+    assert.ok(
+      nodes.some((node) => node.props?.["aria-label"] === label),
+      label,
+    );
   }
   const excludedType = nodes.find((node) => node.props?.["aria-label"] === "Exclude question type");
   excludedType.props.onchange({ target: { value: "box" } });

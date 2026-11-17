@@ -3,26 +3,72 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const source = readFileSync(new URL("../../static/js/dataset-edits.js", import.meta.url), "utf8")
-  .replace(/^import .*;\n/gm, "").replace(/export /g, "");
+  .replace(/^import .*;\n/gm, "")
+  .replace(/export /g, "");
 
 function harness(api, approve = true) {
-  const W = { bulk: { rowsText: "original", labelsDirty: false, pictures: {}, dataset: {},
-    health: { report: {} }, prelabel: { report: {}, drafts: {} }, result: {} } };
+  const W = {
+    bulk: {
+      rowsText: "original",
+      labelsDirty: false,
+      pictures: {},
+      dataset: {},
+      health: { report: {} },
+      prelabel: { report: {}, drafts: {} },
+      result: {},
+    },
+  };
   const questions = { urgent: { type: "noul", instructions: "Urgent?" } };
   const errors = [];
   const h = (tag, attrs, ...children) => ({ tag, attrs, children });
-  const helpers = new Function("api", "h", "handleError", "photoView", "toast", "W", "bulkQuestions", "loadPictureUrls",
-    "rowsPayload", "rowsText", "settleLabels", "labelText", "labelValue", "syncAttachedSets", "render", "window", "preparedLabelsUnsaved",
-    source + "; return {state,prepareEdits,previewEdits,applyEdits,datasetEditsBody,datasetEditsUnsaved};")(
-    api, h, (e) => errors.push(e), () => null, () => {}, W, () => questions, async () => {},
-    () => W.bulk.rowsText, JSON.stringify, () => true, (v) => v === false ? "no" : v === true ? "yes" : "",
-    (v) => v === "no" ? false : v === "yes" ? true : null, () => {}, () => {}, { confirm: () => approve }, () => Object.keys(W.bulk.prelabel.drafts).length > 0);
+  const helpers = new Function(
+    "api",
+    "h",
+    "handleError",
+    "photoView",
+    "toast",
+    "W",
+    "bulkQuestions",
+    "loadPictureUrls",
+    "rowsPayload",
+    "rowsText",
+    "settleLabels",
+    "labelText",
+    "labelValue",
+    "syncAttachedSets",
+    "render",
+    "window",
+    "preparedLabelsUnsaved",
+    source + "; return {state,prepareEdits,previewEdits,applyEdits,datasetEditsBody,datasetEditsUnsaved};",
+  )(
+    api,
+    h,
+    (e) => errors.push(e),
+    () => null,
+    () => {},
+    W,
+    () => questions,
+    async () => {},
+    () => W.bulk.rowsText,
+    JSON.stringify,
+    () => true,
+    (v) => (v === false ? "no" : v === true ? "yes" : ""),
+    (v) => (v === "no" ? false : v === "yes" ? true : null),
+    () => {},
+    () => {},
+    { confirm: () => approve },
+    () => Object.keys(W.bulk.prelabel.drafts).length > 0,
+  );
   return { W, errors, ...helpers };
 }
 
-const prepared = { context: "server-snapshot", questions: { urgent: { type: "noul", instructions: "Urgent?" } },
+const prepared = {
+  context: "server-snapshot",
+  questions: { urgent: { type: "noul", instructions: "Urgent?" } },
   items: [{ index: 0, row: { text: "test input" }, labels: { urgent: "invalid" }, issues: { urgent: "invalid" } }],
-  protected_rows: 1, remove: [] };
+  protected_rows: 1,
+  remove: [],
+};
 
 test("repair preview does not edit rows; Apply sends the preview token and clears stale results", async () => {
   const calls = [];
@@ -48,8 +94,12 @@ test("repair preview does not edit rows; Apply sends the preview token and clear
 
 test("edits or row changes invalidate a preview before Apply can make a request", async () => {
   let count = 0;
-  const x = harness(async (path) => { count++; return path.endsWith("prepare") ? prepared
-    : { token: "preview", changed: 1, removed: [], remaining: 2, changes: [] }; });
+  const x = harness(async (path) => {
+    count++;
+    return path.endsWith("prepare")
+      ? prepared
+      : { token: "preview", changed: 1, removed: [], remaining: 2, changes: [] };
+  });
   await x.prepareEdits("repair");
   x.state.drafts = { 0: { urgent: false } };
   await x.previewEdits();
@@ -63,9 +113,15 @@ test("edits or row changes invalidate a preview before Apply can make a request"
 
 test("a late Apply reply cannot overwrite newer rows", async () => {
   let finish;
-  const x = harness(async (path) => path.endsWith("prepare") ? prepared : path.endsWith("preview")
-    ? { token: "preview", changed: 1, removed: [], remaining: 1, changes: [] }
-    : new Promise((resolve) => { finish = resolve; }));
+  const x = harness(async (path) =>
+    path.endsWith("prepare")
+      ? prepared
+      : path.endsWith("preview")
+        ? { token: "preview", changed: 1, removed: [], remaining: 1, changes: [] }
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+  );
   await x.prepareEdits("repair");
   x.state.drafts = { 0: { urgent: false } };
   await x.previewEdits();
@@ -78,8 +134,12 @@ test("a late Apply reply cannot overwrite newer rows", async () => {
 
 test("canceling Apply with pre-run drafts preserves both queues without making an apply request", async () => {
   const calls = [];
-  const x = harness(async (path) => { calls.push(path); return path.endsWith("prepare") ? prepared
-    : { token: "preview", changed: 1, removed: [], remaining: 1, changes: [] }; }, false);
+  const x = harness(async (path) => {
+    calls.push(path);
+    return path.endsWith("prepare")
+      ? prepared
+      : { token: "preview", changed: 1, removed: [], remaining: 1, changes: [] };
+  }, false);
   await x.prepareEdits("repair");
   x.state.drafts = { 0: { urgent: false } };
   await x.previewEdits();
@@ -93,9 +153,15 @@ test("canceling Apply with pre-run drafts preserves both queues without making a
 
 test("Apply cannot clear pre-run drafts entered while its request is pending", async () => {
   let finish;
-  const x = harness(async (path) => path.endsWith("prepare") ? prepared : path.endsWith("preview")
-    ? { token: "preview", changed: 1, removed: [], remaining: 1, changes: [] }
-    : new Promise((resolve) => { finish = resolve; }));
+  const x = harness(async (path) =>
+    path.endsWith("prepare")
+      ? prepared
+      : path.endsWith("preview")
+        ? { token: "preview", changed: 1, removed: [], remaining: 1, changes: [] }
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+  );
   await x.prepareEdits("repair");
   x.state.drafts = { 0: { urgent: false } };
   await x.previewEdits();

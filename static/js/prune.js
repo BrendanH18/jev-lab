@@ -5,7 +5,7 @@
 // the input is not changed.
 export function withoutQuestions(questions, drop) {
   const gone = drop instanceof Set ? drop : new Set(drop || []);
-  const out = Object.create(null);  // a question id such as "__proto__" stays an ordinary key
+  const out = Object.create(null); // a question id such as "__proto__" stays an ordinary key
   for (const [qid, q] of Object.entries(questions || {})) if (!gone.has(qid)) out[qid] = q;
   return out;
 }
@@ -29,10 +29,15 @@ export function automatedDelta(outcome, baseline) {
 // True when turning a gated question's threshold off automates at least as many rows at the target as the full
 // gate does: its threshold holds back nothing, so it is a candidate to stop gating.
 export function holdsBackNothing(entry, baseline) {
-  return Boolean(entry && entry.off && entry.off.gates && baseline && baseline.gates && entry.off.automated >= baseline.automated);
+  return Boolean(
+    entry && entry.off && entry.off.gates && baseline && baseline.gates && entry.off.automated >= baseline.automated,
+  );
 }
 
 // The share of the question text that a list of { share } entries makes up together, at most 1.
 export function totalShare(entries) {
-  return Math.min(1, (entries || []).reduce((sum, e) => sum + (Number(e.share) || 0), 0));
+  return Math.min(
+    1,
+    (entries || []).reduce((sum, e) => sum + (Number(e.share) || 0), 0),
+  );
 }

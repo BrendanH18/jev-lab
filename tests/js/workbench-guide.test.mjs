@@ -2,14 +2,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { workflowSteps, renderWorkbenchGuide } from "../../static/js/workbench-guide.js";
 
-const h = (tag, attrs, ...children) => ({ tag, attrs,
-  children: children.flat(Infinity).filter((x) => x != null && x !== false) });
-const nodes = (node, tag) => typeof node !== "object" ? []
-  : [...(node.tag === tag ? [node] : []), ...node.children.flatMap((child) => nodes(child, tag))];
+const h = (tag, attrs, ...children) => ({
+  tag,
+  attrs,
+  children: children.flat(Infinity).filter((x) => x != null && x !== false),
+});
+const nodes = (node, tag) =>
+  typeof node !== "object"
+    ? []
+    : [...(node.tag === tag ? [node] : []), ...node.children.flatMap((child) => nodes(child, tag))];
 const step = (snapshot, id) => workflowSteps(snapshot).find((item) => item.id === id);
 
 test("empty workspace still allows setup and existing saved-dataset navigation", () => {
-  const available = workflowSteps().filter((item) => item.enabled).map((item) => item.id);
+  const available = workflowSteps()
+    .filter((item) => item.enabled)
+    .map((item) => item.id);
   assert.deepEqual(available, ["questions", "rows", "review"]);
   assert.equal(step({}, "run").status, "Live call required");
 });
@@ -32,14 +39,24 @@ test("guide shortcuts only emit tab and target, preserve data, and retain disclo
   const snapshot = Object.freeze({ rowCount: 2, questionCount: 1, currentRun: true, gateableCount: 1 });
   const calls = [];
   let open;
-  const guide = renderWorkbenchGuide(h, snapshot, (...args) => calls.push(args),
-    { open: true, onToggle: (value) => { open = value; } });
+  const guide = renderWorkbenchGuide(h, snapshot, (...args) => calls.push(args), {
+    open: true,
+    onToggle: (value) => {
+      open = value;
+    },
+  });
   assert.equal(guide.attrs.open, true);
   guide.attrs.ontoggle({ target: { open: false } });
   assert.equal(open, false);
   for (const button of nodes(guide, "button")) button.attrs.onclick();
-  assert.deepEqual(calls, [["build", "#view"], ["bulk", "#bulk-rows"], ["bulk", "#dataset-health"],
-    ["bulk", "#bulk-run"], ["bulk", "#policy"], ["bulk", "#datasets"]]);
+  assert.deepEqual(calls, [
+    ["build", "#view"],
+    ["bulk", "#bulk-rows"],
+    ["bulk", "#dataset-health"],
+    ["bulk", "#bulk-run"],
+    ["bulk", "#policy"],
+    ["bulk", "#datasets"],
+  ]);
   assert.equal(snapshot.currentRun, true);
 });
 

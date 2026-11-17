@@ -22,8 +22,13 @@ def chunk(kind, data):
 def png(width, height, extra=b""):
     """A PNG; `extra` holds chunks placed between IHDR and IDAT."""
     raw = b"".join(b"\x00" + b"\x80\x80\x80" * width for _ in range(height))
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-            + extra + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + extra
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
 
 
 def jpeg_header(width, height):
@@ -52,7 +57,9 @@ class ImageTests(unittest.TestCase):
             entry = images.sample_asset(name)
             self.assertEqual(entry["format"], "png")
             self.assertGreaterEqual(min(entry["width"], entry["height"]), images.MIN_SIDE)
-        upload = images.parse_upload({"data_base64": "data:image/png;base64," + base64.b64encode(png(300, 300)).decode()})
+        upload = images.parse_upload(
+            {"data_base64": "data:image/png;base64," + base64.b64encode(png(300, 300)).decode()}
+        )
         self.assertEqual((upload["width"], upload["height"]), (300, 300))
         with self.assertRaises(images.ImageError):
             images.parse_upload({"sample": "../../.env"})
@@ -90,8 +97,7 @@ class ImageTests(unittest.TestCase):
         self.assertFalse(images.needs_images_header({"n": {"type": "noul"}}, {}))
 
 
-GOOD = {"shows_item": 0.95, "damage_visible": 0.92, "matches_note": 0.9, "severity": 2.6,
-        "damage_kind": "torn_or_open"}
+GOOD = {"shows_item": 0.95, "damage_visible": 0.92, "matches_note": 0.9, "severity": 2.6, "damage_kind": "torn_or_open"}
 
 
 class ClaimsTests(unittest.TestCase):
@@ -174,8 +180,9 @@ class ClaimsTests(unittest.TestCase):
         intact = dict(GOOD, damage_visible=0.03, matches_note=0.05, severity=0.0, damage_kind="none_visible")
         for ex in claims.EXAMPLES:
             picks = GOOD if damaged[ex["sample"]] else intact
-            out = claims.check(FakeClient(lambda state, qs: picks), World(), ex["order"], ex["note"],
-                               images.sample_asset(ex["sample"]))
+            out = claims.check(
+                FakeClient(lambda state, qs: picks), World(), ex["order"], ex["note"], images.sample_asset(ex["sample"])
+            )
             self.assertEqual(out["verdict"]["decision"], ex["expect"], ex["label"])
 
     def test_questions_keep_one_judgment_each(self):

@@ -11,8 +11,11 @@ from jev.workbench import WorkbenchError
 class PreflightTests(unittest.TestCase):
     def test_paths_use_bulk_wrapping_and_never_labels_or_test_markers(self):
         questions = {"q": {"type": "noul", "instructions": "Read `text` and `details.topic`."}}
-        rows = ["plain", {"text": "ok", "details": {"topic": "coffee"}, "_expect": {"q": "secret"}},
-                {"text": "held", "_test": True, "_expect": {"q": "held-secret"}}]
+        rows = [
+            "plain",
+            {"text": "ok", "details": {"topic": "coffee"}, "_expect": {"q": "secret"}},
+            {"text": "held", "_test": True, "_expect": {"q": "held-secret"}},
+        ]
         report = preflight.check(rows, questions)
         self.assertEqual([f["row"] for f in report["findings"]], [1, 3])
         self.assertEqual(report["held_out"], 1)
@@ -21,7 +24,10 @@ class PreflightTests(unittest.TestCase):
     def test_picture_reference_matches_exact_bulk_state_without_calls_or_writes(self):
         name = next(iter(workbench.images.SAMPLES))
         questions = {"q": {"type": "box", "instructions": "Find the box in `photo`."}}
-        with patch("jev.workbench._picture", return_value={}) as picture, patch("jev.client.JevClient.system_one", side_effect=AssertionError("call")):
+        with (
+            patch("jev.workbench._picture", return_value={}) as picture,
+            patch("jev.client.JevClient.system_one", side_effect=AssertionError("call")),
+        ):
             self.assertEqual(preflight.check([{"_image": name}], questions)["findings"], [])
             picture.assert_called_once()
         report = preflight.check([{"text": "no picture"}], questions)

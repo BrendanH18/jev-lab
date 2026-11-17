@@ -11,7 +11,9 @@ import { fileURLToPath } from "node:url";
 
 import { JS_DIR, moduleSources, workbenchModules } from "./workbench-source.mjs";
 
-const allModules = readdirSync(JS_DIR).filter((f) => f.endsWith(".js")).sort();
+const allModules = readdirSync(JS_DIR)
+  .filter((f) => f.endsWith(".js"))
+  .sort();
 const sourceOf = Object.fromEntries(allModules.map((f) => [f, readFileSync(new URL(f, JS_DIR), "utf8")]));
 
 // Code with comments and the text of strings, template literals and regular expressions blanked out; the ${...}
@@ -19,26 +21,68 @@ const sourceOf = Object.fromEntries(allModules.map((f) => [f, readFileSync(new U
 function codeOnly(src) {
   let out = "";
   let i = 0;
-  const stack = [];  // open template literals: brace depth of the ${ that entered code
+  const stack = []; // open template literals: brace depth of the ${ that entered code
   let depth = 0;
-  let last = "";     // last significant character of code, to tell a regex from a division
-  const regexCanFollow = (prefix) => !last || "(,=:[!&|?{};+-*%<>~^".includes(last) || /\b(return|typeof|case|in|of|delete|void|throw|new)\s*$/.test(prefix);
-  const skipString = (q) => { i++; while (i < src.length && src[i] !== q) { if (src[i] === "\\") i++; i++; } i++; out += " "; last = "a"; };
-  const skipTemplateText = () => {  // from just after ` or } up to the closing ` or ${
+  let last = ""; // last significant character of code, to tell a regex from a division
+  const regexCanFollow = (prefix) =>
+    !last ||
+    "(,=:[!&|?{};+-*%<>~^".includes(last) ||
+    /\b(return|typeof|case|in|of|delete|void|throw|new)\s*$/.test(prefix);
+  const skipString = (q) => {
+    i++;
+    while (i < src.length && src[i] !== q) {
+      if (src[i] === "\\") i++;
+      i++;
+    }
+    i++;
+    out += " ";
+    last = "a";
+  };
+  const skipTemplateText = () => {
+    // from just after ` or } up to the closing ` or ${
     while (i < src.length) {
-      if (src[i] === "\\") { i += 2; continue; }
-      if (src[i] === "`") { i++; out += " "; last = "a"; return; }
-      if (src[i] === "$" && src[i + 1] === "{") { i += 2; out += " "; stack.push(depth); depth++; last = "{"; return; }
+      if (src[i] === "\\") {
+        i += 2;
+        continue;
+      }
+      if (src[i] === "`") {
+        i++;
+        out += " ";
+        last = "a";
+        return;
+      }
+      if (src[i] === "$" && src[i + 1] === "{") {
+        i += 2;
+        out += " ";
+        stack.push(depth);
+        depth++;
+        last = "{";
+        return;
+      }
       i++;
     }
   };
   while (i < src.length) {
     const c = src[i];
     const n = src[i + 1];
-    if (c === "/" && n === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
-    if (c === "/" && n === "*") { i = src.indexOf("*/", i + 2) + 2; out += " "; continue; }
-    if (c === "'" || c === '"') { skipString(c); continue; }
-    if (c === "`") { i++; skipTemplateText(); continue; }
+    if (c === "/" && n === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && n === "*") {
+      i = src.indexOf("*/", i + 2) + 2;
+      out += " ";
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      skipString(c);
+      continue;
+    }
+    if (c === "`") {
+      i++;
+      skipTemplateText();
+      continue;
+    }
     if (c === "/" && regexCanFollow(out.slice(-12))) {
       i++;
       let inClass = false;
@@ -57,7 +101,13 @@ function codeOnly(src) {
     if (c === "{") depth++;
     if (c === "}") {
       depth--;
-      if (stack.length && stack[stack.length - 1] === depth) { stack.pop(); i++; out += " "; skipTemplateText(); continue; }
+      if (stack.length && stack[stack.length - 1] === depth) {
+        stack.pop();
+        i++;
+        out += " ";
+        skipTemplateText();
+        continue;
+      }
     }
     out += c;
     if (!/\s/.test(c)) last = c;
@@ -69,21 +119,42 @@ function codeOnly(src) {
 // Imports as { from: "x.js", names: [[imported, local], ...] } for the page's relative module imports, read from the
 // source with block comments removed (the specifier is a string, so codeOnly would blank it).
 function importsOf(src) {
-  return [...src.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/^import\s*\{([^}]*)\}\s*from\s*"\.\/([\w.-]+\.js)";/gm)].map(([, list, from]) => ({
-    from, names: list.split(",").map((s) => s.trim()).filter(Boolean).map((s) => { const [a, b] = s.split(/\s+as\s+/); return [a, b || a]; }),
+  return [
+    ...src.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/^import\s*\{([^}]*)\}\s*from\s*"\.\/([\w.-]+\.js)";/gm),
+  ].map(([, list, from]) => ({
+    from,
+    names: list
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => {
+        const [a, b] = s.split(/\s+as\s+/);
+        return [a, b || a];
+      }),
   }));
 }
 
 function exportsOf(src) {
   const names = new Set();
-  for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([\w$]+)/gm)) names.add(name);
-  for (const [, list] of src.matchAll(/^export\s*\{([^}]*)\}/gm)) for (const s of list.split(",")) if (s.trim()) names.add(s.trim().split(/\s+as\s+/).pop());
+  for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([\w$]+)/gm))
+    names.add(name);
+  for (const [, list] of src.matchAll(/^export\s*\{([^}]*)\}/gm))
+    for (const s of list.split(","))
+      if (s.trim())
+        names.add(
+          s
+            .trim()
+            .split(/\s+as\s+/)
+            .pop(),
+        );
   return names;
 }
 
 // Top-level declarations: the ones that start at the beginning of a line.
 function topLevelNames(src) {
-  return [...src.matchAll(/^(?:export\s+)?(?:(?:async\s+)?function\*?|const|let|var|class)\s+([\w$]+)/gm)].map((m) => m[1]);
+  return [...src.matchAll(/^(?:export\s+)?(?:(?:async\s+)?function\*?|const|let|var|class)\s+([\w$]+)/gm)].map(
+    (m) => m[1],
+  );
 }
 
 test("every relative import names something its module exports", () => {
@@ -91,7 +162,8 @@ test("every relative import names something its module exports", () => {
     for (const { from, names } of importsOf(sourceOf[file])) {
       assert.ok(sourceOf[from] !== undefined, `${file} imports ./${from}, which is not in static/js`);
       const exported = exportsOf(sourceOf[from]);
-      for (const [name] of names) assert.ok(exported.has(name), `${file} imports ${name} from ./${from}, which does not export it`);
+      for (const [name] of names)
+        assert.ok(exported.has(name), `${file} imports ${name} from ./${from}, which does not export it`);
     }
   }
 });
@@ -123,7 +195,9 @@ function usedNames(code) {
 // may be a local, so the check below leaves those to the browser test rather than guessing.
 function localNames(code) {
   const names = new Set();
-  const add = (list) => { for (const [id] of list.replace(/=[^,]*/g, "").matchAll(/[A-Za-z_$][\w$]*/g)) names.add(id); };
+  const add = (list) => {
+    for (const [id] of list.replace(/=[^,]*/g, "").matchAll(/[A-Za-z_$][\w$]*/g)) names.add(id);
+  };
   for (const [, id] of code.matchAll(/\b(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/g)) names.add(id);
   for (const [, list] of code.matchAll(/\b(?:const|let|var)\s*[{[]([^=]*?)[}\]]\s*=/g)) add(list);
   for (const [, list] of code.matchAll(/\bfunction\b[^(]*\(([^)]*)\)/g)) add(list);
@@ -141,7 +215,9 @@ test("a Workbench module imports every name it uses from another Workbench modul
     const own = new Set(topLevelNames(moduleSources[file]));
     const used = usedNames(code);
     const locals = localNames(code);
-    const imported = new Map(importsOf(moduleSources[file]).flatMap(({ from, names }) => names.map(([name, local]) => [local, [from, name]])));
+    const imported = new Map(
+      importsOf(moduleSources[file]).flatMap(({ from, names }) => names.map(([name, local]) => [local, [from, name]])),
+    );
     for (const [name, home] of owner) {
       if (home === file || own.has(name) || !used.has(name)) continue;
       if (locals.has(name) && !imported.has(name)) continue;
@@ -168,7 +244,11 @@ test("every Workbench module can load first without touching an import at load t
     const first = new URL(file, JS_DIR).href;
     const entry = new URL("workbench.js", JS_DIR).href;
     const script = `${stub}\nawait import(${JSON.stringify(first)});\nawait import(${JSON.stringify(entry)});\nconsole.log("loaded");`;
-    const out = execFileSync(process.execPath, ["--input-type=module", "-e", script], { cwd: fileURLToPath(JS_DIR), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const out = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: fileURLToPath(JS_DIR),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     assert.equal(out.trim(), "loaded", `${file} loaded first`);
   }
 });

@@ -47,14 +47,18 @@ def _format(name: Optional[str], path: Optional[str], direction: str) -> Tuple[s
     formats = _formats()
     if not name and path:
         suffix = Path(path).suffix.lower()
-        name = next((n for n, f in formats.items() if suffix in (f.get("extensions") or []) and callable(f.get(direction))),
-                    DEFAULT_FORMAT)
+        name = next(
+            (n for n, f in formats.items() if suffix in (f.get("extensions") or []) and callable(f.get(direction))),
+            DEFAULT_FORMAT,
+        )
     name = name or DEFAULT_FORMAT
     feature = formats.get(name)
     if feature is None or not callable(feature.get(direction)):
         able = sorted(n for n, f in formats.items() if callable(f.get(direction)))
-        raise kit.CliError("no row format %r %s rows; choose one of: %s" % (name, "reads" if direction == "parse" else "writes",
-                                                                            ", ".join(able)))
+        raise kit.CliError(
+            "no row format %r %s rows; choose one of: %s"
+            % (name, "reads" if direction == "parse" else "writes", ", ".join(able))
+        )
     return name, feature
 
 
@@ -138,8 +142,11 @@ def _emit_rows(rows: List[Any], args: Any, to: Optional[str] = None) -> None:
     shown, hidden = _masked(rows)
     sys.stdout.write(render(shown, name))
     if hidden:
-        print("left out the labels of %d held-out row%s; write them to a file with --out"
-              % (hidden, "" if hidden == 1 else "s"), file=sys.stderr)
+        print(
+            "left out the labels of %d held-out row%s; write them to a file with --out"
+            % (hidden, "" if hidden == 1 else "s"),
+            file=sys.stderr,
+        )
 
 
 def _add_input(parser: Any, name: str = "file") -> None:
@@ -166,7 +173,9 @@ def _input_field(name: str, flag: str) -> str:
     if not name:
         raise kit.CliError("%s needs a field name" % flag)
     if name in (LABEL_KEY, TEST_KEY):
-        raise kit.CliError("%s takes an input field; labels (%s) and test markers (%s) cannot be one" % (flag, LABEL_KEY, TEST_KEY))
+        raise kit.CliError(
+            "%s takes an input field; labels (%s) and test markers (%s) cannot be one" % (flag, LABEL_KEY, TEST_KEY)
+        )
     return name
 
 
@@ -214,12 +223,20 @@ def run_count(args: Any) -> int:
         kit.emit(args, [by, "rows", "labeled", "held out"], [[key] + counts for key, counts in ordered])
         return 0
     keys = [decisions._key(row) for row in rows]
-    kit.emit(args, ["metric", "value"], [
-        ["rows", len(rows)], ["text rows", sum(1 for row in rows if isinstance(row, str))],
-        ["object rows", sum(1 for row in rows if isinstance(row, dict))],
-        ["labeled rows", sum(1 for row in rows if _labels(row))], ["held-out rows", sum(1 for row in rows if _held_out(row))],
-        ["picture rows", sum(1 for row in rows if isinstance(row, dict) and IMAGE_KEY in row)],
-        ["distinct inputs", len(set(keys))], ["duplicate copies", len(keys) - len(set(keys))]])
+    kit.emit(
+        args,
+        ["metric", "value"],
+        [
+            ["rows", len(rows)],
+            ["text rows", sum(1 for row in rows if isinstance(row, str))],
+            ["object rows", sum(1 for row in rows if isinstance(row, dict))],
+            ["labeled rows", sum(1 for row in rows if _labels(row))],
+            ["held-out rows", sum(1 for row in rows if _held_out(row))],
+            ["picture rows", sum(1 for row in rows if isinstance(row, dict) and IMAGE_KEY in row)],
+            ["distinct inputs", len(set(keys))],
+            ["duplicate copies", len(keys) - len(set(keys))],
+        ],
+    )
     return 0
 
 
@@ -229,7 +246,9 @@ def run_count(args: Any) -> int:
 def _configure_fields(parser: Any) -> None:
     _add_input(parser)
     parser.add_argument("--labels", action="store_true", help="list the labeled questions instead of the input fields")
-    parser.add_argument("--min-fill", type=float, metavar="SHARE", help="keep fields filled in at least this share of rows")
+    parser.add_argument(
+        "--min-fill", type=float, metavar="SHARE", help="keep fields filled in at least this share of rows"
+    )
     kit.add_format(parser)
 
 
@@ -275,7 +294,9 @@ def run_fields(args: Any) -> int:
             values = [_inputs(row).get(name) for row in rows]
             filled = [value for value in values if _filled(value)]
             kinds = sorted({_kind(value) for value in filled})
-            out.append([name, len(filled), _pct(len(filled), total), ", ".join(kinds), len({_value_text(v) for v in filled})])
+            out.append(
+                [name, len(filled), _pct(len(filled), total), ", ".join(kinds), len({_value_text(v) for v in filled})]
+            )
         columns = ["field", "rows", "fill %", "types", "distinct"]
     if args.min_fill is not None:
         out = [line for line in out if total and line[1] / total >= args.min_fill]
@@ -289,7 +310,9 @@ def run_fields(args: Any) -> int:
 def _configure_validate(parser: Any) -> None:
     _add_input(parser)
     parser.add_argument("--questions", metavar="PATH", help="a questions JSON file to check the labels against")
-    parser.add_argument("--strict", action="store_true", help="also report repeated inputs and rows past the dataset limit")
+    parser.add_argument(
+        "--strict", action="store_true", help="also report repeated inputs and rows past the dataset limit"
+    )
     kit.add_format(parser)
 
 
@@ -313,7 +336,11 @@ def _row_problems(row: Any, questions: Optional[Dict[str, dict]]) -> List[str]:
         state, labels = workbench.split_labels(row, 0)
     except workbench.WorkbenchError as err:
         return [re.sub(r"^Row 0:? ", "", str(err))]
-    for check in (workbench.row_test, lambda s: workbench.validate_state(workbench.without_marks(s)), workbench.row_picture):
+    for check in (
+        workbench.row_test,
+        lambda s: workbench.validate_state(workbench.without_marks(s)),
+        workbench.row_picture,
+    ):
         try:
             check(state)
         except workbench.WorkbenchError as err:
@@ -400,9 +427,14 @@ def _configure_formats(parser: Any) -> None:
 
 
 def run_formats(args: Any) -> int:
-    kit.emit(args, ["format", "reads", "writes", "extensions", "description"],
-             [[name, callable(f.get("parse")), callable(f.get("render")), " ".join(f.get("extensions") or []), f["title"]]
-              for name, f in sorted(_formats().items())])
+    kit.emit(
+        args,
+        ["format", "reads", "writes", "extensions", "description"],
+        [
+            [name, callable(f.get("parse")), callable(f.get("render")), " ".join(f.get("extensions") or []), f["title"]]
+            for name, f in sorted(_formats().items())
+        ],
+    )
     return 0
 
 
@@ -425,7 +457,13 @@ def run_head(args: Any) -> int:
 def _configure_sample(parser: Any) -> None:
     _add_input(parser)
     parser.add_argument("--size", type=int, required=True, metavar="N", help="how many rows to draw")
-    parser.add_argument("--seed", type=int, default=0, metavar="S", help="the random seed (default: 0); the same seed draws the same rows")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        metavar="S",
+        help="the random seed (default: 0); the same seed draws the same rows",
+    )
     parser.add_argument("--tuning", action="store_true", help="draw from tuning rows only, never held-out ones")
     _add_output(parser)
 
@@ -489,8 +527,10 @@ def run_split(args: Any) -> int:
         files.append((stem + extension, groups[key]))
     existing = [file for file, _rows in files if (folder / file).exists()]
     if existing and not args.force:
-        raise kit.CliError("%s already exist%s in %s; pass --force to replace" % (", ".join(existing), "s" if len(existing) == 1 else "",
-                                                                                  args.out_dir))
+        raise kit.CliError(
+            "%s already exist%s in %s; pass --force to replace"
+            % (", ".join(existing), "s" if len(existing) == 1 else "", args.out_dir)
+        )
     texts = [(file, render(group, name), len(group)) for file, group in files]
     for file, text, _count in texts:
         (folder / file).write_text(text, encoding="utf-8")
@@ -504,7 +544,9 @@ def run_split(args: Any) -> int:
 def _configure_strip(parser: Any) -> None:
     _add_input(parser)
     parser.add_argument("--pictures", action="store_true", help="also remove _image picture names")
-    parser.add_argument("--drop", action="append", default=[], metavar="FIELD", help="also remove this input field (repeat for more)")
+    parser.add_argument(
+        "--drop", action="append", default=[], metavar="FIELD", help="also remove this input field (repeat for more)"
+    )
     _add_output(parser)
 
 
@@ -543,10 +585,15 @@ def run_strip(args: Any) -> int:
 def _configure_merge(parser: Any) -> None:
     parser.add_argument("files", nargs="+", help="rows files, merged in order (one file removes its own duplicates)")
     parser.add_argument("--from", dest="source", metavar="FORMAT", help="read every file in this row format")
-    parser.add_argument("--prefer", choices=("first", "last"), default="first",
-                        help="whose labels a repeated input keeps: the first copy's (default) or the last copy's")
-    parser.add_argument("--fill-labels", action="store_true",
-                        help="add labels for questions the kept copy lacks from the other copies")
+    parser.add_argument(
+        "--prefer",
+        choices=("first", "last"),
+        default="first",
+        help="whose labels a repeated input keeps: the first copy's (default) or the last copy's",
+    )
+    parser.add_argument(
+        "--fill-labels", action="store_true", help="add labels for questions the kept copy lacks from the other copies"
+    )
     _add_output(parser)
 
 
@@ -559,7 +606,10 @@ def run_merge(args: Any) -> int:
             if not isinstance(row, (str, dict)):
                 raise kit.CliError("%s holds a JSON array row; a rows file holds text and JSON objects" % path)
             if isinstance(row, dict) and LABEL_KEY in row and not isinstance(row[LABEL_KEY], dict):
-                raise kit.CliError("%s has a row whose %s is not an object; `lab.py rows validate %s` names it" % (path, LABEL_KEY, path))
+                raise kit.CliError(
+                    "%s has a row whose %s is not an object; `lab.py rows validate %s` names it"
+                    % (path, LABEL_KEY, path)
+                )
             total += 1
             key = decisions._key(row)
             if key not in copies:
@@ -596,9 +646,12 @@ def run_merge(args: Any) -> int:
         merged.append(out)
     _emit_rows(merged, args)
     dropped = total - len(merged)
-    print("kept %d of %d rows: %d duplicate cop%s left out, %d input%s with conflicting labels, %d marked held out "
-          "because a copy was" % (len(merged), total, dropped, "y" if dropped == 1 else "ies", conflicts,
-                                  "" if conflicts == 1 else "s", held), file=sys.stderr)
+    print(
+        "kept %d of %d rows: %d duplicate cop%s left out, %d input%s with conflicting labels, %d marked held out "
+        "because a copy was"
+        % (len(merged), total, dropped, "y" if dropped == 1 else "ies", conflicts, "" if conflicts == 1 else "s", held),
+        file=sys.stderr,
+    )
     return 0
 
 
@@ -607,10 +660,16 @@ def run_merge(args: Any) -> int:
 
 def _configure_filter(parser: Any) -> None:
     _add_input(parser)
-    parser.add_argument("--where", action="append", default=[], metavar="FIELD=VALUE",
-                        help="keep rows whose input field has this value (repeat: all must match)")
-    parser.add_argument("--labeled", nargs="?", const="", metavar="QUESTION",
-                        help="keep rows with a label (for QUESTION, when given)")
+    parser.add_argument(
+        "--where",
+        action="append",
+        default=[],
+        metavar="FIELD=VALUE",
+        help="keep rows whose input field has this value (repeat: all must match)",
+    )
+    parser.add_argument(
+        "--labeled", nargs="?", const="", metavar="QUESTION", help="keep rows with a label (for QUESTION, when given)"
+    )
     which = parser.add_mutually_exclusive_group()
     which.add_argument("--tuning", action="store_true", help="keep tuning rows only")
     which.add_argument("--held-out", action="store_true", help="keep held-out test rows only (printed without labels)")
@@ -644,65 +703,174 @@ def run_filter(args: Any) -> int:
 
 OUT = "--out PATH writes the %s to a file outside the Workbench data directory, labels included"
 
-PACK = kit.define_pack({
-    "id": "cli-rows",
-    "surface": "python.cli",
-    "title": "Bulk rows file tools",
-    "about": "Offline commands for Bulk rows files: counts, field fill rates, line-by-line validation, conversion "
-             "between row formats, head and seeded samples, splitting by a field or held-out marker, stripping labels "
-             "for sharing, merging without duplicate inputs and filtering. Summaries never show held-out label values, "
-             "and only files named with --out or --out-dir are written, never inside the Workbench data directory.",
-    "features": [
-        {"id": "count", "kind": "cli", "command": ["rows", "count"], "configure": _configure_count, "run": run_count,
-         "title": "Count a rows file's rows: text and object rows, labeled, held-out and picture rows, distinct inputs",
-         "options": [{"id": "by", "title": "--by FIELD counts rows, labeled rows and held-out rows per value of a field"},
-                     dict(FORMAT)]},
-        {"id": "fields", "kind": "cli", "command": ["rows", "fields"], "configure": _configure_fields, "run": run_fields,
-         "title": "List a rows file's input fields with how many rows fill them, their value types and distinct values",
-         "options": [{"id": "labels", "title": "--labels counts labels per question, tuning and held-out, without values"},
-                     {"id": "min_fill", "title": "--min-fill SHARE keeps fields filled in at least that share of rows"},
-                     dict(FORMAT)]},
-        {"id": "validate", "kind": "cli", "command": ["rows", "validate"], "configure": _configure_validate, "run": run_validate,
-         "title": "Check every line of a rows file as Bulk would read it and name each malformed one; exit 1 if any",
-         "options": [{"id": "questions", "title": "--questions PATH checks each label against a questions JSON file"},
-                     {"id": "strict", "title": "--strict also reports repeated inputs and rows past the 200-row limit"},
-                     dict(FORMAT)]},
-        {"id": "convert", "kind": "cli", "command": ["rows", "convert"], "configure": _configure_convert, "run": run_convert,
-         "title": "Convert a rows file to another row format named with --to (jsonl, json, csv, tsv, markdown, ...)",
-         "options": [{"id": "from", "title": "--from FORMAT reads a file whose ending does not name its format"},
-                     {"id": "out", "title": OUT % "converted rows"},
-                     {"id": "force", "title": "--force lets --out replace an existing file"}]},
-        {"id": "formats", "kind": "cli", "command": ["rows", "formats"], "configure": _configure_formats, "run": run_formats,
-         "title": "List the row formats the rows commands read and write, with the file endings that pick them"},
-        {"id": "head", "kind": "cli", "command": ["rows", "head"], "configure": _configure_head, "run": run_head,
-         "title": "Print the first rows of a rows file, held-out labels left out",
-         "options": [{"id": "rows", "title": "-n N prints the first N rows"},
-                     {"id": "to", "title": "--to FORMAT prints the rows in another row format, such as a Markdown table"}]},
-        {"id": "sample", "kind": "cli", "command": ["rows", "sample"], "configure": _configure_sample, "run": run_sample,
-         "title": "Draw a random sample of rows, in file order, the same rows for the same seed as the browser's sampler",
-         "options": [{"id": "seed", "title": "--seed S draws a different, repeatable sample"},
-                     {"id": "tuning", "title": "--tuning draws from tuning rows only, never held-out ones"},
-                     {"id": "out", "title": OUT % "sample"}]},
-        {"id": "split", "kind": "cli", "command": ["rows", "split"], "configure": _configure_split, "run": run_split,
-         "title": "Split a rows file into one file per value of an input field in a folder named with --out-dir",
-         "options": [{"id": "held_out", "title": "--held-out splits into tuning and held-out test files instead"},
-                     {"id": "to", "title": "--to FORMAT writes the files in another row format"},
-                     {"id": "force", "title": "--force replaces files that already exist"}]},
-        {"id": "strip", "kind": "cli", "command": ["rows", "strip"], "configure": _configure_strip, "run": run_strip,
-         "title": "Strip labels and test markers from a rows file for sharing, keeping the inputs",
-         "options": [{"id": "pictures", "title": "--pictures also removes picture names"},
-                     {"id": "drop", "title": "--drop FIELD also removes an input field, such as a customer email"},
-                     {"id": "out", "title": "--out PATH writes the stripped rows to a file outside the Workbench data directory"}]},
-        {"id": "merge", "kind": "cli", "command": ["rows", "merge"], "configure": _configure_merge, "run": run_merge,
-         "title": "Merge rows files without duplicate inputs; a repeated input stays held out if any copy was",
-         "options": [{"id": "prefer", "title": "--prefer last keeps the last copy's labels for a repeated input"},
-                     {"id": "fill_labels", "title": "--fill-labels adds labels the kept copy lacks from the other copies"},
-                     {"id": "out", "title": OUT % "merged rows"}]},
-        {"id": "filter", "kind": "cli", "command": ["rows", "filter"], "configure": _configure_filter, "run": run_filter,
-         "title": "Keep the rows that match filters and print or write them",
-         "options": [{"id": "where", "title": "--where FIELD=VALUE keeps rows whose input field has that value"},
-                     {"id": "labeled", "title": "--labeled [QUESTION] keeps labeled rows, or rows with that question labeled"},
-                     {"id": "tuning", "title": "--tuning keeps tuning rows only"},
-                     {"id": "held_out", "title": "--held-out keeps held-out test rows only, printed without their labels"}]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-rows",
+        "surface": "python.cli",
+        "title": "Bulk rows file tools",
+        "about": "Offline commands for Bulk rows files: counts, field fill rates, line-by-line validation, conversion "
+        "between row formats, head and seeded samples, splitting by a field or held-out marker, stripping labels "
+        "for sharing, merging without duplicate inputs and filtering. Summaries never show held-out label values, "
+        "and only files named with --out or --out-dir are written, never inside the Workbench data directory.",
+        "features": [
+            {
+                "id": "count",
+                "kind": "cli",
+                "command": ["rows", "count"],
+                "configure": _configure_count,
+                "run": run_count,
+                "title": "Count a rows file's rows: text and object rows, labeled, held-out and picture rows, distinct inputs",
+                "options": [
+                    {
+                        "id": "by",
+                        "title": "--by FIELD counts rows, labeled rows and held-out rows per value of a field",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "fields",
+                "kind": "cli",
+                "command": ["rows", "fields"],
+                "configure": _configure_fields,
+                "run": run_fields,
+                "title": "List a rows file's input fields with how many rows fill them, their value types and distinct values",
+                "options": [
+                    {
+                        "id": "labels",
+                        "title": "--labels counts labels per question, tuning and held-out, without values",
+                    },
+                    {"id": "min_fill", "title": "--min-fill SHARE keeps fields filled in at least that share of rows"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "validate",
+                "kind": "cli",
+                "command": ["rows", "validate"],
+                "configure": _configure_validate,
+                "run": run_validate,
+                "title": "Check every line of a rows file as Bulk would read it and name each malformed one; exit 1 if any",
+                "options": [
+                    {"id": "questions", "title": "--questions PATH checks each label against a questions JSON file"},
+                    {"id": "strict", "title": "--strict also reports repeated inputs and rows past the 200-row limit"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "convert",
+                "kind": "cli",
+                "command": ["rows", "convert"],
+                "configure": _configure_convert,
+                "run": run_convert,
+                "title": "Convert a rows file to another row format named with --to (jsonl, json, csv, tsv, markdown, ...)",
+                "options": [
+                    {"id": "from", "title": "--from FORMAT reads a file whose ending does not name its format"},
+                    {"id": "out", "title": OUT % "converted rows"},
+                    {"id": "force", "title": "--force lets --out replace an existing file"},
+                ],
+            },
+            {
+                "id": "formats",
+                "kind": "cli",
+                "command": ["rows", "formats"],
+                "configure": _configure_formats,
+                "run": run_formats,
+                "title": "List the row formats the rows commands read and write, with the file endings that pick them",
+            },
+            {
+                "id": "head",
+                "kind": "cli",
+                "command": ["rows", "head"],
+                "configure": _configure_head,
+                "run": run_head,
+                "title": "Print the first rows of a rows file, held-out labels left out",
+                "options": [
+                    {"id": "rows", "title": "-n N prints the first N rows"},
+                    {
+                        "id": "to",
+                        "title": "--to FORMAT prints the rows in another row format, such as a Markdown table",
+                    },
+                ],
+            },
+            {
+                "id": "sample",
+                "kind": "cli",
+                "command": ["rows", "sample"],
+                "configure": _configure_sample,
+                "run": run_sample,
+                "title": "Draw a random sample of rows, in file order, the same rows for the same seed as the browser's sampler",
+                "options": [
+                    {"id": "seed", "title": "--seed S draws a different, repeatable sample"},
+                    {"id": "tuning", "title": "--tuning draws from tuning rows only, never held-out ones"},
+                    {"id": "out", "title": OUT % "sample"},
+                ],
+            },
+            {
+                "id": "split",
+                "kind": "cli",
+                "command": ["rows", "split"],
+                "configure": _configure_split,
+                "run": run_split,
+                "title": "Split a rows file into one file per value of an input field in a folder named with --out-dir",
+                "options": [
+                    {"id": "held_out", "title": "--held-out splits into tuning and held-out test files instead"},
+                    {"id": "to", "title": "--to FORMAT writes the files in another row format"},
+                    {"id": "force", "title": "--force replaces files that already exist"},
+                ],
+            },
+            {
+                "id": "strip",
+                "kind": "cli",
+                "command": ["rows", "strip"],
+                "configure": _configure_strip,
+                "run": run_strip,
+                "title": "Strip labels and test markers from a rows file for sharing, keeping the inputs",
+                "options": [
+                    {"id": "pictures", "title": "--pictures also removes picture names"},
+                    {"id": "drop", "title": "--drop FIELD also removes an input field, such as a customer email"},
+                    {
+                        "id": "out",
+                        "title": "--out PATH writes the stripped rows to a file outside the Workbench data directory",
+                    },
+                ],
+            },
+            {
+                "id": "merge",
+                "kind": "cli",
+                "command": ["rows", "merge"],
+                "configure": _configure_merge,
+                "run": run_merge,
+                "title": "Merge rows files without duplicate inputs; a repeated input stays held out if any copy was",
+                "options": [
+                    {"id": "prefer", "title": "--prefer last keeps the last copy's labels for a repeated input"},
+                    {
+                        "id": "fill_labels",
+                        "title": "--fill-labels adds labels the kept copy lacks from the other copies",
+                    },
+                    {"id": "out", "title": OUT % "merged rows"},
+                ],
+            },
+            {
+                "id": "filter",
+                "kind": "cli",
+                "command": ["rows", "filter"],
+                "configure": _configure_filter,
+                "run": run_filter,
+                "title": "Keep the rows that match filters and print or write them",
+                "options": [
+                    {"id": "where", "title": "--where FIELD=VALUE keeps rows whose input field has that value"},
+                    {
+                        "id": "labeled",
+                        "title": "--labeled [QUESTION] keeps labeled rows, or rows with that question labeled",
+                    },
+                    {"id": "tuning", "title": "--tuning keeps tuning rows only"},
+                    {
+                        "id": "held_out",
+                        "title": "--held-out keeps held-out test rows only, printed without their labels",
+                    },
+                ],
+            },
+        ],
+    }
+)

@@ -25,13 +25,13 @@ def _text(message: dict) -> str:
 
 
 def split(answers: Dict[str, dict]) -> tuple:
-    s = {k[len("shield."):]: v for k, v in answers.items() if k.startswith("shield.")}
-    d = {k[len("dispatch."):]: v for k, v in answers.items() if k.startswith("dispatch.")}
+    s = {k[len("shield.") :]: v for k, v in answers.items() if k.startswith("shield.")}
+    d = {k[len("dispatch.") :]: v for k, v in answers.items() if k.startswith("dispatch.")}
     return s, d
 
 
 def photo_answers(answers: Dict[str, dict]) -> Dict[str, dict]:
-    return {k[len("photo."):]: v for k, v in answers.items() if k.startswith("photo.")}
+    return {k[len("photo.") :]: v for k, v in answers.items() if k.startswith("photo.")}
 
 
 def attached_photo(message: dict) -> Optional[tuple]:
@@ -44,8 +44,9 @@ def attached_photo(message: dict) -> Optional[tuple]:
 
 
 def photo_questions() -> Dict[str, dict]:
-    qs = claims.questions(item="the product the email in `message` is about", note="the email in `message`",
-                          with_box=False)
+    qs = claims.questions(
+        item="the product the email in `message` is about", note="the email in `message`", with_box=False
+    )
     return {"photo." + k: v for k, v in qs.items()}
 
 
@@ -108,8 +109,16 @@ class Autopilot:
 
         with self._lock:
             # Integrated pipeline: Shield gates, sender facts feed Dispatch's checks.
-            plan_i = dispatch.plan(d_answers, cands, self.integrated, "email", message.get("body", ""),
-                                   sender_email=sender, sender_checks=True, evidence=evidence)
+            plan_i = dispatch.plan(
+                d_answers,
+                cands,
+                self.integrated,
+                "email",
+                message.get("body", ""),
+                sender_email=sender,
+                sender_checks=True,
+                evidence=evidence,
+            )
             executed_i, error_i = None, None
             if verdict["level"] == "quarantine":
                 lane = "quarantine"
@@ -126,8 +135,9 @@ class Autopilot:
                 lane = "needs_you"
 
             # Dispatch alone: same answers, trusts the email as if the owner had typed it.
-            plan_n = dispatch.plan(d_answers, cands, self.naive, "email", message.get("body", ""),
-                                   sender_email=sender, sender_checks=False)
+            plan_n = dispatch.plan(
+                d_answers, cands, self.naive, "email", message.get("body", ""), sender_email=sender, sender_checks=False
+            )
             executed_n, error_n = None, None
             if plan_n["decision"] == "execute":
                 executed_n, error_n = _run(self.naive, plan_n, context)
@@ -139,9 +149,17 @@ class Autopilot:
                 "meta": result.meta(),
                 "trace": result.trace(),
                 "shield": {"verdict": verdict, "fact": fact},
-                "photo": {"sample": photo[2]["sample"], "name": photo[2].get("name"), "evidence": evidence} if photo else None,
-                "integrated": {"lane": lane, "plan": plan_i, "executed": executed_i, "error": error_i,
-                               "context": context, "resolved": bool(executed_i) or lane in ("quarantine", "ignored")},
+                "photo": {"sample": photo[2]["sample"], "name": photo[2].get("name"), "evidence": evidence}
+                if photo
+                else None,
+                "integrated": {
+                    "lane": lane,
+                    "plan": plan_i,
+                    "executed": executed_i,
+                    "error": error_i,
+                    "context": context,
+                    "resolved": bool(executed_i) or lane in ("quarantine", "ignored"),
+                },
                 "naive": {"plan": plan_n, "executed": executed_n, "error": error_n},
             }
             self.records[record["id"]] = record
@@ -201,14 +219,20 @@ class Autopilot:
             "sequential": summary([s_res, d_res], seq_ms),
             "parallel": summary([ps_res, pd_res], par_ms),
             "merged": summary([m_res], merged_ms),
-            "per_call_ms": {"shield": round(s_res.latency_ms, 1), "dispatch": round(d_res.latency_ms, 1),
-                            "merged": round(m_res.latency_ms, 1)},
+            "per_call_ms": {
+                "shield": round(s_res.latency_ms, 1),
+                "dispatch": round(d_res.latency_ms, 1),
+                "merged": round(m_res.latency_ms, 1),
+            },
         }
 
     def snapshot(self) -> dict:
         with self._lock:
-            return {"integrated": self.integrated.snapshot(), "naive": self.naive.snapshot(),
-                    "records": list(self.records.values())}
+            return {
+                "integrated": self.integrated.snapshot(),
+                "naive": self.naive.snapshot(),
+                "records": list(self.records.values()),
+            }
 
 
 def find_message(inbox: list, message_id: Optional[str]) -> Optional[dict]:

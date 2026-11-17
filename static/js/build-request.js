@@ -55,12 +55,27 @@ export function requestDraft(state, questions, images = {}) {
 }
 
 export function parseRequestDraft(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)
-      || value.format !== "jev-build-draft" || value.version !== 1) throw new Error("Choose a Jev Build draft (version 1).");
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    value.format !== "jev-build-draft" ||
+    value.version !== 1
+  )
+    throw new Error("Choose a Jev Build draft (version 1).");
   const expected = new Set(["format", "version", "state", "questions", "images"]);
-  if (Object.keys(value).some((key) => !expected.has(key))) throw new Error("Build drafts contain only state, questions and images.");
-  if (value.state === undefined || !value.questions || typeof value.questions !== "object" || Array.isArray(value.questions)
-      || !Object.keys(value.questions).length || !value.images || typeof value.images !== "object" || Array.isArray(value.images)) {
+  if (Object.keys(value).some((key) => !expected.has(key)))
+    throw new Error("Build drafts contain only state, questions and images.");
+  if (
+    value.state === undefined ||
+    !value.questions ||
+    typeof value.questions !== "object" ||
+    Array.isArray(value.questions) ||
+    !Object.keys(value.questions).length ||
+    !value.images ||
+    typeof value.images !== "object" ||
+    Array.isArray(value.images)
+  ) {
     throw new Error("The draft needs state, a question map and an image map.");
   }
   return requestDraft(value.state, value.questions, value.images);
@@ -80,7 +95,11 @@ export function buildContextChanged(current, original) {
 // throw away part of the user's input, so every outbound action must reject it.
 export function parseBuildState(text) {
   if (typeof text !== "string" || !/^[\[{]/.test(text.trim())) return text;
-  try { JSON.parse(text); } catch { return text; }
+  try {
+    JSON.parse(text);
+  } catch {
+    return text;
+  }
   return parseUniqueJson(text);
 }
 

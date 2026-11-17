@@ -286,7 +286,11 @@ function frozenCopy(raw) {
 // A source field: a value, or a function that returns the value now. Errors and null read as the fallback.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -326,7 +330,8 @@ const RUNS = new WeakMap();
 function runIndex(result) {
   if (!isObject(result) || !Array.isArray(result.results)) return { byIndex: new Map(), test: new Set() };
   if (!RUNS.has(result)) {
-    const byIndex = new Map(), test = new Set();
+    const byIndex = new Map(),
+      test = new Set();
     for (const entry of result.results) {
       if (!isObject(entry) || !Number.isInteger(entry.index)) continue;
       byIndex.set(entry.index, entry);
@@ -340,14 +345,22 @@ function runIndex(result) {
 function runCounts(result) {
   if (!isObject(result) || !Array.isArray(result.results)) return null;
   const rows = result.results.filter(isObject);
-  return deepFreeze({ rows: rows.length, answered: rows.filter((r) => isObject(r.answers) && !isTestRow(r.row)).length,
-    held_out: rows.filter((r) => isTestRow(r.row)).length });
+  return deepFreeze({
+    rows: rows.length,
+    answered: rows.filter((r) => isObject(r.answers) && !isTestRow(r.row)).length,
+    held_out: rows.filter((r) => isTestRow(r.row)).length,
+  });
 }
 
 function rowFields(entry, index) {
   const row = entry ? entry.row : undefined;
-  return { index, number: index + 1, text: entry ? analysisRowText(row) : "", row: plainRow(row),
-    image: isObject(row) && typeof row._image === "string" && row._image ? row._image : null };
+  return {
+    index,
+    number: index + 1,
+    text: entry ? analysisRowText(row) : "",
+    row: plainRow(row),
+    image: isObject(row) && typeof row._image === "string" && row._image ? row._image : null,
+  };
 }
 
 // The answered questions of a run, as bulkQuestionsForResult: the first answered row's answers.
@@ -382,11 +395,17 @@ const rowName = (item, index) => (item && Number.isInteger(item.number) ? `#${it
 
 function setsBy(sets, qid, type) {
   const map = new Map();
-  if (!isObject(sets) || sets.type !== type || !Array.isArray(sets.rows) || sets.cut === null || sets.cut === undefined) return map;
+  if (!isObject(sets) || sets.type !== type || !Array.isArray(sets.rows) || sets.cut === null || sets.cut === undefined)
+    return map;
   for (const row of sets.rows) {
     if (!isObject(row) || !Number.isInteger(row.index)) continue;
-    map.set(row.index, { options: Array.isArray(row.set) ? row.set.map(String) : [], size: integer(row.size) ?? 0, covered: row.covered === true,
-      route: row.route === "auto" ? "auto" : "review", probabilities: isObject(row.probabilities) ? clone(row.probabilities) : {} });
+    map.set(row.index, {
+      options: Array.isArray(row.set) ? row.set.map(String) : [],
+      size: integer(row.size) ?? 0,
+      covered: row.covered === true,
+      route: row.route === "auto" ? "auto" : "review",
+      probabilities: isObject(row.probabilities) ? clone(row.probabilities) : {},
+    });
   }
   return map;
 }
@@ -398,13 +417,26 @@ function calItems(report, result, qid, sets) {
   const { byIndex, test } = runIndex(result);
   const type = pick(TYPES, report.type, null);
   const setMap = setsBy(sets, qid, type);
-  const items = deepFreeze((Array.isArray(report.rows) ? report.rows : []).filter((row) => isObject(row) && Number.isInteger(row.index) && !test.has(row.index))
-    .map((row) => {
-      const entry = byIndex.get(row.index);
-      const answer = entry && isObject(entry.answers) && isObject(entry.answers[qid]) ? clone(entry.answers[qid]) : null;
-      return { ...rowFields(entry, row.index), type, label: String(row.label ?? ""), predicted: String(row.predicted ?? ""), correct: row.correct === true,
-        signal: finite(row.signal) ?? 0, top: finite(row.top) ?? 0, answer, set: setMap.get(row.index) || null };
-    }));
+  const items = deepFreeze(
+    (Array.isArray(report.rows) ? report.rows : [])
+      .filter((row) => isObject(row) && Number.isInteger(row.index) && !test.has(row.index))
+      .map((row) => {
+        const entry = byIndex.get(row.index);
+        const answer =
+          entry && isObject(entry.answers) && isObject(entry.answers[qid]) ? clone(entry.answers[qid]) : null;
+        return {
+          ...rowFields(entry, row.index),
+          type,
+          label: String(row.label ?? ""),
+          predicted: String(row.predicted ?? ""),
+          correct: row.correct === true,
+          signal: finite(row.signal) ?? 0,
+          top: finite(row.top) ?? 0,
+          answer,
+          set: setMap.get(row.index) || null,
+        };
+      }),
+  );
   CAL_ITEMS.set(report, { result, qid, sets, items });
   return items;
 }
@@ -450,27 +482,49 @@ export function calibrateCtx(source = {}) {
     const rep = report();
     return rep ? calItems(rep, result(), qid(), sets()) : EMPTY;
   };
-  const needRun = () => { if (!result()) throw new Error("Run the rows in Bulk first: Calibrate reads that run's answers."); };
+  const needRun = () => {
+    if (!result()) throw new Error("Run the rows in Bulk first: Calibrate reads that run's answers.");
+  };
   const ctx = {
     items,
     shown: () => shownList(source, items(), ctx),
     data: {
-      get qid() { return qid(); },
-      get type() { return typeNow(); },
-      get signal() { return pick(SIGNALS, report()?.signal ?? read(source, "signal", "confidence"), "confidence"); },
-      get bound() { return pick(BOUNDS, report()?.bound ?? read(source, "bound", "estimate"), "estimate"); },
-      get threshold() { return threshold(); },
+      get qid() {
+        return qid();
+      },
+      get type() {
+        return typeNow();
+      },
+      get signal() {
+        return pick(SIGNALS, report()?.signal ?? read(source, "signal", "confidence"), "confidence");
+      },
+      get bound() {
+        return pick(BOUNDS, report()?.bound ?? read(source, "bound", "estimate"), "estimate");
+      },
+      get threshold() {
+        return threshold();
+      },
       get questions() {
         const labeled = labeledSet(read(source, "labeledQids", null));
-        return deepFreeze(Object.entries(questions()).map(([id, answer]) => ({ qid: id, type: pick(TYPES, answer?.type, null), labeled: labeled.has(id) })));
+        return deepFreeze(
+          Object.entries(questions()).map(([id, answer]) => ({
+            qid: id,
+            type: pick(TYPES, answer?.type, null),
+            labeled: labeled.has(id),
+          })),
+        );
       },
-      get report() { return frozenCopy(report()); },
+      get report() {
+        return frozenCopy(report());
+      },
       get at() {
         const rep = labeledReport();
         const point = rep && Array.isArray(rep.sweep) ? rep.sweep[Math.round(threshold() * 100)] : null;
         return isObject(point) ? frozenCopy(point) : null;
       },
-      get signals() { return isObject(report()?.signals) ? frozenCopy(report().signals) : EMPTY_OBJECT; },
+      get signals() {
+        return isObject(report()?.signals) ? frozenCopy(report().signals) : EMPTY_OBJECT;
+      },
       get cost() {
         const value = read(source, "cost", null);
         return labeledReport() && isObject(value) ? frozenCopy(value) : null;
@@ -479,8 +533,12 @@ export function calibrateCtx(source = {}) {
         const value = read(source, "holdout", null);
         return result() && isObject(value) ? frozenCopy(value) : null;
       },
-      get sets() { return frozenCopy(sets()); },
-      get sets_coverage() { return pick(SET_COVERAGES, read(source, "setsCoverage", 0.9), 0.9); },
+      get sets() {
+        return frozenCopy(sets());
+      },
+      get sets_coverage() {
+        return pick(SET_COVERAGES, read(source, "setsCoverage", 0.9), 0.9);
+      },
       get attached() {
         const value = read(source, "attached", null);
         return isObject(value) ? frozenCopy(value) : EMPTY_OBJECT;
@@ -489,7 +547,9 @@ export function calibrateCtx(source = {}) {
         const value = read(source, "slices", null);
         return labeledReport() && isObject(value) ? frozenCopy(value) : null;
       },
-      get run() { return runCounts(result()); },
+      get run() {
+        return runCounts(result());
+      },
     },
     actions: {
       setThreshold(value) {
@@ -502,7 +562,8 @@ export function calibrateCtx(source = {}) {
       },
       selectQuestion(id) {
         needRun();
-        if (typeof id !== "string" || !hasOwn(questions(), id)) throw new Error(`“${String(id)}” is not a question this run answered.`);
+        if (typeof id !== "string" || !hasOwn(questions(), id))
+          throw new Error(`“${String(id)}” is not a question this run answered.`);
         return call(source, "selectQuestion", id);
       },
       setSignal(signal) {
@@ -517,19 +578,23 @@ export function calibrateCtx(source = {}) {
       },
       setCoverage(coverage) {
         needRun();
-        if (!SET_COVERAGES.includes(coverage)) throw new Error("Answer sets hold the right answer 80%, 90%, 95% or 99% of the time.");
+        if (!SET_COVERAGES.includes(coverage))
+          throw new Error("Answer sets hold the right answer 80%, 90%, 95% or 99% of the time.");
         if (!GATEABLE.includes(typeNow())) throw new Error("Answer sets need a Choice, Noul or Score question.");
         return call(source, "setCoverage", coverage);
       },
       checkUnseen() {
         if (!labeledReport()) throw new Error("Label some rows first: the check tunes on labeled rows.");
-        if (!GATEABLE.includes(typeNow())) throw new Error("The check on unseen rows needs a Choice, Noul or Score question.");
+        if (!GATEABLE.includes(typeNow()))
+          throw new Error("The check on unseen rows needs a Choice, Noul or Score question.");
         if (read(source, "holdout", null)?.running) throw new Error("The check on unseen rows is already running.");
         if (read(source, "holdoutReady", true) !== true) throw new Error("Open the Bulk tab to run the check.");
         return call(source, "checkUnseen");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: rowName,
   };
   return ctx;
@@ -546,17 +611,33 @@ function polItems(report, result) {
   const known = POL_ITEMS.get(report);
   if (known && known.result === result) return known.items;
   const { byIndex, test } = runIndex(result);
-  const items = deepFreeze((Array.isArray(report.rows) ? report.rows : []).filter((row) => isObject(row) && Number.isInteger(row.index) && !test.has(row.index))
-    .map((row) => {
-      const automated = row.automated === true, correct = row.correct === true;
-      const answers = {};
-      for (const [id, entry] of Object.entries(isObject(row.answers) ? row.answers : {})) {
-        if (!isObject(entry)) continue;
-        answers[id] = { answer: String(entry.answer ?? ""), label: String(entry.label ?? ""), signal: finite(entry.signal) ?? 0 };
-      }
-      return { ...rowFields(byIndex.get(row.index), row.index), outcome: automated ? (correct ? "right" : "wrong") : "review", automated, correct,
-        held: stringList(row.held), wrong: stringList(row.wrong), rules: Array.isArray(row.rules) ? row.rules.filter(Number.isInteger) : [], answers };
-    }));
+  const items = deepFreeze(
+    (Array.isArray(report.rows) ? report.rows : [])
+      .filter((row) => isObject(row) && Number.isInteger(row.index) && !test.has(row.index))
+      .map((row) => {
+        const automated = row.automated === true,
+          correct = row.correct === true;
+        const answers = {};
+        for (const [id, entry] of Object.entries(isObject(row.answers) ? row.answers : {})) {
+          if (!isObject(entry)) continue;
+          answers[id] = {
+            answer: String(entry.answer ?? ""),
+            label: String(entry.label ?? ""),
+            signal: finite(entry.signal) ?? 0,
+          };
+        }
+        return {
+          ...rowFields(byIndex.get(row.index), row.index),
+          outcome: automated ? (correct ? "right" : "wrong") : "review",
+          automated,
+          correct,
+          held: stringList(row.held),
+          wrong: stringList(row.wrong),
+          rules: Array.isArray(row.rules) ? row.rules.filter(Number.isInteger) : [],
+          answers,
+        };
+      }),
+  );
   POL_ITEMS.set(report, { result, items });
   return items;
 }
@@ -573,7 +654,8 @@ export function policyCtx(source = {}) {
     const value = read(source, "result", null);
     return isObject(value) && Array.isArray(value.results) ? value : null;
   };
-  const gateable = () => Object.entries(answeredQuestions(result())).filter(([, answer]) => GATEABLE.includes(answer?.type));
+  const gateable = () =>
+    Object.entries(answeredQuestions(result())).filter(([, answer]) => GATEABLE.includes(answer?.type));
   const gates = () => {
     const raw = read(source, "gates", {});
     const out = {};
@@ -583,7 +665,12 @@ export function policyCtx(source = {}) {
     }
     return out;
   };
-  const active = () => Object.fromEntries(Object.entries(gates()).filter(([, gate]) => gate.on).map(([id, gate]) => [id, gate.t]));
+  const active = () =>
+    Object.fromEntries(
+      Object.entries(gates())
+        .filter(([, gate]) => gate.on)
+        .map(([id, gate]) => [id, gate.t]),
+    );
   const report = () => {
     const value = read(source, "report", null);
     return result() && Object.keys(active()).length && isObject(value) && Array.isArray(value.rows) ? value : null;
@@ -592,14 +679,17 @@ export function policyCtx(source = {}) {
     const rep = report();
     return rep ? polItems(rep, result()) : EMPTY;
   };
-  const needRun = () => { if (!result()) throw new Error("Run the rows in Bulk first: Policy reads that run's answers."); };
+  const needRun = () => {
+    if (!result()) throw new Error("Run the rows in Bulk first: Policy reads that run's answers.");
+  };
   const needGate = () => {
     needRun();
     if (!Object.keys(active()).length) throw new Error("Check at least one question to gate.");
   };
   const thresholds = (map) => {
     needGate();
-    if (!isObject(map) || !Object.keys(map).length) throw new Error("Name at least one checked gate and its threshold.");
+    if (!isObject(map) || !Object.keys(map).length)
+      throw new Error("Name at least one checked gate and its threshold.");
     const on = active();
     const out = {};
     for (const [id, value] of Object.entries(map)) {
@@ -614,17 +704,37 @@ export function policyCtx(source = {}) {
     items,
     shown: () => shownList(source, items(), ctx),
     data: {
-      get signal() { return pick(SIGNALS, report()?.signal ?? read(source, "signal", "confidence"), "confidence"); },
-      get bound() { return pick(BOUNDS, read(source, "bound", "estimate"), "estimate"); },
-      get gates() { return deepFreeze(gates()); },
-      get active() { return deepFreeze(active()); },
-      get max_gates() { return MAX_GATES; },
+      get signal() {
+        return pick(SIGNALS, report()?.signal ?? read(source, "signal", "confidence"), "confidence");
+      },
+      get bound() {
+        return pick(BOUNDS, read(source, "bound", "estimate"), "estimate");
+      },
+      get gates() {
+        return deepFreeze(gates());
+      },
+      get active() {
+        return deepFreeze(active());
+      },
+      get max_gates() {
+        return MAX_GATES;
+      },
       get questions() {
         const labeled = labeledSet(read(source, "labeledQids", null));
         const all = gates();
-        return deepFreeze(gateable().map(([id, answer]) => ({ qid: id, type: answer.type, labeled: labeled.has(id), on: all[id].on, t: all[id].t })));
+        return deepFreeze(
+          gateable().map(([id, answer]) => ({
+            qid: id,
+            type: answer.type,
+            labeled: labeled.has(id),
+            on: all[id].on,
+            t: all[id].t,
+          })),
+        );
       },
-      get report() { return frozenCopy(report()); },
+      get report() {
+        return frozenCopy(report());
+      },
       get tunes() {
         const value = read(source, "tunes", null);
         return report() && isObject(value) ? frozenCopy(value) : null;
@@ -647,22 +757,33 @@ export function policyCtx(source = {}) {
         let copy = null;
         if (rep) {
           copy = clone(rep);
-          if (Array.isArray(copy.gated)) for (const g of copy.gated) if (isObject(g)) g.holds_back_nothing = holdsBackNothing(g, copy.baseline);
+          if (Array.isArray(copy.gated))
+            for (const g of copy.gated) if (isObject(g)) g.holds_back_nothing = holdsBackNothing(g, copy.baseline);
         }
         return deepFreeze({ target: finite(raw.target) ?? 0.95, running: raw.running === true, report: copy });
       },
       get rules() {
         const raw = read(source, "rules", {});
         const text = (value) => (typeof value === "string" ? value : "");
-        return deepFreeze({ text: text(raw.text), applied: text(raw.applied), hold: raw.hold === true, in_force: text(read(source, "rulesInForce", "")),
-          error: typeof raw.error === "string" && raw.error ? raw.error : null, report: isObject(raw.report) && result() ? clone(raw.report) : null });
+        return deepFreeze({
+          text: text(raw.text),
+          applied: text(raw.applied),
+          hold: raw.hold === true,
+          in_force: text(read(source, "rulesInForce", "")),
+          error: typeof raw.error === "string" && raw.error ? raw.error : null,
+          report: isObject(raw.report) && result() ? clone(raw.report) : null,
+        });
       },
       get slices() {
         const value = read(source, "slices", null);
         return report() && isObject(value) ? frozenCopy(value) : null;
       },
-      get run() { return runCounts(result()); },
-      get request_ready() { return read(source, "requestReady", false) === true; },
+      get run() {
+        return runCounts(result());
+      },
+      get request_ready() {
+        return read(source, "requestReady", false) === true;
+      },
     },
     actions: {
       setThreshold(id, value) {
@@ -675,10 +796,12 @@ export function policyCtx(source = {}) {
       setGate(id, on) {
         needRun();
         const all = gates();
-        if (typeof id !== "string" || !hasOwn(all, id)) throw new Error(`“${String(id)}” is not a Choice, Noul or Score question of this run.`);
+        if (typeof id !== "string" || !hasOwn(all, id))
+          throw new Error(`“${String(id)}” is not a Choice, Noul or Score question of this run.`);
         if (typeof on !== "boolean") throw new Error("Say whether to check (true) or uncheck (false) the gate.");
         if (all[id].on === on) throw new Error(`${id} is already ${on ? "checked" : "unchecked"}.`);
-        if (on && Object.keys(active()).length >= MAX_GATES) throw new Error(`At most ${MAX_GATES} gates can be checked. Uncheck one first.`);
+        if (on && Object.keys(active()).length >= MAX_GATES)
+          throw new Error(`At most ${MAX_GATES} gates can be checked. Uncheck one first.`);
         return call(source, "setGate", id, on);
       },
       setSignal(signal) {
@@ -700,7 +823,8 @@ export function policyCtx(source = {}) {
       checkGates() {
         needGate();
         if (read(source, "prune", {})?.running) throw new Error("The gate check is already running.");
-        if (read(source, "requestReady", false) !== true) throw new Error("Run the rows in Bulk first: the check reads the questions that run asked.");
+        if (read(source, "requestReady", false) !== true)
+          throw new Error("Run the rows in Bulk first: the check reads the questions that run asked.");
         return call(source, "checkGates");
       },
       exportGate() {
@@ -708,7 +832,9 @@ export function policyCtx(source = {}) {
         return call(source, "exportGate");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: rowName,
   };
   return ctx;
@@ -726,8 +852,12 @@ function priceOf(value) {
 }
 
 function mistakeItem(raw) {
-  return { question: String(raw?.question ?? ""), label: String(raw?.label ?? ""), answer: String(raw?.answer ?? ""),
-    cost: typeof raw?.cost === "number" ? String(raw.cost) : String(raw?.cost ?? "") };
+  return {
+    question: String(raw?.question ?? ""),
+    label: String(raw?.label ?? ""),
+    answer: String(raw?.answer ?? ""),
+    cost: typeof raw?.cost === "number" ? String(raw.cost) : String(raw?.cost ?? ""),
+  };
 }
 
 // source: {
@@ -743,8 +873,10 @@ export function costsCtx(source = {}) {
     const value = read(source, "result", null);
     return isObject(value) && Array.isArray(value.results) ? value : null;
   };
-  const questionList = () => Object.entries(answeredQuestions(result())).filter(([, answer]) => GATEABLE.includes(answer?.type))
-    .map(([id, answer]) => ({ qid: id, type: answer.type, classes: classesOf(answer) }));
+  const questionList = () =>
+    Object.entries(answeredQuestions(result()))
+      .filter(([, answer]) => GATEABLE.includes(answer?.type))
+      .map(([id, answer]) => ({ qid: id, type: answer.type, classes: classesOf(answer) }));
   const raw = () => {
     const value = read(source, "costs", {});
     return isObject(value) ? value : {};
@@ -763,33 +895,50 @@ export function costsCtx(source = {}) {
   // The list next as the page would store it, or an Error naming the first mistake at fault.
   const validate = (next) => {
     if (!Array.isArray(next)) throw new Error("An edit must give a list of priced mistakes.");
-    if (next.length > MAX_MISTAKES) throw new Error(`At most ${MAX_MISTAKES} mistakes can be priced; the edit gives ${next.length}.`);
+    if (next.length > MAX_MISTAKES)
+      throw new Error(`At most ${MAX_MISTAKES} mistakes can be priced; the edit gives ${next.length}.`);
     const byQid = new Map(questionList().map((q) => [q.qid, q]));
     const seen = new Set();
     return next.map((entry, i) => {
       const where = `Mistake ${i + 1}`;
       if (!isObject(entry)) throw new Error(`${where} must be an object with question, label, answer and cost.`);
       const question = byQid.get(entry.question);
-      if (!question) throw new Error(`${where}: “${String(entry.question)}” is not a Choice, Noul or Score question of this run.`);
-      const label = String(entry.label ?? ""), answer = String(entry.answer ?? "");
-      if (!question.classes.includes(label)) throw new Error(`${where}: “${label}” is not an option of ${question.qid}.`);
-      if (!question.classes.includes(answer)) throw new Error(`${where}: “${answer}” is not an option of ${question.qid}.`);
+      if (!question)
+        throw new Error(`${where}: “${String(entry.question)}” is not a Choice, Noul or Score question of this run.`);
+      const label = String(entry.label ?? ""),
+        answer = String(entry.answer ?? "");
+      if (!question.classes.includes(label))
+        throw new Error(`${where}: “${label}” is not an option of ${question.qid}.`);
+      if (!question.classes.includes(answer))
+        throw new Error(`${where}: “${answer}” is not an option of ${question.qid}.`);
       if (label === answer) throw new Error(`${where}: the answer must differ from the label, or it is not a mistake.`);
       const price = priceOf(entry.cost);
       if (price === null) throw new Error(`${where}: the price must be a number from 0 to 1,000,000.`);
       const key = JSON.stringify([question.qid, label, answer]);
-      if (seen.has(key)) throw new Error(`${where}: ${question.qid} labeled ${label}, answered ${answer} is priced twice.`);
+      if (seen.has(key))
+        throw new Error(`${where}: ${question.qid} labeled ${label}, answered ${answer} is priced twice.`);
       seen.add(key);
-      return { question: question.qid, label, answer, cost: typeof entry.cost === "number" ? String(entry.cost) : String(entry.cost).trim() };
+      return {
+        question: question.qid,
+        label,
+        answer,
+        cost: typeof entry.cost === "number" ? String(entry.cost) : String(entry.cost).trim(),
+      };
     });
   };
   const ctx = {
     items,
     shown: () => shownList(source, items(), ctx),
     data: {
-      get review() { return String(raw().review ?? ""); },
-      get error() { return String(raw().error ?? ""); },
-      get prices() { return isObject(payload().costs) ? frozenCopy(payload().costs) : null; },
+      get review() {
+        return String(raw().review ?? "");
+      },
+      get error() {
+        return String(raw().error ?? "");
+      },
+      get prices() {
+        return isObject(payload().costs) ? frozenCopy(payload().costs) : null;
+      },
       get problem() {
         const value = payload().problem;
         return typeof value === "string" && value ? value : null;
@@ -799,26 +948,40 @@ export function costsCtx(source = {}) {
         if (!isObject(prices) || !(finite(prices.error) > 0) || finite(prices.review) === null) return null;
         return Math.max(0, 1 - prices.review / prices.error);
       },
-      get questions() { return deepFreeze(questionList()); },
-      get max_mistakes() { return MAX_MISTAKES; },
-      get max_price() { return MAX_PRICE; },
+      get questions() {
+        return deepFreeze(questionList());
+      },
+      get max_mistakes() {
+        return MAX_MISTAKES;
+      },
+      get max_price() {
+        return MAX_PRICE;
+      },
       get calibrate() {
         const qid = read(source, "calQid", null);
         const t = finite(read(source, "calThreshold", 0.5));
         const cost = read(source, "calCost", null);
-        return deepFreeze({ qid: result() && typeof qid === "string" ? qid : null, threshold: t === null ? 0.5 : t,
-          cost: result() && isObject(cost) ? clone(cost) : null });
+        return deepFreeze({
+          qid: result() && typeof qid === "string" ? qid : null,
+          threshold: t === null ? 0.5 : t,
+          cost: result() && isObject(cost) ? clone(cost) : null,
+        });
       },
       get policy() {
         const on = read(source, "active", {});
-        const cost = read(source, "policyCost", null), cheapest = read(source, "cheapest", null);
-        return deepFreeze({ active: result() && isObject(on) ? clone(on) : {}, cost: result() && isObject(cost) ? clone(cost) : null,
-          cheapest: result() && isObject(cheapest) ? clone(cheapest) : null });
+        const cost = read(source, "policyCost", null),
+          cheapest = read(source, "cheapest", null);
+        return deepFreeze({
+          active: result() && isObject(on) ? clone(on) : {},
+          cost: result() && isObject(cost) ? clone(cost) : null,
+          cheapest: result() && isObject(cheapest) ? clone(cheapest) : null,
+        });
       },
     },
     actions: {
       replaceItems(next, options = {}) {
-        if (!questionList().length) throw new Error("Run the rows in Bulk first: a mistake names a question of that run.");
+        if (!questionList().length)
+          throw new Error("Run the rows in Bulk first: a mistake names a question of that run.");
         const list = validate(next);
         if (JSON.stringify(list) === JSON.stringify(items())) return { changed: false };
         call(source, "write", list, String(options?.label || "Lab edit"));
@@ -829,18 +992,24 @@ export function costsCtx(source = {}) {
         return ctx.actions.replaceItems([...items().map((item) => ({ ...item })), ...added], options);
       },
       setPrices(review, error) {
-        if (!questionList().length) throw new Error("Run the rows in Bulk first: prices apply to that run's questions.");
+        if (!questionList().length)
+          throw new Error("Run the rows in Bulk first: prices apply to that run's questions.");
         const read1 = (value, what, current) => {
           if (value === null || value === undefined) return current;
           const price = priceOf(value);
           if (price === null) throw new Error(`${what} must be a number from 0 to 1,000,000.`);
           return typeof value === "number" ? String(value) : String(value).trim();
         };
-        const next = [read1(review, "The review price", String(raw().review ?? "")), read1(error, "The mistake price", String(raw().error ?? ""))];
+        const next = [
+          read1(review, "The review price", String(raw().review ?? "")),
+          read1(error, "The mistake price", String(raw().error ?? "")),
+        ];
         return call(source, "setPrices", next[0], next[1]);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => {
       const at = items().indexOf(item);
       return `mistake ${(at >= 0 ? at : index) + 1}`;

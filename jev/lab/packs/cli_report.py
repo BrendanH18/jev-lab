@@ -71,8 +71,10 @@ def to_markdown(blocks: List[tuple]) -> str:
             out.append("\n".join("- %s" % _md_cell(item) for item in block[1]))
         elif kind == "table":
             columns, rows = block[1], block[2]
-            lines = ["| %s |" % " | ".join(_md_cell(column) for column in columns),
-                     "| %s |" % " | ".join("---:" if _numeric(rows, i) else "---" for i in range(len(columns)))]
+            lines = [
+                "| %s |" % " | ".join(_md_cell(column) for column in columns),
+                "| %s |" % " | ".join("---:" if _numeric(rows, i) else "---" for i in range(len(columns))),
+            ]
             lines += ["| %s |" % " | ".join(_md_cell(value) for value in row) for row in rows]
             out.append("\n".join(lines))
     return "\n\n".join(out) + "\n"
@@ -119,15 +121,28 @@ def to_html(title: str, blocks: List[tuple]) -> str:
             columns, rows = block[1], block[2]
             numeric = [_numeric(rows, i) for i in range(len(columns))]
             head = "".join("<th>%s</th>" % html.escape(str(column)) for column in columns)
-            lines = ["<tr>%s</tr>" % "".join(('<td class="num">%s</td>' if numeric[i] else "<td>%s</td>") % _html_cell(value)
-                                             for i, value in enumerate(row)) for row in rows]
-            body.append('<div class="wrap"><table><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>' % (head, "".join(lines)))
-    return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>%s</title>\n<style>\n%s\n</style>\n'
-            "</head>\n<body>\n%s\n</body>\n</html>\n") % (html.escape(title), STYLE, "\n".join(body))
+            lines = [
+                "<tr>%s</tr>"
+                % "".join(
+                    ('<td class="num">%s</td>' if numeric[i] else "<td>%s</td>") % _html_cell(value)
+                    for i, value in enumerate(row)
+                )
+                for row in rows
+            ]
+            body.append(
+                '<div class="wrap"><table><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>'
+                % (head, "".join(lines))
+            )
+    return (
+        '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>%s</title>\n<style>\n%s\n</style>\n'
+        "</head>\n<body>\n%s\n</body>\n</html>\n"
+    ) % (html.escape(title), STYLE, "\n".join(body))
 
 
-def _page(title: str, args, sections: List[Tuple[str, List[tuple]]], toc: bool = False, top: Optional[List[tuple]] = None) -> List[tuple]:
+def _page(
+    title: str, args, sections: List[Tuple[str, List[tuple]]], toc: bool = False, top: Optional[List[tuple]] = None
+) -> List[tuple]:
     """A whole page: the title, the intro (and stamp), an optional table of contents, then each nonempty section."""
     blocks: List[tuple] = [("h1", title), ("p", INTRO)] + (top or [])
     if getattr(args, "stamp", False):
@@ -172,7 +187,10 @@ def _deliver(args, title: str, blocks: List[tuple]) -> None:
     text = to_html(title, blocks) if args.html else to_markdown(blocks)
     if args.out:
         _write(args.out, text, args.force)
-        print("Wrote the %s report to %s (%d bytes)." % ("HTML" if args.html else "Markdown", args.out, len(text.encode("utf-8"))))
+        print(
+            "Wrote the %s report to %s (%d bytes)."
+            % ("HTML" if args.html else "Markdown", args.out, len(text.encode("utf-8")))
+        )
     else:
         sys.stdout.write(text)
 
@@ -192,6 +210,7 @@ def _sections(choices: Tuple[str, ...]):
         if bad or not words:
             raise argparse.ArgumentTypeError("sections are a comma-separated list of: %s" % ", ".join(choices))
         return list(dict.fromkeys(words))
+
     return parse
 
 
@@ -256,9 +275,17 @@ def _coverage(dataset: dict) -> List[dict]:
         if spec.get("type") not in LABEL_TYPES:
             continue
         statuses = [_status(spec, _labels(row).get(qid)) for row in tuning]
-        out.append({"question": qid, "type": spec["type"], "rows": len(tuning), "labeled": statuses.count("labeled"),
-                    "missing": statuses.count("missing"), "invalid": statuses.count("invalid"),
-                    "held_out": sum(_status(spec, _labels(row).get(qid)) == "labeled" for row in held)})
+        out.append(
+            {
+                "question": qid,
+                "type": spec["type"],
+                "rows": len(tuning),
+                "labeled": statuses.count("labeled"),
+                "missing": statuses.count("missing"),
+                "invalid": statuses.count("invalid"),
+                "held_out": sum(_status(spec, _labels(row).get(qid)) == "labeled" for row in held),
+            }
+        )
     return out
 
 
@@ -269,13 +296,28 @@ def _facts(dataset: dict) -> dict:
     test = dataset.get("test") if isinstance(dataset.get("test"), dict) else {}
     looks = test.get("looks") if isinstance(test.get("looks"), list) else []
     guides = dataset.get("guidelines") if isinstance(dataset.get("guidelines"), dict) else {}
-    rules = [line for line in str(dataset.get("rules") or "").splitlines() if line.strip() and not line.strip().startswith("#")]
-    return {"id": dataset["id"], "name": dataset.get("name") or dataset["id"], "notes": dataset.get("notes") or "",
-            "saved": dataset.get("saved_at"), "rows": len(rows), "tuning": len(tuning), "held_out": len(held),
-            "labeled": sum(any(v is not None for v in _labels(row).values()) for row in tuning),
-            "held_out_labeled": sum(any(v is not None for v in _labels(row).values()) for row in held),
-            "questions": len(_questions(dataset)), "check": _check(dataset) is not None, "rules": len(rules),
-            "guidelines": len(guides), "looks": len(looks), "locked_at": test.get("locked_at")}
+    rules = [
+        line
+        for line in str(dataset.get("rules") or "").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    return {
+        "id": dataset["id"],
+        "name": dataset.get("name") or dataset["id"],
+        "notes": dataset.get("notes") or "",
+        "saved": dataset.get("saved_at"),
+        "rows": len(rows),
+        "tuning": len(tuning),
+        "held_out": len(held),
+        "labeled": sum(any(v is not None for v in _labels(row).values()) for row in tuning),
+        "held_out_labeled": sum(any(v is not None for v in _labels(row).values()) for row in held),
+        "questions": len(_questions(dataset)),
+        "check": _check(dataset) is not None,
+        "rules": len(rules),
+        "guidelines": len(guides),
+        "looks": len(looks),
+        "locked_at": test.get("locked_at"),
+    }
 
 
 def _datasets(only: Optional[List[str]]) -> List[dict]:
@@ -300,7 +342,9 @@ def _kept() -> List[list]:
         if kept:
             stamp = history.REVISION.fullmatch(kept[-1].stem).group(1)
             when = datetime.datetime.strptime(stamp, "%Y%m%dT%H%M%S%fZ").strftime("%Y-%m-%dT%H:%M:%SZ")
-            out.append([folder.name, len(kept), when, "live" if workbench._dataset_path(folder.name).exists() else "deleted"])
+            out.append(
+                [folder.name, len(kept), when, "live" if workbench._dataset_path(folder.name).exists() else "deleted"]
+            )
     return out
 
 
@@ -318,34 +362,67 @@ def _below(datasets: List[dict], share: float) -> List[str]:
 
 def _overview_section(datasets: List[dict], tests: List[dict], kept: List[list]) -> List[tuple]:
     facts = [_facts(dataset) for dataset in datasets]
-    rows = [["datasets", len(facts)], ["rows", sum(f["rows"] for f in facts)], ["tuning rows", sum(f["tuning"] for f in facts)],
-            ["held-out rows", sum(f["held_out"] for f in facts)], ["labeled tuning rows", sum(f["labeled"] for f in facts)],
-            ["questions asked", sum(f["questions"] for f in facts)], ["saved checks", sum(f["check"] for f in facts)],
-            ["saved tests", len(tests)], ["datasets with kept history", sum(1 for row in kept if row[3] == "live")],
-            ["deleted datasets with kept history", sum(1 for row in kept if row[3] == "deleted")]]
+    rows = [
+        ["datasets", len(facts)],
+        ["rows", sum(f["rows"] for f in facts)],
+        ["tuning rows", sum(f["tuning"] for f in facts)],
+        ["held-out rows", sum(f["held_out"] for f in facts)],
+        ["labeled tuning rows", sum(f["labeled"] for f in facts)],
+        ["questions asked", sum(f["questions"] for f in facts)],
+        ["saved checks", sum(f["check"] for f in facts)],
+        ["saved tests", len(tests)],
+        ["datasets with kept history", sum(1 for row in kept if row[3] == "live")],
+        ["deleted datasets with kept history", sum(1 for row in kept if row[3] == "deleted")],
+    ]
     return [("table", ["what", "count"], rows)]
 
 
-SORTS = {"id": lambda f: f["id"], "name": lambda f: (str(f["name"]).lower(), f["id"]),
-         "rows": lambda f: (-f["rows"], f["id"]), "labeled": lambda f: (-f["labeled"], f["id"]),
-         "saved": lambda f: (str(f["saved"] or ""), f["id"])}
+SORTS = {
+    "id": lambda f: f["id"],
+    "name": lambda f: (str(f["name"]).lower(), f["id"]),
+    "rows": lambda f: (-f["rows"], f["id"]),
+    "labeled": lambda f: (-f["labeled"], f["id"]),
+    "saved": lambda f: (str(f["saved"] or ""), f["id"]),
+}
 
 
 def _datasets_section(datasets: List[dict], sort: str = "id", links: Optional[Dict[str, str]] = None) -> List[tuple]:
     facts = sorted((_facts(dataset) for dataset in datasets), key=SORTS[sort])
     if sort == "saved":
         facts.reverse()
-    rows = [[Link(f["name"], links[f["id"]]) if links else f["name"], f["id"], f["rows"], f["held_out"], f["labeled"],
-             _pct(f["labeled"], f["tuning"]), f["questions"], f["check"], f["saved"]] for f in facts]
-    return _table(["dataset", "id", "rows", "held out", "labeled", "labeled share", "questions", "check", "saved"], rows,
-                  "No saved datasets.")
+    rows = [
+        [
+            Link(f["name"], links[f["id"]]) if links else f["name"],
+            f["id"],
+            f["rows"],
+            f["held_out"],
+            f["labeled"],
+            _pct(f["labeled"], f["tuning"]),
+            f["questions"],
+            f["check"],
+            f["saved"],
+        ]
+        for f in facts
+    ]
+    return _table(
+        ["dataset", "id", "rows", "held out", "labeled", "labeled share", "questions", "check", "saved"],
+        rows,
+        "No saved datasets.",
+    )
 
 
 def _labels_rows(dataset: dict, with_dataset: bool) -> List[list]:
     out = []
     for item in _coverage(dataset):
-        line = [item["question"], item["type"], item["labeled"], item["missing"], item["invalid"],
-                _pct(item["labeled"], item["rows"]), item["held_out"]]
+        line = [
+            item["question"],
+            item["type"],
+            item["labeled"],
+            item["missing"],
+            item["invalid"],
+            _pct(item["labeled"], item["rows"]),
+            item["held_out"],
+        ]
         out.append(([dataset["id"]] if with_dataset else []) + line)
     return out
 
@@ -361,13 +438,32 @@ def _labels_section(datasets: List[dict]) -> List[tuple]:
 def _check_line(dataset: dict) -> list:
     check = _check(dataset) or {}
     count = lambda key: len(check.get(key)) if isinstance(check.get(key), (dict, list)) else 0  # noqa: E731
-    return [dataset["id"], check.get("model"), check.get("tuned_on"), check.get("signal", "confidence"), count("gates"),
-            check.get("min_accuracy"), check.get("min_coverage"), count("slice_targets"), count("answer_sets"),
-            len([line for line in str(check.get("rules") or "").splitlines() if line.strip()])]
+    return [
+        dataset["id"],
+        check.get("model"),
+        check.get("tuned_on"),
+        check.get("signal", "confidence"),
+        count("gates"),
+        check.get("min_accuracy"),
+        check.get("min_coverage"),
+        count("slice_targets"),
+        count("answer_sets"),
+        len([line for line in str(check.get("rules") or "").splitlines() if line.strip()]),
+    ]
 
 
-CHECK_COLUMNS = ["dataset", "model", "tuned on", "signal", "gates", "min accuracy", "min coverage", "slice targets",
-                 "answer sets", "rules"]
+CHECK_COLUMNS = [
+    "dataset",
+    "model",
+    "tuned on",
+    "signal",
+    "gates",
+    "min accuracy",
+    "min coverage",
+    "slice targets",
+    "answer sets",
+    "rules",
+]
 
 
 def _checks_section(datasets: List[dict]) -> List[tuple]:
@@ -393,8 +489,18 @@ def _test_expect(item: dict) -> dict:
 
 def _tests_section(tests: List[dict]) -> List[tuple]:
     """Saved tests in id order (_tests sorts them)."""
-    rows = [[item["id"], item.get("name"), len(_test_questions(item)), _types(_test_questions(item)), len(_test_expect(item)),
-             len(item.get("images")) if isinstance(item.get("images"), dict) else 0, item.get("saved_at")] for item in tests]
+    rows = [
+        [
+            item["id"],
+            item.get("name"),
+            len(_test_questions(item)),
+            _types(_test_questions(item)),
+            len(_test_expect(item)),
+            len(item.get("images")) if isinstance(item.get("images"), dict) else 0,
+            item.get("saved_at"),
+        ]
+        for item in tests
+    ]
     return _table(["test", "name", "questions", "types", "expectations", "pictures", "saved"], rows, "No saved tests.")
 
 
@@ -407,12 +513,20 @@ def _history_section(kept: List[list]) -> List[tuple]:
 
 def _configure_data(parser) -> None:
     _common(parser, "Workbench data report")
-    parser.add_argument("--sections", type=_sections(DATA_SECTIONS), metavar="LIST",
-                        help="comma-separated sections in order (default: %s)" % ",".join(DATA_SECTIONS))
+    parser.add_argument(
+        "--sections",
+        type=_sections(DATA_SECTIONS),
+        metavar="LIST",
+        help="comma-separated sections in order (default: %s)" % ",".join(DATA_SECTIONS),
+    )
     parser.add_argument("--toc", action="store_true", help="add a table of contents linking each section")
     parser.add_argument("--dataset", action="append", metavar="ID", help="report only this dataset (repeatable)")
-    parser.add_argument("--fail-under", type=_share, metavar="SHARE",
-                        help="exit 1 when a question's tuning label coverage in a reported dataset is below SHARE")
+    parser.add_argument(
+        "--fail-under",
+        type=_share,
+        metavar="SHARE",
+        help="exit 1 when a question's tuning label coverage in a reported dataset is below SHARE",
+    )
     parser.add_argument("--sort", choices=tuple(SORTS), default="id", help="order of the datasets table (default: id)")
 
 
@@ -420,12 +534,14 @@ def _data_blocks(args, links: Optional[Dict[str, str]] = None) -> Tuple[str, Lis
     datasets = _datasets(getattr(args, "dataset", None))
     only = [dataset["id"] for dataset in datasets] if getattr(args, "dataset", None) else None
     tests, kept = _tests(), [row for row in _kept() if not only or row[0] in only]
-    builders = {"overview": ("Overview", lambda: _overview_section(datasets, tests, kept)),
-                "datasets": ("Datasets", lambda: _datasets_section(datasets, getattr(args, "sort", "id"), links)),
-                "labels": ("Label coverage", lambda: _labels_section(datasets)),
-                "checks": ("Saved checks", lambda: _checks_section(datasets)),
-                "tests": ("Saved tests", lambda: _tests_section(tests)),
-                "history": ("Revision history", lambda: _history_section(kept))}
+    builders = {
+        "overview": ("Overview", lambda: _overview_section(datasets, tests, kept)),
+        "datasets": ("Datasets", lambda: _datasets_section(datasets, getattr(args, "sort", "id"), links)),
+        "labels": ("Label coverage", lambda: _labels_section(datasets)),
+        "checks": ("Saved checks", lambda: _checks_section(datasets)),
+        "tests": ("Saved tests", lambda: _tests_section(tests)),
+        "history": ("Revision history", lambda: _history_section(kept)),
+    }
     chosen = getattr(args, "sections", None) or list(DATA_SECTIONS)
     sections = [(builders[key][0], builders[key][1]()) for key in chosen]
     title = args.title or "Workbench data report"
@@ -449,21 +565,44 @@ def run_data(args) -> int:
 def _configure_dataset(parser) -> None:
     parser.add_argument("dataset", help="dataset id")
     _common(parser, "the dataset's name")
-    parser.add_argument("--sections", type=_sections(DATASET_SECTIONS), metavar="LIST",
-                        help="comma-separated sections in order (default: %s)" % ",".join(DATASET_SECTIONS))
-    parser.add_argument("--criteria", action="store_true", help="list every Choice option and Score level with its description")
-    parser.add_argument("--revisions", type=_positive, default=5, metavar="N", help="list the newest N kept revisions (default 5)")
-    parser.add_argument("--since-revision", metavar="REVISION",
-                        help="add what changed from a kept revision (an id, a unique prefix, latest or oldest) to now")
+    parser.add_argument(
+        "--sections",
+        type=_sections(DATASET_SECTIONS),
+        metavar="LIST",
+        help="comma-separated sections in order (default: %s)" % ",".join(DATASET_SECTIONS),
+    )
+    parser.add_argument(
+        "--criteria", action="store_true", help="list every Choice option and Score level with its description"
+    )
+    parser.add_argument(
+        "--revisions", type=_positive, default=5, metavar="N", help="list the newest N kept revisions (default 5)"
+    )
+    parser.add_argument(
+        "--since-revision",
+        metavar="REVISION",
+        help="add what changed from a kept revision (an id, a unique prefix, latest or oldest) to now",
+    )
 
 
 def _dataset_overview(dataset: dict) -> List[tuple]:
     f = _facts(dataset)
-    rows = [["id", f["id"]], ["name", f["name"]], ["notes", f["notes"]], ["saved", f["saved"]], ["rows", f["rows"]],
-            ["tuning rows", f["tuning"]], ["held-out rows", f["held_out"]], ["labeled tuning rows", f["labeled"]],
-            ["labeled held-out rows", f["held_out_labeled"]], ["questions", f["questions"]], ["rules", f["rules"]],
-            ["labeling guidelines", f["guidelines"]], ["saved check", f["check"]], ["test looks", f["looks"]],
-            ["test split locked", f["locked_at"]]]
+    rows = [
+        ["id", f["id"]],
+        ["name", f["name"]],
+        ["notes", f["notes"]],
+        ["saved", f["saved"]],
+        ["rows", f["rows"]],
+        ["tuning rows", f["tuning"]],
+        ["held-out rows", f["held_out"]],
+        ["labeled tuning rows", f["labeled"]],
+        ["labeled held-out rows", f["held_out_labeled"]],
+        ["questions", f["questions"]],
+        ["rules", f["rules"]],
+        ["labeling guidelines", f["guidelines"]],
+        ["saved check", f["check"]],
+        ["test looks", f["looks"]],
+        ["test split locked", f["locked_at"]],
+    ]
     return [("table", ["field", "value"], rows)]
 
 
@@ -493,7 +632,13 @@ def _dataset_fields(dataset: dict) -> List[tuple]:
     tuning = [row for row in dataset["rows"] if not _is_test(row)]
     counts: Dict[str, int] = {}
     for row in tuning:
-        fields = {"text": "x"} if isinstance(row, str) else {k: v for k, v in row.items() if k not in (LABEL, TEST)} if isinstance(row, dict) else {}
+        fields = (
+            {"text": "x"}
+            if isinstance(row, str)
+            else {k: v for k, v in row.items() if k not in (LABEL, TEST)}
+            if isinstance(row, dict)
+            else {}
+        )
         for name, value in fields.items():
             counts.setdefault(name, 0)
             counts[name] += value not in (None, "")
@@ -507,22 +652,57 @@ def _dataset_check(dataset: dict) -> List[tuple]:
         return [("p", "No saved check.")]
     asked = _questions(dataset)
     rules = [line for line in str(check.get("rules") or "").splitlines() if line.strip()]
-    blocks: List[tuple] = [("table", ["field", "value"], [
-        ["model", check.get("model")], ["tuned on", check.get("tuned_on")], ["signal", check.get("signal", "confidence")],
-        ["bound", check.get("bound", "estimate")], ["min accuracy", check.get("min_accuracy")],
-        ["min coverage", check.get("min_coverage")], ["rules", len(rules)], ["saved", check.get("saved_at")]])]
+    blocks: List[tuple] = [
+        (
+            "table",
+            ["field", "value"],
+            [
+                ["model", check.get("model")],
+                ["tuned on", check.get("tuned_on")],
+                ["signal", check.get("signal", "confidence")],
+                ["bound", check.get("bound", "estimate")],
+                ["min accuracy", check.get("min_accuracy")],
+                ["min coverage", check.get("min_coverage")],
+                ["rules", len(rules)],
+                ["saved", check.get("saved_at")],
+            ],
+        )
+    ]
     gates = check.get("gates") if isinstance(check.get("gates"), dict) else {}
     if gates:
-        blocks.append(("table", ["gated question", "type", "threshold"],
-                       [[qid, (asked.get(qid) or {}).get("type"), value] for qid, value in gates.items()]))
+        blocks.append(
+            (
+                "table",
+                ["gated question", "type", "threshold"],
+                [[qid, (asked.get(qid) or {}).get("type"), value] for qid, value in gates.items()],
+            )
+        )
     targets = check.get("slice_targets") if isinstance(check.get("slice_targets"), list) else []
     if targets:
-        blocks.append(("table", ["slice field", "value", "min accuracy", "min coverage"],
-                       [[t.get("field"), t.get("value"), t.get("min_accuracy"), t.get("min_coverage")] for t in targets if isinstance(t, dict)]))
+        blocks.append(
+            (
+                "table",
+                ["slice field", "value", "min accuracy", "min coverage"],
+                [
+                    [t.get("field"), t.get("value"), t.get("min_accuracy"), t.get("min_coverage")]
+                    for t in targets
+                    if isinstance(t, dict)
+                ],
+            )
+        )
     cuts = check.get("answer_sets") if isinstance(check.get("answer_sets"), dict) else {}
     if cuts:
-        blocks.append(("table", ["answer-set question", "cut", "coverage"],
-                       [[qid, (c or {}).get("cut"), (c or {}).get("coverage")] for qid, c in cuts.items() if isinstance(c, dict)]))
+        blocks.append(
+            (
+                "table",
+                ["answer-set question", "cut", "coverage"],
+                [
+                    [qid, (c or {}).get("cut"), (c or {}).get("coverage")]
+                    for qid, c in cuts.items()
+                    if isinstance(c, dict)
+                ],
+            )
+        )
     if rules:
         blocks.append(("list", rules))
     return blocks
@@ -530,15 +710,27 @@ def _dataset_check(dataset: dict) -> List[tuple]:
 
 def _dataset_guidelines(dataset: dict) -> List[tuple]:
     guides = dataset.get("guidelines") if isinstance(dataset.get("guidelines"), dict) else {}
-    rows = [[qid, bool(str((g or {}).get("note") or "").strip()), len((g or {}).get("examples") or [])]
-            for qid, g in guides.items() if isinstance(g, dict)]
+    rows = [
+        [qid, bool(str((g or {}).get("note") or "").strip()), len((g or {}).get("examples") or [])]
+        for qid, g in guides.items()
+        if isinstance(g, dict)
+    ]
     return _table(["question", "note", "examples"], rows, "No labeling guidelines.")
 
 
 def _dataset_history(dataset_id: str, limit: int) -> List[tuple]:
     found = history.revisions(dataset_id)["revisions"]
-    rows = [[entry["revision"], entry["at"][:19] + "Z", entry.get("rows"), entry.get("labeled"), entry.get("test_rows"),
-             entry["current"]] for entry in found[:limit]]
+    rows = [
+        [
+            entry["revision"],
+            entry["at"][:19] + "Z",
+            entry.get("rows"),
+            entry.get("labeled"),
+            entry.get("test_rows"),
+            entry["current"],
+        ]
+        for entry in found[:limit]
+    ]
     blocks = _table(["revision", "kept at", "rows", "labeled", "held out", "same as now"], rows, "No revisions kept.")
     if len(found) > limit:
         older = len(found) - limit
@@ -563,24 +755,44 @@ def _dataset_changes(dataset: dict, word: str) -> Tuple[str, List[tuple]]:
     revision, before = _pick_revision(dataset["id"], word)
     summary = dataset_changes.summarize(before, dataset, "-")
     rows, labels, test = summary["rows"], summary["labels"], summary["test"]
-    return revision, [("table", ["change", "count"], [
-        ["rows then", rows["before"]], ["rows now", rows["after"]], ["rows added", rows["added"]], ["rows removed", rows["removed"]],
-        ["row order changed", rows["order_changed"]], ["labels added", labels["added"]], ["labels removed", labels["removed"]],
-        ["labels changed", labels["changed"]], ["held-out rows then", test["before"]], ["held-out rows now", test["after"]],
-        ["rows moved in or out of the held-out split", test["changed_membership"]],
-        ["questions changed", summary["questions_changed"]], ["rules changed", summary["rules_changed"]],
-        ["name or notes changed", summary["metadata_changed"]], ["check changed", summary["check_changed"]]])]
+    return revision, [
+        (
+            "table",
+            ["change", "count"],
+            [
+                ["rows then", rows["before"]],
+                ["rows now", rows["after"]],
+                ["rows added", rows["added"]],
+                ["rows removed", rows["removed"]],
+                ["row order changed", rows["order_changed"]],
+                ["labels added", labels["added"]],
+                ["labels removed", labels["removed"]],
+                ["labels changed", labels["changed"]],
+                ["held-out rows then", test["before"]],
+                ["held-out rows now", test["after"]],
+                ["rows moved in or out of the held-out split", test["changed_membership"]],
+                ["questions changed", summary["questions_changed"]],
+                ["rules changed", summary["rules_changed"]],
+                ["name or notes changed", summary["metadata_changed"]],
+                ["check changed", summary["check_changed"]],
+            ],
+        )
+    ]
 
 
 def _dataset_blocks(args, dataset: dict, top: Optional[List[tuple]] = None) -> Tuple[str, List[tuple]]:
-    builders = {"overview": ("Overview", lambda: _dataset_overview(dataset)),
-                "questions": ("Questions", lambda: _dataset_questions(dataset, getattr(args, "criteria", False))),
-                "labels": ("Label coverage", lambda: _table(LABEL_COLUMNS, _labels_rows(dataset, False),
-                                                            "No Choice, Noul or Score question is saved.")),
-                "fields": ("Input fields", lambda: _dataset_fields(dataset)),
-                "check": ("Saved check", lambda: _dataset_check(dataset)),
-                "guidelines": ("Labeling guidelines", lambda: _dataset_guidelines(dataset)),
-                "history": ("Revision history", lambda: _dataset_history(dataset["id"], getattr(args, "revisions", 5)))}
+    builders = {
+        "overview": ("Overview", lambda: _dataset_overview(dataset)),
+        "questions": ("Questions", lambda: _dataset_questions(dataset, getattr(args, "criteria", False))),
+        "labels": (
+            "Label coverage",
+            lambda: _table(LABEL_COLUMNS, _labels_rows(dataset, False), "No Choice, Noul or Score question is saved."),
+        ),
+        "fields": ("Input fields", lambda: _dataset_fields(dataset)),
+        "check": ("Saved check", lambda: _dataset_check(dataset)),
+        "guidelines": ("Labeling guidelines", lambda: _dataset_guidelines(dataset)),
+        "history": ("Revision history", lambda: _dataset_history(dataset["id"], getattr(args, "revisions", 5))),
+    }
     chosen = getattr(args, "sections", None) or list(DATASET_SECTIONS)
     sections = [(builders[key][0], builders[key][1]()) for key in chosen]
     if getattr(args, "since_revision", None):
@@ -600,8 +812,12 @@ def run_dataset(args) -> int:
 
 
 def _configure_site(parser) -> None:
-    parser.add_argument("--out-dir", required=True, metavar="DIR",
-                        help="folder for the pages, outside the Workbench data directory (created when its parent exists)")
+    parser.add_argument(
+        "--out-dir",
+        required=True,
+        metavar="DIR",
+        help="folder for the pages, outside the Workbench data directory (created when its parent exists)",
+    )
     parser.add_argument("--markdown", action="store_true", help="write Markdown pages instead of HTML")
     parser.add_argument("--force", action="store_true", help="replace pages that already exist")
     parser.add_argument("--title", help="the index page's title (default: Workbench data report)")
@@ -620,56 +836,96 @@ def run_site(args) -> int:
     index = "index.%s" % ext
     taken = [name for name in [index] + list(links.values()) if (folder / name).exists()]
     if taken and not args.force:
-        raise kit.CliError("%d page(s) already exist in %s, such as %s; pass --force to replace them" % (len(taken), args.out_dir, taken[0]))
+        raise kit.CliError(
+            "%d page(s) already exist in %s, such as %s; pass --force to replace them"
+            % (len(taken), args.out_dir, taken[0])
+        )
     page_args = argparse.Namespace(title=args.title, stamp=args.stamp, sort="id", sections=None, toc=True, dataset=None)
     title, blocks, _ = _data_blocks(page_args, links)
     pages = {index: to_markdown(blocks) if args.markdown else to_html(title, blocks)}
     for dataset in datasets:
-        dataset_args = argparse.Namespace(title=None, stamp=args.stamp, sections=None, criteria=False, revisions=5, since_revision=None)
+        dataset_args = argparse.Namespace(
+            title=None, stamp=args.stamp, sections=None, criteria=False, revisions=5, since_revision=None
+        )
         title, blocks = _dataset_blocks(dataset_args, dataset, top=[("list", [Link("Back to the index", index)])])
         pages[links[dataset["id"]]] = to_markdown(blocks) if args.markdown else to_html(title, blocks)
     folder.mkdir(exist_ok=True)
     for name, text in pages.items():
         (folder / name).write_text(text, encoding="utf-8")
-    print("Wrote %d %s pages to %s: %s" % (len(pages), "Markdown" if args.markdown else "HTML", args.out_dir, ", ".join(pages)))
+    print(
+        "Wrote %d %s pages to %s: %s"
+        % (len(pages), "Markdown" if args.markdown else "HTML", args.out_dir, ", ".join(pages))
+    )
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-report",
-    "surface": "python.cli",
-    "title": "Workbench data reports",
-    "about": "Offline `lab.py report` commands that write one-page Markdown or HTML summaries of the Workbench data: "
-             "datasets, label coverage, held-out counts, saved checks, saved tests and kept revision history, for one "
-             "dataset or the whole data directory, or a linked set of pages. Counts and configuration only; reports "
-             "are written outside the data directory.",
-    "features": [
-        {"id": "data", "kind": "cli", "command": ["report", "data"], "configure": _configure_data, "run": run_data,
-         "title": "a one-page Markdown summary of the whole data directory: overview, datasets, label coverage, checks, tests, history",
-         "options": [
-             {"id": "out", "title": "--out FILE writes the report to a file outside the Workbench data directory"},
-             {"id": "html", "title": "--html makes a self-contained HTML page with light and dark styles"},
-             {"id": "force", "title": "--force replaces an existing report file, which is otherwise refused"},
-             {"id": "title", "title": "--title TEXT names the report"},
-             {"id": "stamp", "title": "--stamp adds the UTC time the report was made"},
-             {"id": "sections", "title": "--sections LIST picks the sections and their order"},
-             {"id": "toc", "title": "--toc adds a table of contents linking each section"},
-             {"id": "dataset", "title": "--dataset ID reports only the named datasets"},
-             {"id": "fail_under", "title": "--fail-under SHARE exits 1 when a question's tuning label coverage is below SHARE"},
-             {"id": "sort", "title": "--sort id|name|rows|labeled|saved orders the datasets table"},
-         ]},
-        {"id": "dataset", "kind": "cli", "command": ["report", "dataset"], "configure": _configure_dataset, "run": run_dataset,
-         "title": "a one-page report on one dataset: counts, questions, label coverage, input fields, check, guidelines, history",
-         "options": [
-             {"id": "sections", "title": "--sections LIST picks the dataset report's sections and their order"},
-             {"id": "criteria", "title": "--criteria lists every Choice option and Score level with its description"},
-             {"id": "revisions", "title": "--revisions N lists the newest N kept revisions"},
-             {"id": "since_revision", "title": "--since-revision REV adds what changed from a kept revision to now, as counts"},
-         ]},
-        {"id": "site", "kind": "cli", "command": ["report", "site"], "configure": _configure_site, "run": run_site,
-         "title": "write a linked set of HTML pages, an index and one page per dataset, to a folder outside the data directory",
-         "options": [
-             {"id": "markdown", "title": "--markdown writes the linked pages as Markdown"},
-         ]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-report",
+        "surface": "python.cli",
+        "title": "Workbench data reports",
+        "about": "Offline `lab.py report` commands that write one-page Markdown or HTML summaries of the Workbench data: "
+        "datasets, label coverage, held-out counts, saved checks, saved tests and kept revision history, for one "
+        "dataset or the whole data directory, or a linked set of pages. Counts and configuration only; reports "
+        "are written outside the data directory.",
+        "features": [
+            {
+                "id": "data",
+                "kind": "cli",
+                "command": ["report", "data"],
+                "configure": _configure_data,
+                "run": run_data,
+                "title": "a one-page Markdown summary of the whole data directory: overview, datasets, label coverage, checks, tests, history",
+                "options": [
+                    {
+                        "id": "out",
+                        "title": "--out FILE writes the report to a file outside the Workbench data directory",
+                    },
+                    {"id": "html", "title": "--html makes a self-contained HTML page with light and dark styles"},
+                    {"id": "force", "title": "--force replaces an existing report file, which is otherwise refused"},
+                    {"id": "title", "title": "--title TEXT names the report"},
+                    {"id": "stamp", "title": "--stamp adds the UTC time the report was made"},
+                    {"id": "sections", "title": "--sections LIST picks the sections and their order"},
+                    {"id": "toc", "title": "--toc adds a table of contents linking each section"},
+                    {"id": "dataset", "title": "--dataset ID reports only the named datasets"},
+                    {
+                        "id": "fail_under",
+                        "title": "--fail-under SHARE exits 1 when a question's tuning label coverage is below SHARE",
+                    },
+                    {"id": "sort", "title": "--sort id|name|rows|labeled|saved orders the datasets table"},
+                ],
+            },
+            {
+                "id": "dataset",
+                "kind": "cli",
+                "command": ["report", "dataset"],
+                "configure": _configure_dataset,
+                "run": run_dataset,
+                "title": "a one-page report on one dataset: counts, questions, label coverage, input fields, check, guidelines, history",
+                "options": [
+                    {"id": "sections", "title": "--sections LIST picks the dataset report's sections and their order"},
+                    {
+                        "id": "criteria",
+                        "title": "--criteria lists every Choice option and Score level with its description",
+                    },
+                    {"id": "revisions", "title": "--revisions N lists the newest N kept revisions"},
+                    {
+                        "id": "since_revision",
+                        "title": "--since-revision REV adds what changed from a kept revision to now, as counts",
+                    },
+                ],
+            },
+            {
+                "id": "site",
+                "kind": "cli",
+                "command": ["report", "site"],
+                "configure": _configure_site,
+                "run": run_site,
+                "title": "write a linked set of HTML pages, an index and one page per dataset, to a folder outside the data directory",
+                "options": [
+                    {"id": "markdown", "title": "--markdown writes the linked pages as Markdown"},
+                ],
+            },
+        ],
+    }
+)

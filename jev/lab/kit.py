@@ -70,7 +70,11 @@ def _check_feature(where: str, feature: dict) -> None:
             raise PackError("%s: anchor must start with #" % where)
     if kind == "cli":
         command = feature.get("command")
-        if not (isinstance(command, (list, tuple)) and 1 <= len(command) <= 2 and all(isinstance(word, str) and _WORD.match(word) for word in command)):
+        if not (
+            isinstance(command, (list, tuple))
+            and 1 <= len(command) <= 2
+            and all(isinstance(word, str) and _WORD.match(word) for word in command)
+        ):
             raise PackError("%s: command must be one or two lowercase words" % where)
         if not callable(feature.get("run")):
             raise PackError("%s: run must be a function" % where)
@@ -78,8 +82,12 @@ def _check_feature(where: str, feature: dict) -> None:
             raise PackError("%s: configure must be a function" % where)
         options = feature.get("options", [])
         ids = [option.get("id") for option in options if isinstance(option, dict)]
-        if (not isinstance(options, list) or len(ids) != len(options) or len(set(ids)) != len(ids)
-                or not all(_FEATURE_ID.match(str(option["id"])) and _text(option.get("title")) for option in options)):
+        if (
+            not isinstance(options, list)
+            or len(ids) != len(options)
+            or len(set(ids)) != len(ids)
+            or not all(_FEATURE_ID.match(str(option["id"])) and _text(option.get("title")) for option in options)
+        ):
             raise PackError("%s: options must be a list of distinct {id, title}" % where)
     if kind == "route":
         if not (isinstance(feature.get("path"), str) and re.match(r"^/api/lab/[a-z0-9][a-z0-9/_-]*$", feature["path"])):
@@ -133,9 +141,18 @@ def improvements_of(pack: dict) -> List[dict]:
     out: List[dict] = []
 
     def add(feature: dict, suffix: str, title: str) -> None:
-        out.append({"id": "%s/%s%s" % (pack["id"], feature["id"], suffix), "title": title, "kind": feature["kind"],
-                    "pack": pack["id"], "pack_title": pack["title"], "surface": pack["surface"],
-                    "about": pack.get("about", ""), "feature": feature["id"]})
+        out.append(
+            {
+                "id": "%s/%s%s" % (pack["id"], feature["id"], suffix),
+                "title": title,
+                "kind": feature["kind"],
+                "pack": pack["id"],
+                "pack_title": pack["title"],
+                "surface": pack["surface"],
+                "about": pack.get("about", ""),
+                "feature": feature["id"],
+            }
+        )
 
     for feature in pack["features"]:
         kind, title = feature["kind"], feature["title"]
@@ -194,19 +211,36 @@ def cell_text(value: Any) -> str:
 def text_table(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
     """A padded plain-text table; numbers are right-aligned and line breaks inside a cell become spaces. No trailing spaces."""
     cells = [[" ".join(cell_text(cell).splitlines()) for cell in row] for row in rows]
-    widths = [max([len(str(column))] + [len(row[index]) for row in cells if index < len(row)]) for index, column in enumerate(columns)]
-    numeric = [bool(rows) and all(isinstance(row[index], (int, float)) and not isinstance(row[index], bool)
-                                  for row in rows if index < len(row) and row[index] is not None) for index in range(len(columns))]
+    widths = [
+        max([len(str(column))] + [len(row[index]) for row in cells if index < len(row)])
+        for index, column in enumerate(columns)
+    ]
+    numeric = [
+        bool(rows)
+        and all(
+            isinstance(row[index], (int, float)) and not isinstance(row[index], bool)
+            for row in rows
+            if index < len(row) and row[index] is not None
+        )
+        for index in range(len(columns))
+    ]
 
     def line(values: Sequence[str]) -> str:
-        parts = [(value.rjust(widths[index]) if numeric[index] else value.ljust(widths[index])) for index, value in enumerate(values)]
+        parts = [
+            (value.rjust(widths[index]) if numeric[index] else value.ljust(widths[index]))
+            for index, value in enumerate(values)
+        ]
         return "  ".join(parts).rstrip()
 
-    return "\n".join([line([str(column) for column in columns]), line(["-" * width for width in widths])] + [line(row) for row in cells])
+    return "\n".join(
+        [line([str(column) for column in columns]), line(["-" * width for width in widths])]
+        + [line(row) for row in cells]
+    )
 
 
 def markdown_table(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
     """A GitHub-flavored Markdown table. Pipes are escaped and line breaks become <br>."""
+
     def cell(value: Any) -> str:
         return cell_text(value).replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>").replace("\r", "<br>")
 
@@ -233,6 +267,8 @@ def add_format(parser: Any, default: str = "table") -> None:
     parser.add_argument("--format", choices=FORMATS, default=default, help="output format (default: %s)" % default)
 
 
-def emit(args: Any, columns: Sequence[str], rows: Sequence[Sequence[Any]], out: Optional[Callable[[str], None]] = None) -> None:
+def emit(
+    args: Any, columns: Sequence[str], rows: Sequence[Sequence[Any]], out: Optional[Callable[[str], None]] = None
+) -> None:
     """Print rows in the format the command was asked for (args.format, a text table when the command has none)."""
     (out or print)(render(columns, rows, getattr(args, "format", "table")))

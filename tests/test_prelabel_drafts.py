@@ -12,15 +12,21 @@ from tests.test_prelabel import QUESTIONS
 
 class DraftTests(unittest.TestCase):
     def setUp(self):
-        self.rows = ["same", "same", {"text": "partial", "_image": "intact-bag", "_expect": {"team": "INVALID"}},
-                     {"text": "held-secret", "_test": True, "_expect": {"urgent": True}}, ["array"]]
-        self.items = [{"index": 0, "labels": {"urgent": False}},
-                      {"index": 2, "labels": {"severity": 0}}]
+        self.rows = [
+            "same",
+            "same",
+            {"text": "partial", "_image": "intact-bag", "_expect": {"team": "INVALID"}},
+            {"text": "held-secret", "_test": True, "_expect": {"urgent": True}},
+            ["array"],
+        ]
+        self.items = [{"index": 0, "labels": {"urgent": False}}, {"index": 2, "labels": {"severity": 0}}]
 
     def test_round_trip_keeps_duplicates_false_zero_and_no_side_effects(self):
         before = copy.deepcopy(self.rows)
-        with patch("jev.workbench.write_dataset", side_effect=AssertionError("write")), \
-                patch("jev.client.JevClient.system_one", side_effect=AssertionError("model")):
+        with (
+            patch("jev.workbench.write_dataset", side_effect=AssertionError("write")),
+            patch("jev.client.JevClient.system_one", side_effect=AssertionError("model")),
+        ):
             draft = prelabel_drafts.export_draft(self.rows, QUESTIONS, self.items)
             text = json.dumps(draft)
             result = prelabel_drafts.import_draft(self.rows, QUESTIONS, text)
@@ -40,17 +46,27 @@ class DraftTests(unittest.TestCase):
         changed_label[2]["_expect"]["team"] = "billing"
         reordered = copy.deepcopy(QUESTIONS)
         reordered["team"]["criteria"] = dict(reversed(list(reordered["team"]["criteria"].items())))
-        for rows, questions in [(changed, QUESTIONS), (changed_label, QUESTIONS), (self.rows[1:], QUESTIONS),
-                                (self.rows, reordered)]:
+        for rows, questions in [
+            (changed, QUESTIONS),
+            (changed_label, QUESTIONS),
+            (self.rows[1:], QUESTIONS),
+            (self.rows, reordered),
+        ]:
             with self.subTest(rows=rows), self.assertRaises(WorkbenchError):
                 prelabel_drafts.import_draft(rows, questions, text)
 
     def test_tampered_entries_and_invalid_labels_rejected(self):
         original = prelabel_drafts.export_draft(self.rows, QUESTIONS, self.items)
         variants = []
-        for key, value in [("index", 3), ("index", False), ("row", {"text": "edited"}),
-                           ("labels", {"urgent": "bad"}), ("labels", {"unknown": True}),
-                           ("missing", []), ("answers", {"urgent": 0.8})]:
+        for key, value in [
+            ("index", 3),
+            ("index", False),
+            ("row", {"text": "edited"}),
+            ("labels", {"urgent": "bad"}),
+            ("labels", {"unknown": True}),
+            ("missing", []),
+            ("answers", {"urgent": 0.8}),
+        ]:
             draft = copy.deepcopy(original)
             draft["items"][0][key] = value
             variants.append(draft)

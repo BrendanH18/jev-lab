@@ -7,25 +7,32 @@
 // (rows that are not an array, a delimiter that is not one character) gives null; nothing throws on bad input.
 
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
-const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+const isRecord = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 
 // Any value as text: null and undefined are "", and a value that cannot be converted is "".
 function str(value) {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return "";
-  try { return String(value); } catch { return ""; }
+  try {
+    return String(value);
+  } catch {
+    return "";
+  }
 }
 
 // The text without a leading byte order mark.
-const withoutBom = (text) => (text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text);
+const withoutBom = (text) => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
 
 // Sets an own property, even for the key "__proto__", which plain assignment would treat as the prototype.
 function setOwn(object, key, value) {
-  if (key === "__proto__") Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+  if (key === "__proto__")
+    Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
   else object[key] = value;
 }
 
-const validDelimiter = (delimiter) => typeof delimiter === "string" && delimiter.length === 1 && !'"\r\n'.includes(delimiter);
+const validDelimiter = (delimiter) =>
+  typeof delimiter === "string" && delimiter.length === 1 && !'"\r\n'.includes(delimiter);
 
 // One cell as text: "" for null and undefined, the text itself for a string, the usual digits for numbers and
 // booleans, the ISO timestamp for a valid Date, and JSON text for arrays and other objects (String(value) when the
@@ -35,7 +42,11 @@ export function cellText(value) {
   if (value === null || value === undefined) return "";
   if (typeof value !== "object") return str(value);
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString();
-  try { return JSON.stringify(value) ?? ""; } catch { return str(value); }
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return str(value);
+  }
 }
 
 // ---------- delimited text ----------
@@ -60,8 +71,10 @@ export function parseDelimited(text, delimiter = ",") {
     const char = value[index];
     if (inQuotes) {
       if (char !== '"') field += char;
-      else if (value[index + 1] === '"') { field += '"'; index += 1; }
-      else inQuotes = false;
+      else if (value[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else inQuotes = false;
       index += 1;
     } else if (char === '"' && field === "" && !wasQuoted) {
       inQuotes = true;
@@ -98,7 +111,8 @@ export function parseDelimited(text, delimiter = ",") {
 // One cell of delimited text: quoted only when it holds the delimiter, a quote or a line break.
 function delimitedCell(value, delimiter, escapeFormulas) {
   let text = cellText(value);
-  if (escapeFormulas && typeof value === "string" && (/^\s*[=+@-]/.test(text) || /^[\t\r\n]/.test(text))) text = `'${text}`;
+  if (escapeFormulas && typeof value === "string" && (/^\s*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)))
+    text = `'${text}`;
   return text.includes(delimiter) || /["\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
@@ -112,7 +126,14 @@ export function formatDelimited(rows, delimiter = ",", options = {}) {
   if (!Array.isArray(rows) || !validDelimiter(delimiter)) return null;
   const escapeFormulas = !(options && options.formulas === "keep");
   const newline = options && ["\r\n", "\n", "\r"].includes(options.newline) ? options.newline : "\r\n";
-  return rows.map((row) => (Array.isArray(row) ? row : [row]).map((cell) => delimitedCell(cell, delimiter, escapeFormulas)).join(delimiter) + newline).join("");
+  return rows
+    .map(
+      (row) =>
+        (Array.isArray(row) ? row : [row])
+          .map((cell) => delimitedCell(cell, delimiter, escapeFormulas))
+          .join(delimiter) + newline,
+    )
+    .join("");
 }
 
 // The first nonblank lines of delimited text, where a line break inside double quotes does not end a line.
@@ -158,7 +179,11 @@ export function sniffDelimiter(text) {
     }
     let agree = 0;
     let shared = 0;
-    for (const [count, times] of tally) if (times > agree || (times === agree && count > shared)) { agree = times; shared = count; }
+    for (const [count, times] of tally)
+      if (times > agree || (times === agree && count > shared)) {
+        agree = times;
+        shared = count;
+      }
     if (agree > best.agree || (agree === best.agree && shared > best.count)) best = { delimiter, agree, count: shared };
   }
   return best.delimiter;
@@ -186,7 +211,9 @@ export function rowsToObjects(rows) {
   }
   return table.slice(1).map((row) => {
     const object = {};
-    header.forEach((name, index) => setOwn(object, name, index < row.length && row[index] !== null && row[index] !== undefined ? row[index] : ""));
+    header.forEach((name, index) =>
+      setOwn(object, name, index < row.length && row[index] !== null && row[index] !== undefined ? row[index] : ""),
+    );
     return object;
   });
 }
@@ -202,7 +229,10 @@ export function objectsToRows(objects) {
   const seen = new Set();
   for (const record of records) {
     for (const key of Object.keys(record)) {
-      if (!seen.has(key)) { seen.add(key); header.push(key); }
+      if (!seen.has(key)) {
+        seen.add(key);
+        header.push(key);
+      }
     }
   }
   return [header, ...records.map((record) => header.map((key) => (hasOwn(record, key) ? cellText(record[key]) : "")))];
@@ -216,10 +246,16 @@ export function objectsToRows(objects) {
 export function parseJsonl(text) {
   const rows = [];
   const errors = [];
-  withoutBom(str(text)).split(/\r\n|\r|\n/).forEach((line, index) => {
-    if (line.trim() === "") return;
-    try { rows.push(JSON.parse(line)); } catch (error) { errors.push({ line: index + 1, message: str(error && error.message) || "Invalid JSON" }); }
-  });
+  withoutBom(str(text))
+    .split(/\r\n|\r|\n/)
+    .forEach((line, index) => {
+      if (line.trim() === "") return;
+      try {
+        rows.push(JSON.parse(line));
+      } catch (error) {
+        errors.push({ line: index + 1, message: str(error && error.message) || "Invalid JSON" });
+      }
+    });
   return { rows, errors };
 }
 
@@ -227,11 +263,17 @@ export function parseJsonl(text) {
 // cannot represent (undefined, a function, a cycle) is written as null. null when values is not an array.
 export function formatJsonl(values) {
   if (!Array.isArray(values)) return null;
-  return values.map((value) => {
-    let line;
-    try { line = JSON.stringify(value); } catch { line = undefined; }
-    return `${line === undefined ? "null" : line}\n`;
-  }).join("");
+  return values
+    .map((value) => {
+      let line;
+      try {
+        line = JSON.stringify(value);
+      } catch {
+        line = undefined;
+      }
+      return `${line === undefined ? "null" : line}\n`;
+    })
+    .join("");
 }
 
 // ---------- Markdown ----------
@@ -243,9 +285,13 @@ function markdownCells(line) {
   let cell = "";
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index];
-    if (char === "\\" && line[index + 1] === "|") { cell += "|"; index += 1; }
-    else if (char === "|") { cells.push(cell); cell = ""; }
-    else cell += char;
+    if (char === "\\" && line[index + 1] === "|") {
+      cell += "|";
+      index += 1;
+    } else if (char === "|") {
+      cells.push(cell);
+      cell = "";
+    } else cell += char;
   }
   cells.push(cell);
   if (cells.length < 2) return null;
@@ -260,7 +306,9 @@ function markdownCells(line) {
 // lines around the table are ignored. null when the text is not a table: fewer than two lines, or a line that is
 // blank or has no pipe.
 export function parseMarkdownTable(text) {
-  const all = str(text).split(/\r\n|\r|\n/).map((line) => line.trim());
+  const all = str(text)
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim());
   while (all.length && all[0] === "") all.shift();
   while (all.length && all[all.length - 1] === "") all.pop();
   if (all.length < 2) return null;
@@ -268,10 +316,17 @@ export function parseMarkdownTable(text) {
   if (parsed.some((cells) => cells === null)) return null;
   const [columns, ...body] = parsed;
   if (body[0].every((cell) => /^:?-+:?$/.test(cell))) body.shift();
-  return { columns, rows: body.map((cells) => columns.map((_name, index) => (index < cells.length ? cells[index] : ""))) };
+  return {
+    columns,
+    rows: body.map((cells) => columns.map((_name, index) => (index < cells.length ? cells[index] : ""))),
+  };
 }
 
-const markdownCell = (value) => cellText(value).trim().replaceAll("|", "\\|").replace(/\r\n|\r|\n/g, "<br>");
+const markdownCell = (value) =>
+  cellText(value)
+    .trim()
+    .replaceAll("|", "\\|")
+    .replace(/\r\n|\r|\n/g, "<br>");
 
 // A Markdown pipe table: a header line, a --- alignment row, then one line per row, joined by "\n" with no final
 // line break. Cells are trimmed, pipes are escaped as \| and line breaks become <br>. Each row gets one cell per
@@ -283,15 +338,19 @@ export function formatMarkdownTable(columns, rows) {
   return [
     line(columns.map(markdownCell)),
     line(columns.map(() => "---")),
-    ...rows.map((row) => line(columns.map((_name, index) => markdownCell(Array.isArray(row) ? row[index] : index === 0 ? row : "")))),
+    ...rows.map((row) =>
+      line(columns.map((_name, index) => markdownCell(Array.isArray(row) ? row[index] : index === 0 ? row : ""))),
+    ),
   ].join("\n");
 }
 
 // ---------- plain text and HTML ----------
 
 const width = (text) => Array.from(text).length;
-const isNumeric = (value) => typeof value === "number" || typeof value === "bigint"
-  || (typeof value === "string" && /^[-+]?\$?\d[\d,]*(?:\.\d+)?%?$/.test(value.trim()));
+const isNumeric = (value) =>
+  typeof value === "number" ||
+  typeof value === "bigint" ||
+  (typeof value === "string" && /^[-+]?\$?\d[\d,]*(?:\.\d+)?%?$/.test(value.trim()));
 
 // A table for a monospace font: the header, a line of dashes, then the rows, with columns padded to the widest cell
 // (in code points) and separated by two spaces, lines joined by "\n" with no trailing spaces or final line break.
@@ -301,8 +360,13 @@ const isNumeric = (value) => typeof value === "number" || typeof value === "bigi
 // extra cells are dropped. null when columns is not a nonempty array or rows is not an array.
 export function formatTextTable(columns, rows) {
   if (!Array.isArray(columns) || !columns.length || !Array.isArray(rows)) return null;
-  const flat = (value) => cellText(value).replace(/[\t\r\n]+/g, " ").trim();
-  const body = rows.map((row) => columns.map((_name, index) => (Array.isArray(row) ? row[index] : index === 0 ? row : "")));
+  const flat = (value) =>
+    cellText(value)
+      .replace(/[\t\r\n]+/g, " ")
+      .trim();
+  const body = rows.map((row) =>
+    columns.map((_name, index) => (Array.isArray(row) ? row[index] : index === 0 ? row : "")),
+  );
   const head = columns.map(flat);
   const text = body.map((row) => row.map(flat));
   const right = columns.map((_name, index) => {
@@ -326,7 +390,10 @@ const escapeHtml = (value) => cellText(value).replace(/[&<>"']/g, (char) => HTML
 // cells are empty and extra cells are dropped. null when columns is not a nonempty array or rows is not an array.
 export function formatHtmlTable(columns, rows) {
   if (!Array.isArray(columns) || !columns.length || !Array.isArray(rows)) return null;
-  const cells = (row, tag) => columns.map((_name, index) => `<${tag}>${escapeHtml(Array.isArray(row) ? row[index] : index === 0 ? row : "")}</${tag}>`).join("");
+  const cells = (row, tag) =>
+    columns
+      .map((_name, index) => `<${tag}>${escapeHtml(Array.isArray(row) ? row[index] : index === 0 ? row : "")}</${tag}>`)
+      .join("");
   return [
     "<table>",
     `<thead><tr>${cells(columns, "th")}</tr></thead>`,
@@ -345,7 +412,9 @@ export function transpose(rows) {
   if (!Array.isArray(rows)) return null;
   const table = rows.map((row) => (Array.isArray(row) ? row : [row]));
   const size = table.reduce((most, row) => Math.max(most, row.length), 0);
-  return Array.from({ length: size }, (_unused, column) => table.map((row) => (column < row.length ? row[column] : "")));
+  return Array.from({ length: size }, (_unused, column) =>
+    table.map((row) => (column < row.length ? row[column] : "")),
+  );
 }
 
 // One column as an array: the cell at the 0-based index from every row, "" where a row is too short. Pass

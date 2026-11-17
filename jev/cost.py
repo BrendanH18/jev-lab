@@ -32,7 +32,12 @@ _ROUND = 9  # float sums of prices compare equal after rounding to this many pla
 
 
 def _price(value: Any, what: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or not 0 <= value <= MAX_COST:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not isfinite(value)
+        or not 0 <= value <= MAX_COST
+    ):
         raise CalibrationError("%s must be a number from 0 to %s" % (what, "{:,}".format(MAX_COST)))
     return float(value)
 
@@ -47,8 +52,11 @@ def parse(costs: Any) -> dict:
     """{"review": float, "error": float, "mistakes": {(question, label, answer): float}} from the request's costs."""
     if not isinstance(costs, dict):
         raise CalibrationError("costs must be an object with review and error prices")
-    out = {"review": _price(costs.get("review"), "The review cost"),
-           "error": _price(costs.get("error"), "The cost of a wrong automated answer"), "mistakes": {}}
+    out = {
+        "review": _price(costs.get("review"), "The review cost"),
+        "error": _price(costs.get("error"), "The cost of a wrong automated answer"),
+        "mistakes": {},
+    }
     raw = costs.get("mistakes") or []
     if not isinstance(raw, list):
         raise CalibrationError("mistakes must be a list")
@@ -77,8 +85,12 @@ def row_costs(scored: List[dict], qids: List[str], prices: dict) -> List[float]:
     for item in scored:
         wrong = [q for q in qids if not item["right"][q]]
         # shown[q] is (answer, label), both as Calibrate shows them: an option key, "yes"/"no", or a level number.
-        out.append(max((prices["mistakes"].get((q, item["shown"][q][1], item["shown"][q][0]), prices["error"])
-                        for q in wrong), default=0.0))
+        out.append(
+            max(
+                (prices["mistakes"].get((q, item["shown"][q][1], item["shown"][q][0]), prices["error"]) for q in wrong),
+                default=0.0,
+            )
+        )
     return out
 
 
@@ -162,25 +174,41 @@ def measure(auto: List[int], right: List[bool], costs: List[float], review: floa
     total = review * (n - len(auto)) + sum(costs[i] for i in auto)
     good = len(auto) - len(wrong)
     low, high = calibrate.wilson(good, len(auto))
-    return {"automated": len(auto), "wrong": len(wrong), "review": n - len(auto),
-            "coverage": len(auto) / n if n else 0.0, "accuracy": good / len(auto) if auto else None, "low": low, "high": high,
-            "cost": total, "per_1000": total / n * PER if n else None}
+    return {
+        "automated": len(auto),
+        "wrong": len(wrong),
+        "review": n - len(auto),
+        "coverage": len(auto) / n if n else 0.0,
+        "accuracy": good / len(auto) if auto else None,
+        "low": low,
+        "high": high,
+        "cost": total,
+        "per_1000": total / n * PER if n else None,
+    }
 
 
 def _gates(qids: List[str], steps: Optional[List[int]]) -> Optional[dict]:
     return None if steps is None else {q: steps[j] / STEPS for j, q in enumerate(qids)}
 
 
-def prepared(rows: Any, qids: Any, signal: str, costs: Any,
-             rules: Any = None) -> Tuple[List[str], dict, List[List[int]], List[bool], List[float], dict]:
+def prepared(
+    rows: Any, qids: Any, signal: str, costs: Any, rules: Any = None
+) -> Tuple[List[str], dict, List[List[int]], List[bool], List[float], dict]:
     """policy.prepared, plus each scored row's price when automated and the parsed prices."""
     prices = parse(costs)
     qids, data, levels, right = policy.prepared(rows, qids, signal, rules)
     return qids, data, levels, right, row_costs(data["scored"], qids, prices), prices
 
 
-def evaluate(rows: Any, qids: Any, signal: str = "confidence", costs: Any = None, gates: Any = None,
-             tune: bool = True, rules: Any = None) -> dict:
+def evaluate(
+    rows: Any,
+    qids: Any,
+    signal: str = "confidence",
+    costs: Any = None,
+    gates: Any = None,
+    tune: bool = True,
+    rules: Any = None,
+) -> dict:
     """rows: Policy's rows. The cheapest thresholds on `qids` (unless `tune` is false: a slider moving needs only
     the current cost), what reviewing or automating every row costs, and, with `gates` ({qid: threshold} over the
     same questions), what those thresholds cost. With one question, the cost at every threshold on the grid."""
@@ -192,12 +220,26 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", costs: Any = None
     n = len(levels) + len(data["held"])  # a row a rule holds costs a review whatever the thresholds
     review = prices["review"]
     applied = sorted({k for k in prices["mistakes"] if k[0] in qids})
-    out = {"signal": signal, "questions": qids, "labeled": n, "unlabeled": data["unlabeled"], "invalid": data["invalid"],
-           "skipped": data["skipped"], "review": review, "error": prices["error"],
-           "mistakes": [{"question": q, "label": lab, "answer": ans, "cost": prices["mistakes"][(q, lab, ans)]}
-                        for q, lab, ans in applied],
-           "break_even": break_even(review, prices["error"]),
-           "review_all": None, "automate_all": None, "best": None, "current": None, "sweep": None}
+    out = {
+        "signal": signal,
+        "questions": qids,
+        "labeled": n,
+        "unlabeled": data["unlabeled"],
+        "invalid": data["invalid"],
+        "skipped": data["skipped"],
+        "review": review,
+        "error": prices["error"],
+        "mistakes": [
+            {"question": q, "label": lab, "answer": ans, "cost": prices["mistakes"][(q, lab, ans)]}
+            for q, lab, ans in applied
+        ],
+        "break_even": break_even(review, prices["error"]),
+        "review_all": None,
+        "automate_all": None,
+        "best": None,
+        "current": None,
+        "sweep": None,
+    }
     if not n:
         return out
     every = list(range(len(levels)))
@@ -213,14 +255,28 @@ def evaluate(rows: Any, qids: Any, signal: str = "confidence", costs: Any = None
         sweep = []
         for s in range(STEPS + 1):
             m = measure([i for i in every if levels[i][0] >= s], right, priced, review, n)
-            sweep.append({"threshold": round(s / STEPS, 2), "automated": m["automated"], "wrong": m["wrong"],
-                          "cost": m["cost"], "per_1000": m["per_1000"]})
+            sweep.append(
+                {
+                    "threshold": round(s / STEPS, 2),
+                    "automated": m["automated"],
+                    "wrong": m["wrong"],
+                    "cost": m["cost"],
+                    "per_1000": m["per_1000"],
+                }
+            )
         out["sweep"] = sweep
     return out
 
 
-def holdout(levels: List[List[int]], right: List[bool], priced: List[float], review: float, qids: List[str],
-            members: List[List[int]], sizes: Optional[List[int]] = None) -> dict:
+def holdout(
+    levels: List[List[int]],
+    right: List[bool],
+    priced: List[float],
+    review: float,
+    qids: List[str],
+    members: List[List[int]],
+    sizes: Optional[List[int]] = None,
+) -> dict:
     """Cross-validate the cheapest thresholds: for each fold, search on the other folds and route the fold with the
     result. members[f] lists fold f's row indices into levels; sizes[f], when given, also counts its rows a rule
     holds, which are always reviewed."""
@@ -242,7 +298,13 @@ def holdout(levels: List[List[int]], right: List[bool], priced: List[float], rev
     held_out = measure(unseen, right, priced, review, n)
     chosen = [p["gates"] for p in parts if p["gates"] is not None]
     spread = {q: [min(g[q] for g in chosen), max(g[q] for g in chosen)] for q in qids} if chosen else None
-    return {"tuned": dict(tuned, gates=_gates(qids, whole)), "unseen": held_out,
-            "gap": held_out["per_1000"] - tuned["per_1000"], "review_all": review * PER,
-            "worse": held_out["per_1000"] > review * PER + calibrate._EPS,
-            "review_folds": sum(1 for p in parts if p["gates"] is None), "spread": spread, "parts": parts}
+    return {
+        "tuned": dict(tuned, gates=_gates(qids, whole)),
+        "unseen": held_out,
+        "gap": held_out["per_1000"] - tuned["per_1000"],
+        "review_all": review * PER,
+        "worse": held_out["per_1000"] > review * PER + calibrate._EPS,
+        "review_folds": sum(1 for p in parts if p["gates"] is None),
+        "spread": spread,
+        "parts": parts,
+    }

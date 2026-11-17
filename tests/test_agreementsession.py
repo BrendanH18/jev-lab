@@ -14,18 +14,26 @@ class AgreementSessionTests(Temp):
         super().setUp()
         self.save()
         self.sample = agreement.sample("tickets", 4, 13)
-        self.items = [{"row_id": item["row_id"], "labels": {item["questions"][0]: "none"}}
-                      for item in self.sample["items"]]
+        self.items = [
+            {"row_id": item["row_id"], "labels": {item["questions"][0]: "none"}} for item in self.sample["items"]
+        ]
         self.before = workbench._dataset_path("tickets").read_bytes()
 
     def export(self, items=None, settlements=None):
-        return agreementsession.export_session("tickets", self.sample["session_context"],
-                                                self.sample["sample_size"], self.sample["seed"],
-                                                self.items if items is None else items, settlements)
+        return agreementsession.export_session(
+            "tickets",
+            self.sample["session_context"],
+            self.sample["sample_size"],
+            self.sample["seed"],
+            self.items if items is None else items,
+            settlements,
+        )
 
     def test_round_trip_preserves_original_sample_and_human_labels_only(self):
-        with patch("jev.workbench.write_dataset", side_effect=AssertionError("write")), \
-                patch("jev.client.JevClient.system_one", side_effect=AssertionError("model")):
+        with (
+            patch("jev.workbench.write_dataset", side_effect=AssertionError("write")),
+            patch("jev.client.JevClient.system_one", side_effect=AssertionError("model")),
+        ):
             session = json.loads(json.dumps(self.export()))
             result = agreementsession.import_session("tickets", session)
         self.assertEqual(result["items"], self.items)
@@ -42,10 +50,14 @@ class AgreementSessionTests(Temp):
         self.sample = agreement.sample("tickets", 200, 7)
         charged = next(item for item in self.sample["items"] if item["number"] == 1)
         refund = next(item for item in self.sample["items"] if item["number"] == 6)
-        items = [{"row_id": charged["row_id"], "labels": {"is_urgent": False}},
-                 {"row_id": refund["row_id"], "labels": {"frustration": 0}}]
-        settlements = [{"row_id": charged["row_id"], "question": "is_urgent", "value": None},
-                       {"row_id": refund["row_id"], "question": "frustration", "value": 0}]
+        items = [
+            {"row_id": charged["row_id"], "labels": {"is_urgent": False}},
+            {"row_id": refund["row_id"], "labels": {"frustration": 0}},
+        ]
+        settlements = [
+            {"row_id": charged["row_id"], "question": "is_urgent", "value": None},
+            {"row_id": refund["row_id"], "question": "frustration", "value": 0},
+        ]
         result = agreementsession.import_session("tickets", self.export(items, settlements))
         self.assertEqual(result["items"], items)
         self.assertEqual(result["settlements"], settlements)
@@ -78,8 +90,14 @@ class AgreementSessionTests(Temp):
 
     def test_invalid_sessions_are_rejected_atomically(self):
         original = self.export()
-        variants = [{}, {**original, "version": True}, {**original, "dataset": "elsewhere"},
-                    {**original, "answers": {}}, {**original, "seed": True}, {**original, "rows": 0}]
+        variants = [
+            {},
+            {**original, "version": True},
+            {**original, "dataset": "elsewhere"},
+            {**original, "answers": {}},
+            {**original, "seed": True},
+            {**original, "rows": 0},
+        ]
         bad = copy.deepcopy(original)
         bad["members"][0]["questions"] = []
         variants.append(bad)
@@ -111,9 +129,13 @@ class AgreementSessionTests(Temp):
 
     def test_retained_settlement_beyond_display_cap_round_trips(self):
         questions = {"q%d" % i: {"type": "noul", "instructions": "Question %d?" % i} for i in range(3)}
-        self.save([{"text": "Coffee %d" % i, "_expect": {qid: True for qid in questions}} for i in range(180)], questions)
+        self.save(
+            [{"text": "Coffee %d" % i, "_expect": {qid: True for qid in questions}} for i in range(180)], questions
+        )
         self.sample = agreement.sample("tickets", 200, 7)
-        items = [{"row_id": item["row_id"], "labels": {qid: False for qid in questions}} for item in self.sample["items"]]
+        items = [
+            {"row_id": item["row_id"], "labels": {qid: False for qid in questions}} for item in self.sample["items"]
+        ]
         settlement = {"row_id": self.sample["items"][-1]["row_id"], "question": "q2", "value": True}
         report = agreement.compare("tickets", items=items)
         self.assertEqual(len(report["disagreements"]), agreement.SHOWN)

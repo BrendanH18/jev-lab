@@ -29,7 +29,9 @@ def all_packs() -> List[dict]:
             if not isinstance(pack, dict) or not pack.get("_defined"):
                 raise kit.PackError("jev/lab/packs/%s.py must define PACK = kit.define_pack({...})" % info.name)
             if pack["id"] != info.name.replace("_", "-"):
-                raise kit.PackError("jev/lab/packs/%s.py: the pack id must be %r" % (info.name, info.name.replace("_", "-")))
+                raise kit.PackError(
+                    "jev/lab/packs/%s.py: the pack id must be %r" % (info.name, info.name.replace("_", "-"))
+                )
             found.append(pack)
         _PACKS = found
     return _PACKS
@@ -79,8 +81,14 @@ def health_findings(rows: list, questions: Dict[str, dict]) -> List[dict]:
         except Exception:  # noqa: BLE001
             continue
         for item in results:
-            out.append({"code": code(pack, feature), "title": feature["title"], "rows": sorted(set(item.get("rows") or [])),
-                        "message": str(item.get("message") or feature["title"])})
+            out.append(
+                {
+                    "code": code(pack, feature),
+                    "title": feature["title"],
+                    "rows": sorted(set(item.get("rows") or [])),
+                    "message": str(item.get("message") or feature["title"]),
+                }
+            )
     return out
 
 

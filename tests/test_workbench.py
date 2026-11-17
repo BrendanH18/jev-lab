@@ -28,10 +28,14 @@ class ValidationTests(unittest.TestCase):
 
     def test_rejects_bad_shapes(self):
         bad = [
-            {}, [], {"x": "not an object"}, {"x": {"type": "essay", "instructions": "?"}},
+            {},
+            [],
+            {"x": "not an object"},
+            {"x": {"type": "essay", "instructions": "?"}},
             {"x": {"type": "choice", "instructions": "?", "criteria": {}}},
             {"x": {"type": "score", "instructions": "?", "criteria": ["only one"]}},
-            {"x": {"type": "noul"}}, {"x": {"type": "noul", "instructions": "?", "criteria": {"maybe": "x"}}},
+            {"x": {"type": "noul"}},
+            {"x": {"type": "noul", "instructions": "?", "criteria": {"maybe": "x"}}},
             {"": {"type": "noul", "instructions": "?"}},
         ]
         for case in bad:
@@ -63,12 +67,19 @@ class ValidationTests(unittest.TestCase):
     def test_photo_example_validates(self):
         ex = examples.get("photo-locate")
         qs = workbench.validate_questions(ex["questions"])
-        self.assertEqual(workbench.request_images(ex["state"], qs, ex["images"])["photo-torn-bag"]["sample"], "torn-bag")
+        self.assertEqual(
+            workbench.request_images(ex["state"], qs, ex["images"])["photo-torn-bag"]["sample"], "torn-bag"
+        )
 
 
 class ExpectationTests(unittest.TestCase):
     def test_checks(self):
-        choice = {"type": "choice", "choice": "billing", "probabilities": {"billing": 0.8, "tech": 0.2}, "confidence": 0.7}
+        choice = {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {"billing": 0.8, "tech": 0.2},
+            "confidence": 0.7,
+        }
         self.assertTrue(workbench.check_expectation(choice, {"choice": "billing", "min": 0.7})["ok"])
         self.assertFalse(workbench.check_expectation(choice, {"choice": "tech"})["ok"])
         score = {"type": "score", "score": 1.4}
@@ -106,8 +117,10 @@ class ItemTests(unittest.TestCase):
     def test_missing_expected_answers_fail_the_run(self):
         item = {"id": "missing", "state": "x", "questions": Q, "expect": {"urgent": {"min": 0.9}}}
         for answers in ({}, {"dept": {"type": "choice", "choice": "billing"}}):
-            with self.subTest(answers=answers), patch.object(
-                    FakeClient, "system_one", return_value=JevResult({}, {"answers": answers}, 0)):
+            with (
+                self.subTest(answers=answers),
+                patch.object(FakeClient, "system_one", return_value=JevResult({}, {"answers": answers}, 0)),
+            ):
                 report = workbench.run_items(FakeClient(), [item])
             self.assertEqual((report["passed"], report["failed"]), (0, 1))
             self.assertFalse(report["runs"][0]["results"]["urgent"]["ok"])
@@ -121,13 +134,25 @@ class ItemTests(unittest.TestCase):
         self.assertFalse(result["results"]["removed"]["ok"])
 
     def test_a_malformed_expectation_fails_its_question_not_the_suite(self):
-        q = {"urgent": {"type": "noul", "instructions": "Urgent?"},
-             "where": {"type": "box", "instructions": "the tear in `photo`"}}
-        bad = {"id": "bad", "name": "bad", "state": {"photo": "photo-abc123"}, "questions": q,
-               "images": {"photo-abc123": {"sample": "torn-bag"}},
-               "expect": {"where": {"box": {}}, "urgent": {"min": 10 ** 400}}}  # overflows float()
-        good = {"id": "good", "name": "good", "state": "x", "questions": {"urgent": q["urgent"]},
-                "expect": {"urgent": {"max": 0.5}}}
+        q = {
+            "urgent": {"type": "noul", "instructions": "Urgent?"},
+            "where": {"type": "box", "instructions": "the tear in `photo`"},
+        }
+        bad = {
+            "id": "bad",
+            "name": "bad",
+            "state": {"photo": "photo-abc123"},
+            "questions": q,
+            "images": {"photo-abc123": {"sample": "torn-bag"}},
+            "expect": {"where": {"box": {}}, "urgent": {"min": 10**400}},
+        }  # overflows float()
+        good = {
+            "id": "good",
+            "name": "good",
+            "state": "x",
+            "questions": {"urgent": q["urgent"]},
+            "expect": {"urgent": {"max": 0.5}},
+        }
         report = workbench.run_items(FakeClient(), [bad, good])
         runs = {r["id"]: r for r in report["runs"]}
         self.assertFalse(runs["bad"]["ok"])
@@ -137,8 +162,14 @@ class ItemTests(unittest.TestCase):
         self.assertEqual((report["passed"], report["failed"]), (1, 1))
 
     def test_save_list_run_delete(self):
-        item = workbench.save_item({"name": "Angry refund → billing!", "state": "I want my money back now",
-                                    "questions": Q, "expect": {"dept": {"choice": "billing"}, "urgent": {"min": 0.5}}})
+        item = workbench.save_item(
+            {
+                "name": "Angry refund → billing!",
+                "state": "I want my money back now",
+                "questions": Q,
+                "expect": {"dept": {"choice": "billing"}, "urgent": {"min": 0.5}},
+            }
+        )
         self.assertEqual(item["id"], "angry-refund-billing")
         self.assertEqual([i["id"] for i in workbench.list_items()], ["angry-refund-billing"])
         client = FakeClient(lambda s, q: {"dept": "billing", "urgent": 0.9})
@@ -157,14 +188,22 @@ class ItemTests(unittest.TestCase):
 
     def test_saved_images_go_to_files_and_run_again(self):
         upload = images.wire_asset(images.sample_asset("crushed-box"))
-        q = {"crushed": {"type": "noul", "instructions": "Is the box in `photo` crushed?"},
-             "where": {"type": "box", "instructions": "the crushed corner in `photo`"}}
-        item = workbench.save_item({
-            "name": "Crushed box", "state": {"photo": "photo-up1234", "other": "photo-smp567"},
-            "questions": dict(q, same={"type": "noul", "instructions": "Same scene as `other`?"}),
-            "images": {"photo-up1234": {"format": "png", "data_base64": upload["data_base64"]},
-                       "photo-smp567": {"sample": "torn-bag"}},
-            "expect": {"where": {"box": {"left": 0.4, "top": 0.3, "right": 0.6, "bottom": 0.5}, "iou_min": 0.5}}})
+        q = {
+            "crushed": {"type": "noul", "instructions": "Is the box in `photo` crushed?"},
+            "where": {"type": "box", "instructions": "the crushed corner in `photo`"},
+        }
+        item = workbench.save_item(
+            {
+                "name": "Crushed box",
+                "state": {"photo": "photo-up1234", "other": "photo-smp567"},
+                "questions": dict(q, same={"type": "noul", "instructions": "Same scene as `other`?"}),
+                "images": {
+                    "photo-up1234": {"format": "png", "data_base64": upload["data_base64"]},
+                    "photo-smp567": {"sample": "torn-bag"},
+                },
+                "expect": {"where": {"box": {"left": 0.4, "top": 0.3, "right": 0.6, "bottom": 0.5}, "iou_min": 0.5}},
+            }
+        )
         stored = item["images"]
         self.assertEqual(stored["photo-smp567"], {"sample": "torn-bag"})
         self.assertRegex(stored["photo-up1234"]["file"], r"^[0-9a-f]{16}\.png$")
@@ -191,12 +230,14 @@ class DatasetTests(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def test_save_list_load_delete(self):
-        text = "\n".join([
-            json.dumps({"text": "Charged twice", "_expect": {"dept": "billing", "urgent": True}}),
-            "plain text row",
-            "",
-            json.dumps({"text": "Login broken", "_expect": {"dept": "tech", "urgent": None}}),
-        ])
+        text = "\n".join(
+            [
+                json.dumps({"text": "Charged twice", "_expect": {"dept": "billing", "urgent": True}}),
+                "plain text row",
+                "",
+                json.dumps({"text": "Login broken", "_expect": {"dept": "tech", "urgent": None}}),
+            ]
+        )
         saved = workbench.save_dataset({"name": "Tickets, March!", "notes": "first pass", "rows": text, "questions": Q})
         self.assertEqual(saved["id"], "tickets-march")
         self.assertEqual(len(saved["rows"]), 3, "the empty line is dropped")
@@ -217,9 +258,14 @@ class DatasetTests(unittest.TestCase):
         replaced = workbench.load_dataset("tickets-march")
         self.assertEqual(replaced["rows"], ["only row"])
         self.assertNotIn("questions", replaced, "a dataset saved without questions has none")
-        self.assertEqual(sorted((self.dir / "datasets").iterdir()), [self.dir / "datasets" / ".history", path],
-                         "no partial file is left behind")
-        self.assertEqual([p.suffix for p in (self.dir / "datasets" / ".history" / "tickets-march").iterdir()], [".json"])
+        self.assertEqual(
+            sorted((self.dir / "datasets").iterdir()),
+            [self.dir / "datasets" / ".history", path],
+            "no partial file is left behind",
+        )
+        self.assertEqual(
+            [p.suffix for p in (self.dir / "datasets" / ".history" / "tickets-march").iterdir()], [".json"]
+        )
         self.assertTrue(workbench.delete_dataset("tickets-march"))
         self.assertFalse(workbench.delete_dataset("tickets-march"))
         self.assertEqual(workbench.list_datasets(), [])
@@ -289,8 +335,13 @@ class BulkAndExportTests(unittest.TestCase):
         returned = {qid: SimpleNamespace(noul=i / 10) for i, qid in enumerate(ids)}
         client = SimpleNamespace(system_one=lambda *args: SimpleNamespace(nouls=returned))
         constructor = lambda **kwargs: kwargs  # noqa: E731
-        sdk = SimpleNamespace(TypeSafeClient=lambda **kwargs: client, Choice=constructor, Noul=constructor,
-                              NoulCriteria=constructor, Score=constructor)
+        sdk = SimpleNamespace(
+            TypeSafeClient=lambda **kwargs: client,
+            Choice=constructor,
+            Noul=constructor,
+            NoulCriteria=constructor,
+            Score=constructor,
+        )
         code = workbench.export("x", questions, "jev-1.14.0")["python"]
         namespace = {}
         with patch.dict(sys.modules, typesafe_sdk=sdk):
@@ -334,18 +385,22 @@ class BulkAndExportTests(unittest.TestCase):
 
     def test_export_refuses_unsafe_image_names(self):
         q = {"bag": {"type": "noul", "instructions": "Is the bag in `photo` torn?"}}
-        for specs in ({"photo-abc123": {"sample": "torn-bag'; rm -rf ~ #"}},
-                      {"photo-abc123": {"format": "jpg' && curl evil #"}},
-                      {"photo-abc'123": {"sample": "torn-bag"}},
-                      {"photo-abc123\n": {"sample": "torn-bag"}}):
+        for specs in (
+            {"photo-abc123": {"sample": "torn-bag'; rm -rf ~ #"}},
+            {"photo-abc123": {"format": "jpg' && curl evil #"}},
+            {"photo-abc'123": {"sample": "torn-bag"}},
+            {"photo-abc123\n": {"sample": "torn-bag"}},
+        ):
             with self.subTest(specs=specs), self.assertRaises(workbench.WorkbenchError):
                 workbench.export({"photo": "photo-abc123"}, q, "jev-1.14.0", specs)
         ok = workbench.export({"photo": "photo-abc123"}, q, "jev-1.14.0", {"photo-abc123": {"format": "png"}})
         self.assertIn("-F 'image-0=@photo-abc123.png'", ok["curl"])
 
     def test_export_with_images_loads_files(self):
-        q = {"bag": {"type": "noul", "instructions": "Is the bag in `photo` torn?"},
-             "where": {"type": "box", "instructions": "the tear in `photo`"}}
+        q = {
+            "bag": {"type": "noul", "instructions": "Is the bag in `photo` torn?"},
+            "where": {"type": "box", "instructions": "the tear in `photo`"},
+        }
         out = workbench.export({"photo": "photo-abc123"}, q, "jev-1.14.0", {"photo-abc123": {"sample": "torn-bag"}})
         self.assertIn("Image(Path('torn-bag.png'))", out["python"])
         self.assertIn("TypeSafeClient(model='jev-1.14.0')", out["python"])

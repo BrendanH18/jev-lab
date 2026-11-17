@@ -31,7 +31,9 @@ export async function handoffFromTrace(trace, source, uploads = [], now = Date.n
   if (!questions || typeof questions !== "object" || Array.isArray(questions) || !Object.keys(questions).length) {
     throw new Error("This request has no questions to open in the Workbench.");
   }
-  const hashed = await Promise.all((uploads || []).filter(Boolean).map(async (b64) => [(await sha256Hex(b64)).slice(0, 12), b64]));
+  const hashed = await Promise.all(
+    (uploads || []).filter(Boolean).map(async (b64) => [(await sha256Hex(b64)).slice(0, 12), b64]),
+  );
   const images = {};
   for (const [ref, asset] of Object.entries(req.assets || {})) {
     if (asset?.sample) {
@@ -39,17 +41,30 @@ export async function handoffFromTrace(trace, source, uploads = [], now = Date.n
       continue;
     }
     const hit = hashed.find(([hex]) => ref.endsWith(`-${hex}`));
-    if (!hit) throw new Error("This page no longer has the uploaded picture for this request. Run it again, then open it in the Workbench.");
+    if (!hit)
+      throw new Error(
+        "This page no longer has the uploaded picture for this request. Run it again, then open it in the Workbench.",
+      );
     images[ref] = { format: asset?.format === "png" ? "png" : "jpg", data_base64: hit[1] };
   }
-  return { v: VERSION, source: String(source || "a demo"), model: req.model || null, state: req.state, questions, images, at: now };
+  return {
+    v: VERSION,
+    source: String(source || "a demo"),
+    model: req.model || null,
+    state: req.state,
+    questions,
+    images,
+    at: now,
+  };
 }
 
 export function writeHandoff(storage, handoff) {
   try {
     storage.setItem(HANDOFF_KEY, JSON.stringify(handoff));
   } catch {
-    throw new Error("The browser would not hold this request, probably because its picture is too large. Open the Workbench and add the picture there.");
+    throw new Error(
+      "The browser would not hold this request, probably because its picture is too large. Open the Workbench and add the picture there.",
+    );
   }
 }
 
@@ -64,9 +79,20 @@ export function readHandoff(storage, now = Date.now()) {
   }
   if (!text) return null;
   let h;
-  try { h = JSON.parse(text); } catch { return null; }
-  if (!h || h.v !== VERSION || typeof h.at !== "number" || now - h.at > HANDOFF_TTL_MS || now < h.at - HANDOFF_TTL_MS) return null;
-  if (!h.questions || typeof h.questions !== "object" || Array.isArray(h.questions) || h.state === undefined) return null;
-  return { source: String(h.source || "a demo"), model: typeof h.model === "string" ? h.model : null, state: h.state,
-    questions: h.questions, images: h.images && typeof h.images === "object" && !Array.isArray(h.images) ? h.images : {} };
+  try {
+    h = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!h || h.v !== VERSION || typeof h.at !== "number" || now - h.at > HANDOFF_TTL_MS || now < h.at - HANDOFF_TTL_MS)
+    return null;
+  if (!h.questions || typeof h.questions !== "object" || Array.isArray(h.questions) || h.state === undefined)
+    return null;
+  return {
+    source: String(h.source || "a demo"),
+    model: typeof h.model === "string" ? h.model : null,
+    state: h.state,
+    questions: h.questions,
+    images: h.images && typeof h.images === "object" && !Array.isArray(h.images) ? h.images : {},
+  };
 }

@@ -32,7 +32,9 @@ def _source(parser: Any, text: bool = True) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset")
     parser.add_argument("--check", action="store_true", help="read the rules saved with the dataset's check")
     if text:
-        parser.add_argument("--text", metavar="RULES", help="read these rules instead, one per line (use \\n between lines)")
+        parser.add_argument(
+            "--text", metavar="RULES", help="read these rules instead, one per line (use \\n between lines)"
+        )
 
 
 def _rules_text(args: Any, dataset: dict) -> str:
@@ -96,6 +98,7 @@ def _tuning(dataset: dict) -> List[Tuple[int, Dict[str, str]]]:
 def _canon(rule: dict) -> tuple:
     def side(conds: List[tuple]) -> tuple:
         return tuple(sorted((q, op, tuple(sorted(vs))) for q, op, vs in conds))
+
     return side(rule["if"]), side(rule["then"])
 
 
@@ -117,10 +120,16 @@ def _side_text(conds: List[tuple]) -> str:
 
 def run_list(args: Any) -> int:
     dataset = workbench.load_dataset(args.dataset)
-    rows = [[rule["line"], _side_text(rule["if"]), _side_text(rule["then"]), ", ".join(rulebook.questions(rule))]
-            for rule in _parsed(args, dataset)]
-    cli_gates._table_or(args, ["line", "if", "then", "questions"], rows,
-                        "the dataset's check has no rules" if args.check else "the dataset has no rules")
+    rows = [
+        [rule["line"], _side_text(rule["if"]), _side_text(rule["then"]), ", ".join(rulebook.questions(rule))]
+        for rule in _parsed(args, dataset)
+    ]
+    cli_gates._table_or(
+        args,
+        ["line", "if", "then", "questions"],
+        rows,
+        "the dataset's check has no rules" if args.check else "the dataset has no rules",
+    )
     return 0
 
 
@@ -156,7 +165,9 @@ def run_lint(args: Any) -> int:
     kinds = _kinds(dataset)
     rows: List[list] = []
     if len(text) > rulebook.MAX_CHARS:
-        rows.append([None, "", "the rules are over %d characters, the most a dataset or check saves" % rulebook.MAX_CHARS])
+        rows.append(
+            [None, "", "the rules are over %d characters, the most a dataset or check saves" % rulebook.MAX_CHARS]
+        )
     seen: Dict[tuple, int] = {}
     count = 0
     for number, line in enumerate(text.splitlines(), 1):
@@ -183,7 +194,9 @@ def run_lint(args: Any) -> int:
             rows.append([number, rule["text"], problem])
     if count > rulebook.MAX_RULES:
         rows.append([None, "", "%d rules; a dataset or check keeps at most %d" % (count, rulebook.MAX_RULES)])
-    cli_gates._table_or(args, ["line", "rule", "problem"], rows, "%d rule%s, no problems" % (count, "" if count == 1 else "s"))
+    cli_gates._table_or(
+        args, ["line", "rule", "problem"], rows, "%d rule%s, no problems" % (count, "" if count == 1 else "s")
+    )
     return 1 if rows else 0
 
 
@@ -207,8 +220,10 @@ def run_labels(args: Any) -> int:
         applies = [number for number, shown in labeled if all(rulebook._holds(c, shown) for c in rule["if"])]
         broken = [number for number, shown in labeled if rulebook.broken(rule, shown)]
         broken_any = broken_any or bool(broken)
-        rows.append([rule["line"], rule["text"], len(labeled), len(applies), len(broken)]
-                    + ([", ".join(map(str, broken))] if args.rows else []))
+        rows.append(
+            [rule["line"], rule["text"], len(labeled), len(applies), len(broken)]
+            + ([", ".join(map(str, broken))] if args.rows else [])
+        )
     columns = ["line", "rule", "labeled rows", "applies", "labels break it"] + (["rows"] if args.rows else [])
     cli_gates._table_or(args, columns, rows, "no rules to check")
     return 1 if broken_any else 0
@@ -219,8 +234,13 @@ def run_labels(args: Any) -> int:
 
 def _configure_suggest(parser: Any) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset with labeled tuning rows")
-    parser.add_argument("--min-rows", type=int, default=DEFAULT_MIN_ROWS, metavar="N",
-                        help="only rules whose if part holds on at least N labeled tuning rows (default %d)" % DEFAULT_MIN_ROWS)
+    parser.add_argument(
+        "--min-rows",
+        type=int,
+        default=DEFAULT_MIN_ROWS,
+        metavar="N",
+        help="only rules whose if part holds on at least N labeled tuning rows (default %d)" % DEFAULT_MIN_ROWS,
+    )
     parser.add_argument("--question", metavar="ID", help="only rules whose if part reads this question")
     kit.add_format(parser)
 
@@ -233,7 +253,10 @@ def run_suggest(args: Any) -> int:
     if args.question and args.question not in kinds:
         raise kit.CliError("%s is not a Choice, Noul or Score question of this dataset" % args.question)
     existing = set()
-    for text in (dataset.get("rules"), (dataset.get("check") or {}).get("rules") if isinstance(dataset.get("check"), dict) else None):
+    for text in (
+        dataset.get("rules"),
+        (dataset.get("check") or {}).get("rules") if isinstance(dataset.get("check"), dict) else None,
+    ):
         try:
             parsed = rulebook.parse(text)
             rulebook.check(parsed, kinds)
@@ -258,8 +281,9 @@ def run_suggest(args: Any) -> int:
             rulebook.check([rule], kinds)
             rows.append([text, len(seen), _canon(rule) in existing])
     rows.sort(key=lambda row: (-row[1], row[0]))
-    cli_gates._table_or(args, ["rule", "labeled rows", "saved"], rows,
-                        "no rule holds on %d or more labeled tuning rows" % args.min_rows)
+    cli_gates._table_or(
+        args, ["rule", "labeled rows", "saved"], rows, "no rule holds on %d or more labeled tuning rows" % args.min_rows
+    )
     return 0
 
 
@@ -287,7 +311,9 @@ def run_compare(args: Any) -> int:
         except CalibrationError:
             pass
     a, b = {_canon(r): r["text"] for r in own}, {_canon(r): r["text"] for r in saved}
-    rows = [[text, True, key in b] for key, text in a.items()] + [[text, False, True] for key, text in b.items() if key not in a]
+    rows = [[text, True, key in b] for key, text in a.items()] + [
+        [text, False, True] for key, text in b.items() if key not in a
+    ]
     differ = any(not (row[1] and row[2]) for row in rows)
     if not rows and args.format == "table":
         print("neither the dataset nor its check has rules")
@@ -315,38 +341,90 @@ def run_questions(args: Any) -> int:
         in_if = sum(any(cond[0] == qid for cond in rule["if"]) for rule in rules)
         in_then = sum(any(cond[0] == qid for cond in rule["then"]) for rule in rules)
         rows.append([qid, qtype, in_if, in_then, sum(qid in shown for _n, shown in tuning)])
-    cli_gates._table_or(args, ["question", "type", "rules reading it in if", "rules reading it in then", "labeled tuning rows"], rows,
-                        "the dataset has no Choice, Noul or Score questions")
+    cli_gates._table_or(
+        args,
+        ["question", "type", "rules reading it in if", "rules reading it in then", "labeled tuning rows"],
+        rows,
+        "the dataset has no Choice, Noul or Score questions",
+    )
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-rules",
-    "surface": "python.cli",
-    "title": "Consistency rule commands",
-    "about": "Offline `lab.py rules` commands for Policy's consistency rules: list a dataset's or its check's rules, "
-             "lint them against the questions, check them against the human labels on tuning rows, suggest rules the "
-             "labels already obey, and compare the dataset's rules with its check's. Tuning rows only; no model call.",
-    "features": [
-        {"id": "list", "kind": "cli", "command": ["rules", "list"], "configure": _configure_list, "run": run_list,
-         "title": "List a dataset's rules, parsed: line, if part, then part and the questions each reads",
-         "options": [dict(CHECK), dict(FORMAT)]},
-        {"id": "lint", "kind": "cli", "command": ["rules", "lint"], "configure": _configure_lint, "run": run_lint,
-         "title": "Lint rules against the dataset's questions: unparsed lines, unknown answers, repeats, and rules that never apply, never break or always break; exit 1 on any",
-         "options": [dict(CHECK), dict(TEXT), dict(FORMAT)]},
-        {"id": "labels", "kind": "cli", "command": ["rules", "labels"], "configure": _configure_labels, "run": run_labels,
-         "title": "Check each rule against the human labels on tuning rows: rows labeled for it, rows it applies to, and rows whose labels break it; exit 1 if any",
-         "options": [dict(CHECK), dict(TEXT), {"id": "rows", "title": "--rows lists the tuning rows whose labels break each rule"},
-                     dict(FORMAT)]},
-        {"id": "suggest", "kind": "cli", "command": ["rules", "suggest"], "configure": _configure_suggest, "run": run_suggest,
-         "title": "Suggest rules the tuning labels already obey (if A = x then B in the answers seen), with their support and whether they are saved",
-         "options": [{"id": "min_rows", "title": "--min-rows N sets how many labeled rows a suggestion needs (default 5)"},
-                     {"id": "question", "title": "--question ID keeps suggestions whose if part reads one question"}, dict(FORMAT)]},
-        {"id": "compare", "kind": "cli", "command": ["rules", "compare"], "configure": _configure_compare, "run": run_compare,
-         "title": "Compare a dataset's rules with the rules saved in its check; exit 1 when they differ",
-         "options": [dict(FORMAT)]},
-        {"id": "questions", "kind": "cli", "command": ["rules", "questions"], "configure": _configure_questions, "run": run_questions,
-         "title": "List each Choice, Noul and Score question with how many rules read it in their if and then parts, and its labeled tuning rows",
-         "options": [dict(CHECK), dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-rules",
+        "surface": "python.cli",
+        "title": "Consistency rule commands",
+        "about": "Offline `lab.py rules` commands for Policy's consistency rules: list a dataset's or its check's rules, "
+        "lint them against the questions, check them against the human labels on tuning rows, suggest rules the "
+        "labels already obey, and compare the dataset's rules with its check's. Tuning rows only; no model call.",
+        "features": [
+            {
+                "id": "list",
+                "kind": "cli",
+                "command": ["rules", "list"],
+                "configure": _configure_list,
+                "run": run_list,
+                "title": "List a dataset's rules, parsed: line, if part, then part and the questions each reads",
+                "options": [dict(CHECK), dict(FORMAT)],
+            },
+            {
+                "id": "lint",
+                "kind": "cli",
+                "command": ["rules", "lint"],
+                "configure": _configure_lint,
+                "run": run_lint,
+                "title": "Lint rules against the dataset's questions: unparsed lines, unknown answers, repeats, and rules that never apply, never break or always break; exit 1 on any",
+                "options": [dict(CHECK), dict(TEXT), dict(FORMAT)],
+            },
+            {
+                "id": "labels",
+                "kind": "cli",
+                "command": ["rules", "labels"],
+                "configure": _configure_labels,
+                "run": run_labels,
+                "title": "Check each rule against the human labels on tuning rows: rows labeled for it, rows it applies to, and rows whose labels break it; exit 1 if any",
+                "options": [
+                    dict(CHECK),
+                    dict(TEXT),
+                    {"id": "rows", "title": "--rows lists the tuning rows whose labels break each rule"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "suggest",
+                "kind": "cli",
+                "command": ["rules", "suggest"],
+                "configure": _configure_suggest,
+                "run": run_suggest,
+                "title": "Suggest rules the tuning labels already obey (if A = x then B in the answers seen), with their support and whether they are saved",
+                "options": [
+                    {
+                        "id": "min_rows",
+                        "title": "--min-rows N sets how many labeled rows a suggestion needs (default 5)",
+                    },
+                    {"id": "question", "title": "--question ID keeps suggestions whose if part reads one question"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "compare",
+                "kind": "cli",
+                "command": ["rules", "compare"],
+                "configure": _configure_compare,
+                "run": run_compare,
+                "title": "Compare a dataset's rules with the rules saved in its check; exit 1 when they differ",
+                "options": [dict(FORMAT)],
+            },
+            {
+                "id": "questions",
+                "kind": "cli",
+                "command": ["rules", "questions"],
+                "configure": _configure_questions,
+                "run": run_questions,
+                "title": "List each Choice, Noul and Score question with how many rules read it in their if and then parts, and its labeled tuning rows",
+                "options": [dict(CHECK), dict(FORMAT)],
+            },
+        ],
+    }
+)

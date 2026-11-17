@@ -22,8 +22,14 @@ Q = {
     "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "money", "tech": None}},
     "refund": {"type": "noul", "instructions": "Does the sender want money back?"},
 }
-CHECK = {"gates": {"refund": 0.6}, "signal": "confidence", "bound": "estimate", "model": "jev-1.13.0",
-         "min_accuracy": 0.9, "min_coverage": 0.5}
+CHECK = {
+    "gates": {"refund": 0.6},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.13.0",
+    "min_accuracy": 0.9,
+    "min_coverage": 0.5,
+}
 
 # text -> (P(refund), label). Confidence is |2p - 1|: 0.98 -> 0.96, 0.05 -> 0.9, 0.6 -> 0.2 (held by a 0.6 gate).
 ROWS = {
@@ -69,9 +75,20 @@ class Temp(unittest.TestCase):
 
 class ValidateTests(unittest.TestCase):
     def test_saved_form_and_defaults(self):
-        check = checks.validate_check({"gates": {"refund": 0.6, "dept": 1}, "model": " jev-1.13.0 ", "min_accuracy": 0.95}, Q)
-        self.assertEqual(check, {"gates": {"refund": 0.6, "dept": 1.0}, "signal": "confidence", "bound": "estimate",
-                                 "model": "jev-1.13.0", "min_accuracy": 0.95, "min_coverage": 0.0})
+        check = checks.validate_check(
+            {"gates": {"refund": 0.6, "dept": 1}, "model": " jev-1.13.0 ", "min_accuracy": 0.95}, Q
+        )
+        self.assertEqual(
+            check,
+            {
+                "gates": {"refund": 0.6, "dept": 1.0},
+                "signal": "confidence",
+                "bound": "estimate",
+                "model": "jev-1.13.0",
+                "min_accuracy": 0.95,
+                "min_coverage": 0.0,
+            },
+        )
 
     def test_tuned_on_is_kept_when_given(self):
         check = checks.validate_check(dict(CHECK, model="jev-latest", tuned_on=" jev-1.14.0 "), Q)
@@ -106,17 +123,31 @@ class ValidateTests(unittest.TestCase):
 class SliceValidationTests(unittest.TestCase):
     def test_configuration_only_and_defaults(self):
         target = {"field": "channel", "value": "email", "min_accuracy": 0.95}
-        checked = checks.validate_check(dict(CHECK, slice_targets=[dict(target, answers={}, accuracy=1, status="pass")]), Q)
+        checked = checks.validate_check(
+            dict(CHECK, slice_targets=[dict(target, answers={}, accuracy=1, status="pass")]), Q
+        )
         self.assertEqual(checked["slice_targets"], [dict(target, min_coverage=0)])
         self.assertNotIn("slice_targets", checks.validate_check(dict(CHECK, slice_targets=[]), Q))
 
     def test_rejects_invalid_targets(self):
         target = {"field": "channel", "value": "email", "min_accuracy": 0.95}
         bad = ["email", [target] * 21, [None], [target, target]]
-        bad += [[dict(target, **change)] for change in (
-            {"field": ""}, {"field": " "}, {"field": "x" * 101}, {"field": "_expect"}, {"field": "_test"},
-            {"value": 1}, {"value": "x" * 501}, {"min_accuracy": True}, {"min_accuracy": 0.4},
-            {"min_coverage": -1}, {"min_coverage": float("nan")})]
+        bad += [
+            [dict(target, **change)]
+            for change in (
+                {"field": ""},
+                {"field": " "},
+                {"field": "x" * 101},
+                {"field": "_expect"},
+                {"field": "_test"},
+                {"value": 1},
+                {"value": "x" * 501},
+                {"min_accuracy": True},
+                {"min_accuracy": 0.4},
+                {"min_coverage": -1},
+                {"min_coverage": float("nan")},
+            )
+        ]
         for spec in bad:
             with self.subTest(spec=spec), self.assertRaises(workbench.WorkbenchError):
                 checks.validate_check(dict(CHECK, slice_targets=spec), Q)
@@ -184,6 +215,7 @@ class StorageTests(Temp):
 def results(probs_labels):
     """Bulk-shaped results for the refund question: [(P(yes), label or None)]."""
     from helpers import fake_answers
+
     out = []
     for i, (p, label) in enumerate(probs_labels):
         r = {"index": i, "row": "row %d" % i, "answers": fake_answers({"refund": Q["refund"]}, {"refund": p})}
@@ -195,8 +227,9 @@ def results(probs_labels):
 
 class EvaluateTests(unittest.TestCase):
     def test_invalid_labels_prevent_a_passing_check(self):
-        rep = checks.evaluate(results([(0.98, True), (0.05, "removed-option")]),
-                              self.check(min_accuracy=1, min_coverage=1))
+        rep = checks.evaluate(
+            results([(0.98, True), (0.05, "removed-option")]), self.check(min_accuracy=1, min_coverage=1)
+        )
         self.assertEqual(rep["status"], "error")
         self.assertEqual(len(rep["invalid"]), 1)
         self.assertTrue(any("invalid label" in reason for reason in rep["reasons"]))
@@ -219,8 +252,10 @@ class EvaluateTests(unittest.TestCase):
         self.assertTrue(rep["targets"]["coverage"]["ok"])
         self.assertIn("below the 90.0% target", rep["reasons"][0])
         [m] = rep["mistakes"]
-        self.assertEqual((m["index"], m["row"], m["wrong"]["refund"]["answer"], m["wrong"]["refund"]["label"]),
-                         (1, "row 1", "yes", "no"))
+        self.assertEqual(
+            (m["index"], m["row"], m["wrong"]["refund"]["answer"], m["wrong"]["refund"]["label"]),
+            (1, "row 1", "yes", "no"),
+        )
 
     def test_fails_on_coverage(self):
         rep = checks.evaluate(results([(0.98, True), (0.6, True), (0.55, False)]), self.check())
@@ -260,16 +295,26 @@ class EvaluateTests(unittest.TestCase):
         rep = checks.evaluate(results([(0.98, None)]), self.check())
         self.assertEqual(rep["status"], "error")
         self.assertIn("No row is labeled", rep["reasons"][0])
-        rep = checks.evaluate(results([(0.98, True)]) + [{"index": 1, "row": "x", "skipped": True}], self.check(),
-                              stopped="Budget reached")
+        rep = checks.evaluate(
+            results([(0.98, True)]) + [{"index": 1, "row": "x", "skipped": True}],
+            self.check(),
+            stopped="Budget reached",
+        )
         self.assertEqual(rep["status"], "error")
         self.assertIn("stopped early: Budget reached", rep["reasons"][0])
 
 
 class SliceEvaluateTests(unittest.TestCase):
     def check(self, targets=None, **kw):
-        return checks.validate_check(dict(CHECK, slice_targets=targets or [
-            {"field": "channel", "value": "email", "min_accuracy": 0.9, "min_coverage": 0.5}], **kw), Q)
+        return checks.validate_check(
+            dict(
+                CHECK,
+                slice_targets=targets
+                or [{"field": "channel", "value": "email", "min_accuracy": 0.9, "min_coverage": 0.5}],
+                **kw,
+            ),
+            Q,
+        )
 
     def rows(self, pairs):
         rows = results(pairs)
@@ -283,15 +328,20 @@ class SliceEvaluateTests(unittest.TestCase):
         rep = checks.evaluate(rows, self.check())
         self.assertEqual(rep["status"], "fail")
         [slice_report] = rep["slice_targets"]
-        self.assertEqual((slice_report["field"], slice_report["value"], slice_report["rows"], slice_report["accuracy"]),
-                         ("channel", "email", 1, 0))
+        self.assertEqual(
+            (slice_report["field"], slice_report["value"], slice_report["rows"], slice_report["accuracy"]),
+            ("channel", "email", 1, 0),
+        )
         self.assertTrue(rep["targets"]["accuracy"]["ok"])
         self.assertFalse(slice_report["targets"]["accuracy"]["ok"])
         self.assertIn("Slice 'channel' = 'email'", rep["reasons"][0])
 
     def test_missing_unlabeled_and_failed_rows_cannot_pass(self):
-        cases = [self.rows([(0.98, True), (0.98, True)])[1:], self.rows([(0.98, None), (0.98, True)]),
-                 self.rows([(0.98, True), (0.98, True)])]
+        cases = [
+            self.rows([(0.98, True), (0.98, True)])[1:],
+            self.rows([(0.98, None), (0.98, True)]),
+            self.rows([(0.98, True), (0.98, True)]),
+        ]
         cases[-1][0].pop("answers")
         cases[-1][0]["error"] = "failed"
         for rows in cases:
@@ -315,6 +365,7 @@ class SliceEvaluateTests(unittest.TestCase):
 
     def test_rule_routing_is_shared(self):
         from helpers import fake_answers
+
         rows = self.rows([(0.98, True)] * 20)
         for row in rows:
             row["answers"] = fake_answers(Q, {"refund": 0.98, "dept": "billing"})
@@ -338,8 +389,15 @@ class SliceEvaluateTests(unittest.TestCase):
 
 class SliceRunTests(Temp):
     def test_targets_persist_and_use_only_tuning_rows_without_extra_calls(self):
-        rows = [{"text": "refund %d" % i, "channel": "email" if i < 2 else "chat",
-                 "_expect": {"refund": True}, **({"_test": True} if i == 0 else {})} for i in range(4)]
+        rows = [
+            {
+                "text": "refund %d" % i,
+                "channel": "email" if i < 2 else "chat",
+                "_expect": {"refund": True},
+                **({"_test": True} if i == 0 else {}),
+            }
+            for i in range(4)
+        ]
         workbench.save_dataset({"name": "Refunds", "rows": rows, "questions": Q})
         targets = [{"field": "channel", "value": "email", "min_accuracy": 1, "min_coverage": 1}]
         checks.save_check("refunds", dict(CHECK, slice_targets=targets))
@@ -364,7 +422,10 @@ class RunTests(Temp):
         self.assertNotIn("_expect", json.dumps([state for state, _ in client.calls]), "labels never reach the model")
         self.assertEqual(rep["status"], "pass")
         self.assertEqual((rep["labeled"], rep["automated"], rep["correct"]), (5, 4, 4))
-        self.assertEqual((rep["id"], rep["name"], rep["model"], rep["answered_by"]), ("refunds", "Refunds", "jev-1.13.0", ["jev-fake"]))
+        self.assertEqual(
+            (rep["id"], rep["name"], rep["model"], rep["answered_by"]),
+            ("refunds", "Refunds", "jev-1.13.0", ["jev-fake"]),
+        )
         self.assertGreater(rep["cost_usd"], 0)
         self.assertEqual(rep["latency_ms_median"], 12.0)
 
@@ -428,7 +489,9 @@ class ScriptTests(Temp):
         self.save()
         good = self.client()
         good.configured, good.backend = True, "fake"
-        good.guard = type("G", (), {"snapshot": lambda self: {"live_calls": 6, "input_tokens": 6000, "spent_usd": 0.0}})()
+        good.guard = type(
+            "G", (), {"snapshot": lambda self: {"live_calls": 6, "input_tokens": 6000, "spent_usd": 0.0}}
+        )()
         code, out = self.main(client=good)
         self.assertEqual(code, 0, out)
         self.assertIn("PASS", out)

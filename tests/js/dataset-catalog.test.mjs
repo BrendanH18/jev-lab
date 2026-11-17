@@ -1,30 +1,83 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { catalogDefaults, matchesCatalog, sortedCatalog, catalogTotals, catalogSummary, catalogCsv, datasetCopyName,
-  canCopyDataset, matchesDeletedDataset, catalogJson, catalogPreset, catalogProgress, catalogIds,
-  updateCatalogPins, pinnedCatalog, catalogDetailsSummary, invertCatalogPins, catalogActiveFilters, catalogFilterSummary } from "../../static/js/dataset-catalog.js";
+import {
+  catalogDefaults,
+  matchesCatalog,
+  sortedCatalog,
+  catalogTotals,
+  catalogSummary,
+  catalogCsv,
+  datasetCopyName,
+  canCopyDataset,
+  matchesDeletedDataset,
+  catalogJson,
+  catalogPreset,
+  catalogProgress,
+  catalogIds,
+  updateCatalogPins,
+  pinnedCatalog,
+  catalogDetailsSummary,
+  invertCatalogPins,
+  catalogActiveFilters,
+  catalogFilterSummary,
+} from "../../static/js/dataset-catalog.js";
 import { workbenchSource } from "./workbench-source.mjs";
 
 const items = [
-  { id: "tickets", name: "Harbor support", notes: "Email traffic", rows: 5, labeled: 3, questions: 2, guidelines: 1,
-    test: { rows: 2 }, check: { secret: "private configuration" } },
+  {
+    id: "tickets",
+    name: "Harbor support",
+    notes: "Email traffic",
+    rows: 5,
+    labeled: 3,
+    questions: 2,
+    guidelines: 1,
+    test: { rows: 2 },
+    check: { secret: "private configuration" },
+  },
   { id: "orders", name: "Order routing", rows: 5, labeled: 0, questions: 0 },
   { id: "reviews", name: "Customer feedback", rows: 2, labeled: 2, questions: 1 },
 ];
 
 test("catalog filters combine existing search with question, split and guideline presence", () => {
   const before = structuredClone(items);
-  assert.deepEqual(items.filter((item) => matchesCatalog(item, { query: "email", check: "with", labels: "some",
-    questions: "with", test: "with", guidelines: "with" })), [items[0]]);
-  assert.deepEqual(items.filter((item) => matchesCatalog(item, { test: "without", guidelines: "without", questions: "with" })), [items[2]]);
-  assert.deepEqual(items.filter((item) => matchesCatalog(item, { questions: "without" })), [items[1]]);
+  assert.deepEqual(
+    items.filter((item) =>
+      matchesCatalog(item, {
+        query: "email",
+        check: "with",
+        labels: "some",
+        questions: "with",
+        test: "with",
+        guidelines: "with",
+      }),
+    ),
+    [items[0]],
+  );
+  assert.deepEqual(
+    items.filter((item) => matchesCatalog(item, { test: "without", guidelines: "without", questions: "with" })),
+    [items[2]],
+  );
+  assert.deepEqual(
+    items.filter((item) => matchesCatalog(item, { questions: "without" })),
+    [items[1]],
+  );
   assert.deepEqual(items, before);
 });
 
 test("catalog sorting preserves ties, original saved order and source arrays", () => {
-  assert.deepEqual(sortedCatalog(items, "name").map((item) => item.id), ["reviews", "tickets", "orders"]);
-  assert.deepEqual(sortedCatalog(items, "rows").map((item) => item.id), ["tickets", "orders", "reviews"]);
-  assert.deepEqual(sortedCatalog(items, "labeled").map((item) => item.id), ["tickets", "reviews", "orders"]);
+  assert.deepEqual(
+    sortedCatalog(items, "name").map((item) => item.id),
+    ["reviews", "tickets", "orders"],
+  );
+  assert.deepEqual(
+    sortedCatalog(items, "rows").map((item) => item.id),
+    ["tickets", "orders", "reviews"],
+  );
+  assert.deepEqual(
+    sortedCatalog(items, "labeled").map((item) => item.id),
+    ["tickets", "reviews", "orders"],
+  );
   assert.deepEqual(sortedCatalog(items, "saved"), items);
   assert.notEqual(sortedCatalog(items), items);
   assert.equal(items[0].id, "tickets");
@@ -32,13 +85,25 @@ test("catalog sorting preserves ties, original saved order and source arrays", (
 
 test("catalog summaries aggregate shown counts without interpreting label quality", () => {
   assert.deepEqual(catalogTotals(items), { datasets: 3, rows: 12, labeled: 5, heldOut: 2, checks: 1 });
-  assert.equal(catalogSummary(items.slice(1)), "7 rows · 2 with labels · 0 held out · 0 saved checks in the shown datasets");
+  assert.equal(
+    catalogSummary(items.slice(1)),
+    "7 rows · 2 with labels · 0 held out · 0 saved checks in the shown datasets",
+  );
   assert.deepEqual(catalogTotals([]), { datasets: 0, rows: 0, labeled: 0, heldOut: 0, checks: 0 });
 });
 
 test("CSV exports only allowlisted metadata, escapes cells and neutralizes formulas", () => {
-  const csv = catalogCsv([{ ...items[0], name: ' =HYPERLINK("private")', notes: "do not export notes",
-    state: "input data", answers: "model data", labels: { secret: "human label" } }, { ...items[1], name: "Coffee,\nHarbor" }]);
+  const csv = catalogCsv([
+    {
+      ...items[0],
+      name: ' =HYPERLINK("private")',
+      notes: "do not export notes",
+      state: "input data",
+      answers: "model data",
+      labels: { secret: "human label" },
+    },
+    { ...items[1], name: "Coffee,\nHarbor" },
+  ]);
   assert.match(csv, /"' =HYPERLINK\(""private""\)"/);
   assert.match(csv, /"Coffee,\nHarbor"/);
   assert.match(csv, /"held_out_rows","saved_check"/);
@@ -72,21 +137,62 @@ test("deleted history search matches name or id without matching hidden revision
   assert.equal(matchesDeletedDataset({ id: "old", notes: "private" }, "private"), false);
 });
 
-const sourceFunction = (name) => workbenchSource.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
-const make = (name, deps) => new Function(...Object.keys(deps), `${sourceFunction(name)}; return ${name};`)(...Object.values(deps));
+const sourceFunction = (name) =>
+  workbenchSource.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
+const make = (name, deps) =>
+  new Function(...Object.keys(deps), `${sourceFunction(name)}; return ${name};`)(...Object.values(deps));
 
 function copyHarness({ approve = true, read, heldOut = false, drafts = {}, discard = true } = {}) {
-  const original = { id: "source", name: "Source", questions: { urgent: { type: "noul" } }, notes: "Saved notes",
-    rows: [{ text: "Hello", _image: "photo", _expect: { urgent: true }, ...(heldOut ? { _test: true } : {}) }], rules: "urgent = true" };
-  const W = { bulk: { dataset: { id: "before", name: "Before" }, rowsText: "before", savedText: "before",
-    labelsDirty: false, prelabel: { drafts }, source: "current", rules: { text: "" }, result: { answers: "old" }, testScore: { accuracy: 1 }, datasets: [{ id: "source-copy" }] } };
-  const calls = [], messages = [], confirmations = [];
-  const deps = { W, canCopyDataset, datasetCopyName, render: () => {}, handleError: (error) => { throw error; },
+  const original = {
+    id: "source",
+    name: "Source",
+    questions: { urgent: { type: "noul" } },
+    notes: "Saved notes",
+    rows: [{ text: "Hello", _image: "photo", _expect: { urgent: true }, ...(heldOut ? { _test: true } : {}) }],
+    rules: "urgent = true",
+  };
+  const W = {
+    bulk: {
+      dataset: { id: "before", name: "Before" },
+      rowsText: "before",
+      savedText: "before",
+      labelsDirty: false,
+      prelabel: { drafts },
+      source: "current",
+      rules: { text: "" },
+      result: { answers: "old" },
+      testScore: { accuracy: 1 },
+      datasets: [{ id: "source-copy" }],
+    },
+  };
+  const calls = [],
+    messages = [],
+    confirmations = [];
+  const deps = {
+    W,
+    canCopyDataset,
+    datasetCopyName,
+    render: () => {},
+    handleError: (error) => {
+      throw error;
+    },
     preparedLabelsUnsaved: () => Object.values(W.bulk.prelabel.drafts).some((labels) => Object.keys(labels).length),
-    confirm: (message) => { confirmations.push(message); return discard; },
-    toast: (message) => messages.push(message), rowsText: (rows) => JSON.stringify(rows),
-    api: async (path, body) => { calls.push([path, body]); return read ? await read(original) : { dataset: original }; },
-    replaceRows: (text) => { if (!approve) return false; W.bulk.rowsText = W.bulk.savedText = text; return true; } };
+    confirm: (message) => {
+      confirmations.push(message);
+      return discard;
+    },
+    toast: (message) => messages.push(message),
+    rowsText: (rows) => JSON.stringify(rows),
+    api: async (path, body) => {
+      calls.push([path, body]);
+      return read ? await read(original) : { dataset: original };
+    },
+    replaceRows: (text) => {
+      if (!approve) return false;
+      W.bulk.rowsText = W.bulk.savedText = text;
+      return true;
+    },
+  };
   return { W, calls, messages, confirmations, original, load: make("loadDatasetCopy", deps) };
 }
 
@@ -102,7 +208,13 @@ test("canceling Load as copy preserves unapplied labeling drafts on otherwise sa
 
 test("copy checks labeling drafts created while the source dataset is loading", async () => {
   let finish;
-  const x = copyHarness({ discard: false, read: (dataset) => new Promise((resolve) => { finish = () => resolve({ dataset }); }) });
+  const x = copyHarness({
+    discard: false,
+    read: (dataset) =>
+      new Promise((resolve) => {
+        finish = () => resolve({ dataset });
+      }),
+  });
   const pending = x.load("source");
   x.W.bulk.prelabel.drafts = { 1: { urgent: true } };
   finish();
@@ -139,7 +251,12 @@ test("declining replacement or copying held-out inputs leaves the editor unchang
 
 test("late copy responses cannot replace newer editor settings or cause duplicate loads", async () => {
   let finish;
-  const x = copyHarness({ read: (dataset) => new Promise((resolve) => { finish = () => resolve({ dataset }); }) });
+  const x = copyHarness({
+    read: (dataset) =>
+      new Promise((resolve) => {
+        finish = () => resolve({ dataset });
+      }),
+  });
   const pending = x.load("source");
   await x.load("source");
   x.W.bulk.dataset.name = "New name";
@@ -154,73 +271,145 @@ test("late copy responses cannot replace newer editor settings or cause duplicat
 test("filtering and sorting move existing dataset nodes without discarding queue edits", () => {
   const W = { bulk: { datasets: items } };
   const rows = items.map((item) => ({ dataset: { datasetId: item.id }, style: {}, draft: { label: "human edit" } }));
-  const list = { querySelectorAll: () => rows, append: (row) => { rows.splice(rows.indexOf(row), 1); rows.push(row); } };
-  const dom = { "#dataset-search-results": list, "#dataset-search-count": {}, "#dataset-search-summary": {},
-    "#dataset-search-empty": {}, "#dataset-catalog-download": {} };
-  const h = (tag, attrs, ...children) => ({ tag, attrs, value: attrs.value, children: children.flat(Infinity).filter(Boolean), focus() { this.focused = true; } });
-  const nodes = (node) => typeof node !== "object" ? [] : [node, ...node.children.flatMap(nodes)];
+  const list = {
+    querySelectorAll: () => rows,
+    append: (row) => {
+      rows.splice(rows.indexOf(row), 1);
+      rows.push(row);
+    },
+  };
+  const dom = {
+    "#dataset-search-results": list,
+    "#dataset-search-count": {},
+    "#dataset-search-summary": {},
+    "#dataset-search-empty": {},
+    "#dataset-catalog-download": {},
+  };
+  const h = (tag, attrs, ...children) => ({
+    tag,
+    attrs,
+    value: attrs.value,
+    children: children.flat(Infinity).filter(Boolean),
+    focus() {
+      this.focused = true;
+    },
+  });
+  const nodes = (node) => (typeof node !== "object" ? [] : [node, ...node.children.flatMap(nodes)]);
   const filters = catalogDefaults();
   const copied = [];
-  const tree = make("datasetSearchControls", { W, $: (id) => dom[id], h, catalogDefaults, matchesCatalog, sortedCatalog,
-    catalogSummary, catalogCsv, catalogJson, catalogPreset, catalogProgress, catalogIds,
-    updateCatalogPins, pinnedCatalog, catalogDetailsSummary, invertCatalogPins, catalogActiveFilters, catalogFilterSummary,
-    copyText: (text) => copied.push(text) })(filters);
+  const tree = make("datasetSearchControls", {
+    W,
+    $: (id) => dom[id],
+    h,
+    catalogDefaults,
+    matchesCatalog,
+    sortedCatalog,
+    catalogSummary,
+    catalogCsv,
+    catalogJson,
+    catalogPreset,
+    catalogProgress,
+    catalogIds,
+    updateCatalogPins,
+    pinnedCatalog,
+    catalogDetailsSummary,
+    invertCatalogPins,
+    catalogActiveFilters,
+    catalogFilterSummary,
+    copyText: (text) => copied.push(text),
+  })(filters);
   const select = (label) => nodes(tree).find((node) => node.attrs["aria-label"] === label);
   select("Filter datasets by held-out split").attrs.onchange({ target: { value: "with" } });
   assert.equal(rows[0].style.display, "");
   assert.equal(rows[1].style.display, "none");
   assert.match(dom["#dataset-search-summary"].textContent, /5 rows/);
   select("Sort datasets").attrs.onchange({ target: { value: "name" } });
-  assert.deepEqual(rows.map((row) => row.dataset.datasetId), ["reviews", "tickets", "orders"]);
+  assert.deepEqual(
+    rows.map((row) => row.dataset.datasetId),
+    ["reviews", "tickets", "orders"],
+  );
   assert.ok(rows.every((row) => row.draft.label === "human edit"));
-  nodes(tree).find((node) => node.attrs.id === "dataset-catalog-copy-ids").attrs.onclick();
+  nodes(tree)
+    .find((node) => node.attrs.id === "dataset-catalog-copy-ids")
+    .attrs.onclick();
   assert.deepEqual(copied, ["tickets"], "copy reflects current filtered order without loading datasets");
   select("Minimum rows without labels").attrs.oninput({ target: { value: "4" } });
-  assert.ok(rows.every((row) => row.style.display === "none"), "count bounds combine with the held-out filter");
+  assert.ok(
+    rows.every((row) => row.style.display === "none"),
+    "count bounds combine with the held-out filter",
+  );
   select("Filter datasets by held-out split").attrs.onchange({ target: { value: "all" } });
   assert.equal(rows.find((row) => row.dataset.datasetId === "orders").style.display, "");
   assert.equal(dom["#dataset-catalog-download"].disabled, false);
   select("Sort datasets").attrs.onchange({ target: { value: "unlabeled" } });
-  assert.deepEqual(rows.map((row) => row.dataset.datasetId), ["orders", "tickets", "reviews"]);
+  assert.deepEqual(
+    rows.map((row) => row.dataset.datasetId),
+    ["orders", "tickets", "reviews"],
+  );
   assert.ok(rows.every((row) => row.draft.label === "human edit"));
   select("Dataset search field").attrs.onchange({ target: { value: "notes" } });
   select("Exclude dataset phrase").attrs.oninput({ target: { value: "email" } });
   assert.equal(rows.find((row) => row.dataset.datasetId === "tickets").style.display, "none");
   select("Search datasets").attrs.oninput({ target: { value: "missing" } });
   assert.equal(dom["#dataset-search-empty"].hidden, false);
-  nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
+  nodes(tree)
+    .find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters")
+    .attrs.onclick();
   assert.deepEqual(filters, catalogDefaults());
   assert.equal(select("Minimum rows without labels").value, "");
   assert.equal(select("Exclude dataset phrase").value, "");
   assert.equal(select("Dataset search field").value, "all");
   assert.ok(rows.every((row) => row.style.display === ""));
-  assert.deepEqual(rows.map((row) => row.dataset.datasetId), items.map((item) => item.id));
-  const addedBounds = [["Maximum labeled rows", "2", ["orders", "reviews"]],
+  assert.deepEqual(
+    rows.map((row) => row.dataset.datasetId),
+    items.map((item) => item.id),
+  );
+  const addedBounds = [
+    ["Maximum labeled rows", "2", ["orders", "reviews"]],
     ["Maximum held-out rows", "0", ["orders", "reviews"]],
     ["Minimum guideline questions", "1", ["tickets"]],
     ["Maximum guideline questions", "0", ["orders", "reviews"]],
-    ["Minimum tuning rows", "4", ["orders"]], ["Maximum tuning rows", "2", ["reviews"]],
-    ["Minimum test evaluations", "1", []], ["Maximum test evaluations", "0", ["tickets", "orders", "reviews"]]];
+    ["Minimum tuning rows", "4", ["orders"]],
+    ["Maximum tuning rows", "2", ["reviews"]],
+    ["Minimum test evaluations", "1", []],
+    ["Maximum test evaluations", "0", ["tickets", "orders", "reviews"]],
+  ];
   for (const [label, value, expected] of addedBounds) {
     select(label).attrs.oninput({ target: { value } });
-    assert.deepEqual(rows.filter((row) => row.style.display === "").map((row) => row.dataset.datasetId), expected);
-    nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
+    assert.deepEqual(
+      rows.filter((row) => row.style.display === "").map((row) => row.dataset.datasetId),
+      expected,
+    );
+    nodes(tree)
+      .find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters")
+      .attrs.onclick();
     assert.equal(select(label).value, "");
   }
   select("Filter datasets by saved timestamp").attrs.onchange({ target: { value: "with" } });
   assert.ok(rows.every((row) => row.style.display === "none"));
   select("Filter datasets by saved timestamp").attrs.onchange({ target: { value: "all" } });
-  for (const [sort, expected] of [["tuning", ["orders", "tickets", "reviews"]],
-    ["tuning-asc", ["reviews", "tickets", "orders"]], ["guidelines-asc", ["orders", "reviews", "tickets"]]]) {
+  for (const [sort, expected] of [
+    ["tuning", ["orders", "tickets", "reviews"]],
+    ["tuning-asc", ["reviews", "tickets", "orders"]],
+    ["guidelines-asc", ["orders", "reviews", "tickets"]],
+  ]) {
     select("Sort datasets").attrs.onchange({ target: { value: sort } });
-    assert.deepEqual(rows.map((row) => row.dataset.datasetId), expected);
+    assert.deepEqual(
+      rows.map((row) => row.dataset.datasetId),
+      expected,
+    );
     assert.ok(rows.every((row) => row.draft.label === "human edit"));
   }
   select("Dataset workflow preset").attrs.onchange({ target: { value: "unscored" } });
-  assert.deepEqual(rows.filter((row) => row.style.display === "").map((row) => row.dataset.datasetId), ["tickets"]);
+  assert.deepEqual(
+    rows.filter((row) => row.style.display === "").map((row) => row.dataset.datasetId),
+    ["tickets"],
+  );
   select("Dataset workflow preset").attrs.onchange({ target: { value: "evaluated" } });
   assert.ok(rows.every((row) => row.style.display === "none"));
-  nodes(tree).find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters").attrs.onclick();
+  nodes(tree)
+    .find((node) => node.tag === "button" && node.children[0] === "Clear dataset filters")
+    .attrs.onclick();
   filters.pinnedIds.push("tickets");
   select("Filter pinned datasets").attrs.onchange({ target: { value: "without" } });
   assert.equal(rows.find((row) => row.dataset.datasetId === "tickets").style.display, "none");
@@ -238,7 +427,10 @@ test("catalog count bounds combine and treat zero as an explicit bound", () => {
   assert.deepEqual(ids({ minRows: "2", maxRows: "5", minLabeled: "2", minQuestions: "1" }), ["tickets", "reviews"]);
   assert.deepEqual(ids({ maxRows: "0" }), []);
   assert.deepEqual(ids({ minRows: "6", maxRows: "2" }), []);
-  assert.deepEqual(ids({ minRows: "" }), items.map((item) => item.id));
+  assert.deepEqual(
+    ids({ minRows: "" }),
+    items.map((item) => item.id),
+  );
   for (const value of ["-1", "1.5", "NaN", "Infinity"]) assert.deepEqual(ids({ minRows: value }), []);
   assert.equal(matchesCatalog({ rows: 0 }, { minRows: 0, maxRows: 0, minUnlabeled: 0 }), true);
   assert.deepEqual(items, before);
@@ -252,11 +444,17 @@ test("catalog metadata sorts order datasets without mutating saved order", () =>
     ["unlabeled", ["orders", "tickets", "reviews"]],
     ["questions", ["tickets", "reviews", "orders"]],
     ["held-out", ["tickets", "orders", "reviews"]],
-  ]) assert.deepEqual(sortedCatalog(items, sort).map((item) => item.id), expected);
+  ])
+    assert.deepEqual(
+      sortedCatalog(items, sort).map((item) => item.id),
+      expected,
+    );
   assert.deepEqual(items, before);
-  assert.deepEqual(sortedCatalog([{ id: "empty" }, { id: "also-empty" }], "unlabeled").map((item) => item.id), ["empty", "also-empty"]);
+  assert.deepEqual(
+    sortedCatalog([{ id: "empty" }, { id: "also-empty" }], "unlabeled").map((item) => item.id),
+    ["empty", "also-empty"],
+  );
 });
-
 
 test("saved-date boundaries are inclusive and unknown dates never match a date filter", () => {
   const dated = { ...items[0], saved_at: "2026-11-10T23:59:00Z" };
@@ -278,11 +476,23 @@ test("label-share filters accept fractions and zero but exclude empty datasets",
 });
 
 test("timestamp and label-share sorting keeps unknown or empty datasets last", () => {
-  const rows = [{ id: "unknown", rows: 0 }, { id: "older", rows: 2, labeled: 2, saved_at: "2026-01-01" },
-    { id: "newer", rows: 10, labeled: 1, saved_at: "2026-11-10" }];
-  assert.deepEqual(sortedCatalog(rows, "newest").map((x) => x.id), ["newer", "older", "unknown"]);
-  assert.deepEqual(sortedCatalog(rows, "oldest").map((x) => x.id), ["older", "newer", "unknown"]);
-  assert.deepEqual(sortedCatalog(rows, "label-share").map((x) => x.id), ["newer", "older", "unknown"]);
+  const rows = [
+    { id: "unknown", rows: 0 },
+    { id: "older", rows: 2, labeled: 2, saved_at: "2026-01-01" },
+    { id: "newer", rows: 10, labeled: 1, saved_at: "2026-11-10" },
+  ];
+  assert.deepEqual(
+    sortedCatalog(rows, "newest").map((x) => x.id),
+    ["newer", "older", "unknown"],
+  );
+  assert.deepEqual(
+    sortedCatalog(rows, "oldest").map((x) => x.id),
+    ["older", "newer", "unknown"],
+  );
+  assert.deepEqual(
+    sortedCatalog(rows, "label-share").map((x) => x.id),
+    ["newer", "older", "unknown"],
+  );
   assert.equal(rows[0].id, "unknown");
 });
 
@@ -290,9 +500,18 @@ test("pin filtering is session metadata and presets return independent filter se
   assert.equal(matchesCatalog(items[0], { pinned: "with", pinnedIds: ["tickets"] }), true);
   assert.equal(matchesCatalog(items[1], { pinned: "with", pinnedIds: ["tickets"] }), false);
   assert.equal(matchesCatalog(items[0], { pinned: "with" }), false);
-  assert.deepEqual(items.filter((x) => matchesCatalog(x, catalogPreset("label"))), [items[0]]);
-  assert.deepEqual(items.filter((x) => matchesCatalog(x, catalogPreset("unlabeled"))), [items[1]]);
-  assert.deepEqual(items.filter((x) => matchesCatalog(x, catalogPreset("check"))), [items[2]]);
+  assert.deepEqual(
+    items.filter((x) => matchesCatalog(x, catalogPreset("label"))),
+    [items[0]],
+  );
+  assert.deepEqual(
+    items.filter((x) => matchesCatalog(x, catalogPreset("unlabeled"))),
+    [items[1]],
+  );
+  assert.deepEqual(
+    items.filter((x) => matchesCatalog(x, catalogPreset("check"))),
+    [items[2]],
+  );
   const preset = catalogPreset("label");
   preset.pinnedIds.push("tickets");
   assert.deepEqual(catalogPreset("label").pinnedIds, []);
@@ -307,9 +526,18 @@ test("JSON catalog uses only allowlisted metadata and preserves names verbatim",
   assert.equal(item.guideline_questions, 1);
   assert.equal(item.labeled_rows, 3);
   assert.doesNotMatch(output, /private configuration|Email traffic|forbidden/);
-  assert.deepEqual(Object.keys(item), ["id", "name", "rows", "labeled_rows", "questions", "held_out_rows", "saved_check", "guideline_questions", "saved_at"]);
+  assert.deepEqual(Object.keys(item), [
+    "id",
+    "name",
+    "rows",
+    "labeled_rows",
+    "questions",
+    "held_out_rows",
+    "saved_check",
+    "guideline_questions",
+    "saved_at",
+  ]);
 });
-
 
 test("scoped catalog search and exclusions use only the selected authored metadata", () => {
   assert.equal(matchesCatalog(items[0], { query: "support", searchField: "name" }), true);
@@ -338,11 +566,22 @@ test("notes and additional numeric filters combine and retain explicit zero boun
 });
 
 test("pinned and descending label-share sorts preserve source and unknown ordering", () => {
-  assert.deepEqual(sortedCatalog(items, "pinned", ["reviews"]).map((x) => x.id), ["reviews", "tickets", "orders"]);
-  assert.deepEqual(sortedCatalog(items, "pinned").map((x) => x.id), ["tickets", "orders", "reviews"]);
-  assert.deepEqual(sortedCatalog([...items, { id: "empty", rows: 0 }], "label-share-desc").map((x) => x.id),
-    ["reviews", "tickets", "orders", "empty"]);
-  assert.deepEqual(items.map((x) => x.id), ["tickets", "orders", "reviews"]);
+  assert.deepEqual(
+    sortedCatalog(items, "pinned", ["reviews"]).map((x) => x.id),
+    ["reviews", "tickets", "orders"],
+  );
+  assert.deepEqual(
+    sortedCatalog(items, "pinned").map((x) => x.id),
+    ["tickets", "orders", "reviews"],
+  );
+  assert.deepEqual(
+    sortedCatalog([...items, { id: "empty", rows: 0 }], "label-share-desc").map((x) => x.id),
+    ["reviews", "tickets", "orders", "empty"],
+  );
+  assert.deepEqual(
+    items.map((x) => x.id),
+    ["tickets", "orders", "reviews"],
+  );
 });
 
 test("card progress and copy IDs use summary metadata without leaking notes or inputs", () => {
@@ -370,12 +609,17 @@ test("maximum labeled/held-out and guideline bounds combine with inclusive zero 
   assert.deepEqual(ids({ maxHeldOut: 0 }), ["orders", "reviews"]);
   assert.deepEqual(ids({ minGuidelines: 1 }), ["tickets"]);
   assert.deepEqual(ids({ maxGuidelines: 0 }), ["orders", "reviews"]);
-  assert.deepEqual(ids({ maxLabeled: 3, minLabeled: 3, maxHeldOut: 2, minHeldOut: 2,
-    minGuidelines: 1, maxGuidelines: 1 }), ["tickets"]);
+  assert.deepEqual(
+    ids({ maxLabeled: 3, minLabeled: 3, maxHeldOut: 2, minHeldOut: 2, minGuidelines: 1, maxGuidelines: 1 }),
+    ["tickets"],
+  );
   assert.deepEqual(ids({ minGuidelines: 2, maxGuidelines: 1 }), []);
   for (const key of ["maxLabeled", "maxHeldOut", "minGuidelines", "maxGuidelines"]) {
     for (const value of ["-1", "1.5", "NaN", "Infinity"]) assert.deepEqual(ids({ [key]: value }), []);
-    assert.deepEqual(ids({ [key]: "" }), items.map((x) => x.id));
+    assert.deepEqual(
+      ids({ [key]: "" }),
+      items.map((x) => x.id),
+    );
   }
 });
 
@@ -388,8 +632,14 @@ test("ascending workload sorts and guideline count sort keep stable ties and sou
     ["held-out-asc", ["orders", "reviews", "tickets"]],
     ["guidelines", ["tickets", "orders", "reviews"]],
   ]) {
-    assert.deepEqual(sortedCatalog(items, sort).map((x) => x.id), ids);
-    assert.deepEqual(sortedCatalog([{ id: "a" }, { id: "b" }], sort).map((x) => x.id), ["a", "b"]);
+    assert.deepEqual(
+      sortedCatalog(items, sort).map((x) => x.id),
+      ids,
+    );
+    assert.deepEqual(
+      sortedCatalog([{ id: "a" }, { id: "b" }], sort).map((x) => x.id),
+      ["a", "b"],
+    );
   }
   assert.deepEqual(items, before);
 });
@@ -402,7 +652,10 @@ test("tuning-row bounds exclude held-out rows and combine with other bounds", ()
   assert.equal(matchesCatalog({ rows: 2, test: { rows: 2 } }, { maxTuning: "0" }), true);
   for (const key of ["minTuning", "maxTuning", "minLooks", "maxLooks"]) {
     for (const value of ["-1", "1.5", "Infinity", "NaN"]) assert.deepEqual(ids({ [key]: value }), []);
-    assert.deepEqual(ids({ [key]: "" }), items.map((x) => x.id));
+    assert.deepEqual(
+      ids({ [key]: "" }),
+      items.map((x) => x.id),
+    );
   }
 });
 
@@ -415,8 +668,14 @@ test("test-evaluation bounds count saved looks without inferring model performan
   assert.equal(matchesCatalog(looked, { minLooks: "3" }), false);
   assert.equal(matchesCatalog({}, { maxLooks: "0" }), true);
   const datasets = [never, looked, {}];
-  assert.deepEqual(datasets.filter((x) => matchesCatalog(x, catalogPreset("unscored"))), [never]);
-  assert.deepEqual(datasets.filter((x) => matchesCatalog(x, catalogPreset("evaluated"))), [looked]);
+  assert.deepEqual(
+    datasets.filter((x) => matchesCatalog(x, catalogPreset("unscored"))),
+    [never],
+  );
+  assert.deepEqual(
+    datasets.filter((x) => matchesCatalog(x, catalogPreset("evaluated"))),
+    [looked],
+  );
   assert.notEqual(catalogPreset("unscored").pinnedIds, catalogPreset("unscored").pinnedIds);
 });
 
@@ -431,11 +690,23 @@ test("saved timestamp presence can find legacy undated datasets", () => {
 
 test("tuning workload and ascending guideline sorts preserve saved items and stable ties", () => {
   const before = structuredClone(items);
-  assert.deepEqual(sortedCatalog(items, "tuning").map((x) => x.id), ["orders", "tickets", "reviews"]);
-  assert.deepEqual(sortedCatalog(items, "tuning-asc").map((x) => x.id), ["reviews", "tickets", "orders"]);
-  assert.deepEqual(sortedCatalog(items, "guidelines-asc").map((x) => x.id), ["orders", "reviews", "tickets"]);
+  assert.deepEqual(
+    sortedCatalog(items, "tuning").map((x) => x.id),
+    ["orders", "tickets", "reviews"],
+  );
+  assert.deepEqual(
+    sortedCatalog(items, "tuning-asc").map((x) => x.id),
+    ["reviews", "tickets", "orders"],
+  );
+  assert.deepEqual(
+    sortedCatalog(items, "guidelines-asc").map((x) => x.id),
+    ["orders", "reviews", "tickets"],
+  );
   for (const sort of ["tuning", "tuning-asc", "guidelines-asc"]) {
-    assert.deepEqual(sortedCatalog([{ id: "a" }, { id: "b" }], sort).map((x) => x.id), ["a", "b"]);
+    assert.deepEqual(
+      sortedCatalog([{ id: "a" }, { id: "b" }], sort).map((x) => x.id),
+      ["a", "b"],
+    );
   }
   assert.deepEqual(items, before);
 });

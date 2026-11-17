@@ -24,18 +24,24 @@ def rows(n=20):
     for i in range(n):
         sure = i < 14
         p = 0.9 if i % 2 == 0 else 0.2
-        out.append({"index": i,
-                    "answers": {"dept": dept("billing", 0.95 if sure else 0.4), "refund": {"type": "noul", "noul": p}},
-                    "labels": {"dept": "billing" if sure else "shipping", "refund": p > 0.5}})
+        out.append(
+            {
+                "index": i,
+                "answers": {"dept": dept("billing", 0.95 if sure else 0.4), "refund": {"type": "noul", "noul": p}},
+                "labels": {"dept": "billing" if sure else "shipping", "refund": p > 0.5},
+            }
+        )
     return out
 
 
 REQUEST = {
-    "dept": {"type": "choice", "instructions": "Which team handles this?",
-             "criteria": {"billing": "Charges and refunds", "shipping": "Deliveries", "none": "Neither"}},
+    "dept": {
+        "type": "choice",
+        "instructions": "Which team handles this?",
+        "criteria": {"billing": "Charges and refunds", "shipping": "Deliveries", "none": "Neither"},
+    },
     "refund": {"type": "noul", "instructions": "Does the customer ask for money back?"},
-    "tone": {"type": "score", "instructions": "How upset is the customer?",
-             "criteria": ["Calm", "Annoyed", "Angry"]},
+    "tone": {"type": "score", "instructions": "How upset is the customer?", "criteria": ["Calm", "Annoyed", "Angry"]},
 }
 
 

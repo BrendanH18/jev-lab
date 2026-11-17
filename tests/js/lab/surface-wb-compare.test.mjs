@@ -10,7 +10,15 @@ import { createLab } from "../../../static/js/lab/host.js";
 import rowsPack from "../../../static/js/lab/packs/workbench/wb-compare-rows.js";
 import variantsPack from "../../../static/js/lab/packs/workbench/wb-compare-variants.js";
 import { fakeDom, fakeEnv, find, findAll, textOf } from "./harness.mjs";
-import { COMPARE_REPORTS, COMPARE_RESULT, QUESTIONS_A, QUESTIONS_B, VARIANT_TEXTS, sampleCompareRowsCtx, sampleCompareVariantsCtx } from "./fixtures/workbench-compare.mjs";
+import {
+  COMPARE_REPORTS,
+  COMPARE_RESULT,
+  QUESTIONS_A,
+  QUESTIONS_B,
+  VARIANT_TEXTS,
+  sampleCompareRowsCtx,
+  sampleCompareVariantsCtx,
+} from "./fixtures/workbench-compare.mjs";
 
 const ROWS = "workbench.compare.rows";
 const VARIANTS = "workbench.compare.variants";
@@ -19,15 +27,43 @@ const VARIANTS = "workbench.compare.variants";
 
 test("rows: every item has exactly the documented fields, in run order", () => {
   const ctx = sampleCompareRowsCtx();
-  const keys = ["index", "number", "row", "text", "sent", "label", "answers", "picks", "signals", "tops", "correct", "verdict", "differs", "paired",
-    "orders", "meta", "errors", "skipped"];
+  const keys = [
+    "index",
+    "number",
+    "row",
+    "text",
+    "sent",
+    "label",
+    "answers",
+    "picks",
+    "signals",
+    "tops",
+    "correct",
+    "verdict",
+    "differs",
+    "paired",
+    "orders",
+    "meta",
+    "errors",
+    "skipped",
+  ];
   for (const item of ctx.items()) assert.deepEqual(Object.keys(item), keys);
-  assert.deepEqual(ctx.items().map((item) => item.number), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(
+    ctx.items().map((item) => item.number),
+    [1, 2, 3, 4, 5, 6, 7],
+  );
   const [first, second, third, , fifth, , seventh] = ctx.items();
   assert.equal(first.text, "My espresso grinder arrived cracked, I want a refund today.");
   assert.deepEqual(first.sent, [null, "My espreso grinder arived cracked, I want a refund today."]);
   assert.deepEqual(first.correct, [true, false]);
-  assert.deepEqual(first.meta[1], { model: "jev-1.14.0", latency_ms: 560, input_tokens: 720, output_tokens: 40, cost_usd: 0.0003, calls: 2 });
+  assert.deepEqual(first.meta[1], {
+    model: "jev-1.14.0",
+    latency_ms: 560,
+    input_tokens: 720,
+    output_tokens: 40,
+    cost_usd: 0.0003,
+    calls: 2,
+  });
   assert.equal(second.text, '{"text":"Where is wholesale order HC-2231?","channel":"email","_image":"receipt.png"}');
   assert.equal(second.row._image, "receipt.png");
   assert.equal(third.differs, false);
@@ -46,20 +82,32 @@ test("rows: no item holds a held-out label, the rows box, or a test marker", () 
 });
 
 test("rows: local reads mirror jev/calibrate.read for every type and refuse what it refuses", () => {
-  const result = { variants: [{ questions: { q: { type: "choice" } } }, { questions: { q: { type: "choice" } } }], results: [] };
+  const result = {
+    variants: [{ questions: { q: { type: "choice" } } }, { questions: { q: { type: "choice" } } }],
+    results: [],
+  };
   const answers = [
-    [{ type: "choice", choice: "b", probabilities: { a: 0.2, b: 0.5, c: 0.3 } }, "b", 0.25, 0.5],          // (0.5 - 1/3) / (2/3)
-    [{ type: "choice", choice: "b", probabilities: { b: 1 } }, "b", 1, 1],                                   // one option: 1
+    [{ type: "choice", choice: "b", probabilities: { a: 0.2, b: 0.5, c: 0.3 } }, "b", 0.25, 0.5], // (0.5 - 1/3) / (2/3)
+    [{ type: "choice", choice: "b", probabilities: { b: 1 } }, "b", 1, 1], // one option: 1
     [{ type: "score", probabilities: { 0: 0.2, 1: 0.5, 2: 0.3 }, confidence: 0.4 }, "1", 0.4, 0.5],
     [{ type: "noul", noul: 0.3 }, "no", 0.4, 0.7],
-    [{ type: "box", box: { left: 0.105, top: 0.2, right: 0.5, bottom: 0.6 }, confidence: 0.9 }, "0.10, 0.20, 0.50, 0.60", 0.9, 0.9],
-    [{ type: "choice", choice: "z", probabilities: { a: 1 } }, null, null, null],                            // pick not offered
+    [
+      { type: "box", box: { left: 0.105, top: 0.2, right: 0.5, bottom: 0.6 }, confidence: 0.9 },
+      "0.10, 0.20, 0.50, 0.60",
+      0.9,
+      0.9,
+    ],
+    [{ type: "choice", choice: "z", probabilities: { a: 1 } }, null, null, null], // pick not offered
     [{ type: "noul", noul: 1.2 }, null, null, null],
     [{ type: "box", box: { left: 0.5, top: 0.2, right: 0.4, bottom: 0.6 }, confidence: 0.9 }, null, null, null],
     [{ type: "score", probabilities: { low: 1 } }, null, null, null],
     [{ type: "rating", value: 3 }, null, null, null],
   ];
-  result.results = answers.map(([answer], index) => ({ index, row: `row ${index}`, runs: [{ answers: { q: answer } }, { answers: { q: answer } }] }));
+  result.results = answers.map(([answer], index) => ({
+    index,
+    row: `row ${index}`,
+    runs: [{ answers: { q: answer } }, { answers: { q: answer } }],
+  }));
   const ctx = compareRowsCtx({ result, report: { type: "choice", signal: "confidence", disagreements: [] }, qid: "q" });
   ctx.items().forEach((item, index) => {
     const [, pick, signal, top] = answers[index];
@@ -69,23 +117,52 @@ test("rows: local reads mirror jev/calibrate.read for every type and refuse what
     if (top === null) assert.equal(item.tops[0], null);
     else assert.ok(Math.abs(item.tops[0] - top) < 1e-12, `top ${index}`);
   });
-  const top = compareRowsCtx({ result, report: { type: "choice", signal: "top_probability", disagreements: [] }, qid: "q" });
+  const top = compareRowsCtx({
+    result,
+    report: { type: "choice", signal: "top_probability", disagreements: [] },
+    qid: "q",
+  });
   assert.equal(top.items()[0].signals[0], 0.5);
   assert.equal(top.items()[3].signals[0], 0.7);
 });
 
 test("rows: shown() is the page's disagreement list after Lab filters and Lab sort", () => {
-  assert.deepEqual(sampleCompareRowsCtx().shown().map((item) => item.number), [1, 2, 4, 6]);
-  assert.deepEqual(sampleCompareRowsCtx({ hide: [1, 2] }).shown().map((item) => item.number), [1, 4, 6], "a Lab filter hides more");
-  assert.deepEqual(sampleCompareRowsCtx({ order: [5, 3, 2] }).shown().map((item) => item.number), [6, 4, 1, 2], "agreeing rows stay hidden under a sort");
+  assert.deepEqual(
+    sampleCompareRowsCtx()
+      .shown()
+      .map((item) => item.number),
+    [1, 2, 4, 6],
+  );
+  assert.deepEqual(
+    sampleCompareRowsCtx({ hide: [1, 2] })
+      .shown()
+      .map((item) => item.number),
+    [1, 4, 6],
+    "a Lab filter hides more",
+  );
+  assert.deepEqual(
+    sampleCompareRowsCtx({ order: [5, 3, 2] })
+      .shown()
+      .map((item) => item.number),
+    [6, 4, 1, 2],
+    "agreeing rows stay hidden under a sort",
+  );
   const ctx = sampleCompareRowsCtx();
   ctx.state.report = COMPARE_REPORTS.urgent;
   ctx.state.qid = "urgent";
-  assert.deepEqual(ctx.shown().map((item) => item.number), [2], "evaluated at call time");
+  assert.deepEqual(
+    ctx.shown().map((item) => item.number),
+    [2],
+    "evaluated at call time",
+  );
 });
 
 test("rows: before a run, without a report and on a report error everything is empty", () => {
-  for (const overrides of [{ result: null }, { report: null }, { report: null, reportError: "No row has answers from both variants" }]) {
+  for (const overrides of [
+    { result: null },
+    { report: null },
+    { report: null, reportError: "No row has answers from both variants" },
+  ]) {
     const ctx = sampleCompareRowsCtx(overrides);
     assert.deepEqual([ctx.items(), ctx.shown()], [[], []]);
     assert.equal(ctx.data.type, null);
@@ -94,7 +171,17 @@ test("rows: before a run, without a report and on a report error everything is e
     assert.equal(ctx.data.counts, null);
   }
   const before = sampleCompareRowsCtx({ result: null });
-  assert.deepEqual([before.data.qid, before.data.run, before.data.variants, before.data.agreement, before.data.shared, before.data.slices], [null, null, [], [], [], null]);
+  assert.deepEqual(
+    [
+      before.data.qid,
+      before.data.run,
+      before.data.variants,
+      before.data.agreement,
+      before.data.shared,
+      before.data.slices,
+    ],
+    [null, null, [], [], [], null],
+  );
   assert.equal(sampleCompareRowsCtx({ report: null, reportError: "boom" }).data.report_error, "boom");
 });
 
@@ -106,9 +193,27 @@ test("rows: data reads the run and the report", () => {
   assert.deepEqual(data.shared, ["department", "urgent", "tone", "drink", "spot"]);
   assert.deepEqual(data.labeled, ["department", "urgent", "tone", "spot"]);
   assert.deepEqual(data.counts, { answered_both: 5, agree: 1, disagree: 4, only_a: 2, only_b: 0, excluded: 0 });
-  assert.deepEqual(data.run, { rows: 7, labeled: 6, held_out: 1, wall_ms: 3200, cost_usd: 0.0019, stopped: "Session budget reached; 1 call was skipped." });
-  assert.deepEqual(data.variants.map((variant) => [variant.name, variant.perturb, variant.average_orders, variant.question_count, variant.errors]),
-    [["A", null, false, 7, 0], ["B", "typos", true, 7, 1]]);
+  assert.deepEqual(data.run, {
+    rows: 7,
+    labeled: 6,
+    held_out: 1,
+    wall_ms: 3200,
+    cost_usd: 0.0019,
+    stopped: "Session budget reached; 1 call was skipped.",
+  });
+  assert.deepEqual(
+    data.variants.map((variant) => [
+      variant.name,
+      variant.perturb,
+      variant.average_orders,
+      variant.question_count,
+      variant.errors,
+    ]),
+    [
+      ["A", null, false, 7, 0],
+      ["B", "typos", true, 7, 1],
+    ],
+  );
   assert.deepEqual(data.questions, [QUESTIONS_A.department, QUESTIONS_B.department]);
   assert.equal(data.scores[0].sweep.length, 101);
   assert.equal(data.cascade.best.threshold, 0.37);
@@ -129,8 +234,15 @@ test("rows: every action checks its guard before reaching the page", () => {
   assert.equal(ok.actions.setCascadeThreshold(0.456), 0.46);
   ok.actions.labelDisagreements();
   ok.actions.useInBuild("B");
-  assert.deepEqual(ok.log, [["selectQuestion", "urgent"], ["setSignal", "top_probability"], ["setBound", "lower"], ["setFirst", "B"],
-    ["setCascadeThreshold", 0.46], ["labelDisagreements"], ["useInBuild", 1]]);
+  assert.deepEqual(ok.log, [
+    ["selectQuestion", "urgent"],
+    ["setSignal", "top_probability"],
+    ["setBound", "lower"],
+    ["setFirst", "B"],
+    ["setCascadeThreshold", 0.46],
+    ["labelDisagreements"],
+    ["useInBuild", 1],
+  ]);
 
   const refuse = (ctx, run, message) => {
     assert.throws(run, message);
@@ -146,8 +258,14 @@ test("rows: every action checks its guard before reaching the page", () => {
   refuse(ctx, () => ctx.actions.setCascadeThreshold("0.5"), /from 0 to 1/);
   refuse(ctx, () => ctx.actions.useInBuild(0), /A or B/);
   const running = sampleCompareRowsCtx({ running: true });
-  for (const run of [() => running.actions.selectQuestion("urgent"), () => running.actions.setSignal("confidence"), () => running.actions.labelDisagreements(),
-    () => running.actions.useInBuild("A"), () => running.actions.setFirst("A")]) refuse(running, run, /Wait for the current Compare run/);
+  for (const run of [
+    () => running.actions.selectQuestion("urgent"),
+    () => running.actions.setSignal("confidence"),
+    () => running.actions.labelDisagreements(),
+    () => running.actions.useInBuild("A"),
+    () => running.actions.setFirst("A"),
+  ])
+    refuse(running, run, /Wait for the current Compare run/);
   const none = sampleCompareRowsCtx({ result: null });
   refuse(none, () => none.actions.selectQuestion("department"), /Run both variants first/);
   const noul = sampleCompareRowsCtx({ qid: "urgent" });
@@ -159,7 +277,15 @@ test("rows: every action checks its guard before reaching the page", () => {
   refuse(agree, () => agree.actions.labelDisagreements(), /nothing to label/);
   const busy = sampleCompareRowsCtx({ labeling: true });
   refuse(busy, () => busy.actions.labelDisagreements(), /already being prepared/);
-  assert.throws(() => compareRowsCtx({ result: COMPARE_RESULT, report: COMPARE_REPORTS.department, qid: "department" }).actions.useInBuild("A"), /cannot do that here/);
+  assert.throws(
+    () =>
+      compareRowsCtx({
+        result: COMPARE_RESULT,
+        report: COMPARE_REPORTS.department,
+        qid: "department",
+      }).actions.useInBuild("A"),
+    /cannot do that here/,
+  );
 });
 
 test("rows: there is no action that edits, adds or replays rows", () => {
@@ -171,33 +297,75 @@ test("rows: there is no action that edits, adds or replays rows", () => {
 
 test("variants: one item per question id, A's order then B-only ids, with positions", () => {
   const ctx = sampleCompareVariantsCtx();
-  assert.deepEqual(ctx.items().map((item) => [item.qid, item.ia, item.ib, item.comparable]), [["department", 0, 1, true], ["urgent", 1, 0, true],
-    ["tone", 2, 2, true], ["drink", 3, 3, true], ["spot", 4, 4, true], ["rush", 5, 5, false], ["allergy", 6, null, false], ["refund", null, 6, false]]);
+  assert.deepEqual(
+    ctx.items().map((item) => [item.qid, item.ia, item.ib, item.comparable]),
+    [
+      ["department", 0, 1, true],
+      ["urgent", 1, 0, true],
+      ["tone", 2, 2, true],
+      ["drink", 3, 3, true],
+      ["spot", 4, 4, true],
+      ["rush", 5, 5, false],
+      ["allergy", 6, null, false],
+      ["refund", null, 6, false],
+    ],
+  );
   for (const item of ctx.items()) assert.deepEqual(Object.keys(item), ["qid", "a", "b", "ia", "ib", "comparable"]);
   assert.deepEqual(ctx.items()[0].a, QUESTIONS_A.department);
   assert.equal(ctx.items()[6].b, null);
   assert.equal(ctx.itemName(ctx.items()[2], 2), "tone");
   assert.equal(ctx.items(), ctx.items());
-  assert.deepEqual(sampleCompareVariantsCtx({ hide: ["tone", "rush"], order: ["refund"] }).shown().map((item) => item.qid),
-    ["refund", "department", "urgent", "drink", "spot", "allergy"]);
+  assert.deepEqual(
+    sampleCompareVariantsCtx({ hide: ["tone", "rush"], order: ["refund"] })
+      .shown()
+      .map((item) => item.qid),
+    ["refund", "department", "urgent", "drink", "spot", "allergy"],
+  );
 });
 
 test("variants: an editor that does not parse contributes nothing and shows the page's message", () => {
   const ctx = sampleCompareVariantsCtx({ texts: [VARIANT_TEXTS[0], '{"a": {"type": "noul"}, "a": {"type": "noul"}}'] });
-  assert.deepEqual(ctx.items().map((item) => item.qid), Object.keys(QUESTIONS_A));
+  assert.deepEqual(
+    ctx.items().map((item) => item.qid),
+    Object.keys(QUESTIONS_A),
+  );
   assert.ok(ctx.items().every((item) => item.b === null));
   assert.match(ctx.data.variants[1].error, /^Variant B: invalid JSON/);
   assert.equal(ctx.data.variants[1].count, null);
-  assert.equal(sampleCompareVariantsCtx({ texts: ["  ", "[]"] }).data.variants.map((variant) => variant.error).join(" | "),
-    "Variant A has no questions | Variant B: questions must be an object keyed by question id");
-  const proto = sampleCompareVariantsCtx({ texts: ['{"__proto__": {"type": "noul", "instructions": "x"}}', '{"__proto__": {"type": "noul", "instructions": "y"}}'] });
-  assert.deepEqual(proto.items().map((item) => [item.qid, item.comparable]), [["__proto__", true]]);
+  assert.equal(
+    sampleCompareVariantsCtx({ texts: ["  ", "[]"] })
+      .data.variants.map((variant) => variant.error)
+      .join(" | "),
+    "Variant A has no questions | Variant B: questions must be an object keyed by question id",
+  );
+  const proto = sampleCompareVariantsCtx({
+    texts: [
+      '{"__proto__": {"type": "noul", "instructions": "x"}}',
+      '{"__proto__": {"type": "noul", "instructions": "y"}}',
+    ],
+  });
+  assert.deepEqual(
+    proto.items().map((item) => [item.qid, item.comparable]),
+    [["__proto__", true]],
+  );
 });
 
 test("variants: data holds the editors' configuration and label-free counts only", () => {
   const data = sampleCompareVariantsCtx({ perturb: "typos", average: true, rowCount: 260 }).data;
-  assert.deepEqual(data.variants.map(({ name, model, perturb, average, error, count }) => ({ name, model, perturb, average, error, count })),
-    [{ name: "A", model: "", perturb: "", average: false, error: null, count: 7 }, { name: "B", model: "jev-1.14.0", perturb: "typos", average: true, error: null, count: 7 }]);
+  assert.deepEqual(
+    data.variants.map(({ name, model, perturb, average, error, count }) => ({
+      name,
+      model,
+      perturb,
+      average,
+      error,
+      count,
+    })),
+    [
+      { name: "A", model: "", perturb: "", average: false, error: null, count: 7 },
+      { name: "B", model: "jev-1.14.0", perturb: "typos", average: true, error: null, count: 7 },
+    ],
+  );
   assert.deepEqual(data.rows, { count: 260, sent: 200 });
   assert.equal(data.current_model, "jev-latest");
   assert.deepEqual(data.models, ["jev-1.14.0", "jev-latest"]);
@@ -210,11 +378,28 @@ test("variants: data holds the editors' configuration and label-free counts only
 
 test("variants: replaceItems writes both editors through the page's edit path and keeps unchanged text", () => {
   const ctx = sampleCompareVariantsCtx();
-  const next = ctx.items().filter((item) => item.qid !== "refund").map((item) => (item.qid === "tone" ? { ...item, b: { ...item.b, instructions: "Upset?" } } : item));
+  const next = ctx
+    .items()
+    .filter((item) => item.qid !== "refund")
+    .map((item) => (item.qid === "tone" ? { ...item, b: { ...item.b, instructions: "Upset?" } } : item));
   ctx.actions.replaceItems([next[1], ...next.filter((_, index) => index !== 1)], { label: "test" });
-  assert.deepEqual(ctx.log.map(([name, index]) => [name, index]), [["setQuestions", 0], ["setQuestions", 1]]);
-  assert.deepEqual(Object.keys(JSON.parse(ctx.state.variants[0].text)), ["urgent", "department", "tone", "drink", "spot", "rush", "allergy"], "A follows the list order");
-  assert.deepEqual(Object.keys(JSON.parse(ctx.state.variants[1].text)), ["urgent", "department", "tone", "drink", "spot", "rush"], "B follows ib");
+  assert.deepEqual(
+    ctx.log.map(([name, index]) => [name, index]),
+    [
+      ["setQuestions", 0],
+      ["setQuestions", 1],
+    ],
+  );
+  assert.deepEqual(
+    Object.keys(JSON.parse(ctx.state.variants[0].text)),
+    ["urgent", "department", "tone", "drink", "spot", "rush", "allergy"],
+    "A follows the list order",
+  );
+  assert.deepEqual(
+    Object.keys(JSON.parse(ctx.state.variants[1].text)),
+    ["urgent", "department", "tone", "drink", "spot", "rush"],
+    "B follows ib",
+  );
   assert.equal(JSON.parse(ctx.state.variants[1].text).tone.instructions, "Upset?");
 
   const same = sampleCompareVariantsCtx();
@@ -222,7 +407,11 @@ test("variants: replaceItems writes both editors through the page's edit path an
   assert.deepEqual(same.log, [], "an unchanged list writes nothing");
   const moved = sampleCompareVariantsCtx();
   moved.actions.replaceItems(moved.items().map((item) => (item.qid === "refund" ? { ...item, ib: -1 } : item)));
-  assert.deepEqual(moved.log.map(([name, index]) => [name, index]), [["setQuestions", 1]], "only B changed");
+  assert.deepEqual(
+    moved.log.map(([name, index]) => [name, index]),
+    [["setQuestions", 1]],
+    "only B changed",
+  );
   assert.equal(Object.keys(JSON.parse(moved.state.variants[1].text))[0], "refund");
 });
 
@@ -265,11 +454,26 @@ test("variants: the editors' buttons keep their guards, and no action presses Ru
   ok.actions.setModel("A", " jev-1.14.0 ");
   ok.actions.setRows("shuffle");
   ok.actions.setAsk(true);
-  assert.deepEqual(ok.log, [["copyAToB"], ["reverseA"], ["averageA"], ["fill", 1, "terse"], ["setModel", 0, "jev-1.14.0"], ["setRows", "shuffle"], ["setAsk", true]]);
+  assert.deepEqual(ok.log, [
+    ["copyAToB"],
+    ["reverseA"],
+    ["averageA"],
+    ["fill", 1, "terse"],
+    ["setModel", 0, "jev-1.14.0"],
+    ["setRows", "shuffle"],
+    ["setAsk", true],
+  ]);
 
-  const plain = sampleCompareVariantsCtx({ texts: ['{"tone": {"type": "score", "criteria": ["Low", "High"]}, "pick": {"type": "choice", "criteria": {"1": "One", "2": "Two"}}}', VARIANT_TEXTS[1]] });
+  const plain = sampleCompareVariantsCtx({
+    texts: [
+      '{"tone": {"type": "score", "criteria": ["Low", "High"]}, "pick": {"type": "choice", "criteria": {"1": "One", "2": "Two"}}}',
+      VARIANT_TEXTS[1],
+    ],
+  });
   assert.throws(() => plain.actions.reverseA(), /no Choice question whose options can be reordered/);
-  const single = sampleCompareVariantsCtx({ texts: ['{"pick": {"type": "choice", "criteria": {"only": "One"}}}', VARIANT_TEXTS[1]] });
+  const single = sampleCompareVariantsCtx({
+    texts: ['{"pick": {"type": "choice", "criteria": {"only": "One"}}}', VARIANT_TEXTS[1]],
+  });
   assert.throws(() => single.actions.averageA(), /two or more options/);
   const broken = sampleCompareVariantsCtx({ texts: ["{ oops", VARIANT_TEXTS[1]] });
   assert.throws(() => broken.actions.reverseA(), /Variant A: invalid JSON/);
@@ -281,7 +485,8 @@ test("variants: the editors' buttons keep their guards, and no action presses Ru
   assert.throws(() => ctx.actions.setAsk("yes"), /both orders/);
   assert.deepEqual([...plain.log, ...single.log, ...broken.log, ...ctx.log], []);
   const running = sampleCompareVariantsCtx({ running: true });
-  for (const name of ["copyAToB", "reverseA", "averageA"]) assert.throws(() => running.actions[name](), /Wait for the current Compare run/);
+  for (const name of ["copyAToB", "reverseA", "averageA"])
+    assert.throws(() => running.actions[name](), /Wait for the current Compare run/);
   assert.deepEqual(running.log, []);
 });
 
@@ -289,8 +494,18 @@ test("variants: the editors' buttons keep their guards, and no action presses Ru
 
 const source = readFileSync(new URL("../../../static/js/workbench-compare.js", import.meta.url), "utf8");
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
-const HOOKS = ["renderCompareRows", "cmpShownDisagreements", "cmpRowsTitle", "cmpRowsReset", "cmpRowsList", "refreshCmpRows", "resetCmpRowsLab",
-  "cmpLabSection", "cmpLabRows", "cmpLabVariants"];
+const HOOKS = [
+  "renderCompareRows",
+  "cmpShownDisagreements",
+  "cmpRowsTitle",
+  "cmpRowsReset",
+  "cmpRowsList",
+  "refreshCmpRows",
+  "resetCmpRowsLab",
+  "cmpLabSection",
+  "cmpLabRows",
+  "cmpLabVariants",
+];
 
 // The page's rows panel, rebuilt from source with DOM stand-ins. W.lab is a real Lab host (or none).
 function rowsPage(lab) {
@@ -306,20 +521,97 @@ function rowsPage(lab) {
   };
   const mount = (target, ...children) => dom.mount(typeof target === "string" ? $(target) : target, ...children);
   const calls = [];
-  const W = { compare: { result: COMPARE_RESULT, report: COMPARE_REPORTS.department, qid: "department", signal: "confidence", bound: "estimate", first: "A",
-    cascadeT: 0.37, slices: null, slicesError: null, reportError: null, running: false, labelingBusy: false, variants: [{ text: VARIANT_TEXTS[0], model: "" },
-      { text: VARIANT_TEXTS[1], model: "", perturb: "", average: false }] }, bulk: { rowsText: "a\nb" }, lab, labEnv: fakeEnv() };
-  const make = new Function("W", "h", "icon", "statusBadge", "rowText", "sentText", "mount", "$", "rescoreCompare", "render", "updateCascade",
-    "handoffCompareDisagreements", "cmpUseInBuild", "currentStatus", "countRows", "cmpCopyA", "reverseA", "averageA", "cmpFill", "runCompare", "refreshCmpVariants",
-    `${HOOKS.map(body).join("\n")}\nreturn { ${HOOKS.join(", ")} };`);
-  const fns = make(W, dom.h, (name) => dom.h("i", { class: name }), (kind, text) => dom.h("span", { class: `badge ${kind}` }, text),
-    (row) => (typeof row === "string" ? row : JSON.stringify(row)), () => null, mount, $, async () => { calls.push("rescore"); }, () => calls.push("render"),
-    () => calls.push("updateCascade"), () => calls.push("handoff"), (i) => calls.push(`use ${i}`), () => ({ model: "jev-latest" }), (text) => text.split("\n").length,
-    () => calls.push("copyA"), () => calls.push("reverseA"), () => calls.push("averageA"), (i, from) => calls.push(`fill ${i} ${from}`), () => calls.push("run"),
-    () => calls.push("refreshVariants"));
-  const render = () => { tree = fns.renderCompareRows(); return tree; };
-  const listed = () => findAll(byId("cmp-rows-list"), (node) => node.tag === "tr").slice(1).map((row) => textOf(row.children[0]));
-  return { W, fns, render, listed, byId, calls, get tree() { return tree; } };
+  const W = {
+    compare: {
+      result: COMPARE_RESULT,
+      report: COMPARE_REPORTS.department,
+      qid: "department",
+      signal: "confidence",
+      bound: "estimate",
+      first: "A",
+      cascadeT: 0.37,
+      slices: null,
+      slicesError: null,
+      reportError: null,
+      running: false,
+      labelingBusy: false,
+      variants: [
+        { text: VARIANT_TEXTS[0], model: "" },
+        { text: VARIANT_TEXTS[1], model: "", perturb: "", average: false },
+      ],
+    },
+    bulk: { rowsText: "a\nb" },
+    lab,
+    labEnv: fakeEnv(),
+  };
+  const make = new Function(
+    "W",
+    "h",
+    "icon",
+    "statusBadge",
+    "rowText",
+    "sentText",
+    "mount",
+    "$",
+    "rescoreCompare",
+    "render",
+    "updateCascade",
+    "handoffCompareDisagreements",
+    "cmpUseInBuild",
+    "currentStatus",
+    "countRows",
+    "cmpCopyA",
+    "reverseA",
+    "averageA",
+    "cmpFill",
+    "runCompare",
+    "refreshCmpVariants",
+    `${HOOKS.map(body).join("\n")}\nreturn { ${HOOKS.join(", ")} };`,
+  );
+  const fns = make(
+    W,
+    dom.h,
+    (name) => dom.h("i", { class: name }),
+    (kind, text) => dom.h("span", { class: `badge ${kind}` }, text),
+    (row) => (typeof row === "string" ? row : JSON.stringify(row)),
+    () => null,
+    mount,
+    $,
+    async () => {
+      calls.push("rescore");
+    },
+    () => calls.push("render"),
+    () => calls.push("updateCascade"),
+    () => calls.push("handoff"),
+    (i) => calls.push(`use ${i}`),
+    () => ({ model: "jev-latest" }),
+    (text) => text.split("\n").length,
+    () => calls.push("copyA"),
+    () => calls.push("reverseA"),
+    () => calls.push("averageA"),
+    (i, from) => calls.push(`fill ${i} ${from}`),
+    () => calls.push("run"),
+    () => calls.push("refreshVariants"),
+  );
+  const render = () => {
+    tree = fns.renderCompareRows();
+    return tree;
+  };
+  const listed = () =>
+    findAll(byId("cmp-rows-list"), (node) => node.tag === "tr")
+      .slice(1)
+      .map((row) => textOf(row.children[0]));
+  return {
+    W,
+    fns,
+    render,
+    listed,
+    byId,
+    calls,
+    get tree() {
+      return tree;
+    },
+  };
 }
 
 const labWith = (packs, builders = { compareRowsCtx, compareVariantsCtx }) => createLab(packs, builders);
@@ -330,7 +622,11 @@ test("hook: without Lab, or before the builders exist, the table lists every dis
     page.render();
     assert.deepEqual(page.listed(), ["1", "2", "4", "6"]);
     assert.equal(textOf(page.byId("cmp-rows-title")), "Rows where A and B answer “department” differently · 4");
-    assert.equal(find(page.tree, (node) => node.attrs?.["data-lab-surface"]), null, "no Lab section");
+    assert.equal(
+      find(page.tree, (node) => node.attrs?.["data-lab-surface"]),
+      null,
+      "no Lab section",
+    );
     assert.equal(textOf(page.byId("cmp-rows-reset")), "");
   }
 });
@@ -372,7 +668,10 @@ test("hook: the labeling handoff still sends every disagreement, whatever Lab sh
   lab.view(ROWS).filters = [{ key: "wb-compare-rows/labeled", op: "without", value: "" }];
   page.render();
   assert.deepEqual(page.listed(), ["4"]);
-  const button = find(page.tree, (node) => node.tag === "button" && textOf(node) === "Label missing disagreement inputs");
+  const button = find(
+    page.tree,
+    (node) => node.tag === "button" && textOf(node) === "Label missing disagreement inputs",
+  );
   assert.equal(button.attrs.disabled, false);
 });
 

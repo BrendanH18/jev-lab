@@ -52,18 +52,28 @@ def _check(dataset: dict) -> Tuple[Dict[str, dict], dict]:
     """(questions a label can be given for, check), or WorkbenchError."""
     check = dataset.get("check")
     if not isinstance(check, dict):
-        raise WorkbenchError("Dataset %r has no check. Save one from Policy, export it, and route rows with it first."
-                             % dataset["id"])
-    questions = {q: spec for q, spec in (dataset.get("questions") or {}).items()
-                 if isinstance(spec, dict) and spec.get("type") in LABEL_TYPES}
+        raise WorkbenchError(
+            "Dataset %r has no check. Save one from Policy, export it, and route rows with it first." % dataset["id"]
+        )
+    questions = {
+        q: spec
+        for q, spec in (dataset.get("questions") or {}).items()
+        if isinstance(spec, dict) and spec.get("type") in LABEL_TYPES
+    }
     return questions, check
 
 
 def _expected(dataset: dict, check: dict) -> dict:
     from . import gate  # Gate's answer-set helpers also read Review's row identity during import.
 
-    return gate.provenance(dataset.get("questions"), check["gates"], check.get("signal", "confidence"),
-                           check["model"], check.get("rules"), check.get("answer_sets"))
+    return gate.provenance(
+        dataset.get("questions"),
+        check["gates"],
+        check.get("signal", "confidence"),
+        check["model"],
+        check.get("rules"),
+        check.get("answer_sets"),
+    )
 
 
 def _compatible(item: dict, expected: dict) -> bool:
@@ -72,7 +82,9 @@ def _compatible(item: dict, expected: dict) -> bool:
         return False
     value = item["provenance"]
     if not isinstance(value, dict) or type(value.get("version")) is not int or value != expected:
-        raise ValueError("has gate provenance that does not match this check. Export its current gate and route the rows again")
+        raise ValueError(
+            "has gate provenance that does not match this check. Export its current gate and route the rows again"
+        )
     return True
 
 
@@ -117,14 +129,21 @@ def _decision(line: str, questions: Dict[str, dict]) -> dict:
         raise ValueError("has a row the model cannot be sent: %s" % err)
     unknown = [q for q in d["answers"] if q not in questions]
     if unknown:
-        raise ValueError("answers %s, which the dataset's questions do not include. Was it routed by this check's gate?"
-                         % ", ".join(unknown[:3]))
+        raise ValueError(
+            "answers %s, which the dataset's questions do not include. Was it routed by this check's gate?"
+            % ", ".join(unknown[:3])
+        )
     held = d.get("held") or []
     broken = d.get("rules") or []
     if not isinstance(held, list) or not isinstance(broken, list) or not all(isinstance(q, str) for q in held):
         raise ValueError("has held or rules that are not lists of text")
-    out = {"route": d["route"], "row": row, "answers": d["answers"],
-           "held": [q for q in held if q in questions], "rules": [str(r) for r in broken]}
+    out = {
+        "route": d["route"],
+        "row": row,
+        "answers": d["answers"],
+        "held": [q for q in held if q in questions],
+        "rules": [str(r) for r in broken],
+    }
     if "provenance" in d:
         out["provenance"] = d["provenance"]
     if "candidates" in d and "provenance" in d:
@@ -175,7 +194,7 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
     questions, check = _check(dataset)
     expected = _expected(dataset, check)
     audit = _count(audit, "audit", MAX_AUDIT)
-    seed = _count(seed, "seed", 2 ** 31)
+    seed = _count(seed, "seed", 2**31)
     rule_qids = _rule_questions(check, questions)
     gates = check["gates"]
     have = {_key(r) for r in dataset["rows"]}
@@ -214,7 +233,9 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
     sampled = random.Random(seed).sample(auto, min(audit, len(auto)))
     sampled.sort(key=lambda d: d["line"])
     waiting = len(review)
-    review = review[:workbench.MAX_BULK_ROWS - len(sampled)]  # the audit sample stays whole: it stands for every auto row
+    review = review[
+        : workbench.MAX_BULK_ROWS - len(sampled)
+    ]  # the audit sample stays whole: it stands for every auto row
     items = []
     for d in review:
         opened = set(d["held"])
@@ -235,16 +256,27 @@ def queue(dataset_id: str, text: Any, audit: Any = 0, seed: Any = 0) -> dict:
     counts.update({"queued": len(items), "audit": len(sampled), "dropped": waiting - len(review)})
     from . import reviewsession
 
-    slice_fields = [{"name": option["name"],
-                     "values": sorted({slices._value(item["row"], option["name"]) for item in items})}
-                    for option in slices.fields(items) if option["name"] not in ("_expect", "_test")]
+    slice_fields = [
+        {"name": option["name"], "values": sorted({slices._value(item["row"], option["name"]) for item in items})}
+        for option in slices.fields(items)
+        if option["name"] not in ("_expect", "_test")
+    ]
     for item in items:
-        item["slice_values"] = {option["name"]: slices._value(item["row"], option["name"])
-                                for option in slice_fields}
-    return {"dataset": workbench.dataset_summary(dataset), "items": items, "questions": questions,
-            "gates": check["gates"], "counts": counts, "problems": problems[:PROBLEMS_SHOWN],
-            "problems_total": len(problems), "room": room, "slice_fields": slice_fields,
-            "seed": seed, "audit_requested": audit, "session_context": reviewsession.context(dataset, text)}
+        item["slice_values"] = {option["name"]: slices._value(item["row"], option["name"]) for option in slice_fields}
+    return {
+        "dataset": workbench.dataset_summary(dataset),
+        "items": items,
+        "questions": questions,
+        "gates": check["gates"],
+        "counts": counts,
+        "problems": problems[:PROBLEMS_SHOWN],
+        "problems_total": len(problems),
+        "room": room,
+        "slice_fields": slice_fields,
+        "seed": seed,
+        "audit_requested": audit,
+        "session_context": reviewsession.context(dataset, text),
+    }
 
 
 def _item(item: Any, number: int, questions: Dict[str, dict]) -> dict:
@@ -325,8 +357,7 @@ def export_labels(dataset_id: str, items: Any) -> str:
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(["row_id", "input"] + ["label:" + q for q in questions])
     for item in checked:
-        writer.writerow([_handoff_id(item["row"], expected), _key(item["row"])] +
-                        ["" for q in questions])
+        writer.writerow([_handoff_id(item["row"], expected), _key(item["row"])] + ["" for q in questions])
     return out.getvalue()
 
 
@@ -336,8 +367,13 @@ def import_labels(dataset_id: str, items: Any, text: Any) -> dict:
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
         raise WorkbenchError("Supply a nonempty labels CSV of at most %d characters" % MAX_TEXT_CHARS)
     try:
-        rows = [r for r in csv.reader(io.StringIO(text.lstrip("\ufeff"), newline=""),
-                                     delimiter=csvimport._delimiter(text), strict=True) if any(c.strip() for c in r)]
+        rows = [
+            r
+            for r in csv.reader(
+                io.StringIO(text.lstrip("\ufeff"), newline=""), delimiter=csvimport._delimiter(text), strict=True
+            )
+            if any(c.strip() for c in r)
+        ]
     except csv.Error as err:
         raise WorkbenchError("Could not read the labels CSV: %s" % err) from err
     names = ["row_id", "input"] + ["label:" + q for q in questions]
@@ -359,7 +395,9 @@ def import_labels(dataset_id: str, items: Any, text: Any) -> dict:
         item = index[rid]
         try:
             state = json.loads(values["input"])
-            same = isinstance(state, dict) and json.dumps(state, sort_keys=True, ensure_ascii=False) == _key(item["row"])
+            same = isinstance(state, dict) and json.dumps(state, sort_keys=True, ensure_ascii=False) == _key(
+                item["row"]
+            )
         except (ValueError, TypeError):
             same = False
         if not same:
@@ -374,16 +412,23 @@ def import_labels(dataset_id: str, items: Any, text: Any) -> dict:
             labeled += value is not None
         changed += labels != item["labels"]
         item["labels"] = labels
-    return {"items": checked, "counts": {"rows": len(checked), "matched": len(seen),
-                                         "changed": changed, "labels": labeled}}
+    return {
+        "items": checked,
+        "counts": {"rows": len(checked), "matched": len(seen), "changed": changed, "labels": labeled},
+    }
 
 
 def _audit_stats(rows: List[dict]) -> dict:
     n = len(rows)
     correct = sum(r["correct"] for r in rows)
     low, high = calibrate.wilson(correct, n)
-    return {"rows": n, "correct": correct, "accuracy": correct / n if n else None,
-            "accuracy_low": low, "accuracy_high": high}
+    return {
+        "rows": n,
+        "correct": correct,
+        "accuracy": correct / n if n else None,
+        "accuracy_low": low,
+        "accuracy_high": high,
+    }
 
 
 def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, expected: dict) -> Optional[dict]:
@@ -391,8 +436,9 @@ def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, exp
 
     A row is right when every gated answer matches its label, as Policy scores it. None without such rows."""
     gates = list(check["gates"])
-    scored = [i for i in items if i["kind"] == "audit" and _compatible(i, expected)
-              and all(q in i["labels"] for q in gates)]
+    scored = [
+        i for i in items if i["kind"] == "audit" and _compatible(i, expected) and all(q in i["labels"] for q in gates)
+    ]
     if not scored:
         return None
     wrong, outcomes = [], []
@@ -419,10 +465,19 @@ def audit_report(items: List[dict], questions: Dict[str, dict], check: dict, exp
     low, high = calibrate.wilson(correct, n)
     bound = check.get("bound", "estimate")
     target = check.get("min_accuracy")
-    return {"rows": n, "correct": correct, "accuracy": correct / n, "accuracy_low": low, "accuracy_high": high,
-            "target": target, "bound": bound,
-            "ok": None if target is None else calibrate.meets(correct, n, target, bound),
-            "wrong": wrong[:PROBLEMS_SHOWN], "wrong_total": len(wrong), "by_slice": by_slice}
+    return {
+        "rows": n,
+        "correct": correct,
+        "accuracy": correct / n,
+        "accuracy_low": low,
+        "accuracy_high": high,
+        "target": target,
+        "bound": bound,
+        "ok": None if target is None else calibrate.meets(correct, n, target, bound),
+        "wrong": wrong[:PROBLEMS_SHOWN],
+        "wrong_total": len(wrong),
+        "by_slice": by_slice,
+    }
 
 
 @workbench.dataset_update()
@@ -451,12 +506,22 @@ def append(dataset_id: str, items: Any) -> dict:
         have.add(key)
         new.append(item)
     if len(dataset["rows"]) + len(new) > workbench.MAX_BULK_ROWS:
-        raise WorkbenchError("The dataset holds %d rows, and a dataset holds up to %d, the most one Bulk run takes. "
-                             "Add at most %d of these %d rows, or save them as a new dataset."
-                             % (len(dataset["rows"]), workbench.MAX_BULK_ROWS,
-                                max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"])), len(new)))
+        raise WorkbenchError(
+            "The dataset holds %d rows, and a dataset holds up to %d, the most one Bulk run takes. "
+            "Add at most %d of these %d rows, or save them as a new dataset."
+            % (
+                len(dataset["rows"]),
+                workbench.MAX_BULK_ROWS,
+                max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"])),
+                len(new),
+            )
+        )
     rows = dataset["rows"] + [dict(i["row"], **{workbench.LABEL_KEY: i["labels"]}) for i in new]
     dataset["rows"] = workbench.validate_rows(rows)
     workbench.write_dataset(dataset)
-    return {"dataset": workbench.dataset_summary(dataset), "added": len(new), "already": already,
-            "audit": audit_report(checked, questions, check, expected)}
+    return {
+        "dataset": workbench.dataset_summary(dataset),
+        "added": len(new),
+        "already": already,
+        "audit": audit_report(checked, questions, check, expected),
+    }

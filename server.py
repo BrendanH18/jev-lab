@@ -20,8 +20,55 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from jev import (agreement, agreementsession, answersets, bundles, calibrate, checks, claims, compare, compare_workflows, cost, csvimport, dataset_changes, dataset_edits, decisions, dispatch, drift, driftsession, envfile, estimate, examples, find, gate, guidelines, health, hello,
-                 history, holdout, images, counter, lab, lint, policy, preflight, prelabel, prelabel_drafts, prune, recalibrate, review, reviews, reviewsession, rules, security, shield, slices, testsplit, upgrade, workbench)
+from jev import (
+    agreement,
+    agreementsession,
+    answersets,
+    bundles,
+    calibrate,
+    checks,
+    claims,
+    compare,
+    compare_workflows,
+    cost,
+    csvimport,
+    dataset_changes,
+    dataset_edits,
+    decisions,
+    dispatch,
+    drift,
+    driftsession,
+    envfile,
+    estimate,
+    examples,
+    find,
+    gate,
+    guidelines,
+    health,
+    hello,
+    history,
+    holdout,
+    images,
+    counter,
+    lab,
+    lint,
+    policy,
+    preflight,
+    prelabel,
+    prelabel_drafts,
+    prune,
+    recalibrate,
+    review,
+    reviews,
+    reviewsession,
+    rules,
+    security,
+    shield,
+    slices,
+    testsplit,
+    upgrade,
+    workbench,
+)
 from jev.autopilot import Autopilot, find_message
 from jev.client import JevClient, JevError, is_versioned, price_per_input_token, supports_box
 from jev.config import PROJECT_ROOT, Settings
@@ -31,9 +78,18 @@ from jev.world import TEMPLATES, World
 
 VERSION = "0.2.0"
 STATIC = PROJECT_ROOT / "static"
-PAGES = {"/": "index.html", "/shield": "shield.html", "/dispatch": "dispatch.html", "/autopilot": "autopilot.html",
-         "/claims": "claims.html", "/reviews": "reviews.html", "/counter": "counter.html", "/find": "find.html", "/play": "play.html",
-         "/workbench": "workbench.html"}
+PAGES = {
+    "/": "index.html",
+    "/shield": "shield.html",
+    "/dispatch": "dispatch.html",
+    "/autopilot": "autopilot.html",
+    "/claims": "claims.html",
+    "/reviews": "reviews.html",
+    "/counter": "counter.html",
+    "/find": "find.html",
+    "/play": "play.html",
+    "/workbench": "workbench.html",
+}
 MAX_BODY_BYTES = 12 * 1024 * 1024  # room for a few base64 photos
 
 settings = Settings()
@@ -96,8 +152,10 @@ def api_key(body):
         client.reload_settings()
         existing = client.settings.file_values.get("TYPESAFE_API_KEY")
         if existing and existing != key and not body.get("replace"):
-            status["save_error"] = ("A different key is already saved in .env. Use “Forget key” first "
-                                    "(or send replace: true). The new key is active for this run only.")
+            status["save_error"] = (
+                "A different key is already saved in .env. Use “Forget key” first "
+                "(or send replace: true). The new key is active for this run only."
+            )
         else:
             try:
                 envfile.write_key(PROJECT_ROOT, key)
@@ -136,8 +194,10 @@ def check_model(model: str) -> None:
         return
     names = [m.get("name") for m in client.models().get("models", [])]
     if model not in names:
-        raise BadRequest("%s is not available to this key. Choose one of: %s, or a versioned id such as "
-                         "jev-1.14.0." % (model, ", ".join(names)))
+        raise BadRequest(
+            "%s is not available to this key. Choose one of: %s, or a versioned id such as "
+            "jev-1.14.0." % (model, ", ".join(names))
+        )
 
 
 def api_model(body):
@@ -149,17 +209,25 @@ def api_model(body):
 
 
 def api_image_samples(_body):
-    return {"samples": [{"name": name, "about": about, "url": "/img/samples/%s.png" % name}
-                        for name, about in images.SAMPLES.items()],
-            "limits": {"min_side": images.MIN_SIDE, "max_side": images.MAX_SIDE, "max_images": images.MAX_IMAGES}}
+    return {
+        "samples": [
+            {"name": name, "about": about, "url": "/img/samples/%s.png" % name}
+            for name, about in images.SAMPLES.items()
+        ],
+        "limits": {"min_side": images.MIN_SIDE, "max_side": images.MAX_SIDE, "max_images": images.MAX_IMAGES},
+    }
 
 
 # --- demos ---------------------------------------------------------------------------------
 
 
 def api_scenarios(_body):
-    return {"inbox": [dict(m) for m in INBOX], "commands": COMMANDS, "templates": TEMPLATES,
-            "hello_examples": hello.EXAMPLES}
+    return {
+        "inbox": [dict(m) for m in INBOX],
+        "commands": COMMANDS,
+        "templates": TEMPLATES,
+        "hello_examples": hello.EXAMPLES,
+    }
 
 
 def api_hello(body):
@@ -176,8 +244,13 @@ def api_shield(body):
     vendors = dispatch_world.state["vendors"]
     result = client.system_one(shield.state_for(message), shield.questions(vendors))
     fact = shield.facts(message, result.answers, vendors)
-    return {"meta": result.meta(), "trace": result.trace(), "answers": result.answers, "fact": fact,
-            "verdict": shield.verdict(result.answers, fact, body.get("weights"), body.get("policy"))}
+    return {
+        "meta": result.meta(),
+        "trace": result.trace(),
+        "answers": result.answers,
+        "fact": fact,
+        "verdict": shield.verdict(result.answers, fact, body.get("weights"), body.get("policy")),
+    }
 
 
 def api_shield_rescore(body):
@@ -209,10 +282,14 @@ def api_shield_batch(body):
     results = workbench.map_until_stopped(one, messages, min(16, len(messages)) or 1, stop, skipped)
     done = [r for r in results if "meta" in r]
     stopped = next((r["error"] for r in results if r.get("status") in (401, 402)), None)
-    return {"results": results, "wall_ms": round((time.perf_counter() - started) * 1000, 1),
-            "completed": len(done), "stopped": stopped,
-            "total_cost_usd": sum(r["meta"]["cost_usd"] for r in done),
-            "total_input_tokens": sum(r["meta"]["input_tokens"] for r in done)}
+    return {
+        "results": results,
+        "wall_ms": round((time.perf_counter() - started) * 1000, 1),
+        "completed": len(done),
+        "stopped": stopped,
+        "total_cost_usd": sum(r["meta"]["cost_usd"] for r in done),
+        "total_input_tokens": sum(r["meta"]["input_tokens"] for r in done),
+    }
 
 
 def _action_key(tool, exec_args) -> str:
@@ -275,12 +352,12 @@ def api_dispatch(body):
     if not text:
         raise BadRequest("text is required")
     cands = dispatch.candidates(text)
-    result = client.system_one(dispatch.state_for_command(text),
-                               dispatch.questions(dispatch_world.state, cands, source="command"))
+    result = client.system_one(
+        dispatch.state_for_command(text), dispatch.questions(dispatch_world.state, cands, source="command")
+    )
     _, plan = _dispatch_plan(text, result.answers)
     _remember_plan(plan)
-    out = {"meta": result.meta(), "trace": result.trace(), "answers": result.answers, "candidates": cands,
-           "plan": plan}
+    out = {"meta": result.meta(), "trace": result.trace(), "answers": result.answers, "candidates": cands, "plan": plan}
     if body.get("execute") and plan["decision"] == "execute":
         out["executed"] = _run_approved(plan["tool"], plan["exec_args"])
         out["world"] = dispatch_world.snapshot()
@@ -349,8 +426,12 @@ def api_autopilot_benchmark(body):
 def api_claims_setup(_body):
     world = dispatch_world.snapshot()
     orders = [dict(claims.order_facts(dispatch_world, oid), id=oid) for oid in world["orders"]]
-    return {"orders": orders, "policy": claims.DEFAULT_POLICY, "samples": api_image_samples({})["samples"],
-            "examples": claims.EXAMPLES}
+    return {
+        "orders": orders,
+        "policy": claims.DEFAULT_POLICY,
+        "samples": api_image_samples({})["samples"],
+        "examples": claims.EXAMPLES,
+    }
 
 
 def api_claims_check(body):
@@ -391,8 +472,14 @@ def api_counter_decide(body):
 
 
 def api_reviews_setup(_body):
-    return {"examples": reviews.EXAMPLES, "policy": reviews.DEFAULT_POLICY, "teams": reviews.TEAMS,
-            "topic_teams": reviews.TOPIC_TEAM, "channels": reviews.CHANNELS, "actions": reviews.ACTIONS}
+    return {
+        "examples": reviews.EXAMPLES,
+        "policy": reviews.DEFAULT_POLICY,
+        "teams": reviews.TEAMS,
+        "topic_teams": reviews.TOPIC_TEAM,
+        "channels": reviews.CHANNELS,
+        "actions": reviews.ACTIONS,
+    }
 
 
 def api_reviews_check(body):
@@ -485,13 +572,20 @@ def api_wb_dataset_edits_prepare(body):
 
 
 def api_wb_dataset_edits_preview(body):
-    return dataset_edits.preview(body.get("rows"), body.get("questions"), body.get("context"),
-                                 body.get("action"), body.get("items"))
+    return dataset_edits.preview(
+        body.get("rows"), body.get("questions"), body.get("context"), body.get("action"), body.get("items")
+    )
 
 
 def api_wb_dataset_edits_apply(body):
-    return dataset_edits.apply(body.get("rows"), body.get("questions"), body.get("context"),
-                               body.get("action"), body.get("items"), body.get("token"))
+    return dataset_edits.apply(
+        body.get("rows"),
+        body.get("questions"),
+        body.get("context"),
+        body.get("action"),
+        body.get("items"),
+        body.get("token"),
+    )
 
 
 def api_wb_items(_body):
@@ -565,8 +659,14 @@ def api_wb_bulk(body):
     model = bulk_model(body)
     if model:
         check_model(model)
-    return workbench.run_bulk(client, bulk_rows(body, body.get("indices") is None), body.get("questions"),
-                              str(body.get("field") or "text"), model, body.get("indices"))
+    return workbench.run_bulk(
+        client,
+        bulk_rows(body, body.get("indices") is None),
+        body.get("questions"),
+        str(body.get("field") or "text"),
+        model,
+        body.get("indices"),
+    )
 
 
 def bulk_model(body):
@@ -584,13 +684,22 @@ def api_wb_compare(body):
 
 
 def api_wb_compare_score(body):
-    return compare.evaluate(body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("first") or "A"),
-                            str(body.get("bound") or "estimate"))
+    return compare.evaluate(
+        body.get("rows"),
+        str(body.get("signal") or "confidence"),
+        str(body.get("first") or "A"),
+        str(body.get("bound") or "estimate"),
+    )
 
 
 def api_wb_compare_slices(body):
-    return compare_workflows.by_slice(body.get("rows"), body.get("field"), str(body.get("signal") or "confidence"),
-                                      str(body.get("first") or "A"), str(body.get("bound") or "estimate"))
+    return compare_workflows.by_slice(
+        body.get("rows"),
+        body.get("field"),
+        str(body.get("signal") or "confidence"),
+        str(body.get("first") or "A"),
+        str(body.get("bound") or "estimate"),
+    )
 
 
 def api_wb_compare_labeling(body):
@@ -598,8 +707,14 @@ def api_wb_compare_labeling(body):
 
 
 def api_wb_agreement_session_export(body):
-    return agreementsession.export_session(str(body.get("id", "")), body.get("context"), body.get("rows"),
-                                           body.get("seed"), body.get("items"), body.get("settlements"))
+    return agreementsession.export_session(
+        str(body.get("id", "")),
+        body.get("context"),
+        body.get("rows"),
+        body.get("seed"),
+        body.get("items"),
+        body.get("settlements"),
+    )
 
 
 def api_wb_agreement_session_import(body):
@@ -611,36 +726,67 @@ def api_wb_recalibrate(body):
 
 
 def api_wb_calibrate(body):
-    return calibrate.evaluate(body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("bound") or "estimate"))
+    return calibrate.evaluate(
+        body.get("rows"), str(body.get("signal") or "confidence"), str(body.get("bound") or "estimate")
+    )
 
 
 def api_wb_policy(body):
-    return policy.evaluate(body.get("rows"), body.get("gates"), str(body.get("signal") or "confidence"), body.get("rules"))
+    return policy.evaluate(
+        body.get("rows"), body.get("gates"), str(body.get("signal") or "confidence"), body.get("rules")
+    )
 
 
 def api_wb_policy_tune(body):
-    return policy.tune(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                       str(body.get("bound") or "estimate"), body.get("rules"))
+    return policy.tune(
+        body.get("rows"),
+        body.get("questions"),
+        str(body.get("signal") or "confidence"),
+        str(body.get("bound") or "estimate"),
+        body.get("rules"),
+    )
 
 
 def api_wb_policy_prune(body):
-    return prune.prune(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                       str(body.get("bound") or "estimate"), body.get("target", 0.95), body.get("rules"), body.get("request"))
+    return prune.prune(
+        body.get("rows"),
+        body.get("questions"),
+        str(body.get("signal") or "confidence"),
+        str(body.get("bound") or "estimate"),
+        body.get("target", 0.95),
+        body.get("rules"),
+        body.get("request"),
+    )
 
 
 def api_wb_holdout(body):
-    return holdout.evaluate(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                            str(body.get("bound") or "estimate"), body.get("folds", holdout.FOLDS), body.get("costs"),
-                            body.get("rules"))
+    return holdout.evaluate(
+        body.get("rows"),
+        body.get("questions"),
+        str(body.get("signal") or "confidence"),
+        str(body.get("bound") or "estimate"),
+        body.get("folds", holdout.FOLDS),
+        body.get("costs"),
+        body.get("rules"),
+    )
 
 
 def api_wb_answersets(body):
-    return answersets.evaluate(body.get("rows"), body.get("coverage", 0.9), body.get("folds", holdout.FOLDS), body.get("field"))
+    return answersets.evaluate(
+        body.get("rows"), body.get("coverage", 0.9), body.get("folds", holdout.FOLDS), body.get("field")
+    )
 
 
 def api_wb_cost(body):
-    return cost.evaluate(body.get("rows"), body.get("questions"), str(body.get("signal") or "confidence"),
-                         body.get("costs"), body.get("gates"), body.get("tune") is not False, body.get("rules"))
+    return cost.evaluate(
+        body.get("rows"),
+        body.get("questions"),
+        str(body.get("signal") or "confidence"),
+        body.get("costs"),
+        body.get("gates"),
+        body.get("tune") is not False,
+        body.get("rules"),
+    )
 
 
 def api_wb_rules(body):
@@ -648,8 +794,9 @@ def api_wb_rules(body):
 
 
 def api_wb_review(body):
-    return review.evaluate(body.get("rows"), body.get("question"), body.get("threshold", 0.5),
-                           str(body.get("signal") or "confidence"))
+    return review.evaluate(
+        body.get("rows"), body.get("question"), body.get("threshold", 0.5), str(body.get("signal") or "confidence")
+    )
 
 
 def api_wb_slices(body):
@@ -661,8 +808,11 @@ def api_wb_datasets(_body):
 
 
 def api_wb_dataset_save(body):
-    dataset = (dataset_changes.save(body, body["preview_revision"]) if "preview_revision" in body
-               else workbench.save_dataset(body))
+    dataset = (
+        dataset_changes.save(body, body["preview_revision"])
+        if "preview_revision" in body
+        else workbench.save_dataset(body)
+    )
     out = {"dataset": workbench.dataset_summary(dataset)}
     if dataset.get("check_dropped"):
         out["check_dropped"] = dataset["check_dropped"]
@@ -742,8 +892,14 @@ def api_wb_estimate(body):
     field = str(body.get("field") or "text")
     model = str(body.get("model") or "").strip() or None
     if kind == "bulk":
-        return estimate.for_bulk(client, bulk_rows(body, body.get("indices") is None), body.get("questions"),
-                                 field, bulk_model(body), body.get("indices"))
+        return estimate.for_bulk(
+            client,
+            bulk_rows(body, body.get("indices") is None),
+            body.get("questions"),
+            field,
+            bulk_model(body),
+            body.get("indices"),
+        )
     if kind == "compare":
         return estimate.for_compare(client, bulk_rows(body), body.get("variants"), field)
     if kind == "check":
@@ -780,8 +936,9 @@ def api_wb_drift_add(body):
 
 
 def api_wb_drift_session_export(body):
-    return driftsession.export_session(str(body.get("id", "")), body.get("context"), body.get("members"),
-                                      body.get("items"))
+    return driftsession.export_session(
+        str(body.get("id", "")), body.get("context"), body.get("members"), body.get("items")
+    )
 
 
 def api_wb_drift_session_import(body):
@@ -798,8 +955,14 @@ def api_wb_test_remove(body):
 
 
 def api_wb_test_score(body):
-    return testsplit.score(str(body.get("id", "")), body.get("rows"), body.get("gates"),
-                           str(body.get("signal") or "confidence"), body.get("rules"), body.get("model"))
+    return testsplit.score(
+        str(body.get("id", "")),
+        body.get("rows"),
+        body.get("gates"),
+        str(body.get("signal") or "confidence"),
+        body.get("rules"),
+        body.get("model"),
+    )
 
 
 def api_wb_check_upgrade(body):
@@ -825,8 +988,14 @@ def api_wb_decisions_add(body):
 
 
 def api_wb_decisions_session_export(body):
-    return reviewsession.export_session(str(body.get("id", "")), body.get("text"), body.get("seed"),
-                                        body.get("audit"), body.get("context"), body.get("items"))
+    return reviewsession.export_session(
+        str(body.get("id", "")),
+        body.get("text"),
+        body.get("seed"),
+        body.get("audit"),
+        body.get("context"),
+        body.get("items"),
+    )
 
 
 def api_wb_decisions_session_import(body):
@@ -848,8 +1017,14 @@ def api_wb_agreement_settle(body):
 def api_wb_gate_export(body):
     if body.get("dataset"):
         return gate.export_check(str(body["dataset"]))
-    return gate.export(body.get("questions"), body.get("gates"), body.get("signal", "confidence"),
-                       body.get("model") or client.model, rules=body.get("rules"), answer_sets=body.get("answer_sets"))
+    return gate.export(
+        body.get("questions"),
+        body.get("gates"),
+        body.get("signal", "confidence"),
+        body.get("model") or client.model,
+        rules=body.get("rules"),
+        answer_sets=body.get("answer_sets"),
+    )
 
 
 def api_wb_import(body):
@@ -857,8 +1032,11 @@ def api_wb_import(body):
 
 
 def api_wb_bulk_sample(_body):
-    return {"rows": workbench.load_sample_rows(), "questions": examples.BULK_QUESTIONS,
-            "terse_questions": examples.TERSE_BULK_QUESTIONS}
+    return {
+        "rows": workbench.load_sample_rows(),
+        "questions": examples.BULK_QUESTIONS,
+        "terse_questions": examples.TERSE_BULK_QUESTIONS,
+    }
 
 
 def api_wb_pictures_save(body):
@@ -992,9 +1170,11 @@ for _route, _handler in lab.routes().items():
         raise RuntimeError("Lab route %s %s is already a route" % _route)
     ROUTES[_route] = _handler
 
-CSP = ("default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "
-       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
-       "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+CSP = (
+    "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1040,8 +1220,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body, dict):
                     raise BadRequest("Body must be a JSON object")
                 self._send(200, route(body))
-            except (BadRequest, workbench.WorkbenchError, calibrate.CalibrationError, envfile.EnvFileError,
-                    images.ImageError) as err:
+            except (
+                BadRequest,
+                workbench.WorkbenchError,
+                calibrate.CalibrationError,
+                envfile.EnvFileError,
+                images.ImageError,
+            ) as err:
                 self._send(400, {"error": str(err)})
             except JevError as err:
                 status = err.status if err.status in (400, 401, 402, 403, 413, 422, 429) else 502
@@ -1087,7 +1272,9 @@ def main():
     except OSError as err:
         print("Could not listen on 127.0.0.1:%d (%s). Set PORT=<other port> and try again." % (port, err))
         return 1
-    key_note = ("API key from %s" % client.key_source) if client.configured else "no API key yet: connect one in the app"
+    key_note = (
+        ("API key from %s" % client.key_source) if client.configured else "no API key yet: connect one in the app"
+    )
     print("\n  Jev Lab %s  →  http://127.0.0.1:%d" % (VERSION, port))
     print("  model %s via %s · %s" % (client.model, client.backend, key_note))
     print("  every call is live · spend guard $%.2f per run (JEV_LAB_BUDGET_USD)\n" % client.guard.budget_usd)

@@ -20,17 +20,51 @@ const PAGES_DIR = join(ROOT, "static/js/lab/pages");
 const SURFACES_DIR = join(ROOT, "static/js/lab/surfaces");
 const DOCS_DIR = join(ROOT, "docs/lab");
 // Every page gets an index, even with no packs of its own, so its entry module can always import one.
-export const PAGES = ["index", "shield", "dispatch", "autopilot", "claims", "reviews", "find", "play", "counter", "workbench"];
+export const PAGES = [
+  "index",
+  "shield",
+  "dispatch",
+  "autopilot",
+  "claims",
+  "reviews",
+  "find",
+  "play",
+  "counter",
+  "workbench",
+];
 
 const AREA_TITLES = {
-  chrome: "Every page", index: "Overview", shield: "Shield", dispatch: "Dispatch", autopilot: "Autopilot", claims: "Claims", reviews: "Reviews",
-  find: "Find", play: "Play", counter: "Counter", "workbench.build": "Workbench · Build", "workbench.tests": "Workbench · Tests",
-  "workbench.bulk": "Workbench · Bulk", "workbench.labeling": "Workbench · Labeling", "workbench.datasets": "Workbench · Datasets",
-  "workbench.checks": "Workbench · Checks", "workbench.drift": "Workbench · Drift", "workbench.review": "Workbench · Review",
-  "workbench.calibrate": "Workbench · Calibrate", "workbench.policy": "Workbench · Policy", "workbench.costs": "Workbench · Costs",
-  "workbench.compare": "Workbench · Compare", "workbench.examples": "Workbench · Examples", "workbench.toolbox": "Workbench · Toolbox",
-  "workbench.shell": "Workbench · Page", "python.lint": "Question checks", "python.health": "Dataset health", "python.cli": "Command line",
-  "python.api": "Local API", "python.formats": "Row formats", "python.gate": "Exported gates",
+  chrome: "Every page",
+  index: "Overview",
+  shield: "Shield",
+  dispatch: "Dispatch",
+  autopilot: "Autopilot",
+  claims: "Claims",
+  reviews: "Reviews",
+  find: "Find",
+  play: "Play",
+  counter: "Counter",
+  "workbench.build": "Workbench · Build",
+  "workbench.tests": "Workbench · Tests",
+  "workbench.bulk": "Workbench · Bulk",
+  "workbench.labeling": "Workbench · Labeling",
+  "workbench.datasets": "Workbench · Datasets",
+  "workbench.checks": "Workbench · Checks",
+  "workbench.drift": "Workbench · Drift",
+  "workbench.review": "Workbench · Review",
+  "workbench.calibrate": "Workbench · Calibrate",
+  "workbench.policy": "Workbench · Policy",
+  "workbench.costs": "Workbench · Costs",
+  "workbench.compare": "Workbench · Compare",
+  "workbench.examples": "Workbench · Examples",
+  "workbench.toolbox": "Workbench · Toolbox",
+  "workbench.shell": "Workbench · Page",
+  "python.lint": "Question checks",
+  "python.health": "Dataset health",
+  "python.cli": "Command line",
+  "python.api": "Local API",
+  "python.formats": "Row formats",
+  "python.gate": "Exported gates",
 };
 
 // A surface id's area: its page, or its first two parts for the Workbench and for Python packs.
@@ -38,20 +72,32 @@ export function areaOf(surface) {
   const parts = String(surface).split(".");
   return parts.slice(0, parts[0] === "workbench" || parts[0] === "python" ? 2 : 1).join(".");
 }
-const areaTitle = (area) => AREA_TITLES[area] || area.split(".").map((part) => part[0].toUpperCase() + part.slice(1)).join(" · ");
+const areaTitle = (area) =>
+  AREA_TITLES[area] ||
+  area
+    .split(".")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" · ");
 
 export function packFiles() {
   if (!existsSync(PACKS_DIR)) return [];
   const out = [];
-  for (const page of readdirSync(PACKS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()) {
-    for (const file of readdirSync(join(PACKS_DIR, page)).filter((name) => name.endsWith(".js")).sort()) out.push({ page, file, path: join(PACKS_DIR, page, file) });
+  for (const page of readdirSync(PACKS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()) {
+    for (const file of readdirSync(join(PACKS_DIR, page))
+      .filter((name) => name.endsWith(".js"))
+      .sort())
+      out.push({ page, file, path: join(PACKS_DIR, page, file) });
   }
   return out;
 }
 
 export async function loadJsPacks() {
   const packs = [];
-  for (const entry of packFiles()) packs.push({ ...entry, pack: (await import(pathToFileURL(entry.path).href)).default });
+  for (const entry of packFiles())
+    packs.push({ ...entry, pack: (await import(pathToFileURL(entry.path).href)).default });
   return packs;
 }
 
@@ -61,41 +107,70 @@ export function pythonImprovements() {
   let lastError = null;
   for (const python of ["python3", "python"]) {
     try {
-      return JSON.parse(execFileSync(python, ["scripts/lab.py", "inventory", "--json"], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }));
-    } catch (error) { lastError = error; }
+      return JSON.parse(
+        execFileSync(python, ["scripts/lab.py", "inventory", "--json"], {
+          cwd: ROOT,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          maxBuffer: 64 * 1024 * 1024,
+        }),
+      );
+    } catch (error) {
+      lastError = error;
+    }
   }
-  throw new Error(`Could not read the Python packs with scripts/lab.py inventory --json: ${lastError?.stderr || lastError?.message}`);
+  throw new Error(
+    `Could not read the Python packs with scripts/lab.py inventory --json: ${lastError?.stderr || lastError?.message}`,
+  );
 }
 
 // The ctx-builder modules of a page: static/js/lab/surfaces/<page>.js and <page>-<area>.js.
 export function surfaceFiles(page) {
   if (!existsSync(SURFACES_DIR)) return [];
-  return readdirSync(SURFACES_DIR).filter((name) => name === `${page}.js` || (name.startsWith(`${page}-`) && name.endsWith(".js"))).sort();
+  return readdirSync(SURFACES_DIR)
+    .filter((name) => name === `${page}.js` || (name.startsWith(`${page}-`) && name.endsWith(".js")))
+    .sort();
 }
 
 function pageIndex(page, files, surfaces) {
-  const lines = ["// Generated by scripts/lab_inventory.mjs from static/js/lab/packs and static/js/lab/surfaces. Do not edit: run the",
+  const lines = [
+    "// Generated by scripts/lab_inventory.mjs from static/js/lab/packs and static/js/lab/surfaces. Do not edit: run the",
     `// script again instead. The Lab packs the ${page} page loads (its own, then the page-wide "chrome" packs) and the`,
     "// ctx builders of its surfaces, which page code reaches as LAB.builders.",
-    'import { createLab } from "../host.js";'];
+    'import { createLab } from "../host.js";',
+  ];
   surfaces.forEach((file, index) => lines.push(`import * as s${index} from "../surfaces/${file}";`));
   files.forEach((entry, index) => lines.push(`import p${index} from "../packs/${entry.page}/${entry.file}";`));
-  lines.push("", `export const PACKS = [${files.map((_, index) => `p${index}`).join(", ")}];`,
-    `export const LAB = createLab(PACKS, { ${surfaces.map((_, index) => `...s${index}`).join(", ")} });`, "");
+  lines.push(
+    "",
+    `export const PACKS = [${files.map((_, index) => `p${index}`).join(", ")}];`,
+    `export const LAB = createLab(PACKS, { ${surfaces.map((_, index) => `...s${index}`).join(", ")} });`,
+    "",
+  );
   return lines.join("\n");
 }
 
-const range = (first, last) => (first === last ? `${first}` : `${first.toLocaleString("en-US")}–${last.toLocaleString("en-US")}`);
+const range = (first, last) =>
+  first === last ? `${first}` : `${first.toLocaleString("en-US")}–${last.toLocaleString("en-US")}`;
 
 function areaDoc(area, groups, first) {
   const count = groups.reduce((total, group) => total + group.items.length, 0);
-  const lines = [`# ${areaTitle(area)}: improvements ${range(first, first + count - 1)}`, "",
+  const lines = [
+    `# ${areaTitle(area)}: improvements ${range(first, first + count - 1)}`,
+    "",
     `${count.toLocaleString("en-US")} improvements from ${groups.length} Lab pack${groups.length === 1 ? "" : "s"}. This file is generated by`,
     "`node scripts/lab_inventory.mjs` from what the packs declare; do not edit it. Each numbered line is one capability with",
-    "its own test, named by the id in backticks. [Back to the Lab inventory](README.md).", ""];
+    "its own test, named by the id in backticks. [Back to the Lab inventory](README.md).",
+    "",
+  ];
   let number = first;
   for (const group of groups) {
-    lines.push(`## ${group.title}`, "", `Pack \`${group.id}\` on \`${group.surface}\`.${group.about ? ` ${group.about}` : ""}`, "");
+    lines.push(
+      `## ${group.title}`,
+      "",
+      `Pack \`${group.id}\` on \`${group.surface}\`.${group.about ? ` ${group.about}` : ""}`,
+      "",
+    );
     for (const item of group.items) lines.push(`${number++}. ${item.title} · \`${item.id}\``);
     lines.push("");
   }
@@ -103,10 +178,13 @@ function areaDoc(area, groups, first) {
 }
 
 function readme(rows, total, packCount) {
-  const lines = [`# Lab: ${total.toLocaleString("en-US")} improvements`, "",
+  const lines = [
+    `# Lab: ${total.toLocaleString("en-US")} improvements`,
+    "",
     "Lab is the extension layer of Jev Lab. Small, self-contained **packs** declare features (filters and sorts over a",
     "list, advisory checks, previewed edits, metrics, copy and download formats, paste importers, commands with",
-    "shortcuts, calculators, panels), and one generic set of controls shows them on every page:", "",
+    "shortcuts, calculators, panels), and one generic set of controls shows them on every page:",
+    "",
     "- **Lab tools** is a disclosure beside each list or result it works on. *Refine* filters and sorts by derived",
     "  facts, *Checks* runs advisory checks on the shown items, *Edits* previews a change before you apply it (with one",
     "  guarded Undo), *Metrics* computes from what the page already holds, and *Copy and download* states what each",
@@ -115,28 +193,44 @@ function readme(rows, total, packCount) {
     "- **Commands** (the top-bar button, or Ctrl/Cmd + K) is a palette of every action the current page offers, with",
     "  its keyboard shortcut.",
     "- `scripts/lab.py` is the same idea for the terminal: offline subcommands for datasets, saved tests, questions",
-    "  and statistics.", "",
+    "  and statistics.",
+    "",
     "Every improvement here runs locally. None calls the model, adds a dependency, changes a built-in scenario or the",
     "wording of a model-facing question, or shows an answer the current user did not request in this session. Lab",
     "keeps its filters, sorts and drafts in the page session only. Exports state their content boundary, and the",
-    "existing rules for held-out rows, labels, audits and spend previews apply unchanged.", "",
-    "## How improvements are counted", "",
+    "existing rules for held-out rows, labels, audits and spend previews apply unchanged.",
+    "",
+    "## How improvements are counted",
+    "",
     "One numbered improvement is one user-visible capability with its own test, named by the improvement's id. A",
     "numeric fact gives three (a minimum filter, a maximum filter, and sorting in either direction), a yes/no fact one",
     "(with or without), a text fact two (a contains filter and sorting), a category fact two (a filter and a",
     "breakdown of the shown items), a panel as many as it lists, and every check, edit, metric, export, importer,",
     "command, tool, command-line subcommand or option, and behavior one. `tests/js/lab/harness.mjs` and",
-    "`tests/labkit.py` refuse a pack whose features lack a concrete case.", "",
-    "## Inventory", "",
-    `${total.toLocaleString("en-US")} improvements in ${packCount} packs.`, "",
-    "| Improvements | Area | Count | Packs | Inventory |", "| --- | --- | ---: | ---: | --- |"];
-  for (const row of rows) lines.push(`| ${range(row.first, row.last)} | ${areaTitle(row.area)} | ${row.count.toLocaleString("en-US")} | ${row.packs} | [${row.file}](${row.file}) |`);
-  lines.push("", "## Adding a pack", "",
+    "`tests/labkit.py` refuse a pack whose features lack a concrete case.",
+    "",
+    "## Inventory",
+    "",
+    `${total.toLocaleString("en-US")} improvements in ${packCount} packs.`,
+    "",
+    "| Improvements | Area | Count | Packs | Inventory |",
+    "| --- | --- | ---: | ---: | --- |",
+  ];
+  for (const row of rows)
+    lines.push(
+      `| ${range(row.first, row.last)} | ${areaTitle(row.area)} | ${row.count.toLocaleString("en-US")} | ${row.packs} | [${row.file}](${row.file}) |`,
+    );
+  lines.push(
+    "",
+    "## Adding a pack",
+    "",
     "A JavaScript pack is one module under `static/js/lab/packs/<page>/` that default-exports `definePack({ ... })`",
     "(see the header of `static/js/lab/kit.js`), with a test `tests/js/lab/<pack id>.test.mjs` that calls `checkPack`.",
     "A Python pack is one module under `jev/lab/packs/` with a test `tests/test_lab_<pack id>.py`. Packs import only",
     "the kit and the shared libraries in `static/js/lab/lib/` (or `jev/lab/`), and reach the page through the `ctx` its",
-    "surface passes in. Then run `node scripts/lab_inventory.mjs` to refresh the page indexes and this inventory.", "");
+    "surface passes in. Then run `node scripts/lab_inventory.mjs` to refresh the page indexes and this inventory.",
+    "",
+  );
   return lines.join("\n");
 }
 
@@ -150,17 +244,34 @@ export async function generate() {
     const names = new Map();
     for (const file of surfaces) {
       for (const name of Object.keys(await import(pathToFileURL(join(SURFACES_DIR, file)).href))) {
-        if (names.has(name)) throw new Error(`static/js/lab/surfaces: ${file} and ${names.get(name)} both export ${name}`);
+        if (names.has(name))
+          throw new Error(`static/js/lab/surfaces: ${file} and ${names.get(name)} both export ${name}`);
         names.set(name, file);
       }
     }
-    files.set(`static/js/lab/pages/${page}.js`, pageIndex(page, [...loaded.filter((entry) => entry.page === page), ...chrome], surfaces));
+    files.set(
+      `static/js/lab/pages/${page}.js`,
+      pageIndex(page, [...loaded.filter((entry) => entry.page === page), ...chrome], surfaces),
+    );
   }
 
-  const groups = loaded.map(({ pack }) => ({ id: pack.id, title: pack.title, surface: pack.surface, about: pack.about || "", items: improvementsOf(pack) }));
+  const groups = loaded.map(({ pack }) => ({
+    id: pack.id,
+    title: pack.title,
+    surface: pack.surface,
+    about: pack.about || "",
+    items: improvementsOf(pack),
+  }));
   const python = new Map();
   for (const item of pythonImprovements()) {
-    if (!python.has(item.pack)) python.set(item.pack, { id: item.pack, title: item.pack_title || item.pack, surface: item.surface, about: item.about || "", items: [] });
+    if (!python.has(item.pack))
+      python.set(item.pack, {
+        id: item.pack,
+        title: item.pack_title || item.pack,
+        surface: item.surface,
+        about: item.about || "",
+        items: [],
+      });
     python.get(item.pack).items.push({ id: item.id, title: item.title });
   }
   groups.push(...python.values());
@@ -220,7 +331,9 @@ async function main() {
       writeFileSync(full, files.get(path));
     } else rmSync(full);
   }
-  console.log(`Lab inventory: ${total} improvements in ${packs} packs; ${stale.length} file${stale.length === 1 ? "" : "s"} updated.`);
+  console.log(
+    `Lab inventory: ${total} improvements in ${packs} packs; ${stale.length} file${stale.length === 1 ? "" : "s"} updated.`,
+  );
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();

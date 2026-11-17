@@ -20,8 +20,11 @@ def _source(rows: Any, questions: Any) -> tuple:
     report = health.analyze(rows, questions)
     asked = workbench.validate_questions(questions) if questions else {}
     # Keep Choice order in the schema, while ignoring JSON field order in inputs.
-    context = hashlib.sha256((json.dumps(rows, sort_keys=True, ensure_ascii=False) + "\n" +
-                              json.dumps(asked, ensure_ascii=False)).encode("utf-8")).hexdigest()
+    context = hashlib.sha256(
+        (json.dumps(rows, sort_keys=True, ensure_ascii=False) + "\n" + json.dumps(asked, ensure_ascii=False)).encode(
+            "utf-8"
+        )
+    ).hexdigest()
     groups = {}
     for index, row in enumerate(rows):
         groups.setdefault(decisions._key(row), []).append(index)
@@ -43,9 +46,15 @@ def prepare(rows: Any, questions: Any = None) -> dict:
             continue
         for number in conflict["rows"]:
             eligible.setdefault(number - 1, {})[qid] = "conflict"
-    items = [{"index": i, "row": workbench.without_marks(rows[i]),
-              "labels": {qid: rows[i][LABEL_KEY][qid] for qid in issues}, "issues": issues}
-             for i, issues in sorted(eligible.items())]
+    items = [
+        {
+            "index": i,
+            "row": workbench.without_marks(rows[i]),
+            "labels": {qid: rows[i][LABEL_KEY][qid] for qid in issues},
+            "issues": issues,
+        }
+        for i, issues in sorted(eligible.items())
+    ]
     # Only byte-equivalent label maps may be collapsed. Missing vs explicit null stays distinct.
     remove = []
     for group in groups.values():
@@ -58,8 +67,13 @@ def prepare(rows: Any, questions: Any = None) -> dict:
             if signature in seen:
                 remove.append(index)
             seen.add(signature)
-    return {"context": context, "items": items, "questions": asked,
-            "remove": sorted(remove), "protected_rows": len(protected)}
+    return {
+        "context": context,
+        "items": items,
+        "questions": asked,
+        "remove": sorted(remove),
+        "protected_rows": len(protected),
+    }
 
 
 def _edited(rows: Any, questions: Any, context: Any, action: Any, items: Any) -> tuple:
@@ -102,9 +116,16 @@ def _edited(rows: Any, questions: Any, context: Any, action: Any, items: Any) ->
 
 def preview(rows: Any, questions: Any, context: Any, action: Any, items: Any = None) -> dict:
     out, changes, removed = _edited(rows, questions, context, action, items)
-    token = hashlib.sha256(json.dumps([context, action, out], ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
-    return {"token": token, "changed": len(changes), "changes": changes,
-            "removed": [i + 1 for i in removed], "remaining": len(out)}
+    token = hashlib.sha256(
+        json.dumps([context, action, out], ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return {
+        "token": token,
+        "changed": len(changes),
+        "changes": changes,
+        "removed": [i + 1 for i in removed],
+        "remaining": len(out),
+    }
 
 
 def apply(rows: Any, questions: Any, context: Any, action: Any, items: Any, token: Any) -> dict:

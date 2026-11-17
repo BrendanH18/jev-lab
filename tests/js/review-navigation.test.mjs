@@ -5,19 +5,35 @@ import { workbenchSource } from "./workbench-source.mjs";
 const source = workbenchSource;
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const { queueVisible, queueNextIncomplete } = new Function(
-  ["queueReady", "queueVisible", "queueNextIncomplete"].map(body).join("\n")
-  + "; return { queueVisible, queueNextIncomplete };")();
+  ["queueReady", "queueVisible", "queueNextIncomplete"].map(body).join("\n") +
+    "; return { queueVisible, queueNextIncomplete };",
+)();
 const gates = { urgent: 0.5 };
-const row = (line, kind, value) => ({ line, kind, row: { text: `Traffic ${line}` },
-  labels: { urgent: value }, answers: { urgent: true }, held: ["urgent"], rules: [], open: ["urgent"], provenance: { version: 1 } });
+const row = (line, kind, value) => ({
+  line,
+  kind,
+  row: { text: `Traffic ${line}` },
+  labels: { urgent: value },
+  answers: { urgent: true },
+  held: ["urgent"],
+  rules: [],
+  open: ["urgent"],
+  provenance: { version: 1 },
+});
 
 function h(tag, attrs, ...children) {
-  return { tag, attrs, children: children.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false),
-    addEventListener() {} };
+  return {
+    tag,
+    attrs,
+    children: children.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false),
+    addEventListener() {},
+  };
 }
-const textOf = (node) => typeof node === "object" ? node.children.map(textOf).join(" ") : String(node);
-const find = (node, tag) => typeof node === "object"
-  ? [...(node.tag === tag ? [node] : []), ...node.children.flatMap((child) => find(child, tag))] : [];
+const textOf = (node) => (typeof node === "object" ? node.children.map(textOf).join(" ") : String(node));
+const find = (node, tag) =>
+  typeof node === "object"
+    ? [...(node.tag === tag ? [node] : []), ...node.children.flatMap((child) => find(child, tag))]
+    : [];
 
 test("kind and status filters preserve the queue and treat false and zero as ready labels", () => {
   const items = [row(1, "review", null), row(2, "audit", false), row(3, "audit", null), row(4, "review", 0)];
@@ -42,13 +58,54 @@ test("next incomplete follows queue order and kind, wraps, and skips newly compl
 
 test("filtered view keeps blind audit answers hidden and Add counts all ready rows", () => {
   const items = [row(1, "review", false), row(2, "audit", null), row(3, "audit", true)];
-  const q = { report: { items, gates, questions: { urgent: { type: "noul" } }, room: 10,
-    counts: { decisions: 3, review: 1, auto: 2, queued: 3, audit: 2 } }, kindFilter: "audit", statusFilter: "incomplete" };
+  const q = {
+    report: {
+      items,
+      gates,
+      questions: { urgent: { type: "noul" } },
+      room: 10,
+      counts: { decisions: 3, review: 1, auto: 2, queued: 3, audit: 2 },
+    },
+    kindFilter: "audit",
+    statusFilter: "incomplete",
+  };
   let csvItems;
-  const functions = ["queueView", "queueReady", "queueVisible", "queueNextIncomplete", "queueSelect", "queueClasses", "shownAnswer", "labelText", "labelValue"].map(body).join("\n");
-  const view = new Function("W", "h", "icon", "rowText", "queueCsv", "render", "nextQueueRow", "addQueued",
-    `${functions}; return queueView;`)({ bulk: { pictures: {} } }, h, () => "", (r) => r.text,
-    (_id, queue) => { csvItems = queue.report.items; return null; }, () => {}, () => {}, () => {});
+  const functions = [
+    "queueView",
+    "queueReady",
+    "queueVisible",
+    "queueNextIncomplete",
+    "queueSelect",
+    "queueClasses",
+    "shownAnswer",
+    "labelText",
+    "labelValue",
+  ]
+    .map(body)
+    .join("\n");
+  const view = new Function(
+    "W",
+    "h",
+    "icon",
+    "rowText",
+    "queueCsv",
+    "render",
+    "nextQueueRow",
+    "addQueued",
+    `${functions}; return queueView;`,
+  )(
+    { bulk: { pictures: {} } },
+    h,
+    () => "",
+    (r) => r.text,
+    (_id, queue) => {
+      csvItems = queue.report.items;
+      return null;
+    },
+    () => {},
+    () => {},
+    () => {},
+  );
   const tree = view({ id: "tickets" }, q);
   assert.match(textOf(tree), /2 of 3 rows ready · 1 incomplete · showing 1/);
   assert.match(textOf(tree), /Traffic 2/);
@@ -65,11 +122,21 @@ test("jump changes only presentation, then scrolls and focuses the next incomple
   const items = [row(1, "review", null), row(2, "audit", null), row(3, "audit", false)];
   const q = { report: { items, gates }, kindFilter: "audit", statusFilter: "ready", nextLine: null };
   const calls = [];
-  const document = { getElementById(id) { calls.push(id); return {
-    scrollIntoView: () => calls.push("scroll"), querySelector: () => ({ focus: () => calls.push("focus") }),
-  }; } };
-  const next = new Function("W", "document", "render", `${["queueReady", "queueNextIncomplete", "nextQueueRow"].map(body).join("\n")}; return nextQueueRow;`)(
-    { bulk: { checkRuns: { tickets: { queue: q } } } }, document, () => calls.push("render"));
+  const document = {
+    getElementById(id) {
+      calls.push(id);
+      return {
+        scrollIntoView: () => calls.push("scroll"),
+        querySelector: () => ({ focus: () => calls.push("focus") }),
+      };
+    },
+  };
+  const next = new Function(
+    "W",
+    "document",
+    "render",
+    `${["queueReady", "queueNextIncomplete", "nextQueueRow"].map(body).join("\n")}; return nextQueueRow;`,
+  )({ bulk: { checkRuns: { tickets: { queue: q } } } }, document, () => calls.push("render"));
   next("tickets");
   assert.equal(q.statusFilter, "incomplete");
   assert.equal(q.nextLine, 2);

@@ -42,10 +42,17 @@ class OpenInWorkbenchTests(unittest.TestCase):
 
         def post(payload):
             self.sent.append(payload)
-            return {"model": "jev-1.14.0", "answers": fake_answers(payload["questions"]), "usage": {"input_tokens": 100}}
+            return {
+                "model": "jev-1.14.0",
+                "answers": fake_answers(payload["questions"]),
+                "usage": {"input_tokens": 100},
+            }
 
-        for target, attr, value in ((server.client, "_post_system_one", post), (server.client, "_memory_key", "sk-test"),
-                                    (server.client, "guard", SpendGuard(budget_usd=100, rpm=1000))):
+        for target, attr, value in (
+            (server.client, "_post_system_one", post),
+            (server.client, "_memory_key", "sk-test"),
+            (server.client, "guard", SpendGuard(budget_usd=100, rpm=1000)),
+        ):
             patcher = patch.object(target, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -58,7 +65,10 @@ class OpenInWorkbenchTests(unittest.TestCase):
         state, questions = workbench.validate_state(state), workbench.validate_questions(questions)
         self.assertEqual(questions, sent["questions"], "Workbench validation keeps the questions as they are")
         assets = workbench.request_images(state, questions, specs)
-        self.assertEqual({ref: a["data"] for ref, a in assets.items()}, {ref: a["data"] for ref, a in (sent.get("assets") or {}).items()})
+        self.assertEqual(
+            {ref: a["data"] for ref, a in assets.items()},
+            {ref: a["data"] for ref, a in (sent.get("assets") or {}).items()},
+        )
         return assets
 
     def test_playground_shield_dispatch_find_play_and_reviews(self):
@@ -68,8 +78,12 @@ class OpenInWorkbenchTests(unittest.TestCase):
             return server.api_play_giveup({"id": game["id"]})["traces"][-1]  # traces are released at reveal
 
         demos = {
-            "counter": lambda: server.api_counter_turn({"transcript": [{"speaker": "customer", "text": "When will it ship?"}]})["trace"],
-            "playground": lambda: server.api_hello({"text": "My order A-1041 arrived damaged. Refund please."})["trace"],
+            "counter": lambda: server.api_counter_turn(
+                {"transcript": [{"speaker": "customer", "text": "When will it ship?"}]}
+            )["trace"],
+            "playground": lambda: server.api_hello({"text": "My order A-1041 arrived damaged. Refund please."})[
+                "trace"
+            ],
             "shield": lambda: server.api_shield({"message": dict(INBOX[0])})["trace"],
             "dispatch": lambda: server.api_dispatch({"text": "Pay PackRight's open invoice"})["trace"],
             "find": lambda: server.api_find({"queries": ["When do we roast?", "Who handles refunds?"]})["trace"],
@@ -93,13 +107,18 @@ class OpenInWorkbenchTests(unittest.TestCase):
         self.assertRunsInWorkbench(sample["trace"])
 
         upload = base64.b64encode(images.sample_bytes("crushed-box")).decode("ascii")
-        result = server.api_claims_check({"order": order, "note": "The box was crushed.", "image": {"data_base64": upload}})
+        result = server.api_claims_check(
+            {"order": order, "note": "The box was crushed.", "image": {"data_base64": upload}}
+        )
         trace = result["trace"]
-        (ref, shown), = trace["request"]["assets"].items()
+        ((ref, shown),) = trace["request"]["assets"].items()
         self.assertNotIn("sample", shown)
         self.assertNotIn(upload, str(trace), "the trace leaves an upload's bytes out, so the page supplies them")
-        self.assertEqual(ref, "photo-" + hashlib.sha256(base64.b64decode(upload)).hexdigest()[:12],
-                         "handoff.js finds an upload by this reference")
+        self.assertEqual(
+            ref,
+            "photo-" + hashlib.sha256(base64.b64decode(upload)).hexdigest()[:12],
+            "handoff.js finds an upload by this reference",
+        )
         self.assertRunsInWorkbench(trace, uploads=[upload])
 
 

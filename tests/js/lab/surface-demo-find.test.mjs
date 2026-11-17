@@ -6,11 +6,25 @@ import { test } from "node:test";
 
 import { applyTransform, improvementsOf, previewTransform, undoTransform } from "../../../static/js/lab/kit.js";
 import { createLab } from "../../../static/js/lab/host.js";
-import { FIND_RULES, findDocumentCtx, findDocumentLines, findLineItems, findResultsCtx } from "../../../static/js/lab/surfaces/find.js";
+import {
+  FIND_RULES,
+  findDocumentCtx,
+  findDocumentLines,
+  findLineItems,
+  findResultsCtx,
+} from "../../../static/js/lab/surfaces/find.js";
 import resultsPack from "../../../static/js/lab/packs/find/find-results-insights.js";
 import documentPack from "../../../static/js/lab/packs/find/find-document-tools.js";
 import { fakeEnv, find, fire, textOf } from "./harness.mjs";
-import { DOC_LINES, DOCS, QUERIES, RESULTS, resultsByPosition, sampleFindDocumentCtx, sampleFindResultsCtx } from "./fixtures/find.mjs";
+import {
+  DOC_LINES,
+  DOCS,
+  QUERIES,
+  RESULTS,
+  resultsByPosition,
+  sampleFindDocumentCtx,
+  sampleFindResultsCtx,
+} from "./fixtures/find.mjs";
 
 const PAGE = readFileSync(new URL("../../../static/js/find.js", import.meta.url), "utf8");
 const HTML = readFileSync(new URL("../../../static/find.html", import.meta.url), "utf8");
@@ -20,8 +34,13 @@ const body = (name, source = PAGE) => {
   assert.ok(match, `no function ${name}`);
   return match[0];
 };
-const h = (tag, attrs = {}, ...children) => ({ tag, attrs: attrs || {}, children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false) });
-const plain = (value) => JSON.parse(JSON.stringify(value, (key, entry) => (typeof entry === "function" ? "fn" : entry)));
+const h = (tag, attrs = {}, ...children) => ({
+  tag,
+  attrs: attrs || {},
+  children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false),
+});
+const plain = (value) =>
+  JSON.parse(JSON.stringify(value, (key, entry) => (typeof entry === "function" ? "fn" : entry)));
 
 // ---------- the contract's constants ----------
 
@@ -31,7 +50,19 @@ test("FIND_RULES mirror jev/find.py and the page", () => {
   assert.match(FIND_PY, /MAX_DOC_CHARS = 60_000\b/);
   assert.match(FIND_PY, /FOUND, ABSENT = 0\.7, 0\.35\b/);
   assert.match(FIND_PY, /top: int = 5\)/);
-  assert.deepEqual({ ...FIND_RULES }, { found: 0.7, absent: 0.35, max_queries: 8, max_lines: 255, max_doc_chars: 60000, top: 5, list_min: 0.01, highlight_min: 0.05 });
+  assert.deepEqual(
+    { ...FIND_RULES },
+    {
+      found: 0.7,
+      absent: 0.35,
+      max_queries: 8,
+      max_lines: 255,
+      max_doc_chars: 60000,
+      top: 5,
+      list_min: 0.01,
+      highlight_min: 0.05,
+    },
+  );
   assert.match(PAGE, /const MAX_Q = 8;/);
   assert.ok(PAGE.includes("i === 0 || hit.prob >= 0.01"), "the page lists hits from 1%");
   assert.ok(PAGE.includes('hit.prob >= 0.05 ? "hit2"'), "the page highlights hits from 5%");
@@ -44,9 +75,14 @@ test("the fixture builds requests the way jev/find.py does", () => {
   assert.ok(FIND_PY.includes('"%s| %s" % (line_id(i), line)'));
   assert.ok(FIND_PY.includes("Which line of `document` contains the answer to: “%s”?"));
   assert.ok(FIND_PY.includes("Does any line of `document` address or answer: “%s”?"));
-  assert.equal(request.questions["q0.where"].instructions, `Which line of \`document\` contains the answer to: “${QUERIES[0]}”?`);
-  for (const text of ["At least one line states or directly implies the answer", "No line addresses this question"]) assert.ok(FIND_PY.includes(`"${text}"`));
-  for (const line of DOC_LINES) assert.doesNotMatch(line, /@(?![\w.-]+\.example\b)/, "fictional addresses use .example");
+  assert.equal(
+    request.questions["q0.where"].instructions,
+    `Which line of \`document\` contains the answer to: “${QUERIES[0]}”?`,
+  );
+  for (const text of ["At least one line states or directly implies the answer", "No line addresses this question"])
+    assert.ok(FIND_PY.includes(`"${text}"`));
+  for (const line of DOC_LINES)
+    assert.doesNotMatch(line, /@(?![\w.-]+\.example\b)/, "fictional addresses use .example");
 });
 
 // ---------- find.results builder ----------
@@ -54,18 +90,48 @@ test("the fixture builds requests the way jev/find.py does", () => {
 test("result items have the contract's shape, in request order", () => {
   const ctx = sampleFindResultsCtx();
   const items = ctx.items();
-  assert.deepEqual(items.map((item) => item.position), [1, 2, 3, 4]);
+  assert.deepEqual(
+    items.map((item) => item.position),
+    [1, 2, 3, 4],
+  );
   const notice = items[1];
-  assert.deepEqual(Object.keys(notice), ["position", "key", "query", "exists", "verdict", "confidence", "hits", "top", "top_prob", "line_probs"]);
-  assert.deepEqual({ ...notice, hits: undefined, top: undefined, line_probs: undefined }, { position: 2, key: "q1", query: QUERIES[1], exists: 0.93, verdict: "answered",
-    confidence: 0.64, hits: undefined, top: undefined, top_prob: 0.64, line_probs: undefined });
-  assert.deepEqual(notice.hits.map((hit) => [hit.rank, hit.id, hit.index, hit.prob, hit.heading, hit.section, hit.listed]), [
-    [1, "L008", 8, 0.64, false, "Section C: Leaving Harbor Coffee", true],
-    [2, "L006", 6, 0.3, false, "Section B: Pay and time off", true],
-    [3, "L007", 7, 0.03, true, "Section C: Leaving Harbor Coffee", true],
-    [4, "L003", 3, 0.02, false, "Section A: Hours and scheduling", true],
-    [5, "L000", 0, 0.005, false, null, false],
+  assert.deepEqual(Object.keys(notice), [
+    "position",
+    "key",
+    "query",
+    "exists",
+    "verdict",
+    "confidence",
+    "hits",
+    "top",
+    "top_prob",
+    "line_probs",
   ]);
+  assert.deepEqual(
+    { ...notice, hits: undefined, top: undefined, line_probs: undefined },
+    {
+      position: 2,
+      key: "q1",
+      query: QUERIES[1],
+      exists: 0.93,
+      verdict: "answered",
+      confidence: 0.64,
+      hits: undefined,
+      top: undefined,
+      top_prob: 0.64,
+      line_probs: undefined,
+    },
+  );
+  assert.deepEqual(
+    notice.hits.map((hit) => [hit.rank, hit.id, hit.index, hit.prob, hit.heading, hit.section, hit.listed]),
+    [
+      [1, "L008", 8, 0.64, false, "Section C: Leaving Harbor Coffee", true],
+      [2, "L006", 6, 0.3, false, "Section B: Pay and time off", true],
+      [3, "L007", 7, 0.03, true, "Section C: Leaving Harbor Coffee", true],
+      [4, "L003", 3, 0.02, false, "Section A: Hours and scheduling", true],
+      [5, "L000", 0, 0.005, false, null, false],
+    ],
+  );
   assert.equal(notice.hits[0].text, "Please give at least two weeks notice when you resign.");
   assert.deepEqual(notice.top, notice.hits[0]);
   assert.notEqual(notice.top, notice.hits[0], "top is a copy");
@@ -80,13 +146,24 @@ test("result items have the contract's shape, in request order", () => {
 test("odd results read without throwing", () => {
   const items = sampleFindResultsCtx({ result: RESULTS.odd }).items();
   assert.equal(items.length, 3);
-  assert.deepEqual([items[0].query, items[0].exists, items[0].verdict, items[0].confidence, items[0].top_prob, items[0].line_probs], ["  ", null, null, null, null, null]);
-  assert.deepEqual(items[0].hits.map((hit) => [hit.id, hit.index, hit.prob, hit.section, hit.listed]),
-    [["L001", 1, null, "Section A: Hours and scheduling", true], ["", null, 0.02, null, true]]);
+  assert.deepEqual(
+    [items[0].query, items[0].exists, items[0].verdict, items[0].confidence, items[0].top_prob, items[0].line_probs],
+    ["  ", null, null, null, null, null],
+  );
+  assert.deepEqual(
+    items[0].hits.map((hit) => [hit.id, hit.index, hit.prob, hit.section, hit.listed]),
+    [
+      ["L001", 1, null, "Section A: Hours and scheduling", true],
+      ["", null, 0.02, null, true],
+    ],
+  );
   assert.deepEqual([items[1].hits, items[1].top, items[1].verdict], [[], null, "absent"]);
   assert.deepEqual([items[2].query, items[2].hits], ["", []]);
   const ctx = sampleFindResultsCtx({ result: RESULTS.odd });
-  assert.deepEqual([ctx.data.lines, ctx.data.thresholds, ctx.data.request, ctx.data.trace, ctx.data.truncated], [null, null, null, null, false]);
+  assert.deepEqual(
+    [ctx.data.lines, ctx.data.thresholds, ctx.data.request, ctx.data.trace, ctx.data.truncated],
+    [null, null, null, null, false],
+  );
   assert.deepEqual(ctx.data.meta, { model: "jev-1.14.0" });
 });
 
@@ -95,24 +172,44 @@ test("items keep their identity until a new result arrives; shown() honors Lab f
   const ctx = sampleFindResultsCtx({ result: () => result, hide: [2], order: [4, 3] });
   const first = ctx.items();
   assert.equal(ctx.items(), first);
-  assert.deepEqual(ctx.shown().map((item) => item.position), [4, 3, 1]);
+  assert.deepEqual(
+    ctx.shown().map((item) => item.position),
+    [4, 3, 1],
+  );
   assert.ok(ctx.shown().every((item) => first.includes(item)));
   result = RESULTS.mixed;
   assert.notEqual(ctx.items(), first);
-  assert.deepEqual(ctx.items().map((item) => item.query), ["who roasts on Sunday?", "where is the staff entrance?", "when is payday?"]);
+  assert.deepEqual(
+    ctx.items().map((item) => item.query),
+    ["who roasts on Sunday?", "where is the staff entrance?", "when is payday?"],
+  );
   result = null;
   assert.deepEqual([ctx.items(), ctx.shown()], [[], []]);
 });
 
 test("results data: before a search, after it, and while the boxes change", () => {
   const none = sampleFindResultsCtx({ result: null, searches: 0 });
-  assert.deepEqual([none.data.lines, none.data.meta, none.data.request, none.data.trace, none.data.thresholds, none.data.focus, none.data.stale, none.data.searches],
-    [null, null, null, null, null, null, false, 0]);
+  assert.deepEqual(
+    [
+      none.data.lines,
+      none.data.meta,
+      none.data.request,
+      none.data.trace,
+      none.data.thresholds,
+      none.data.focus,
+      none.data.stale,
+      none.data.searches,
+    ],
+    [null, null, null, null, null, null, false, 0],
+  );
   assert.deepEqual(none.data.searched, []);
   assert.deepEqual(none.data.queries, QUERIES);
   const boxes = [...QUERIES, "   "];
   const ctx = sampleFindResultsCtx({ queries: boxes, focusIndex: 2, pending: true, editing: true, searches: 3 });
-  assert.deepEqual([ctx.data.lines, ctx.data.truncated, ctx.data.focus, ctx.data.pending, ctx.data.editing, ctx.data.searches], [13, false, 3, true, true, 3]);
+  assert.deepEqual(
+    [ctx.data.lines, ctx.data.truncated, ctx.data.focus, ctx.data.pending, ctx.data.editing, ctx.data.searches],
+    [13, false, 3, true, true, 3],
+  );
   assert.deepEqual(ctx.data.thresholds, { found: 0.7, absent: 0.35 });
   assert.equal(ctx.data.meta.cost_usd, 0.000092);
   assert.ok(ctx.data.request.state.document.includes("L012| Questions about this handbook"));
@@ -124,7 +221,10 @@ test("results data: before a search, after it, and while the boxes change", () =
   boxes[1] = "how much notice for managers?";
   assert.equal(ctx.data.stale, true);
   assert.equal(sampleFindResultsCtx({ focusIndex: 9 }).data.focus, null, "a focus outside the results reads as none");
-  assert.equal(sampleFindResultsCtx({ result: RESULTS.handbook, queries: [...QUERIES, "a", "b", "c", "d", "e"] }).data.stale, true);
+  assert.equal(
+    sampleFindResultsCtx({ result: RESULTS.handbook, queries: [...QUERIES, "a", "b", "c", "d", "e"] }).data.stale,
+    true,
+  );
 });
 
 test("results actions: focusResult and showHit go only to shown, listed things", () => {
@@ -136,14 +236,28 @@ test("results actions: focusResult and showHit go only to shown, listed things",
   assert.throws(() => sampleFindResultsCtx({ result: null }).actions.focusResult(1), /Search first/);
   ctx.log.length = 0;
   assert.equal(ctx.actions.showHit(1, 1).id, "L010");
-  assert.deepEqual(ctx.log, [["focusResult", 0], ["showLine", 10]]);
+  assert.deepEqual(ctx.log, [
+    ["focusResult", 0],
+    ["showLine", 10],
+  ]);
   assert.throws(() => ctx.actions.showHit(2, 5), /does not list hit 5/, "L000 at 0.5% is not on the card");
   assert.throws(() => ctx.actions.showHit(2, 9), /has no hit 9/);
   ctx.log.length = 0;
   assert.throws(() => ctx.actions.showHit(2, 2), /L006 is not shown in the document/);
-  assert.deepEqual(ctx.log, [["focusResult", 1], ["showLine", 6]], "the question is still focused");
+  assert.deepEqual(
+    ctx.log,
+    [
+      ["focusResult", 1],
+      ["showLine", 6],
+    ],
+    "the question is still focused",
+  );
   assert.throws(() => sampleFindResultsCtx({ editing: true }).actions.showHit(1, 1), /Press Done first/);
-  assert.throws(() => sampleFindResultsCtx({ result: RESULTS.odd }).actions.showHit(1, 2), /does not list hit 2/, "a hit without an index cannot be shown");
+  assert.throws(
+    () => sampleFindResultsCtx({ result: RESULTS.odd }).actions.showHit(1, 2),
+    /does not list hit 2/,
+    "a hit without an index cannot be shown",
+  );
   assert.throws(() => sampleFindResultsCtx({ missing: ["focusResult"] }).actions.focusResult(1), /cannot do that here/);
 });
 
@@ -158,11 +272,18 @@ test("results actions: inspect and addQuery keep their guards and never search",
   assert.throws(() => ctx.actions.addQuery("   "), /no question to add/);
   assert.throws(() => ctx.actions.addQuery(42), /no question to add/);
   assert.throws(() => ctx.actions.addQuery("Can I bring my DOG to work?"), /already in a box/);
-  assert.throws(() => sampleFindResultsCtx({ pending: true }).actions.addQuery("is there a staff discount?"), /Wait for the search/);
+  assert.throws(
+    () => sampleFindResultsCtx({ pending: true }).actions.addQuery("is there a staff discount?"),
+    /Wait for the search/,
+  );
   const full = sampleFindResultsCtx({ queries: ["a", "b", "c", "d", "e", "f", "g", "h"] });
   assert.throws(() => full.actions.addQuery("is there a staff discount?"), /at most 8 questions/);
   assert.deepEqual(full.log, []);
-  assert.deepEqual(Object.keys(ctx.actions).sort(), ["addQuery", "focusResult", "inspect", "showHit"], "no replaceItems or importItems: the results are read-only");
+  assert.deepEqual(
+    Object.keys(ctx.actions).sort(),
+    ["addQuery", "focusResult", "inspect", "showHit"],
+    "no replaceItems or importItems: the results are read-only",
+  );
 });
 
 // ---------- find.document builder ----------
@@ -170,10 +291,28 @@ test("results actions: inspect and addQuery keep their guards and never search",
 test("document items are the page's lines, canonical, with 255 searched", () => {
   const ctx = sampleFindDocumentCtx();
   const items = ctx.items();
-  assert.deepEqual(items.map((item) => item.text), DOC_LINES, "blank lines dropped, indentation trimmed");
+  assert.deepEqual(
+    items.map((item) => item.text),
+    DOC_LINES,
+    "blank lines dropped, indentation trimmed",
+  );
   assert.deepEqual(findDocumentLines(DOCS.short), DOC_LINES);
-  assert.deepEqual(items[3], { index: 3, id: "L003", text: DOC_LINES[3], heading: false, section: "Section A: Hours and scheduling", searched: true });
-  assert.deepEqual(items[0], { index: 0, id: "L000", text: DOC_LINES[0], heading: false, section: null, searched: true });
+  assert.deepEqual(items[3], {
+    index: 3,
+    id: "L003",
+    text: DOC_LINES[3],
+    heading: false,
+    section: "Section A: Hours and scheduling",
+    searched: true,
+  });
+  assert.deepEqual(items[0], {
+    index: 0,
+    id: "L000",
+    text: DOC_LINES[0],
+    heading: false,
+    section: null,
+    searched: true,
+  });
   assert.deepEqual(Object.keys(items[9]), ["index", "id", "text", "heading", "section", "searched"]);
   assert.equal(items[9].section, "Section D: Pets");
   assert.equal(ctx.itemName(items[12], 0), "L012");
@@ -182,7 +321,10 @@ test("document items are the page's lines, canonical, with 255 searched", () => 
   const long = sampleFindDocumentCtx({ text: DOCS.long, result: null });
   assert.equal(long.items().length, 260);
   assert.equal(long.shown().length, 255, "the page shows only the searched lines");
-  assert.deepEqual([long.items()[254].searched, long.items()[255].searched, long.items()[255].section], [true, false, "Section F: Roast log week 6"]);
+  assert.deepEqual(
+    [long.items()[254].searched, long.items()[255].searched, long.items()[255].section],
+    [true, false, "Section F: Roast log week 6"],
+  );
   assert.equal(findLineItems(["a"]).length, 1);
   assert.equal(findLineItems(Array.from({ length: 1001 }, () => "x"))[1000].id, "L1000");
   assert.deepEqual(sampleFindDocumentCtx({ text: "", result: null }).items(), []);
@@ -192,13 +334,24 @@ test("document data: text, counts, sample flag, and the user's own results", () 
   const ctx = sampleFindDocumentCtx({ focusIndex: 1 });
   assert.equal(ctx.data.text, DOCS.short);
   assert.equal(ctx.data.chars, DOCS.short.length);
-  assert.equal(sampleFindDocumentCtx({ text: "Café ☕\u{1F600}", result: null }).data.chars, 7, "code points, like the server");
-  assert.deepEqual([ctx.data.lines, ctx.data.searchable, ctx.data.sample, ctx.data.editing, ctx.data.pending], [13, 13, true, false, false]);
+  assert.equal(
+    sampleFindDocumentCtx({ text: "Café ☕\u{1F600}", result: null }).data.chars,
+    7,
+    "code points, like the server",
+  );
+  assert.deepEqual(
+    [ctx.data.lines, ctx.data.searchable, ctx.data.sample, ctx.data.editing, ctx.data.pending],
+    [13, 13, true, false, false],
+  );
   assert.equal(sampleFindDocumentCtx({ text: DOCS.long, result: null }).data.searchable, 255);
   assert.equal(sampleFindDocumentCtx({ sample: DOCS.plain }).data.sample, false);
   assert.equal(sampleFindDocumentCtx({ sample: null }).data.sample, false);
   assert.equal(ctx.data.results.length, 4);
-  assert.equal(ctx.data.results[0], resultsByPosition(sampleFindResultsCtx())[1], "the same frozen objects as find.results");
+  assert.equal(
+    ctx.data.results[0],
+    resultsByPosition(sampleFindResultsCtx())[1],
+    "the same frozen objects as find.results",
+  );
   assert.equal(ctx.data.focused.position, 2);
   const none = sampleFindDocumentCtx({ result: null });
   assert.deepEqual([none.data.results, none.data.focused], [[], null]);
@@ -209,12 +362,22 @@ test("replaceItems writes canonical lines back as the document, with every guard
   const ctx = sampleFindDocumentCtx();
   const items = ctx.items();
   // Unchanged: nothing is written, so the results stay.
-  assert.equal(ctx.actions.replaceItems(items.map((item) => ({ ...item })), { label: "Nothing" }), 13);
+  assert.equal(
+    ctx.actions.replaceItems(
+      items.map((item) => ({ ...item })),
+      { label: "Nothing" },
+    ),
+    13,
+  );
   assert.deepEqual(ctx.log, []);
   const next = findLineItems(DOC_LINES.filter((_, index) => index !== 3));
   assert.equal(ctx.actions.replaceItems(next, { label: "Drop L003" }), 12);
   assert.deepEqual(ctx.log, [["setText", DOC_LINES.filter((_, index) => index !== 3).join("\n"), "Drop L003"]]);
-  assert.deepEqual(ctx.items().map((item) => item.text), DOC_LINES.filter((_, index) => index !== 3), "items follow the new text");
+  assert.deepEqual(
+    ctx.items().map((item) => item.text),
+    DOC_LINES.filter((_, index) => index !== 3),
+    "items follow the new text",
+  );
   const fresh = () => sampleFindDocumentCtx();
   const rejects = [
     ["not a list", /a list of lines/],
@@ -223,8 +386,8 @@ test("replaceItems writes canonical lines back as the document, with every guard
     [findLineItems(["   "]), /Line 1 is blank/],
     [findLineItems(["two\nlines"]), /line break/],
     [[{ ...findLineItems(["padded"])[0], text: " padded " }], /spaces at an end/],
-    [next.slice(1), /out of step/],                                         // stale index and id after removing a line
-    [[{ id: "L000", index: 0, text: "Order", heading: false, section: null, searched: true }], /out of step/],  // key order matters for Undo
+    [next.slice(1), /out of step/], // stale index and id after removing a line
+    [[{ id: "L000", index: 0, text: "Order", heading: false, section: null, searched: true }], /out of step/], // key order matters for Undo
     [[{ ...findLineItems(["Section A: Hours"])[0], heading: false }], /out of step/],
     [findLineItems(["x".repeat(60001)]), /at most 60,000/],
   ];
@@ -235,35 +398,65 @@ test("replaceItems writes canonical lines back as the document, with every guard
   }
   assert.throws(() => sampleFindDocumentCtx({ editing: true }).actions.replaceItems(next, {}), /Press Done first/);
   assert.throws(() => sampleFindDocumentCtx({ pending: true }).actions.replaceItems(next, {}), /Wait for the search/);
-  assert.throws(() => sampleFindDocumentCtx({ missing: ["setText"] }).actions.replaceItems(next, {}), /cannot do that here/);
+  assert.throws(
+    () => sampleFindDocumentCtx({ missing: ["setText"] }).actions.replaceItems(next, {}),
+    /cannot do that here/,
+  );
   const exact = findLineItems(["x".repeat(60000)]);
   assert.equal(sampleFindDocumentCtx().actions.replaceItems(exact, {}), 1, "exactly 60,000 characters is allowed");
 });
 
 test("a previewed edit applies through replaceItems and its Undo restores the document", () => {
-  const ctx = sampleFindDocumentCtx({ text: "Section A: Hours\nThe cafe opens at 6:30 am.\nthe cafe opens at  6:30 am.\nSection B: Pay", result: null });
+  const ctx = sampleFindDocumentCtx({
+    text: "Section A: Hours\nThe cafe opens at 6:30 am.\nthe cafe opens at  6:30 am.\nSection B: Pay",
+    result: null,
+  });
   const transform = documentPack.features.find((feature) => feature.id === "remove_duplicates");
   const before = ctx.items();
-  const preview = previewTransform("find-document-tools/remove_duplicates", transform, before, new Set(before.map((_, index) => index)), {}, ctx);
+  const preview = previewTransform(
+    "find-document-tools/remove_duplicates",
+    transform,
+    before,
+    new Set(before.map((_, index) => index)),
+    {},
+    ctx,
+  );
   const applied = applyTransform(preview, ctx.items());
   ctx.actions.replaceItems(applied.items, { label: preview.label });
   assert.equal(ctx.state.text, "Section A: Hours\nThe cafe opens at 6:30 am.\nSection B: Pay");
   const restored = undoTransform(applied.undo, ctx.items());
   ctx.actions.replaceItems(restored, { label: "Undo" });
-  assert.equal(ctx.state.text, "Section A: Hours\nThe cafe opens at 6:30 am.\nthe cafe opens at  6:30 am.\nSection B: Pay");
+  assert.equal(
+    ctx.state.text,
+    "Section A: Hours\nThe cafe opens at 6:30 am.\nthe cafe opens at  6:30 am.\nSection B: Pay",
+  );
   assert.deepEqual(ctx.items(), before);
 });
 
 test("importItems appends text lines with the same guards", () => {
   const ctx = sampleFindDocumentCtx({ text: "Section A: Hours\nPayday is Friday.", result: null });
-  assert.equal(ctx.actions.importItems([{ text: "  Tips are pooled.  " }, { ...findLineItems(["Section B: Pay"])[0], index: 7 }], { label: "Paste" }), 4);
-  assert.deepEqual(ctx.log, [["setText", "Section A: Hours\nPayday is Friday.\nTips are pooled.\nSection B: Pay", "Paste"]]);
-  assert.deepEqual(ctx.items().map((item) => item.id), ["L000", "L001", "L002", "L003"], "imported lines are renumbered");
+  assert.equal(
+    ctx.actions.importItems([{ text: "  Tips are pooled.  " }, { ...findLineItems(["Section B: Pay"])[0], index: 7 }], {
+      label: "Paste",
+    }),
+    4,
+  );
+  assert.deepEqual(ctx.log, [
+    ["setText", "Section A: Hours\nPayday is Friday.\nTips are pooled.\nSection B: Pay", "Paste"],
+  ]);
+  assert.deepEqual(
+    ctx.items().map((item) => item.id),
+    ["L000", "L001", "L002", "L003"],
+    "imported lines are renumbered",
+  );
   assert.throws(() => ctx.actions.importItems([], {}), /no lines to add/);
   assert.throws(() => ctx.actions.importItems([{ text: "" }], {}), /blank/);
   assert.throws(() => ctx.actions.importItems([{ text: "a\r\nb" }], {}), /line break/);
   assert.throws(() => ctx.actions.importItems([{ text: "y".repeat(60000) }], {}), /at most 60,000/);
-  assert.throws(() => sampleFindDocumentCtx({ editing: true }).actions.importItems([{ text: "x" }], {}), /Press Done first/);
+  assert.throws(
+    () => sampleFindDocumentCtx({ editing: true }).actions.importItems([{ text: "x" }], {}),
+    /Press Done first/,
+  );
   assert.equal(ctx.log.length, 1);
 });
 
@@ -274,7 +467,10 @@ test("showLine scrolls only to a line that is shown", () => {
   assert.throws(() => ctx.actions.showLine(4), /a Lab filter hides it/);
   assert.throws(() => ctx.actions.showLine(6), /not on screen/);
   assert.throws(() => ctx.actions.showLine(40), /no line 40/);
-  assert.throws(() => sampleFindDocumentCtx({ text: DOCS.long, result: null }).actions.showLine(258), /first 255 lines/);
+  assert.throws(
+    () => sampleFindDocumentCtx({ text: DOCS.long, result: null }).actions.showLine(258),
+    /first 255 lines/,
+  );
   assert.throws(() => sampleFindDocumentCtx({ editing: true }).actions.showLine(2), /Press Done first/);
 });
 
@@ -316,7 +512,19 @@ function renderResults() {
       \`The Choice probabilities always sum to 1, so some line ranks first even when nothing answers. The separate “exists” Noul is what tells you whether to trust the top hit: ≥ \${pct(r.thresholds.found)} answered, < \${pct(r.thresholds.absent)} absent, between = partial. Tune those on your own documents.\`));
 }`;
 
-const PAGE_FUNCTIONS = ["lines", "renderDoc", "renderDocLab", "renderResults", "resultsLab", "renderResultCards", "resultCard", "focusResult", "showLine", "setDocument", "toggleEdit"];
+const PAGE_FUNCTIONS = [
+  "lines",
+  "renderDoc",
+  "renderDocLab",
+  "renderResults",
+  "resultsLab",
+  "renderResultCards",
+  "resultCard",
+  "focusResult",
+  "showLine",
+  "setDocument",
+  "toggleEdit",
+];
 const ctxDecl = (name, builder) => {
   const match = PAGE.match(new RegExp(`const ${name} = ${builder}\\(\\{[^]*?\\n\\}\\);`));
   assert.ok(match, `static/js/find.js has no ${name}`);
@@ -326,32 +534,72 @@ const ctxDecl = (name, builder) => {
 // The page's functions over a fake screen. packs: the Lab packs loaded; state: S overrides.
 function pageWith({ packs = [], ...state } = {}) {
   const LAB = createLab(packs);
-  const S = { text: DOCS.short, queries: [...QUERIES], editing: false, result: RESULTS.handbook, focus: 0, pending: false, searches: 1, sample: DOCS.short, ...state };
+  const S = {
+    text: DOCS.short,
+    queries: [...QUERIES],
+    editing: false,
+    result: RESULTS.handbook,
+    focus: 0,
+    pending: false,
+    searches: 1,
+    sample: DOCS.short,
+    ...state,
+  };
   const held = new Map();
   const log = [];
   const byId = (id) => {
-    for (const nodes of held.values()) for (const node of nodes) { const hit = find(node, (entry) => entry.attrs?.id === id); if (hit) return hit; }
+    for (const nodes of held.values())
+      for (const node of nodes) {
+        const hit = find(node, (entry) => entry.attrs?.id === id);
+        if (hit) return hit;
+      }
     return null;
   };
-  const elements = { "#doc-count": { textContent: "" }, "#doc-lab": { hidden: true, classList: { toggle: (name, on) => { elements["#doc-lab"].hidden = on; } } } };
+  const elements = {
+    "#doc-count": { textContent: "" },
+    "#doc-lab": {
+      hidden: true,
+      classList: {
+        toggle: (name, on) => {
+          elements["#doc-lab"].hidden = on;
+        },
+      },
+    },
+  };
   const $ = (selector) => elements[selector] || byId(selector.slice(1));
   const mount = (target, ...nodes) => {
     const list = nodes.flat(Infinity).filter(Boolean);
-    if (typeof target === "string") held.set(target, list); else target.children = list;
+    if (typeof target === "string") held.set(target, list);
+    else target.children = list;
     return target;
   };
   const deps = {
-    S, LAB, RESULTS: "find.results", DOC: "find.document", $, h, mount, labEnv: fakeEnv(),
-    statusBadge: (kind) => h("badge", {}, kind), pct: (p, digits = 0) => `${(p * 100).toFixed(digits)}%`, icon: (name) => h("icon", {}, name),
-    callStats: (meta, onInspect) => h("stats", { onclick: onInspect }, String(meta.cost_usd)), inspect: (trace, title) => log.push(["inspect", title]),
-    toast: (message) => log.push(["toast", message]), renderQueries: (focus) => log.push(["renderQueries", focus]),
+    S,
+    LAB,
+    RESULTS: "find.results",
+    DOC: "find.document",
+    $,
+    h,
+    mount,
+    labEnv: fakeEnv(),
+    statusBadge: (kind) => h("badge", {}, kind),
+    pct: (p, digits = 0) => `${(p * 100).toFixed(digits)}%`,
+    icon: (name) => h("icon", {}, name),
+    callStats: (meta, onInspect) => h("stats", { onclick: onInspect }, String(meta.cost_usd)),
+    inspect: (trace, title) => log.push(["inspect", title]),
+    toast: (message) => log.push(["toast", message]),
+    renderQueries: (focus) => log.push(["renderQueries", focus]),
     document: { getElementById: (id) => (byId(id) ? { scrollIntoView: () => log.push(["scroll", id]) } : null) },
-    findResultsCtx, findDocumentCtx,
+    findResultsCtx,
+    findDocumentCtx,
   };
   const names = Object.keys(deps);
   const source = `${ctxDecl("resultsCtx", "findResultsCtx")}\n${ctxDecl("docCtx", "findDocumentCtx")}\n${PAGE_FUNCTIONS.map((name) => body(name)).join("\n")}\nreturn { resultsCtx, docCtx, ${PAGE_FUNCTIONS.join(", ")} };`;
   const page = new Function(...names, source)(...names.map((name) => deps[name]));
-  const before = new Function(...names, "lines", `${BEFORE}\nreturn { renderDoc, renderResults };`)(...names.map((name) => deps[name]), page.lines);
+  const before = new Function(...names, "lines", `${BEFORE}\nreturn { renderDoc, renderResults };`)(
+    ...names.map((name) => deps[name]),
+    page.lines,
+  );
   return { ...page, before, S, LAB, held, log, elements };
 }
 
@@ -394,7 +642,10 @@ test("result cards: Lab filters hide cards, a Lab sort reorders them, clicks kee
   const page = pageWith({ packs: [resultsPack, documentPack] });
   page.renderResults();
   const cards = () => page.held.get("#results")[1].children;
-  const queries = () => cards().filter((node) => node.attrs.class?.startsWith("result")).map((node) => textOf(find(node, (entry) => entry.attrs.class === "q")));
+  const queries = () =>
+    cards()
+      .filter((node) => node.attrs.class?.startsWith("result"))
+      .map((node) => textOf(find(node, (entry) => entry.attrs.class === "q")));
   const view = page.LAB.view("find.results");
   view.filters = [{ key: "find-results-insights/verdict", op: "is", value: "answered" }];
   page.renderResultCards();
@@ -405,20 +656,33 @@ test("result cards: Lab filters hide cards, a Lab sort reorders them, clicks kee
   view.sort = { key: "find-results-insights/top_prob", dir: "asc" };
   page.renderResultCards();
   // .38 wifi, .41 parental, .64 notice, .71 dog
-  assert.deepEqual(queries(), [3, 2, 1, 0].map((index) => `“${QUERIES[index]}”`));
+  assert.deepEqual(
+    queries(),
+    [3, 2, 1, 0].map((index) => `“${QUERIES[index]}”`),
+  );
   const dogCard = cards().at(-1);
   assert.equal(dogCard.attrs.style.background, "var(--panel-2)", "question 1 is still the focused one");
-  fire(cards()[2], "click");  // the parental-leave card, after the status note and the wifi card
+  fire(cards()[2], "click"); // the parental-leave card, after the status note and the wifi card
   assert.equal(page.S.focus, 2);
-  fire(find(cards()[2], (node) => node.attrs.class === "hit top"), "click", { stopPropagation: () => page.log.push(["stop"]) });
+  fire(
+    find(cards()[2], (node) => node.attrs.class === "hit top"),
+    "click",
+    { stopPropagation: () => page.log.push(["stop"]) },
+  );
   assert.deepEqual(page.log.slice(-2), [["stop"], ["scroll", "ln-6"]], "the top line of the parental question is L006");
   view.filters = [{ key: "find-results-insights/top_prob", op: "min", value: "0.99" }];
   page.renderResultCards();
   assert.equal(textOf(cards()[1]), "No question matches the Lab filters.");
-  fire(find(cards()[0], (node) => node.tag === "button"), "click");
+  fire(
+    find(cards()[0], (node) => node.tag === "button"),
+    "click",
+  );
   assert.equal(page.LAB.active("find.results"), 0);
   assert.equal(queries().length, 4);
-  assert.deepEqual(queries(), QUERIES.map((query) => `“${query}”`));
+  assert.deepEqual(
+    queries(),
+    QUERIES.map((query) => `“${query}”`),
+  );
 });
 
 test("document lines: Lab filters and sort keep line IDs and highlights, with a note and a reset", () => {
@@ -428,7 +692,10 @@ test("document lines: Lab filters and sort keep line IDs and highlights, with a 
   page.renderDoc();
   let [note, doc] = page.held.get("#doc");
   assert.match(textOf(note), /5 of 13 lines shown · 1 Lab setting active/);
-  assert.deepEqual(doc.children.map((node) => node.attrs.id), ["ln-1", "ln-4", "ln-7", "ln-9", "ln-11"]);
+  assert.deepEqual(
+    doc.children.map((node) => node.attrs.id),
+    ["ln-1", "ln-4", "ln-7", "ln-9", "ln-11"],
+  );
   // Question 1 is focused: L010 is its top line (not shown), L009 at 20% is highlighted, L011 at 4% is not.
   assert.equal(doc.children[3].attrs.class, "ln head hit2");
   assert.equal(doc.children[4].attrs.class, "ln head ");
@@ -436,12 +703,18 @@ test("document lines: Lab filters and sort keep line IDs and highlights, with a 
   view.sort = { key: "find-document-tools/focused_p", dir: "desc" };
   page.renderDoc();
   [note, doc] = page.held.get("#doc");
-  assert.deepEqual(doc.children.slice(0, 3).map((node) => textOf(node.children[0])), ["L010", "L009", "L011"]);
+  assert.deepEqual(
+    doc.children.slice(0, 3).map((node) => textOf(node.children[0])),
+    ["L010", "L009", "L011"],
+  );
   assert.equal(doc.children[0].attrs.class, "ln  hit");
   view.filters = [{ key: "find-document-tools/words", op: "min", value: "99" }];
   page.renderDoc();
   assert.equal(textOf(page.held.get("#doc")[1]), "No line matches the Lab filters.");
-  fire(find(page.held.get("#doc")[0], (node) => node.tag === "button"), "click");
+  fire(
+    find(page.held.get("#doc")[0], (node) => node.tag === "button"),
+    "click",
+  );
   assert.equal(page.LAB.active("find.document"), 0);
   assert.equal(page.held.get("#doc").length, 1);
   assert.equal(page.held.get("#doc")[0].children.length, 13);
@@ -462,7 +735,10 @@ test("the Lab sections render beside both lists, and a document edit drops the r
   page.docCtx.actions.replaceItems(findLineItems(DOC_LINES.slice(0, 4)), { label: "Keep the start" });
   assert.equal(page.S.text, DOC_LINES.slice(0, 4).join("\n"));
   assert.equal(page.S.result, null);
-  assert.equal(textOf(page.held.get("#results")[0]), "Results appear here. One request answers every question at once.");
+  assert.equal(
+    textOf(page.held.get("#results")[0]),
+    "Results appear here. One request answers every question at once.",
+  );
   assert.deepEqual(page.log.at(-1), ["toast", "Keep the start: the document changed. Press Search for new results."]);
   assert.equal(page.held.get("#doc")[0].children.length, 4);
   // While the text box is open, edits wait for Done.
@@ -482,21 +758,46 @@ test("the Lab sections render beside both lists, and a document edit drops the r
 
 test("search() marks the search pending, counts answered searches and redraws the document's Lab tools", async () => {
   const run = async (fail) => {
-    const S = { text: DOCS.short, queries: [...QUERIES], editing: false, result: null, focus: 3, pending: false, searches: 2 };
+    const S = {
+      text: DOCS.short,
+      queries: [...QUERIES],
+      editing: false,
+      result: null,
+      focus: 3,
+      pending: false,
+      searches: 2,
+    };
     const seen = [];
     const btn = { disabled: false };
     const deps = {
-      S, $: () => btn, h, mount: () => {}, icon: () => null, toast: (message) => seen.push(["toast", message]), toggleEdit: () => seen.push(["toggleEdit"]),
+      S,
+      $: () => btn,
+      h,
+      mount: () => {},
+      icon: () => null,
+      toast: (message) => seen.push(["toast", message]),
+      toggleEdit: () => seen.push(["toggleEdit"]),
       handleError: (error) => seen.push(["handleError", error.message, S.pending]),
-      api: async (path, payload) => { seen.push(["api", path, payload.queries.length, S.pending]); if (fail) throw new Error("No key"); return RESULTS.handbook; },
-      renderResults: () => seen.push(["renderResults", S.pending, S.searches]), renderDoc: () => seen.push(["renderDoc"]), renderDocLab: () => seen.push(["renderDocLab"]),
+      api: async (path, payload) => {
+        seen.push(["api", path, payload.queries.length, S.pending]);
+        if (fail) throw new Error("No key");
+        return RESULTS.handbook;
+      },
+      renderResults: () => seen.push(["renderResults", S.pending, S.searches]),
+      renderDoc: () => seen.push(["renderDoc"]),
+      renderDocLab: () => seen.push(["renderDocLab"]),
     };
     const search = new Function(...Object.keys(deps), `${body("search")}\nreturn search;`)(...Object.values(deps));
     await search();
     return { S, seen };
   };
   const ok = await run(false);
-  assert.deepEqual(ok.seen, [["api", "/api/find", 4, true], ["renderResults", false, 3], ["renderDoc"], ["renderDocLab"]]);
+  assert.deepEqual(ok.seen, [
+    ["api", "/api/find", 4, true],
+    ["renderResults", false, 3],
+    ["renderDoc"],
+    ["renderDocLab"],
+  ]);
   assert.deepEqual([ok.S.pending, ok.S.focus, ok.S.result], [false, 0, RESULTS.handbook]);
   const failed = await run(true);
   assert.deepEqual(failed.seen.slice(1), [["handleError", "No key", true]]);
@@ -510,7 +811,13 @@ test("the page installs Lab once after the top bar and wires both surfaces", () 
   assert.match(PAGE, /import \{ LAB \} from "\.\/lab\/pages\/find\.js";/);
   assert.match(PAGE, /import \{ installLab, labEnv \} from "\.\/lab\/env\.js";/);
   assert.match(PAGE, /import \{ findDocumentCtx, findResultsCtx \} from "\.\/lab\/surfaces\/find\.js";/);
-  for (const hook of ["LAB.matches(RESULTS, item, ctx)", "LAB.arrange(RESULTS, list, ctx)", "LAB.matches(DOC, item, ctx)", "LAB.arrange(DOC, list, ctx)"]) assert.ok(PAGE.includes(hook), hook);
+  for (const hook of [
+    "LAB.matches(RESULTS, item, ctx)",
+    "LAB.arrange(RESULTS, list, ctx)",
+    "LAB.matches(DOC, item, ctx)",
+    "LAB.arrange(DOC, list, ctx)",
+  ])
+    assert.ok(PAGE.includes(hook), hook);
   for (const declaration of [ctxDecl("resultsCtx", "findResultsCtx"), ctxDecl("docCtx", "findDocumentCtx")]) {
     assert.doesNotMatch(declaration, /\bsearch\(|api\(/, "no Lab action can search");
   }
@@ -521,16 +828,31 @@ test("the page installs Lab once after the top bar and wires both surfaces", () 
 
 test("both starter packs render with the real ctx and every block open", () => {
   const LAB = createLab([resultsPack, documentPack]);
-  for (const [id, ctx] of [["find.results", sampleFindResultsCtx()], ["find.document", sampleFindDocumentCtx()]]) {
+  for (const [id, ctx] of [
+    ["find.results", sampleFindResultsCtx()],
+    ["find.document", sampleFindDocumentCtx()],
+  ]) {
     const view = LAB.view(id);
-    for (const name of ["section", "refine", "checks", "transforms", "metrics", "exports", "imports", "commands"]) view.open[name] = true;
+    for (const name of ["section", "refine", "checks", "transforms", "metrics", "exports", "imports", "commands"])
+      view.open[name] = true;
     const tree = LAB.section(fakeEnv(), id, ctx);
     assert.match(textOf(tree), /Lab tools · \d+/);
     const editable = id === "find.document";
-    assert.equal(!!find(tree, (node) => node.attrs?.["data-lab-block"] === "transforms"), editable, `${id}: edits only on the document`);
-    assert.equal(!!find(tree, (node) => node.attrs?.["data-lab-block"] === "imports"), editable, `${id}: imports only on the document`);
+    assert.equal(
+      !!find(tree, (node) => node.attrs?.["data-lab-block"] === "transforms"),
+      editable,
+      `${id}: edits only on the document`,
+    );
+    assert.equal(
+      !!find(tree, (node) => node.attrs?.["data-lab-block"] === "imports"),
+      editable,
+      `${id}: imports only on the document`,
+    );
   }
-  const improvements = (id) => [resultsPack, documentPack].filter((pack) => pack.surface === id).reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
+  const improvements = (id) =>
+    [resultsPack, documentPack]
+      .filter((pack) => pack.surface === id)
+      .reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
   assert.ok(improvements("find.results") > 0 && improvements("find.document") > 0);
   assert.equal(LAB.count("find.results"), improvements("find.results"));
   assert.equal(LAB.count("find.document"), improvements("find.document"));

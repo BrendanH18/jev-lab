@@ -15,8 +15,10 @@ from jev.calibrate import CalibrationError  # noqa: E402
 
 def noul_rows(cases):
     """cases: [(P(yes), label)] for one Noul question "u"."""
-    return [{"index": i, "answers": {"u": {"type": "noul", "noul": p}}, "labels": {"u": label}, "key": "row %d" % i}
-            for i, (p, label) in enumerate(cases)]
+    return [
+        {"index": i, "answers": {"u": {"type": "noul", "noul": p}}, "labels": {"u": label}, "key": "row %d" % i}
+        for i, (p, label) in enumerate(cases)
+    ]
 
 
 # Confidence |2p - 1|: 0.90 right, 0.80 wrong, 0.60 right, 0.40 right, 0.20 wrong, 0.10 right.
@@ -25,15 +27,27 @@ SIX = noul_rows([(0.95, True), (0.90, False), (0.80, True), (0.70, True), (0.60,
 
 def choice(picked, conf, options=("billing", "shipping", "other")):
     rest = (1 - conf) / (len(options) - 1)
-    return {"type": "choice", "choice": picked, "confidence": conf,
-            "probabilities": {o: (conf if o == picked else rest) for o in options}}
+    return {
+        "type": "choice",
+        "choice": picked,
+        "confidence": conf,
+        "probabilities": {o: (conf if o == picked else rest) for o in options},
+    }
 
 
 # (answer, confidence, label): right, wrong (billing answered shipping), right, wrong (shipping answered other), right.
-DEPT = [{"index": i, "answers": {"dept": choice(a, c)}, "labels": {"dept": label}}
-        for i, (a, c, label) in enumerate([("billing", 0.9, "billing"), ("shipping", 0.7, "billing"),
-                                           ("billing", 0.5, "billing"), ("other", 0.3, "shipping"),
-                                           ("shipping", 0.8, "shipping")])]
+DEPT = [
+    {"index": i, "answers": {"dept": choice(a, c)}, "labels": {"dept": label}}
+    for i, (a, c, label) in enumerate(
+        [
+            ("billing", 0.9, "billing"),
+            ("shipping", 0.7, "billing"),
+            ("billing", 0.5, "billing"),
+            ("other", 0.3, "shipping"),
+            ("shipping", 0.8, "shipping"),
+        ]
+    )
+]
 
 
 def brute(levels, value):
@@ -50,8 +64,16 @@ def brute(levels, value):
 
 class ParseTests(unittest.TestCase):
     def test_prices_must_be_plain_numbers_in_range(self):
-        for bad in (None, [], {"review": 1}, {"review": "1", "error": 2}, {"review": True, "error": 2},
-                    {"review": -1, "error": 2}, {"review": 1, "error": float("nan")}, {"review": 1, "error": 2e6}):
+        for bad in (
+            None,
+            [],
+            {"review": 1},
+            {"review": "1", "error": 2},
+            {"review": True, "error": 2},
+            {"review": -1, "error": 2},
+            {"review": 1, "error": float("nan")},
+            {"review": 1, "error": 2e6},
+        ):
             with self.assertRaises(CalibrationError, msg=repr(bad)):
                 cost.parse(bad)
         self.assertEqual(cost.parse({"review": 0, "error": 3})["review"], 0.0)
@@ -59,8 +81,15 @@ class ParseTests(unittest.TestCase):
     def test_mistakes_are_validated(self):
         ok = {"question": "q", "label": "a", "answer": "b", "cost": 5}
         self.assertEqual(cost.parse({"review": 1, "error": 2, "mistakes": [ok]})["mistakes"], {("q", "a", "b"): 5.0})
-        for bad in ([dict(ok, answer="a")], [ok, dict(ok, cost=6)], [dict(ok, cost=-1)], [dict(ok, label="")],
-                    ["q"], {"q": 1}, [dict(ok, label="l%d" % i) for i in range(cost.MAX_MISTAKES + 1)]):
+        for bad in (
+            [dict(ok, answer="a")],
+            [ok, dict(ok, cost=6)],
+            [dict(ok, cost=-1)],
+            [dict(ok, label="")],
+            ["q"],
+            {"q": 1},
+            [dict(ok, label="l%d" % i) for i in range(cost.MAX_MISTAKES + 1)],
+        ):
             with self.assertRaises(CalibrationError, msg=repr(bad)):
                 cost.parse({"review": 1, "error": 2, "mistakes": bad})
 
@@ -72,9 +101,16 @@ class ParseTests(unittest.TestCase):
 
 class RowCostTests(unittest.TestCase):
     def test_a_row_costs_its_most_expensive_mistake(self):
-        prices = cost.parse({"review": 1, "error": 3, "mistakes": [
-            {"question": "a", "label": "yes", "answer": "no", "cost": 5},
-            {"question": "b", "label": "yes", "answer": "no", "cost": 8}]})
+        prices = cost.parse(
+            {
+                "review": 1,
+                "error": 3,
+                "mistakes": [
+                    {"question": "a", "label": "yes", "answer": "no", "cost": 5},
+                    {"question": "b", "label": "yes", "answer": "no", "cost": 8},
+                ],
+            }
+        )
         scored = [
             {"right": {"a": True, "b": True}, "shown": {"a": ("yes", "yes"), "b": ("no", "no")}},
             {"right": {"a": False, "b": True}, "shown": {"a": ("no", "yes"), "b": ("no", "no")}},
@@ -118,11 +154,22 @@ class EvaluateTests(unittest.TestCase):
     def test_a_priced_mistake_moves_the_choice_threshold(self):
         base = cost.evaluate(DEPT, ["dept"], costs={"review": 1, "error": 1.5})
         self.assertEqual((base["best"]["gates"], base["best"]["cost"]), ({"dept": 0.31}, 2.5))
-        priced = cost.evaluate(DEPT, ["dept"], costs={"review": 1, "error": 1.5, "mistakes": [
-            {"question": "dept", "label": "billing", "answer": "shipping", "cost": 10},
-            {"question": "other", "label": "x", "answer": "y", "cost": 1}]})
+        priced = cost.evaluate(
+            DEPT,
+            ["dept"],
+            costs={
+                "review": 1,
+                "error": 1.5,
+                "mistakes": [
+                    {"question": "dept", "label": "billing", "answer": "shipping", "cost": 10},
+                    {"question": "other", "label": "x", "answer": "y", "cost": 1},
+                ],
+            },
+        )
         self.assertEqual(priced["best"]["gates"], {"dept": 0.71})
-        self.assertEqual([m["question"] for m in priced["mistakes"]], ["dept"])  # prices for other questions don't apply
+        self.assertEqual(
+            [m["question"] for m in priced["mistakes"]], ["dept"]
+        )  # prices for other questions don't apply
 
     def test_tune_false_skips_the_search(self):
         rep = cost.evaluate(SIX, ["u"], costs={"review": 1, "error": 3}, gates={"u": 0.0}, tune=False)

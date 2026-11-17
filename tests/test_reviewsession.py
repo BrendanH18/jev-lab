@@ -16,24 +16,37 @@ class SessionTests(Temp):
         self.save()
         self.text = self.route()
         self.report = decisions.queue("tickets", self.text, audit=2, seed=12)
-        self.edits = [{"line": self.report["items"][0]["line"],
-                       "labels": {"department": "shipping", "is_urgent": False, "frustration": 0}},
-                      {"line": self.report["items"][-1]["line"], "labels": {"department": None}}]
+        self.edits = [
+            {
+                "line": self.report["items"][0]["line"],
+                "labels": {"department": "shipping", "is_urgent": False, "frustration": 0},
+            },
+            {"line": self.report["items"][-1]["line"], "labels": {"department": None}},
+        ]
         self.before = workbench._dataset_path("tickets").read_bytes()
 
     def export(self, edits=None):
-        return reviewsession.export_session("tickets", self.text, self.report["seed"],
-                                            self.report["audit_requested"], self.report["session_context"],
-                                            self.edits if edits is None else edits)
+        return reviewsession.export_session(
+            "tickets",
+            self.text,
+            self.report["seed"],
+            self.report["audit_requested"],
+            self.report["session_context"],
+            self.edits if edits is None else edits,
+        )
 
     def test_round_trip_preserves_sample_edits_and_blind_audit(self):
-        with patch("jev.workbench.write_dataset", side_effect=AssertionError("write")), \
-                patch("jev.client.JevClient.system_one", side_effect=AssertionError("model")):
+        with (
+            patch("jev.workbench.write_dataset", side_effect=AssertionError("write")),
+            patch("jev.client.JevClient.system_one", side_effect=AssertionError("model")),
+        ):
             session = json.loads(json.dumps(self.export()))
             out = reviewsession.import_session("tickets", self.text, session)
         self.assertEqual(out["edits"], self.edits)
-        self.assertEqual([(i["line"], i["kind"]) for i in out["report"]["items"]],
-                         [(i["line"], i["kind"]) for i in self.report["items"]])
+        self.assertEqual(
+            [(i["line"], i["kind"]) for i in out["report"]["items"]],
+            [(i["line"], i["kind"]) for i in self.report["items"]],
+        )
         first = out["report"]["items"][0]
         self.assertIs(first["labels"]["is_urgent"], False)
         self.assertEqual(first["labels"]["frustration"], 0)
@@ -49,16 +62,14 @@ class SessionTests(Temp):
         text = json.dumps(empty)
         for forbidden in ("answers", "candidates", "provenance", "row", "Refund my order today", "billing"):
             self.assertNotIn('"%s"' % forbidden, text)
-        self.assertEqual(empty["members"], [{"line": i["line"], "kind": i["kind"]}
-                                            for i in self.report["items"]])
+        self.assertEqual(empty["members"], [{"line": i["line"], "kind": i["kind"]} for i in self.report["items"]])
 
     def test_exact_source_and_saved_snapshot_required_on_import_and_export(self):
         session = self.export()
         with self.assertRaisesRegex(WorkbenchError, "original decisions"):
             reviewsession.import_session("tickets", self.text + "\n", session)
         with self.assertRaisesRegex(WorkbenchError, "changed"):
-            reviewsession.export_session("tickets", self.text + "\n", 12, 2,
-                                         self.report["session_context"], self.edits)
+            reviewsession.export_session("tickets", self.text + "\n", 12, 2, self.report["session_context"], self.edits)
         saved = workbench.load_dataset("tickets")
         saved["rows"][0]["_expect"]["department"] = "shipping"
         workbench.write_dataset(saved)
@@ -78,8 +89,14 @@ class SessionTests(Temp):
 
     def test_tampered_session_rejected_atomically(self):
         original = self.export()
-        variants = [{}, {**original, "version": True}, {**original, "dataset": "other"},
-                    {**original, "answers": {}}, {**original, "seed": True}, {**original, "audit": -1}]
+        variants = [
+            {},
+            {**original, "version": True},
+            {**original, "dataset": "other"},
+            {**original, "answers": {}},
+            {**original, "seed": True},
+            {**original, "audit": -1},
+        ]
         for key, value in (("line", True), ("line", 999), ("kind", "audit"), ("answers", {})):
             bad = copy.deepcopy(original)
             bad["members"][0][key] = value
@@ -110,8 +127,16 @@ class SessionTests(Temp):
     def test_routes_expose_export_and_preview_only(self):
         export = server.ROUTES[("POST", "/api/workbench/checks/decisions/session/export")]
         restore = server.ROUTES[("POST", "/api/workbench/checks/decisions/session/import")]
-        session = export({"id": "tickets", "text": self.text, "seed": 12, "audit": 2,
-                          "context": self.report["session_context"], "items": self.edits})
+        session = export(
+            {
+                "id": "tickets",
+                "text": self.text,
+                "seed": 12,
+                "audit": 2,
+                "context": self.report["session_context"],
+                "items": self.edits,
+            }
+        )
         out = restore({"id": "tickets", "text": self.text, "session": session})
         self.assertEqual(out["edits"], self.edits)
         self.assertEqual(workbench._dataset_path("tickets").read_bytes(), self.before)
@@ -125,5 +150,4 @@ class SessionTests(Temp):
         fields = {option["name"]: option["values"] for option in report["slice_fields"]}
         self.assertEqual(fields["channel"], [long + "0", long + "1"])
         self.assertNotIn("_test", fields)
-        self.assertTrue(all(item["slice_values"]["channel"] == item["row"]["channel"]
-                            for item in report["items"]))
+        self.assertTrue(all(item["slice_values"]["channel"] == item["row"]["channel"] for item in report["items"]))

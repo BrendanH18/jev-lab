@@ -57,14 +57,17 @@ def _label(question: dict, row: Any, qid: str) -> Optional[str]:
 
 def _tuning(dataset: dict) -> List[Tuple[int, Any]]:
     """(1-based row number, row) for every tuning row."""
-    return [(number, row) for number, row in enumerate(dataset["rows"], 1)
-            if not (isinstance(row, dict) and row.get(workbench.TEST_KEY) is True)]
+    return [
+        (number, row)
+        for number, row in enumerate(dataset["rows"], 1)
+        if not (isinstance(row, dict) and row.get(workbench.TEST_KEY) is True)
+    ]
 
 
 def _input_text(row: Any) -> str:
     state = workbench.without_marks(row)
     text = state if isinstance(state, str) else json.dumps(state, ensure_ascii=False, sort_keys=True)
-    return text if len(text) <= INPUT_CHARS else text[:INPUT_CHARS - 1] + "…"
+    return text if len(text) <= INPUT_CHARS else text[: INPUT_CHARS - 1] + "…"
 
 
 # ---------- labels crosstab ----------
@@ -81,8 +84,12 @@ def _configure_crosstab(parser: Any) -> None:
 def run_crosstab(args: Any) -> int:
     dataset = workbench.load_dataset(args.dataset)
     qa, qb = _question(dataset, args.first), _question(dataset, args.second)
-    pairs = [(a, b) for _n, row in _tuning(dataset)
-             for a, b in [(_label(qa, row, args.first), _label(qb, row, args.second))] if a is not None and b is not None]
+    pairs = [
+        (a, b)
+        for _n, row in _tuning(dataset)
+        for a, b in [(_label(qa, row, args.first), _label(qb, row, args.second))]
+        if a is not None and b is not None
+    ]
     columns = _answers(qb)
     rows = []
     for answer in _answers(qa):
@@ -126,8 +133,12 @@ def run_by_field(args: Any) -> int:
         counts = [labels.count(answer) for answer in answers]
         top = max(range(len(answers)), key=lambda i: (counts[i], -i))
         rows.append([slices._shown(value), len(labels)] + counts + [answers[top]])
-    cli_gates._table_or(args, [args.field, "labeled rows"] + answers + ["most common"], rows,
-                        "no value of %s has %d or more labeled rows" % (args.field, args.min_rows))
+    cli_gates._table_or(
+        args,
+        [args.field, "labeled rows"] + answers + ["most common"],
+        rows,
+        "no value of %s has %d or more labeled rows" % (args.field, args.min_rows),
+    )
     return 0
 
 
@@ -138,7 +149,9 @@ def _configure_agree(parser: Any) -> None:
     parser.add_argument("a", help="the first dataset id")
     parser.add_argument("b", help="the second dataset id")
     parser.add_argument("--question", metavar="ID", help="only this question")
-    parser.add_argument("--min-agreement", type=float, metavar="X", help="exit 1 when a question's agreement is below X")
+    parser.add_argument(
+        "--min-agreement", type=float, metavar="X", help="exit 1 when a question's agreement is below X"
+    )
     kit.add_format(parser)
 
 
@@ -168,7 +181,9 @@ def run_agree(args: Any) -> int:
     shared = [qid for qid in qa if qid in qb and qa[qid]["type"] == qb[qid]["type"]]
     if args.question:
         if args.question not in shared:
-            raise kit.CliError("%s is not a Choice, Noul or Score question of the same type in both datasets" % args.question)
+            raise kit.CliError(
+                "%s is not a Choice, Noul or Score question of the same type in both datasets" % args.question
+            )
         shared = [args.question]
     rows, low = [], False
     for qid in shared:
@@ -179,9 +194,21 @@ def run_agree(args: Any) -> int:
         value = kappa(pairs)
         if args.min_agreement is not None and share is not None and share < args.min_agreement:
             low = True
-        rows.append([qid, len(pairs), agreed, None if share is None else round(share, 6), None if value is None else round(value, 6)])
-    cli_gates._table_or(args, ["question", "shared inputs", "agreed", "agreement", "kappa"], rows,
-                        "the datasets share no Choice, Noul or Score question")
+        rows.append(
+            [
+                qid,
+                len(pairs),
+                agreed,
+                None if share is None else round(share, 6),
+                None if value is None else round(value, 6),
+            ]
+        )
+    cli_gates._table_or(
+        args,
+        ["question", "shared inputs", "agreed", "agreement", "kappa"],
+        rows,
+        "the datasets share no Choice, Noul or Score question",
+    )
     return 1 if low else 0
 
 
@@ -192,8 +219,11 @@ def _configure_missing(parser: Any) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset")
     parser.add_argument("--question", metavar="ID", help="only rows missing a label for this question")
     parser.add_argument("--limit", type=int, metavar="N", help="only the first N rows")
-    parser.add_argument("--export", action="store_true",
-                        help="print the rows as JSON lines, inputs and picture names only, ready to label elsewhere")
+    parser.add_argument(
+        "--export",
+        action="store_true",
+        help="print the rows as JSON lines, inputs and picture names only, ready to label elsewhere",
+    )
     kit.add_format(parser)
 
 
@@ -208,40 +238,79 @@ def run_missing(args: Any) -> int:
         if missing:
             found.append((number, row, missing))
     if args.limit is not None:
-        found = found[:max(args.limit, 0)]
+        found = found[: max(args.limit, 0)]
     if args.export:
         for _number, row, _missing in found:
             state = workbench.without_marks(row)
             print(json.dumps({"text": state} if isinstance(state, str) else state, ensure_ascii=False))
         return 0
     rows = [[number, ", ".join(missing), _input_text(row)] for number, row, missing in found]
-    cli_gates._table_or(args, ["row", "missing", "input"], rows, "every tuning row has a valid label for every question")
+    cli_gates._table_or(
+        args, ["row", "missing", "input"], rows, "every tuning row has a valid label for every question"
+    )
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-labels",
-    "surface": "python.cli",
-    "title": "Human label commands",
-    "about": "Offline `lab.py labels` commands over the human labels on tuning rows: a cross-tab of two questions, one "
-             "question's labels by an input field, agreement and Cohen's kappa between two datasets on shared inputs, "
-             "and the rows still missing a label, exportable as unlabeled rows. Held-out rows are never read.",
-    "features": [
-        {"id": "crosstab", "kind": "cli", "command": ["labels", "crosstab"], "configure": _configure_crosstab, "run": run_crosstab,
-         "title": "Cross-tabulate two questions' labels on tuning rows labeled for both",
-         "options": [{"id": "shares", "title": "--shares prints each cell as a share of its row"}, dict(FORMAT)]},
-        {"id": "by_field", "kind": "cli", "command": ["labels", "by-field"], "configure": _configure_by_field, "run": run_by_field,
-         "title": "Count one question's tuning labels per value of an input field, with each value's most common answer",
-         "options": [{"id": "min_rows", "title": "--min-rows N keeps values with at least N labeled rows"}, dict(FORMAT)]},
-        {"id": "agree", "kind": "cli", "command": ["labels", "agree"], "configure": _configure_agree, "run": run_agree,
-         "title": "Measure how often two datasets' labels agree on the tuning inputs they share, per question, with Cohen's kappa",
-         "options": [{"id": "question", "title": "--question ID compares one question"},
-                     {"id": "min_agreement", "title": "--min-agreement X exits 1 when a question agrees on less than X of shared inputs"},
-                     dict(FORMAT)]},
-        {"id": "missing", "kind": "cli", "command": ["labels", "missing"], "configure": _configure_missing, "run": run_missing,
-         "title": "List the tuning rows still missing a valid label, with the questions they lack and a short input",
-         "options": [{"id": "question", "title": "--question ID keeps rows missing one question's label"},
-                     {"id": "limit", "title": "--limit N keeps the first N rows"},
-                     {"id": "export", "title": "--export prints the rows as unlabeled JSON lines to label elsewhere"}, dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-labels",
+        "surface": "python.cli",
+        "title": "Human label commands",
+        "about": "Offline `lab.py labels` commands over the human labels on tuning rows: a cross-tab of two questions, one "
+        "question's labels by an input field, agreement and Cohen's kappa between two datasets on shared inputs, "
+        "and the rows still missing a label, exportable as unlabeled rows. Held-out rows are never read.",
+        "features": [
+            {
+                "id": "crosstab",
+                "kind": "cli",
+                "command": ["labels", "crosstab"],
+                "configure": _configure_crosstab,
+                "run": run_crosstab,
+                "title": "Cross-tabulate two questions' labels on tuning rows labeled for both",
+                "options": [{"id": "shares", "title": "--shares prints each cell as a share of its row"}, dict(FORMAT)],
+            },
+            {
+                "id": "by_field",
+                "kind": "cli",
+                "command": ["labels", "by-field"],
+                "configure": _configure_by_field,
+                "run": run_by_field,
+                "title": "Count one question's tuning labels per value of an input field, with each value's most common answer",
+                "options": [
+                    {"id": "min_rows", "title": "--min-rows N keeps values with at least N labeled rows"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "agree",
+                "kind": "cli",
+                "command": ["labels", "agree"],
+                "configure": _configure_agree,
+                "run": run_agree,
+                "title": "Measure how often two datasets' labels agree on the tuning inputs they share, per question, with Cohen's kappa",
+                "options": [
+                    {"id": "question", "title": "--question ID compares one question"},
+                    {
+                        "id": "min_agreement",
+                        "title": "--min-agreement X exits 1 when a question agrees on less than X of shared inputs",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "missing",
+                "kind": "cli",
+                "command": ["labels", "missing"],
+                "configure": _configure_missing,
+                "run": run_missing,
+                "title": "List the tuning rows still missing a valid label, with the questions they lack and a short input",
+                "options": [
+                    {"id": "question", "title": "--question ID keeps rows missing one question's label"},
+                    {"id": "limit", "title": "--limit N keeps the first N rows"},
+                    {"id": "export", "title": "--export prints the rows as unlabeled JSON lines to label elsewhere"},
+                    dict(FORMAT),
+                ],
+            },
+        ],
+    }
+)

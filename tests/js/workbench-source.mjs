@@ -6,10 +6,16 @@ import { readdirSync, readFileSync } from "node:fs";
 export const JS_DIR = new URL("../../static/js/", import.meta.url);
 
 // The entry and every workbench-*.js module, entry first.
-export const workbenchModules = ["workbench.js",
-  ...readdirSync(JS_DIR).filter((f) => /^workbench-[a-z-]+\.js$/.test(f)).sort()];
+export const workbenchModules = [
+  "workbench.js",
+  ...readdirSync(JS_DIR)
+    .filter((f) => /^workbench-[a-z-]+\.js$/.test(f))
+    .sort(),
+];
 
-export const moduleSources = Object.fromEntries(workbenchModules.map((f) => [f, readFileSync(new URL(f, JS_DIR), "utf8")]));
+export const moduleSources = Object.fromEntries(
+  workbenchModules.map((f) => [f, readFileSync(new URL(f, JS_DIR), "utf8")]),
+);
 
 // All Workbench module sources joined, for the tests' `function name(...) {...}` lookups.
 export const workbenchSource = Object.values(moduleSources).join("\n");

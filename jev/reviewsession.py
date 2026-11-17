@@ -53,8 +53,16 @@ def export_session(dataset_id: str, text: Any, seed: Any, audit: Any, snapshot: 
     if not isinstance(snapshot, str) or snapshot != report["session_context"]:
         raise WorkbenchError("Review source or dataset changed. Read decisions again before downloading a session")
     edits = _edits(items, report)
-    return {"format": "jev-review-session", "version": 1, "dataset": dataset_id,
-            "context": snapshot, "seed": seed, "audit": audit, "members": _members(report), "edits": edits}
+    return {
+        "format": "jev-review-session",
+        "version": 1,
+        "dataset": dataset_id,
+        "context": snapshot,
+        "seed": seed,
+        "audit": audit,
+        "members": _members(report),
+        "edits": edits,
+    }
 
 
 def import_session(dataset_id: str, text: Any, session: Any) -> dict:
@@ -68,8 +76,12 @@ def import_session(dataset_id: str, text: Any, session: Any) -> dict:
         raise WorkbenchError("Review session is not valid JSON") from err
     if size > decisions.MAX_TEXT_CHARS:
         raise WorkbenchError("Review session file is too large")
-    if (session["format"] != "jev-review-session" or type(session["version"]) is not int
-            or session["version"] != 1 or session["dataset"] != dataset_id):
+    if (
+        session["format"] != "jev-review-session"
+        or type(session["version"]) is not int
+        or session["version"] != 1
+        or session["dataset"] != dataset_id
+    ):
         raise WorkbenchError("Review session does not match this dataset")
     report = decisions.queue(dataset_id, text, session["audit"], session["seed"])
     if session["context"] != report["session_context"]:
@@ -81,6 +93,12 @@ def import_session(dataset_id: str, text: Any, session: Any) -> dict:
     index = {item["line"]: item for item in report["items"]}
     for edit in edits:
         index[edit["line"]]["labels"].update(edit["labels"])
-    return {"report": report, "edits": edits,
-            "counts": {"rows": len(report["items"]), "edited_rows": len(edits),
-                       "labels": sum(len(item["labels"]) for item in edits)}}
+    return {
+        "report": report,
+        "edits": edits,
+        "counts": {
+            "rows": len(report["items"]),
+            "edited_rows": len(edits),
+            "labels": sum(len(item["labels"]) for item in edits),
+        },
+    }

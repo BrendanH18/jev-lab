@@ -246,13 +246,18 @@ import { stableStringify } from "../lib/json.js";
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const own = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? ""));
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const count = (value) => (Number.isInteger(value) && value >= 0 ? value : 0);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const has = (value) => value !== null && value !== undefined;
 const textList = (value) => (Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : []);
 const copy = (value) => {
-  try { return value === undefined ? null : clone(value); } catch { return null; }
+  try {
+    return value === undefined ? null : clone(value);
+  } catch {
+    return null;
+  }
 };
 
 function deepFreeze(value) {
@@ -266,7 +271,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -284,11 +293,23 @@ function optionsOf(question) {
   const type = question?.type;
   const criteria = question?.criteria;
   if (type === "noul") {
-    return [{ value: true, text: "yes", description: asText(own(criteria, "true") ? criteria.true : null) },
-      { value: false, text: "no", description: asText(own(criteria, "false") ? criteria.false : null) }];
+    return [
+      { value: true, text: "yes", description: asText(own(criteria, "true") ? criteria.true : null) },
+      { value: false, text: "no", description: asText(own(criteria, "false") ? criteria.false : null) },
+    ];
   }
-  if (type === "score") return (Array.isArray(criteria) ? criteria : []).map((text, index) => ({ value: index, text: String(index), description: asText(text) }));
-  if (type === "choice") return Object.entries(isObject(criteria) ? criteria : {}).map(([key, text]) => ({ value: key, text: key, description: asText(text) }));
+  if (type === "score")
+    return (Array.isArray(criteria) ? criteria : []).map((text, index) => ({
+      value: index,
+      text: String(index),
+      description: asText(text),
+    }));
+  if (type === "choice")
+    return Object.entries(isObject(criteria) ? criteria : {}).map(([key, text]) => ({
+      value: key,
+      text: key,
+      description: asText(text),
+    }));
   return [];
 }
 
@@ -315,9 +336,16 @@ function labelKey(value, type) {
 const labelShown = (label) => (typeof label === "string" ? `“${label}”` : asText(label));
 
 function questionList(questions, gates) {
-  return Object.entries(isObject(questions) ? questions : {}).filter(([, question]) => LABEL_TYPES.includes(question?.type))
-    .map(([id, question]) => ({ id, type: question.type, gated: own(gates, id), threshold: own(gates, id) ? finite(gates[id]) : null,
-      instructions: asText(question.instructions), options: optionsOf(question) }));
+  return Object.entries(isObject(questions) ? questions : {})
+    .filter(([, question]) => LABEL_TYPES.includes(question?.type))
+    .map(([id, question]) => ({
+      id,
+      type: question.type,
+      gated: own(gates, id),
+      threshold: own(gates, id) ? finite(gates[id]) : null,
+      instructions: asText(question.instructions),
+      options: optionsOf(question),
+    }));
 }
 
 function numberMap(object) {
@@ -330,28 +358,45 @@ function labelChanges(name, current, draft, questions) {
   if (!isObject(draft)) throw new Error(`${name}: labels must be an object of question ids and labels.`);
   const out = {};
   for (const [qid, raw] of Object.entries(draft)) {
-    if (!own(questions, qid) || !LABEL_TYPES.includes(questions[qid]?.type)) throw new Error(`${name}: ${qid} is not a question of this queue.`);
+    if (!own(questions, qid) || !LABEL_TYPES.includes(questions[qid]?.type))
+      throw new Error(`${name}: ${qid} is not a question of this queue.`);
     let value = null;
     if (raw !== undefined && raw !== null && raw !== "") {
       value = storedLabel(questions[qid], raw);
-      if (value === undefined) throw new Error(`${name}: ${labelShown(raw)} is not a label option for ${qid} (options: ${optionsOf(questions[qid]).map((option) => option.text).join(", ")}).`);
+      if (value === undefined)
+        throw new Error(
+          `${name}: ${labelShown(raw)} is not a label option for ${qid} (options: ${optionsOf(questions[qid])
+            .map((option) => option.text)
+            .join(", ")}).`,
+        );
     }
     const before = has(current[qid]) ? current[qid] : null;
-    if (labelKey(before, questions[qid].type) !== labelKey(value, questions[qid].type) || (before === null) !== (value === null)) out[qid] = value;
+    if (
+      labelKey(before, questions[qid].type) !== labelKey(value, questions[qid].type) ||
+      (before === null) !== (value === null)
+    )
+      out[qid] = value;
   }
   return out;
 }
 
 const imageOf = (row) => (isObject(row) && typeof row._image === "string" ? row._image : null);
-const readyOf = (labels, gates) => Object.keys(isObject(gates) ? gates : {}).every((qid) => isObject(labels) && has(labels[qid]));
+const readyOf = (labels, gates) =>
+  Object.keys(isObject(gates) ? gates : {}).every((qid) => isObject(labels) && has(labels[qid]));
 
 // Arranges raw rows the way the page shows them: matches on the derived item, then Lab's sort over the items.
 function arrangeRaws(source, ctx, raws, byRaw) {
-  const passed = raws.filter((raw) => typeof source.matches !== "function" || source.matches(byRaw.get(raw), ctx) !== false);
+  const passed = raws.filter(
+    (raw) => typeof source.matches !== "function" || source.matches(byRaw.get(raw), ctx) !== false,
+  );
   if (typeof source.arrange !== "function") return passed;
   const back = new Map(passed.map((raw) => [byRaw.get(raw), raw]));
-  const arranged = source.arrange(passed.map((raw) => byRaw.get(raw)), ctx);
-  if (!Array.isArray(arranged) || arranged.length !== passed.length || !arranged.every((item) => back.has(item))) return passed;
+  const arranged = source.arrange(
+    passed.map((raw) => byRaw.get(raw)),
+    ctx,
+  );
+  if (!Array.isArray(arranged) || arranged.length !== passed.length || !arranged.every((item) => back.has(item)))
+    return passed;
   return arranged.map((item) => back.get(item));
 }
 
@@ -368,20 +413,37 @@ function checkReportSummary(rep) {
   const targets = isObject(rep.targets) ? rep.targets : {};
   return {
     status: rep.status,
-    rows: count(rep.rows), labeled: count(rep.labeled), automated: count(rep.automated), correct: count(rep.correct),
-    coverage: finite(rep.coverage), accuracy: finite(rep.accuracy), accuracy_low: finite(rep.accuracy_low), accuracy_high: finite(rep.accuracy_high),
+    rows: count(rep.rows),
+    labeled: count(rep.labeled),
+    automated: count(rep.automated),
+    correct: count(rep.correct),
+    coverage: finite(rep.coverage),
+    accuracy: finite(rep.accuracy),
+    accuracy_low: finite(rep.accuracy_low),
+    accuracy_high: finite(rep.accuracy_high),
     measured: finite(targets.accuracy?.value),
     accuracy_ok: typeof targets.accuracy?.ok === "boolean" ? targets.accuracy.ok : null,
     coverage_ok: typeof targets.coverage?.ok === "boolean" ? targets.coverage.ok : null,
     model: typeof rep.model === "string" ? rep.model : "",
     answered_by: textList(rep.answered_by),
-    cost_usd: finite(rep.cost_usd), latency_ms_median: finite(rep.latency_ms_median), wall_ms: finite(rep.wall_ms),
+    cost_usd: finite(rep.cost_usd),
+    latency_ms_median: finite(rep.latency_ms_median),
+    wall_ms: finite(rep.wall_ms),
     mistakes_total: count(rep.mistakes_total),
-    reasons: textList(rep.reasons), notes: textList(rep.notes),
+    reasons: textList(rep.reasons),
+    notes: textList(rep.notes),
     slices: (Array.isArray(rep.slice_targets) ? rep.slice_targets : []).filter(isObject).map((slice) => ({
-      field: asText(slice.field), value: asText(slice.value), status: CHECK_STATUSES.includes(slice.status) ? slice.status : null,
-      rows: count(slice.rows), labeled: count(slice.labeled), automated: count(slice.automated), coverage: finite(slice.coverage),
-      accuracy: finite(slice.accuracy), accuracy_low: finite(slice.accuracy_low), accuracy_high: finite(slice.accuracy_high) })),
+      field: asText(slice.field),
+      value: asText(slice.value),
+      status: CHECK_STATUSES.includes(slice.status) ? slice.status : null,
+      rows: count(slice.rows),
+      labeled: count(slice.labeled),
+      automated: count(slice.automated),
+      coverage: finite(slice.coverage),
+      accuracy: finite(slice.accuracy),
+      accuracy_low: finite(slice.accuracy_low),
+      accuracy_high: finite(slice.accuracy_high),
+    })),
   };
 }
 
@@ -398,39 +460,70 @@ function checkListItem(x, position, run, loadedId) {
   const driftReport = isObject(drift.report) ? drift.report : null;
   const queueItems = Array.isArray(queue.report?.items) ? queue.report.items.filter(isObject) : [];
   const queueGates = isObject(queue.report?.gates) ? queue.report.gates : {};
-  const editedLabels = Object.values(isObject(queue.edits) ? queue.edits : {}).reduce((n, labels) => n + (isObject(labels) ? Object.keys(labels).length : 0), 0);
+  const editedLabels = Object.values(isObject(queue.edits) ? queue.edits : {}).reduce(
+    (n, labels) => n + (isObject(labels) ? Object.keys(labels).length : 0),
+    0,
+  );
   const upgradeReport = isObject(upgrade.report) ? upgrade.report : null;
   return {
     id: x.id,
     name: typeof x.name === "string" && x.name ? x.name : x.id,
     position,
     loaded: typeof loadedId === "string" && loadedId === x.id,
-    rows, tuning_rows: tuning, held_out_rows: heldOut, labeled: count(x.labeled), question_count: count(x.questions),
+    rows,
+    tuning_rows: tuning,
+    held_out_rows: heldOut,
+    labeled: count(x.labeled),
+    question_count: count(x.questions),
     calls: Math.min(tuning, 200),
-    gates, gated: Object.keys(gates),
+    gates,
+    gated: Object.keys(gates),
     signal: typeof c.signal === "string" ? c.signal : "",
     bound: c.bound === "lower" ? "lower" : "estimate",
     model: typeof c.model === "string" ? c.model : "",
     tuned_on: typeof c.tuned_on === "string" && c.tuned_on ? c.tuned_on : null,
-    min_accuracy: finite(c.min_accuracy), min_coverage: finite(c.min_coverage),
+    min_accuracy: finite(c.min_accuracy),
+    min_coverage: finite(c.min_coverage),
     rules: typeof c.rules === "string" && c.rules.trim() ? c.rules.split("\n").filter((line) => line.trim()).length : 0,
-    slice_targets: (Array.isArray(c.slice_targets) ? c.slice_targets : []).filter(isObject).map((t) => ({ field: asText(t.field), value: asText(t.value),
-      min_accuracy: finite(t.min_accuracy), min_coverage: finite(t.min_coverage) })),
+    slice_targets: (Array.isArray(c.slice_targets) ? c.slice_targets : [])
+      .filter(isObject)
+      .map((t) => ({
+        field: asText(t.field),
+        value: asText(t.value),
+        min_accuracy: finite(t.min_accuracy),
+        min_coverage: finite(t.min_coverage),
+      })),
     answer_sets: numberMap(c.answer_sets),
     notes: textList(x.check_notes),
     model_override: typeof r.model === "string" ? r.model.trim() : "",
     busy: !!(r.running || drift.running || drift.busy || upgrade.running),
     report: checkReportSummary(r.report),
-    drift: { open: drift.open === true, running: drift.running === true, compared: !!driftReport && !driftReport.recovered && DRIFT_STATUSES.includes(driftReport.status),
-      status: driftReport && !driftReport.recovered && DRIFT_STATUSES.includes(driftReport.status) ? driftReport.status : null,
+    drift: {
+      open: drift.open === true,
+      running: drift.running === true,
+      compared: !!driftReport && !driftReport.recovered && DRIFT_STATUSES.includes(driftReport.status),
+      status:
+        driftReport && !driftReport.recovered && DRIFT_STATUSES.includes(driftReport.status)
+          ? driftReport.status
+          : null,
       recovered: driftReport?.recovered === true,
-      queued: Array.isArray(driftReport?.labeling?.items) ? driftReport.labeling.items.length : 0 },
-    upgrade: { open: upgrade.open === true, running: upgrade.running === true,
+      queued: Array.isArray(driftReport?.labeling?.items) ? driftReport.labeling.items.length : 0,
+    },
+    upgrade: {
+      open: upgrade.open === true,
+      running: upgrade.running === true,
       verdict: upgradeReport && UPGRADE_VERDICTS.includes(upgradeReport.verdict) ? upgradeReport.verdict : null,
-      candidate: typeof upgradeReport?.sides?.candidate?.model === "string" ? upgradeReport.sides.candidate.model : null },
-    queue: { open: queue.open === true, read: queueItems.length > 0 || isObject(queue.report),
-      rows: queueItems.length, ready: queueItems.filter((item) => readyOf(item.labels, queueGates)).length,
-      audit: queueItems.filter((item) => item.kind === "audit").length, edited_labels: editedLabels },
+      candidate:
+        typeof upgradeReport?.sides?.candidate?.model === "string" ? upgradeReport.sides.candidate.model : null,
+    },
+    queue: {
+      open: queue.open === true,
+      read: queueItems.length > 0 || isObject(queue.report),
+      rows: queueItems.length,
+      ready: queueItems.filter((item) => readyOf(item.labels, queueGates)).length,
+      audit: queueItems.filter((item) => item.kind === "audit").length,
+      edited_labels: editedLabels,
+    },
   };
 }
 
@@ -448,7 +541,9 @@ export function checksListCtx(source = {}) {
     const datasets = read(source, "datasets", []);
     const runs = read(source, "runs", {});
     const loadedId = read(source, "loadedId", null);
-    const raw = (Array.isArray(datasets) ? datasets : []).filter((x) => isObject(x) && typeof x.id === "string" && isObject(x.check));
+    const raw = (Array.isArray(datasets) ? datasets : []).filter(
+      (x) => isObject(x) && typeof x.id === "string" && isObject(x.check),
+    );
     const list = raw.map((x, index) => checkListItem(x, index + 1, isObject(runs) ? runs[x.id] : null, loadedId));
     const key = JSON.stringify(list);
     if (memo && memo.key === key) return memo;
@@ -459,15 +554,26 @@ export function checksListCtx(source = {}) {
   const items = () => lookup().items;
   const catalogShown = (entry) => {
     if (typeof source.catalogShown !== "function") return true;
-    try { return source.catalogShown(entry.dataset) !== false; } catch { return true; }
+    try {
+      return source.catalogShown(entry.dataset) !== false;
+    } catch {
+      return true;
+    }
   };
   const visible = () => {
     const { items: list, byId } = lookup();
-    const passed = list.filter((item) => catalogShown(byId.get(item.id))
-      && (typeof source.matches !== "function" || source.matches(item, ctx) !== false));
+    const passed = list.filter(
+      (item) =>
+        catalogShown(byId.get(item.id)) &&
+        (typeof source.matches !== "function" || source.matches(item, ctx) !== false),
+    );
     if (typeof source.arrange !== "function") return passed;
     const arranged = source.arrange(passed, ctx);
-    return Array.isArray(arranged) && arranged.length === passed.length && arranged.every((item) => passed.includes(item)) ? arranged : passed;
+    return Array.isArray(arranged) &&
+      arranged.length === passed.length &&
+      arranged.every((item) => passed.includes(item))
+      ? arranged
+      : passed;
   };
   const itemOf = (id) => {
     const entry = lookup().byId.get(id);
@@ -476,7 +582,8 @@ export function checksListCtx(source = {}) {
   };
   const shownItem = (id) => {
     const item = itemOf(id);
-    if (!visible().includes(item)) throw new Error(`The check saved with “${item.id}” is hidden by the current filters.`);
+    if (!visible().includes(item))
+      throw new Error(`The check saved with “${item.id}” is hidden by the current filters.`);
     return item;
   };
   const ctx = {
@@ -496,7 +603,8 @@ export function checksListCtx(source = {}) {
     actions: {
       open(id, panel, open = true) {
         const item = itemOf(id);
-        if (!["drift", "upgrade", "queue"].includes(panel)) throw new Error(`Unknown panel “${String(panel)}”: use drift, upgrade or queue.`);
+        if (!["drift", "upgrade", "queue"].includes(panel))
+          throw new Error(`Unknown panel “${String(panel)}”: use drift, upgrade or queue.`);
         return call(source, "open", item.id, panel, open !== false);
       },
       exportGate(id) {
@@ -508,7 +616,9 @@ export function checksListCtx(source = {}) {
         return call(source, "goTo", item.id);
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && typeof item.id === "string" ? item.id : "?"),
     // The page's hook (not for packs).
     page: {
@@ -557,7 +667,8 @@ export function driftQueueCtx(source = {}) {
     return isObject(labeling) && Array.isArray(labeling.items) ? labeling : null;
   };
   const busy = () => read(source, "busy", false) === true || driftOf().busy === true || driftOf().running === true;
-  const rawItems = () => (labelingOf()?.items || []).filter((raw) => isObject(raw) && Number.isInteger(raw.line) && isObject(raw.row));
+  const rawItems = () =>
+    (labelingOf()?.items || []).filter((raw) => isObject(raw) && Number.isInteger(raw.line) && isObject(raw.row));
   const questionsOf = () => (isObject(labelingOf()?.questions) ? labelingOf().questions : {});
   const gatesOf = () => (isObject(labelingOf()?.gates) ? labelingOf().gates : {});
 
@@ -567,8 +678,20 @@ export function driftQueueCtx(source = {}) {
     const raws = rawItems();
     const pictures = read(source, "pictures", {});
     const loaded = (name) => name !== null && isObject(pictures) && typeof pictures[name] === "string";
-    const key = [count(labeling?.room), raws.map((raw) => `${raw.line}:${stableStringify(raw.labels) ?? ""}:${loaded(imageOf(raw.row)) ? 1 : 0}`).join("|")].join("\u0000");
-    if (memo && memo.labeling === labeling && memo.items === labeling?.items && memo.length === raws.length && memo.key === key) return memo.value;
+    const key = [
+      count(labeling?.room),
+      raws
+        .map((raw) => `${raw.line}:${stableStringify(raw.labels) ?? ""}:${loaded(imageOf(raw.row)) ? 1 : 0}`)
+        .join("|"),
+    ].join("\u0000");
+    if (
+      memo &&
+      memo.labeling === labeling &&
+      memo.items === labeling?.items &&
+      memo.length === raws.length &&
+      memo.key === key
+    )
+      return memo.value;
     const questions = questionsOf();
     const gates = gatesOf();
     const qids = Object.keys(questions).filter((qid) => LABEL_TYPES.includes(questions[qid]?.type));
@@ -576,17 +699,27 @@ export function driftQueueCtx(source = {}) {
     const byRaw = new Map();
     const list = raws.map((raw, position) => {
       const row = copy(raw.row);
-      const labels = Object.fromEntries(qids.map((qid) => [qid, has(raw.labels?.[qid]) ? copy(raw.labels[qid]) : null]));
+      const labels = Object.fromEntries(
+        qids.map((qid) => [qid, has(raw.labels?.[qid]) ? copy(raw.labels[qid]) : null]),
+      );
       const ready = readyOf(labels, gates);
       const willAdd = ready && room > 0;
       if (willAdd) room--;
       const image = imageOf(row);
       const item = deepFreeze({
-        line: raw.line, index: Number.isInteger(raw.index) ? raw.index : raw.line - 1, position: position + 1,
-        row, identity: stableStringify(row) ?? "", image, picture_loaded: loaded(image),
-        labels, labeled: qids.filter((qid) => has(labels[qid])),
+        line: raw.line,
+        index: Number.isInteger(raw.index) ? raw.index : raw.line - 1,
+        position: position + 1,
+        row,
+        identity: stableStringify(row) ?? "",
+        image,
+        picture_loaded: loaded(image),
+        labels,
+        labeled: qids.filter((qid) => has(labels[qid])),
         missing: Object.keys(gates).filter((qid) => !has(labels[qid])),
-        ready, status: ready ? "ready" : "incomplete", will_add: willAdd,
+        ready,
+        status: ready ? "ready" : "incomplete",
+        will_add: willAdd,
       });
       byRaw.set(raw, item);
       return item;
@@ -603,7 +736,8 @@ export function driftQueueCtx(source = {}) {
   };
   const writable = () => {
     if (busy()) throw new Error("Wait for the traffic operation to finish.");
-    if (!labelingOf()) throw new Error("Compare new rows first, or restore a traffic labeling draft: there is no traffic queue.");
+    if (!labelingOf())
+      throw new Error("Compare new rows first, or restore a traffic labeling draft: there is no traffic queue.");
   };
   const itemAt = (line) => {
     const item = items().find((entry) => entry.line === line);
@@ -626,21 +760,30 @@ export function driftQueueCtx(source = {}) {
       const dataset = read(source, "dataset", {});
       const saved = isObject(d.saved) ? { added: count(d.saved.added), already: count(d.saved.already) } : null;
       return deepFreeze({
-        dataset: { id: isObject(dataset) && typeof dataset.id === "string" ? dataset.id : null, name: isObject(dataset) ? asText(dataset.name || dataset.id) : "" },
+        dataset: {
+          id: isObject(dataset) && typeof dataset.id === "string" ? dataset.id : null,
+          name: isObject(dataset) ? asText(dataset.name || dataset.id) : "",
+        },
         busy: busy(),
         present: !!labeling,
         open: d.labelsOpen === true,
         recovered: d.report?.recovered === true,
         questions: labeling ? questionList(questionsOf(), gatesOf()) : [],
         gates: numberMap(gatesOf()),
-        counts: { eligible: count(counts.eligible), queued: count(counts.queued), in_dataset: count(counts.in_dataset),
-          repeated: count(counts.repeated), unsupported: count(counts.unsupported) },
+        counts: {
+          eligible: count(counts.eligible),
+          queued: count(counts.queued),
+          in_dataset: count(counts.in_dataset),
+          repeated: count(counts.repeated),
+          unsupported: count(counts.unsupported),
+        },
         room: count(labeling?.room),
         ready,
         adding: Math.min(ready, count(labeling?.room)),
         labels: list.reduce((n, item) => n + item.labeled.length, 0),
         saved,
-        session_available: !!labeling && typeof labeling.session_context === "string" && labeling.session_context !== "",
+        session_available:
+          !!labeling && typeof labeling.session_context === "string" && labeling.session_context !== "",
       });
     },
     actions: {
@@ -656,12 +799,17 @@ export function driftQueueCtx(source = {}) {
         writable();
         const current = items();
         if (!Array.isArray(nextItems)) throw new Error("Give the whole traffic queue as a list.");
-        if (nextItems.length !== current.length) throw new Error(`Edits cannot add or remove queued rows: the queue lists ${current.length}, the edit gave ${nextItems.length}.`);
+        if (nextItems.length !== current.length)
+          throw new Error(
+            `Edits cannot add or remove queued rows: the queue lists ${current.length}, the edit gave ${nextItems.length}.`,
+          );
         const changes = [];
         nextItems.forEach((entry, position) => {
           const was = current[position];
-          if (!isObject(entry) || entry.line !== was.line) throw new Error(`Position ${position + 1}: edits cannot reorder, add or replace queued rows.`);
-          if (stableStringify(entry.row) !== was.identity) throw new Error(`New row ${was.line}: edits cannot change the input, only human labels.`);
+          if (!isObject(entry) || entry.line !== was.line)
+            throw new Error(`Position ${position + 1}: edits cannot reorder, add or replace queued rows.`);
+          if (stableStringify(entry.row) !== was.identity)
+            throw new Error(`New row ${was.line}: edits cannot change the input, only human labels.`);
           const labels = changeOnly(entry.labels, was.labels);
           const changed = labelChanges(`New row ${was.line}`, was.labels, labels, questionsOf());
           if (Object.keys(changed).length) changes.push([was.line, changed]);
@@ -672,7 +820,8 @@ export function driftQueueCtx(source = {}) {
       goTo(line) {
         writable();
         const item = itemAt(line);
-        if (!ctx.shown().includes(item)) throw new Error(`New row ${item.line} is not shown. Open Label new traffic or clear the Lab filters.`);
+        if (!ctx.shown().includes(item))
+          throw new Error(`New row ${item.line} is not shown. Open Label new traffic or clear the Lab filters.`);
         return call(source, "goTo", item.line);
       },
       openLabels(open = true) {
@@ -681,7 +830,9 @@ export function driftQueueCtx(source = {}) {
         return call(source, "openLabels", open !== false);
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && Number.isInteger(item.line) ? `new row ${item.line}` : "?"),
     page: {
       matches(raw) {
@@ -698,7 +849,7 @@ export function driftQueueCtx(source = {}) {
 // An edited labels map: missing keys mean unchanged; returns only keys whose values the edit states.
 function changeOnly(next, before) {
   if (next === undefined) return {};
-  if (!isObject(next)) return next;  // labelChanges rejects it
+  if (!isObject(next)) return next; // labelChanges rejects it
   const out = {};
   for (const [qid, value] of Object.entries(next)) {
     if (!own(before, qid) || stableStringify(before[qid] ?? null) !== stableStringify(value ?? null)) out[qid] = value;
@@ -715,9 +866,12 @@ const REVIEW_STATUSES = Object.freeze(["all", "incomplete", "ready"]);
 
 // The page's own filters (workbench-review.js queueVisible), used when the page passes none.
 function reviewPageVisible(raws, gates, kind, status, field, value) {
-  return raws.filter((item) => (kind === "all" || item.kind === kind)
-    && (status === "all" || readyOf(item.labels, gates) === (status === "ready"))
-    && (!field || item.slice_values?.[field] === value));
+  return raws.filter(
+    (item) =>
+      (kind === "all" || item.kind === kind) &&
+      (status === "all" || readyOf(item.labels, gates) === (status === "ready")) &&
+      (!field || item.slice_values?.[field] === value),
+  );
 }
 
 // source: {
@@ -749,9 +903,14 @@ export function reviewQueueCtx(source = {}) {
   const filters = () => {
     const q = queueOf();
     const fields = Array.isArray(reportOf()?.slice_fields) ? reportOf().slice_fields : [];
-    const field = typeof q.sliceField === "string" && fields.some((entry) => entry?.name === q.sliceField) ? q.sliceField : "";
-    return { kind: REVIEW_KINDS.includes(q.kindFilter) ? q.kindFilter : "all", status: REVIEW_STATUSES.includes(q.statusFilter) ? q.statusFilter : "all",
-      slice_field: field, slice_value: field && typeof q.sliceValue === "string" ? q.sliceValue : "" };
+    const field =
+      typeof q.sliceField === "string" && fields.some((entry) => entry?.name === q.sliceField) ? q.sliceField : "";
+    return {
+      kind: REVIEW_KINDS.includes(q.kindFilter) ? q.kindFilter : "all",
+      status: REVIEW_STATUSES.includes(q.statusFilter) ? q.statusFilter : "all",
+      slice_field: field,
+      slice_value: field && typeof q.sliceValue === "string" ? q.sliceValue : "",
+    };
   };
 
   let memo = null;
@@ -761,9 +920,22 @@ export function reviewQueueCtx(source = {}) {
     const q = queueOf();
     const pictures = read(source, "pictures", {});
     const loaded = (name) => name !== null && isObject(pictures) && typeof pictures[name] === "string";
-    const key = [count(report?.room), q.nextLine ?? "", stableStringify(editsOf()) ?? "",
-      raws.map((raw) => `${raw.line}:${stableStringify(raw.labels) ?? ""}:${loaded(imageOf(raw.row)) ? 1 : 0}`).join("|")].join("\u0000");
-    if (memo && memo.report === report && memo.items === report?.items && memo.length === raws.length && memo.key === key) return memo.value;
+    const key = [
+      count(report?.room),
+      q.nextLine ?? "",
+      stableStringify(editsOf()) ?? "",
+      raws
+        .map((raw) => `${raw.line}:${stableStringify(raw.labels) ?? ""}:${loaded(imageOf(raw.row)) ? 1 : 0}`)
+        .join("|"),
+    ].join("\u0000");
+    if (
+      memo &&
+      memo.report === report &&
+      memo.items === report?.items &&
+      memo.length === raws.length &&
+      memo.key === key
+    )
+      return memo.value;
     const questions = questionsOf();
     const gates = gatesOf();
     const edits = editsOf();
@@ -773,7 +945,9 @@ export function reviewQueueCtx(source = {}) {
     const list = raws.map((raw, position) => {
       const row = copy(raw.row);
       const kind = raw.kind === "audit" ? "audit" : "review";
-      const labels = Object.fromEntries(qids.map((qid) => [qid, has(raw.labels?.[qid]) ? copy(raw.labels[qid]) : null]));
+      const labels = Object.fromEntries(
+        qids.map((qid) => [qid, has(raw.labels?.[qid]) ? copy(raw.labels[qid]) : null]),
+      );
       const edited = Object.keys(isObject(edits[raw.line]) ? edits[raw.line] : {}).filter((qid) => qids.includes(qid));
       const ready = readyOf(labels, gates);
       const willAdd = ready && room > 0;
@@ -782,17 +956,34 @@ export function reviewQueueCtx(source = {}) {
       const answers = isObject(raw.answers) ? raw.answers : {};
       const image = imageOf(row);
       const item = deepFreeze({
-        line: raw.line, position: position + 1, kind, row, identity: stableStringify(row) ?? "", image, picture_loaded: loaded(image),
+        line: raw.line,
+        position: position + 1,
+        kind,
+        row,
+        identity: stableStringify(row) ?? "",
+        image,
+        picture_loaded: loaded(image),
         verified: isObject(raw.provenance),
-        held: textList(raw.held), rules: textList(raw.rules), open: textList(raw.open),
-        labels, edited,
+        held: textList(raw.held),
+        rules: textList(raw.rules),
+        open: textList(raw.open),
+        labels,
+        edited,
         suggested: kind === "review" ? qids.filter((qid) => has(labels[qid]) && !edited.includes(qid)) : [],
         missing: Object.keys(gates).filter((qid) => !has(labels[qid])),
-        ready, status: ready ? "ready" : "incomplete", will_add: willAdd,
+        ready,
+        status: ready ? "ready" : "incomplete",
+        will_add: willAdd,
         revealed,
         answers: revealed ? copy(answers) : null,
         candidates: revealed ? (isObject(raw.candidates) ? copy(raw.candidates) : {}) : null,
-        disagree: revealed ? qids.filter((qid) => has(labels[qid]) && labelKey(labels[qid], questions[qid].type) !== labelKey(answers[qid], questions[qid].type)) : null,
+        disagree: revealed
+          ? qids.filter(
+              (qid) =>
+                has(labels[qid]) &&
+                labelKey(labels[qid], questions[qid].type) !== labelKey(answers[qid], questions[qid].type),
+            )
+          : null,
         slice_values: isObject(raw.slice_values) ? copy(raw.slice_values) : {},
         current: q.nextLine === raw.line,
       });
@@ -817,7 +1008,9 @@ export function reviewQueueCtx(source = {}) {
     if (!reportOf()) return [];
     return arrangeRaws(source, ctx, pageRaws(), lookup().byRaw);
   };
-  const notBusy = () => { if (busy()) throw new Error("Wait for the Review operation to finish."); };
+  const notBusy = () => {
+    if (busy()) throw new Error("Wait for the Review operation to finish.");
+  };
   const writable = () => {
     notBusy();
     if (!reportOf()) throw new Error("Read the gate's decisions first: there is no Review queue yet.");
@@ -846,31 +1039,51 @@ export function reviewQueueCtx(source = {}) {
       const preview = isObject(q.csvPreview) && isObject(q.csvPreview.counts) ? q.csvPreview.counts : null;
       const questions = report ? questionList(questionsOf(), gates) : [];
       return deepFreeze({
-        dataset: { id: isObject(dataset) && typeof dataset.id === "string" ? dataset.id : null, name: isObject(dataset) ? asText(dataset.name || dataset.id) : "" },
+        dataset: {
+          id: isObject(dataset) && typeof dataset.id === "string" ? dataset.id : null,
+          name: isObject(dataset) ? asText(dataset.name || dataset.id) : "",
+        },
         busy: busy(),
         read: !!report,
         text_changed: !!report && typeof q.text === "string" && q.text !== q.readText,
         filters: filters(),
-        slice_fields: (Array.isArray(report?.slice_fields) ? report.slice_fields : []).filter((field) => isObject(field) && typeof field.name === "string")
+        slice_fields: (Array.isArray(report?.slice_fields) ? report.slice_fields : [])
+          .filter((field) => isObject(field) && typeof field.name === "string")
           .map((field) => ({ name: field.name, values: textList(field.values) })),
         questions,
         gates: numberMap(gates),
-        counts: Object.fromEntries(["decisions", "review", "auto", "in_dataset", "repeated", "unverified", "queued", "audit", "dropped"].map((name) => [name, count(counts[name])])),
+        counts: Object.fromEntries(
+          ["decisions", "review", "auto", "in_dataset", "repeated", "unverified", "queued", "audit", "dropped"].map(
+            (name) => [name, count(counts[name])],
+          ),
+        ),
         problems_total: count(report?.problems_total),
         room: count(report?.room),
         ready,
         incomplete: list.length - ready,
         adding: Math.min(ready, count(report?.room)),
-        progress: Object.fromEntries(questions.map((question) => {
-          const labeled = list.filter((item) => has(item.labels[question.id])).length;
-          return [question.id, { labeled, missing: list.length - labeled }];
-        })),
-        edits: { rows: Object.values(edits).filter((labels) => isObject(labels) && Object.keys(labels).length).length,
-          labels: Object.values(edits).reduce((n, labels) => n + (isObject(labels) ? Object.keys(labels).length : 0), 0) },
-        session_available: !!report && typeof report.session_context === "string" && report.session_context !== "" && q.text === q.readText,
+        progress: Object.fromEntries(
+          questions.map((question) => {
+            const labeled = list.filter((item) => has(item.labels[question.id])).length;
+            return [question.id, { labeled, missing: list.length - labeled }];
+          }),
+        ),
+        edits: {
+          rows: Object.values(edits).filter((labels) => isObject(labels) && Object.keys(labels).length).length,
+          labels: Object.values(edits).reduce(
+            (n, labels) => n + (isObject(labels) ? Object.keys(labels).length : 0),
+            0,
+          ),
+        },
+        session_available:
+          !!report &&
+          typeof report.session_context === "string" &&
+          report.session_context !== "" &&
+          q.text === q.readText,
         csv_preview: preview ? { matched: count(preview.matched), changed: count(preview.changed) } : null,
         audit_requested: report && Number.isInteger(report.audit_requested) ? report.audit_requested : null,
-        next_line: report && Number.isInteger(q.nextLine) && list.some((item) => item.line === q.nextLine) ? q.nextLine : null,
+        next_line:
+          report && Number.isInteger(q.nextLine) && list.some((item) => item.line === q.nextLine) ? q.nextLine : null,
       });
     },
     actions: {
@@ -886,14 +1099,24 @@ export function reviewQueueCtx(source = {}) {
         writable();
         const current = items();
         if (!Array.isArray(nextItems)) throw new Error("Give the whole Review queue as a list.");
-        if (nextItems.length !== current.length) throw new Error(`Edits cannot add or remove queued rows: the queue lists ${current.length}, the edit gave ${nextItems.length}.`);
+        if (nextItems.length !== current.length)
+          throw new Error(
+            `Edits cannot add or remove queued rows: the queue lists ${current.length}, the edit gave ${nextItems.length}.`,
+          );
         const changes = [];
         nextItems.forEach((entry, position) => {
           const was = current[position];
-          if (!isObject(entry) || entry.line !== was.line) throw new Error(`Position ${position + 1}: edits cannot reorder, add or replace queued rows.`);
+          if (!isObject(entry) || entry.line !== was.line)
+            throw new Error(`Position ${position + 1}: edits cannot reorder, add or replace queued rows.`);
           if (entry.kind !== was.kind) throw new Error(`Line ${was.line}: review and audit membership cannot change.`);
-          if (stableStringify(entry.row) !== was.identity) throw new Error(`Line ${was.line}: edits cannot change the input, only labels.`);
-          const changed = labelChanges(`Line ${was.line}`, was.labels, changeOnly(entry.labels, was.labels), questionsOf());
+          if (stableStringify(entry.row) !== was.identity)
+            throw new Error(`Line ${was.line}: edits cannot change the input, only labels.`);
+          const changed = labelChanges(
+            `Line ${was.line}`,
+            was.labels,
+            changeOnly(entry.labels, was.labels),
+            questionsOf(),
+          );
           if (Object.keys(changed).length) changes.push([was.line, changed]);
         });
         if (changes.length) call(source, "writeLabels", changes, String(label || "Lab edit"));
@@ -910,25 +1133,34 @@ export function reviewQueueCtx(source = {}) {
         if (direction !== 1 && direction !== -1) throw new Error("Go to the next (1) or previous (-1) incomplete row.");
         const f = filters();
         const { raws, byRaw } = lookup();
-        const open = raws.filter((raw) => (f.kind === "all" || raw.kind === f.kind) && (!f.slice_field || raw.slice_values?.[f.slice_field] === f.slice_value)
-          && !byRaw.get(raw).ready && (typeof source.matches !== "function" || source.matches(byRaw.get(raw), ctx) !== false));
+        const open = raws.filter(
+          (raw) =>
+            (f.kind === "all" || raw.kind === f.kind) &&
+            (!f.slice_field || raw.slice_values?.[f.slice_field] === f.slice_value) &&
+            !byRaw.get(raw).ready &&
+            (typeof source.matches !== "function" || source.matches(byRaw.get(raw), ctx) !== false),
+        );
         if (!open.length) throw new Error("No incomplete row is left under the row kind, slice and Lab filters.");
         return call(source, "next", direction);
       },
       setKind(kind) {
         writable();
-        if (!REVIEW_KINDS.includes(kind)) throw new Error(`Unknown row kind “${String(kind)}”: use all, review or audit.`);
+        if (!REVIEW_KINDS.includes(kind))
+          throw new Error(`Unknown row kind “${String(kind)}”: use all, review or audit.`);
         return call(source, "setFilter", "kindFilter", kind);
       },
       setStatus(status) {
         writable();
-        if (!REVIEW_STATUSES.includes(status)) throw new Error(`Unknown labeling status “${String(status)}”: use all, incomplete or ready.`);
+        if (!REVIEW_STATUSES.includes(status))
+          throw new Error(`Unknown labeling status “${String(status)}”: use all, incomplete or ready.`);
         return call(source, "setFilter", "statusFilter", status);
       },
       setSlice(field = "", value = null) {
         writable();
         if (field === "" || field === null) return call(source, "setSlice", "", "");
-        const entry = (Array.isArray(reportOf().slice_fields) ? reportOf().slice_fields : []).find((option) => option?.name === field);
+        const entry = (Array.isArray(reportOf().slice_fields) ? reportOf().slice_fields : []).find(
+          (option) => option?.name === field,
+        );
         if (!entry) throw new Error(`“${String(field)}” is not an input slice of this queue.`);
         const values = textList(entry.values);
         const chosen = value === null || value === undefined ? values[0] : value;
@@ -939,7 +1171,9 @@ export function reviewQueueCtx(source = {}) {
         return call(source, "resetFilters");
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && Number.isInteger(item.line) ? `line ${item.line}` : "?"),
     page: {
       matches(raw) {
