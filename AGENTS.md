@@ -65,7 +65,9 @@ suite does not need one. The official `typesafe-sdk` is used on Python ≥3.10; 
 the locked-SDK suite on 3.10–3.14, the stdlib fallback on 3.9, and separate lint-and-format, JavaScript and
 sample-picture jobs, so both code paths must keep working. `.github/workflows/audit.yml` audits
 `uv.lock` (`uv audit`) on PRs and weekly. Every job runs on Namespace runners
-(`namespace-profile-gitrunner`, Ubuntu 24.04), never GitHub-hosted ones.
+(`namespace-profile-gitrunner`, Ubuntu 24.04), never GitHub-hosted ones. The main ruleset requires
+the `All tests passed` job, which passes only when every other job in `test.yml` passed: add any new
+test job to its `needs`.
 
 ## Architecture
 
