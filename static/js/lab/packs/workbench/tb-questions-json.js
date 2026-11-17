@@ -41,7 +41,7 @@ const STATE_LIMIT = 120000;
 const OUTLINE = ["id", "type", "instructions", "key", "description"];
 const JSON_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const plural = (count, word, many = `${word}s`) => `${count} ${count === 1 ? word : many}`;
 const pretty = (value) => JSON.stringify(value, null, 2);

@@ -12,7 +12,7 @@ export const MAX_INPUT_CHARS = 500;
 export const MAX_WHY_CHARS = 500;
 
 const has = (v) => v !== null && v !== undefined && v !== "";
-const own = (obj, key) => !!obj && Object.prototype.hasOwnProperty.call(obj, key); // a question id may be __proto__
+const own = (obj, key) => !!obj && Object.hasOwn(obj, key); // a question id may be __proto__
 const text = (v) => (v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v));
 
 // The label options a person can choose for a question, as the labeling selects show them.

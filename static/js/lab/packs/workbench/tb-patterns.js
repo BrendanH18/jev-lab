@@ -609,7 +609,7 @@ function globBody(glob, inBraces = false) {
       let inner = glob.slice(i + 1, close);
       const negate = inner[0] === "!" || inner[0] === "^";
       if (negate) inner = inner.slice(1);
-      out += `[${negate ? "^" : ""}${inner.replace(/[\\\]\[]/g, "\\$&")}]`;
+      out += `[${negate ? "^" : ""}${inner.replace(/[\\\][]/g, "\\$&")}]`;
       i = close + 1;
     } else if (c === "{") {
       need(!inBraces, "Nested braces are not supported in a glob.");

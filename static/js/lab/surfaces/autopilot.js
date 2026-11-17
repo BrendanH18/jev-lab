@@ -407,7 +407,7 @@ function emailState(source) {
   };
   const recordOf = (id) => {
     const map = records();
-    return Object.prototype.hasOwnProperty.call(map, id) && isObject(map[id]) ? map[id] : null;
+    return Object.hasOwn(map, id) && isObject(map[id]) ? map[id] : null;
   };
   const activeId = () => textOrNull(read(source, "activeId", null));
   const running = () => read(source, "running", false) === true;

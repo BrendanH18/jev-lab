@@ -149,8 +149,7 @@ function pyJson(value) {
   return "null";
 }
 function sliceValue(row, field) {
-  if (!isObject(row) || !Object.prototype.hasOwnProperty.call(row, field) || row[field] === null || row[field] === "")
-    return NONE;
+  if (!isObject(row) || !Object.hasOwn(row, field) || row[field] === null || row[field] === "") return NONE;
   const value = row[field];
   return pyStrip(typeof value === "string" ? value : pyJson(value)) || NONE;
 }

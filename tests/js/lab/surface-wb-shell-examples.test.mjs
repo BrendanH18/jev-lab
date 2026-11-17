@@ -540,11 +540,11 @@ const fakeH = (tag, attrs = {}, ...children) => ({
 });
 
 test("workbench.js lists the Toolbox tab, opens it from #toolbox and reaches Lab only through W in its new functions", () => {
-  assert.match(workbench, /const TABS = \[[^\n]*\["toolbox", "Toolbox"\]\];/);
-  assert.match(workbench, /case "toolbox": view = renderToolbox\(\); break;/);
+  assert.match(workbench, /const TABS = \[[^;]*\["toolbox", "Toolbox"\],?\s*\];/);
+  assert.match(workbench, /case "toolbox":\s*view = renderToolbox\(\);\s*break;/);
   assert.match(
     workbench,
-    /role: "tab",\s*\n?\s*"aria-selected": W\.tab === k \? "true" : "false", "aria-controls": "view", tabindex: W\.tab === k \? "0" : "-1"/,
+    /role: "tab",\s*\n?\s*"aria-selected": W\.tab === k \? "true" : "false",\s*"aria-controls": "view",\s*tabindex: W\.tab === k \? "0" : "-1"/,
   );
   assert.match(workbench, /tabForKey\(tabIds, W\.tab, event\.key\)/);
   assert.match(workbench, /window\.addEventListener\("hashchange"/);

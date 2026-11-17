@@ -358,7 +358,7 @@ checkPack(
           const page = opened(t);
           rows(page)[2].instructions = "Is the customer furious?";
           rows(page)[6].instructions = "What is the tone?";
-          let tree = t.render(page);
+          const tree = t.render(page);
           t.fire(act(t, tree, "goto", { "data-qid": "angry" }), "click");
           assert.deepEqual(page.log.at(-1), ["focus", 2]);
           t.fire(act(t, tree, "goto", { "data-qid": "tone" }), "click");

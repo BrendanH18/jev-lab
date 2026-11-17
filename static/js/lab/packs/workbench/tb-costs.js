@@ -600,7 +600,7 @@ export default definePack({
         const total = growth === 0 ? first * months : (first * Math.expm1(months * Math.log1p(growth))) / growth;
         return [
           ["Total cost (USD)", total],
-          ["Cost of the last month (USD)", first * Math.pow(1 + growth, months - 1)],
+          ["Cost of the last month (USD)", first * (1 + growth) ** (months - 1)],
           ["Average per month (USD)", total / months],
         ];
       },

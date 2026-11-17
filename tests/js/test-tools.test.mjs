@@ -80,8 +80,8 @@ function harness() {
   return new Function(
     ...Object.keys(helpers),
     `
-    ${source.match(/const testFilterDefaults[^\n]*/)[0]}
-    ${source.match(/const testView[^\n]*/)[0]}
+    ${source.match(/^const testFilterDefaults\b[\s\S]*?;$/m)[0]}
+    ${source.match(/^const testView\b[\s\S]*?;$/m)[0]}
     ${body("reconcileTests")}
     ${body("shownTests")}
     ${body("unsuccessfulTestIds")}

@@ -8,7 +8,7 @@ import { codePoints } from "../../lib/text.js";
 
 const TYPES = ["noul", "choice", "score", "box"];
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const both = (item) => isObject(item) && isObject(item.a) && isObject(item.b);
 const onlyA = (item) => isObject(item) && isObject(item.a) && !isObject(item.b);
 const onlyB = (item) => isObject(item) && isObject(item.b) && !isObject(item.a);

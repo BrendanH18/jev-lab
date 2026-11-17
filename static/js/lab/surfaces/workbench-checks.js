@@ -245,7 +245,7 @@ import { clone } from "../kit.js";
 import { stableStringify } from "../lib/json.js";
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const own = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+const own = (object, key) => isObject(object) && Object.hasOwn(object, key);
 const asText = (value) =>
   typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const count = (value) => (Number.isInteger(value) && value >= 0 ? value : 0);
@@ -485,14 +485,12 @@ function checkListItem(x, position, run, loadedId) {
     min_accuracy: finite(c.min_accuracy),
     min_coverage: finite(c.min_coverage),
     rules: typeof c.rules === "string" && c.rules.trim() ? c.rules.split("\n").filter((line) => line.trim()).length : 0,
-    slice_targets: (Array.isArray(c.slice_targets) ? c.slice_targets : [])
-      .filter(isObject)
-      .map((t) => ({
-        field: asText(t.field),
-        value: asText(t.value),
-        min_accuracy: finite(t.min_accuracy),
-        min_coverage: finite(t.min_coverage),
-      })),
+    slice_targets: (Array.isArray(c.slice_targets) ? c.slice_targets : []).filter(isObject).map((t) => ({
+      field: asText(t.field),
+      value: asText(t.value),
+      min_accuracy: finite(t.min_accuracy),
+      min_coverage: finite(t.min_coverage),
+    })),
     answer_sets: numberMap(c.answer_sets),
     notes: textList(x.check_notes),
     model_override: typeof r.model === "string" ? r.model.trim() : "",

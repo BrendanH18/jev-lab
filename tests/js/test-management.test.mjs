@@ -110,9 +110,10 @@ test("new test controls use current visible scope or full selected scope", () =>
   const source = readFileSync(new URL("../../static/js/workbench-tests.js", import.meta.url), "utf8");
   assert.match(source, /downloadTestMetadata\(shownTests\(\), "csv"\)/);
   for (const format of ["json", "csv"]) {
-    assert.ok(
-      source.includes(
-        `downloadTestMetadata(W.items.filter((item) => testView.selected.includes(item.id)), "${format}")`,
+    assert.match(
+      source,
+      new RegExp(
+        String.raw`downloadTestMetadata\(\s*W\.items\.filter\(\(item\) => testView\.selected\.includes\(item\.id\)\),\s*"${format}",?\s*\)`,
       ),
     );
   }

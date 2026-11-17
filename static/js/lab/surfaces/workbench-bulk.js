@@ -205,7 +205,7 @@ const RESERVED = ["_expect", "_test", "_image"];
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const has = (object, key) => Object.hasOwn(object, key);
 const plain = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 
 function deepFreeze(value) {

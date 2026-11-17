@@ -1781,7 +1781,7 @@ function agreeReport(x, a) {
       criteria: {},
     };
     const key = settleKey(d.row_id, d.question);
-    const value = Object.prototype.hasOwnProperty.call(a.choices, key) ? a.choices[key] : d.first;
+    const value = Object.hasOwn(a.choices, key) ? a.choices[key] : d.first;
     const current = labelText(value, question.type);
     const options = [
       ...new Set([...queueClasses(question), labelText(d.first, question.type), labelText(d.second, question.type)]),
@@ -1973,9 +1973,7 @@ async function saveSettled(id) {
   const remaining =
     !!a.pendingSettlements?.length ||
     a.report.disagreements_total > a.report.disagreements.length ||
-    a.report.disagreements.some(
-      (item) => !Object.prototype.hasOwnProperty.call(a.choices, settleKey(item.row_id, item.question)),
-    );
+    a.report.disagreements.some((item) => !Object.hasOwn(a.choices, settleKey(item.row_id, item.question)));
   if (
     remaining &&
     !window.confirm(
@@ -1994,7 +1992,7 @@ async function saveSettled(id) {
     const loaded = b.dataset.id === id;
     if (loaded) b.dataset.id = null;
     a.report.disagreements = a.report.disagreements.filter(
-      (d) => !Object.prototype.hasOwnProperty.call(a.choices, settleKey(d.row_id, d.question)),
+      (d) => !Object.hasOwn(a.choices, settleKey(d.row_id, d.question)),
     );
     a.choices = {};
     b.datasets = (await api("/api/workbench/datasets")).datasets;

@@ -192,7 +192,7 @@ export default definePack({
       help: "Add needs every gated question labeled.",
       check: (item, ctx) => {
         const gates = isObject(ctx?.data?.gates) ? ctx.data.gates : {};
-        const gone = cleared(item).filter((qid) => Object.prototype.hasOwnProperty.call(gates, qid));
+        const gone = cleared(item).filter((qid) => Object.hasOwn(gates, qid));
         return gone.length
           ? `You cleared ${gone.join(", ")} on line ${item.line}; ${gone.length === 1 ? "it is" : "they are"} gated, so Add skips the row until ${gone.length === 1 ? "it is" : "they are"} labeled again.`
           : null;

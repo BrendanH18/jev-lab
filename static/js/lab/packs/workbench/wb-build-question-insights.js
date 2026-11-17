@@ -5,8 +5,7 @@ import { definePack } from "../../kit.js";
 import { duplicateKeys } from "../../lib/json.js";
 import { codePoints, findBackticked, sentences, toSnakeCase } from "../../lib/text.js";
 
-const hasOwn = (object, key) =>
-  !!object && typeof object === "object" && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => !!object && typeof object === "object" && Object.hasOwn(object, key);
 const text = (value) =>
   typeof value === "string" ? value : value === null || value === undefined ? "" : JSON.stringify(value);
 const str = (value) => (typeof value === "string" ? value : "");

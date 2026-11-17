@@ -24,7 +24,7 @@ const metaOf = (item) => {
   const result = resultOf(item);
   return result && !result.error && isObject(result.meta) ? result.meta : null;
 };
-const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const has = (object, key) => Object.hasOwn(object, key);
 // Derived values are rounded to 12 significant digits so the facts table shows 0.22, not 0.21999999999999997.
 const tidy = (value) => (value === null ? null : Number(value.toPrecision(12)));
 const lowest = (values) => (values.length ? tidy(Math.min(...values)) : null);

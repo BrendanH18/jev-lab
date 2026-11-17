@@ -219,7 +219,6 @@ test("items are frozen, keep their identity until the list changes, and are [] b
     assert.equal(ctx.shown()[0], first[0], "shown() hands out the same objects");
     assert.ok(Object.isFrozen(first[0]));
     assert.throws(() => {
-      "use strict";
       first[0].id = "x";
     }, TypeError);
     assert.deepEqual(sample({ world: null, last: null }).items(), []);

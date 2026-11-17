@@ -594,6 +594,6 @@ test("the page wires Lab once, mounts both sections, and moves the policy only t
   // A check records the session history the surfaces read, capped at the page's limit.
   assert.match(
     body("check"),
-    /S\.calls \+= 1;\n\s+S\.history\.push\(\{ call: S\.calls, at: Date\.now\(\), review: \{ \.\.\.S\.result\.review \}, answers: S\.result\.answers, meta: S\.result\.meta \}\);/,
+    /S\.calls \+= 1;\n\s+S\.history\.push\(\{\s*call: S\.calls,\s*at: Date\.now\(\),\s*review: \{ \.\.\.S\.result\.review \},\s*answers: S\.result\.answers,\s*meta: S\.result\.meta,?\s*\}\);/,
   );
 });

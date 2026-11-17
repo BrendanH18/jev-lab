@@ -264,7 +264,7 @@ const EMPTY_OBJECT = Object.freeze({});
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const integer = (value) => (Number.isInteger(value) ? value : null);
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const round2 = (value) => Math.round(value * 100) / 100;
 
 function deepFreeze(value) {

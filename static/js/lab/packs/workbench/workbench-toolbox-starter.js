@@ -180,7 +180,7 @@ export default definePack({
       help: "After checking n rows and finding no mistakes, the highest error rate still consistent with that at the chosen confidence (one-sided). The rule of three, 3 ÷ n, is the 95% shortcut.",
       inputs: [COUNT("n", "Rows checked, all correct", { min: 1 }), LEVEL],
       compute: ({ n, level }) => {
-        const bound = 1 - Math.pow(1 - Number(level), 1 / n);
+        const bound = 1 - (1 - Number(level)) ** (1 / n);
         return [
           ["Error rate is at most", bound],
           ["Accuracy is at least", 1 - bound],
@@ -626,9 +626,9 @@ export default definePack({
       help: "With k independent events of probability p each (k flagged rows, k checks), the chance that at least one, all, or none of them happen.",
       inputs: [SHARE("p", "Probability of each event"), COUNT("k", "Number of events", { min: 1 })],
       compute: ({ p, k }) => [
-        ["At least one", 1 - Math.pow(1 - p, k)],
-        ["All of them", Math.pow(p, k)],
-        ["None of them", Math.pow(1 - p, k)],
+        ["At least one", 1 - (1 - p) ** k],
+        ["All of them", p ** k],
+        ["None of them", (1 - p) ** k],
       ],
     },
 

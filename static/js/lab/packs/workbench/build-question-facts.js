@@ -17,8 +17,7 @@ import {
 } from "../../lib/text.js";
 
 const TYPES = ["noul", "choice", "score", "box"];
-const hasOwn = (object, key) =>
-  !!object && typeof object === "object" && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => !!object && typeof object === "object" && Object.hasOwn(object, key);
 const str = (value) => (typeof value === "string" ? value : "");
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const RUN_NOTE = "From your latest Run in this page session; the Build tab says when those answers are outdated.";

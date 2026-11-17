@@ -208,7 +208,7 @@ export default definePack({
         for (const [id, value] of Object.entries(labels)) {
           if (questions[id]?.type !== "noul" || !(typeof value === "string" || value === 1 || value === 0)) continue;
           const word = String(value).trim().toLowerCase();
-          if (Object.prototype.hasOwnProperty.call(NOUL_WORDS, word)) {
+          if (Object.hasOwn(NOUL_WORDS, word)) {
             labels[id] = NOUL_WORDS[word];
             changed = true;
           }

@@ -15,7 +15,7 @@
 // a missing node); nothing throws on bad input. Cyclic structures are outside the domain: they never loop forever,
 // but the cyclic part is skipped or kept by reference.
 
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const NAME_AT = /[A-Za-z_][A-Za-z0-9_]*/y;
 

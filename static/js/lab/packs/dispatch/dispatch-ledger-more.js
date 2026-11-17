@@ -351,15 +351,13 @@ export default definePack({
       mime: "application/x-ndjson",
       build: (ctx) =>
         formatJsonl(
-          ctx
-            .shown()
-            .map((item) => ({
-              id: item.id,
-              vendor: item.vendor || "",
-              vendor_domain: item.vendor_domain ?? null,
-              amount: amountOf(item),
-              paid: item.paid === true,
-            })),
+          ctx.shown().map((item) => ({
+            id: item.id,
+            vendor: item.vendor || "",
+            vendor_domain: item.vendor_domain ?? null,
+            amount: amountOf(item),
+            paid: item.paid === true,
+          })),
         ),
     },
     {

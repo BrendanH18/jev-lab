@@ -240,18 +240,16 @@ export function shellCtx(source = {}) {
   };
   const steps = () => {
     const list = read(source, "steps", EMPTY);
-    return (Array.isArray(list) ? list : [])
-      .filter(isObject)
-      .map((step, index) => ({
-        id: asText(step.id),
-        position: index + 1,
-        title: asText(step.title),
-        tab: asText(step.tab),
-        target: asText(step.target),
-        action: asText(step.action),
-        status: asText(step.status),
-        enabled: step.enabled === true,
-      }));
+    return (Array.isArray(list) ? list : []).filter(isObject).map((step, index) => ({
+      id: asText(step.id),
+      position: index + 1,
+      title: asText(step.title),
+      tab: asText(step.tab),
+      target: asText(step.target),
+      action: asText(step.action),
+      status: asText(step.status),
+      enabled: step.enabled === true,
+    }));
   };
   const ctx = {
     items: () => EMPTY,

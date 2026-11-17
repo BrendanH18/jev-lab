@@ -18,7 +18,7 @@ const REPEAT = 3; // a transition repeated on at least this many rows and half t
 const LABELABLE = ["choice", "noul", "score"];
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const fixed = (value, digits = 2) => (num(value) === null ? "—" : value.toFixed(digits));
 const dec = (value, digits = 4) => (num(value) === null ? "" : String(Number(value.toFixed(digits))));
@@ -383,6 +383,7 @@ export default definePack({
             "B 95% high",
           ],
           ...Array.from({ length: Math.max(a?.length || 0, b?.length || 0) }, (_, k) => [
+            // biome-ignore lint/correctness/noUnsafeOptionalChaining: k < the longer length, so a[k] or b[k] exists
             dec((a?.[k] || b?.[k]).threshold, 2),
             ...side(a?.[k]),
             ...side(b?.[k]),

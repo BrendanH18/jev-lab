@@ -412,16 +412,14 @@ export default definePack({
       mime: "application/x-ndjson",
       build: (ctx) =>
         formatJsonl(
-          ctx
-            .shown()
-            .map((item) => ({
-              id: item.id,
-              title: item.title || "",
-              day: item.day ?? null,
-              time: item.time ?? null,
-              with_domain: item.with_domain ?? null,
-              moved: item.moved === true,
-            })),
+          ctx.shown().map((item) => ({
+            id: item.id,
+            title: item.title || "",
+            day: item.day ?? null,
+            time: item.time ?? null,
+            with_domain: item.with_domain ?? null,
+            moved: item.moved === true,
+          })),
         ),
     },
     {

@@ -263,7 +263,7 @@ export default definePack({
         return [
           ["Attempts needed", attempts],
           ["Retries after the first", attempts - 1],
-          ["Chance of success within them", 1 - Math.pow(failure, attempts)],
+          ["Chance of success within them", 1 - failure ** attempts],
           ["Average attempts until success, with no limit", 1 / (1 - failure)],
         ];
       },
@@ -281,11 +281,11 @@ export default definePack({
       ],
       compute: ({ rows, failure, attempts }) => {
         need(failure < 1, "With every attempt failing, no row ever succeeds.");
-        const calls = (rows * (1 - Math.pow(failure, attempts))) / (1 - failure);
+        const calls = (rows * (1 - failure ** attempts)) / (1 - failure);
         return [
           ["Expected calls", calls],
           ["Expected retries", calls - rows],
-          ["Expected rows still failing", rows * Math.pow(failure, attempts)],
+          ["Expected rows still failing", rows * failure ** attempts],
           ["Extra calls as a share of rows", calls / rows - 1],
         ];
       },
@@ -307,7 +307,7 @@ export default definePack({
           longest = 0;
         const rows = [];
         for (let retry = 1; retry <= retries; retry++) {
-          const wait = Math.min(base * Math.pow(factor, retry - 1), cap === null ? Infinity : cap);
+          const wait = Math.min(base * factor ** (retry - 1), cap === null ? Infinity : cap);
           total += wait;
           longest = Math.max(longest, wait);
           rows.push([retry, wait, total]);

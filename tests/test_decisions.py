@@ -409,9 +409,9 @@ class QueueTests(Temp):
     def test_audit_sample_is_random_but_repeatable(self):
         self.save()
         text = self.route()
-        pick = lambda seed: [
+        pick = lambda seed: [  # noqa: E731
             i["line"] for i in decisions.queue("tickets", text, audit=2, seed=seed)["items"] if i["kind"] == "audit"
-        ]  # noqa: E731
+        ]
         self.assertEqual(pick(0), pick(0))
         self.assertEqual(len({tuple(pick(s)) for s in range(12)}) > 1, True, "other seeds draw other rows")
         everything = decisions.queue("tickets", text, audit=200)

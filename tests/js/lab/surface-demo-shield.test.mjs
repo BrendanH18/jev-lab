@@ -766,11 +766,11 @@ test("the page's Lab wiring is in place", () => {
   assert.equal(PAGE.match(/installLab\(/g).length, 1);
   assert.match(
     PAGE,
-    /matches: \(item, ctx\) => LAB\.matches\(INBOX_ID, item, ctx\), arrange: \(items, ctx\) => LAB\.arrange\(INBOX_ID, items, ctx\)/,
+    /matches: \(item, ctx\) => LAB\.matches\(INBOX_ID, item, ctx\),\s*arrange: \(items, ctx\) => LAB\.arrange\(INBOX_ID, items, ctx\)/,
   );
   assert.match(
     PAGE,
-    /matches: \(item, ctx\) => LAB\.matches\(RESULT_ID, item, ctx\), arrange: \(items, ctx\) => LAB\.arrange\(RESULT_ID, items, ctx\)/,
+    /matches: \(item, ctx\) => LAB\.matches\(RESULT_ID, item, ctx\),\s*arrange: \(items, ctx\) => LAB\.arrange\(RESULT_ID, items, ctx\)/,
   );
   assert.match(body("renderInboxLab"), /LAB\.section\(labEnv, INBOX_ID, INBOX\)/);
   assert.match(body("renderResultLab"), /LAB\.section\(labEnv, RESULT_ID, RESULT\)/);

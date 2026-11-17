@@ -14,7 +14,7 @@ const EDGES = ["left", "top", "right", "bottom"];
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const has = (object, key) => Object.hasOwn(object, key);
 const plural = (count, word, many = `${word}s`) => `${count} ${count === 1 ? word : many}`;
 const pct = (value) => `${(value * 100).toFixed(1)}%`;
 const total = (values) => values.reduce((sum, value) => sum + value, 0);

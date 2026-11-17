@@ -10,7 +10,7 @@ import { jaccard, utf8Bytes } from "../../lib/text.js";
 
 const TYPES = ["noul", "choice", "score", "box"];
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const both = (item) => isObject(item.a) && isObject(item.b);
 const typeOf = (question) => (isObject(question) && typeof question.type === "string" ? question.type : "?");
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);

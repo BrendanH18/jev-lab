@@ -10,7 +10,7 @@ import { formatTextTable } from "../../lib/tables.js";
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const has = (value) => value !== undefined && value !== null;
-const own = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+const own = (object, key) => isObject(object) && Object.hasOwn(object, key);
 const draftOf = (item) => (isObject(item?.draft) ? item.draft : {});
 const missingOf = (item) => (Array.isArray(item?.missing) ? item.missing.filter((qid) => typeof qid === "string") : []);
 const blankOf = (item) => missingOf(item).filter((qid) => !has(draftOf(item)[qid]));

@@ -162,7 +162,7 @@ export default definePack({
       value: (item, ctx) => {
         const guidelines = guidelinesOf(ctx);
         return guidelines && Array.isArray(item?.missing)
-          ? blankOf(item).filter((qid) => Object.prototype.hasOwnProperty.call(guidelines, qid)).length
+          ? blankOf(item).filter((qid) => Object.hasOwn(guidelines, qid)).length
           : null;
       },
     },
@@ -281,7 +281,7 @@ export default definePack({
         const guidelines = guidelinesOf(ctx);
         const blanks = itemsOf(ctx).flatMap(blankOf);
         if (!guidelines || !blanks.length) return null;
-        const covered = blanks.filter((qid) => Object.prototype.hasOwnProperty.call(guidelines, qid)).length;
+        const covered = blanks.filter((qid) => Object.hasOwn(guidelines, qid)).length;
         return { value: covered / blanks.length, detail: `${covered} of ${plural(blanks.length, "blank label")}` };
       },
     },

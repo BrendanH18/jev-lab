@@ -26,7 +26,7 @@ function fieldsOf(items) {
   return seen;
 }
 const cell = (row, key) =>
-  !isObject(row) || !Object.prototype.hasOwnProperty.call(row, key)
+  !isObject(row) || !Object.hasOwn(row, key)
     ? ""
     : typeof row[key] === "string"
       ? row[key]
@@ -164,7 +164,7 @@ export default definePack({
         return csvText([
           ["field", "rows", "kinds"],
           ...fieldsOf(items).map((key) => {
-            const holding = items.filter((item) => Object.prototype.hasOwnProperty.call(item.row, key));
+            const holding = items.filter((item) => Object.hasOwn(item.row, key));
             return [key, holding.length, [...new Set(holding.map((item) => kind(item.row[key])))].join(" ")];
           }),
         ]);

@@ -1055,6 +1055,7 @@ test("a non-number in any position gives null (false for the predicates), never 
       undefined,
       5,
       { 0: 1, length: 1 },
+      // biome-ignore lint/suspicious/noSparseArray: the test feeds a sparse array on purpose
       [1, , 3],
     ]) {
       // eslint-disable-line no-sparse-arrays

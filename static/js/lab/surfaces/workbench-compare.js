@@ -220,7 +220,7 @@ const EDGES = ["left", "top", "right", "bottom"];
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const integer = (value) => (Number.isInteger(value) ? value : null);
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 
 function deepFreeze(value) {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -517,22 +517,20 @@ export function compareRowsCtx(source = {}) {
         const res = result();
         if (!res) return EMPTY;
         return deepFreeze(
-          res.variants
-            .slice(0, 2)
-            .map((variant, v) => ({
-              name: NAMES[v],
-              model: typeof variant?.model === "string" ? variant.model : null,
-              perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null,
-              average_orders: variant?.average_orders === true,
-              question_count: isObject(variant?.questions) ? Object.keys(variant.questions).length : 0,
-              completed: integer(variant?.completed) ?? 0,
-              errors: integer(variant?.errors) ?? 0,
-              cost_usd: finite(variant?.cost_usd),
-              input_tokens: finite(variant?.input_tokens),
-              latency_ms_median: finite(variant?.latency_ms_median),
-              perturbed_rows: integer(variant?.perturbed_rows) ?? 0,
-              unperturbed_rows: integer(variant?.unperturbed_rows) ?? 0,
-            })),
+          res.variants.slice(0, 2).map((variant, v) => ({
+            name: NAMES[v],
+            model: typeof variant?.model === "string" ? variant.model : null,
+            perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null,
+            average_orders: variant?.average_orders === true,
+            question_count: isObject(variant?.questions) ? Object.keys(variant.questions).length : 0,
+            completed: integer(variant?.completed) ?? 0,
+            errors: integer(variant?.errors) ?? 0,
+            cost_usd: finite(variant?.cost_usd),
+            input_tokens: finite(variant?.input_tokens),
+            latency_ms_median: finite(variant?.latency_ms_median),
+            perturbed_rows: integer(variant?.perturbed_rows) ?? 0,
+            unperturbed_rows: integer(variant?.unperturbed_rows) ?? 0,
+          })),
         );
       },
       get scores() {
@@ -801,15 +799,13 @@ export function compareVariantsCtx(source = {}) {
         const list = read(source, "lastRun", null);
         if (!Array.isArray(list) || list.length < 2) return null;
         return deepFreeze(
-          list
-            .slice(0, 2)
-            .map((variant, v) => ({
-              name: NAMES[v],
-              model: typeof variant?.model === "string" ? variant.model : null,
-              perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null,
-              average_orders: variant?.average_orders === true,
-              questions: isObject(variant?.questions) ? clone(variant.questions) : {},
-            })),
+          list.slice(0, 2).map((variant, v) => ({
+            name: NAMES[v],
+            model: typeof variant?.model === "string" ? variant.model : null,
+            perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null,
+            average_orders: variant?.average_orders === true,
+            questions: isObject(variant?.questions) ? clone(variant.questions) : {},
+          })),
         );
       },
     },

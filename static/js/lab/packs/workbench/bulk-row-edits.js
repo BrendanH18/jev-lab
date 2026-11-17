@@ -13,7 +13,7 @@ import {
 import { formatDelimited, formatMarkdownTable, parseDelimited, parseMarkdownTable } from "../../lib/tables.js";
 
 const RESERVED = ["_expect", "_test", "_image"];
-const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const has = (object, key) => Object.hasOwn(object, key);
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 

@@ -104,20 +104,20 @@ const urlHost = (url) => {
 };
 
 const NAMES = {
-  0x00a0: "no-break space",
-  0x00ad: "soft hyphen",
-  0x2007: "figure space",
-  0x2009: "thin space",
-  0x200b: "zero-width space",
-  0x200c: "zero-width non-joiner",
-  0x200d: "zero-width joiner",
-  0x200e: "left-to-right mark",
-  0x200f: "right-to-left mark",
-  0x2028: "line separator",
-  0x2029: "paragraph separator",
-  0x202f: "narrow no-break space",
-  0x2060: "word joiner",
-  0xfeff: "byte order mark",
+  160: "no-break space",
+  173: "soft hyphen",
+  8199: "figure space",
+  8201: "thin space",
+  8203: "zero-width space",
+  8204: "zero-width non-joiner",
+  8205: "zero-width joiner",
+  8206: "left-to-right mark",
+  8207: "right-to-left mark",
+  8232: "line separator",
+  8233: "paragraph separator",
+  8239: "narrow no-break space",
+  8288: "word joiner",
+  65279: "byte order mark",
 };
 const codeLabel = (code) => `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
 const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF\u00AD]/g;

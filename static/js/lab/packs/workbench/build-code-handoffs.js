@@ -14,7 +14,7 @@ const SHAPE = "It describes the answers object of a System One JSON response, ke
 const STALE = "The request changed since that Run: run it again for code that matches the editor.";
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const hasOwn = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => isObject(object) && Object.hasOwn(object, key);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const setOwn = (object, key, value) =>
   Object.defineProperty(object, key, { value, enumerable: true, writable: true, configurable: true });

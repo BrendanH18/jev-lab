@@ -60,7 +60,7 @@ export const CHECKS_SURFACE = "workbench.checks.list";
 export const DRIFT_SURFACE = "workbench.drift.queue";
 export const REVIEW_SURFACE = "workbench.review.queue";
 
-const has = (overrides, key) => Object.prototype.hasOwnProperty.call(overrides, key);
+const has = (overrides, key) => Object.hasOwn(overrides, key);
 const fresh = (value) => JSON.parse(JSON.stringify(value));
 
 export const CHECK_QUESTIONS = Object.freeze({

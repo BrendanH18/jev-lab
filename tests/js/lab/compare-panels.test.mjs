@@ -364,7 +364,7 @@ checkPack(
         },
         measurements: (t) => {
           const page = ctx();
-          let tree = t.render(page);
+          const tree = t.render(page);
           assert.deepEqual(field(t, tree, "latency"), ["400 ms", "560 ms"]);
           assert.deepEqual(field(t, tree, "input tokens"), ["300", "720"]);
           assert.deepEqual(field(t, tree, "cost"), ["$0.0001", "$0.0003"]);

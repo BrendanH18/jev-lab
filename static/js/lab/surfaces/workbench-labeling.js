@@ -161,7 +161,7 @@ const LABELING_STATUSES = Object.freeze(["all", "incomplete", "ready"]);
 const LABELING_TYPES = Object.freeze(["choice", "noul", "score"]);
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const own = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+const own = (object, key) => isObject(object) && Object.hasOwn(object, key);
 const asText = (value) =>
   typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const copy = (value) => {
@@ -467,13 +467,11 @@ export function labelingQueueCtx(source = {}) {
             fields: (Array.isArray(report.fields) ? report.fields : [])
               .map((field) => (isObject(field) ? field.name : field))
               .filter((name) => typeof name === "string"),
-            values: (Array.isArray(report.values) ? report.values : [])
-              .filter(isObject)
-              .map((entry) => ({
-                value: asText(entry.value),
-                shown: asText(entry.shown ?? entry.value),
-                rows: count(entry.rows),
-              })),
+            values: (Array.isArray(report.values) ? report.values : []).filter(isObject).map((entry) => ({
+              value: asText(entry.value),
+              shown: asText(entry.shown ?? entry.value),
+              rows: count(entry.rows),
+            })),
           }
         : null;
       const nextIndex =

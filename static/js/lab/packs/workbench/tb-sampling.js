@@ -149,7 +149,7 @@ function groupBy(items, keyOf, nameOf = (item) => item.value) {
 // such field (a text line is the row {"text": line}).
 function fieldValue(item, field) {
   const row = rowOf(item.text);
-  if (!Object.prototype.hasOwnProperty.call(row, field)) return null;
+  if (!Object.hasOwn(row, field)) return null;
   const value = row[field];
   return {
     key: stableStringify(value),

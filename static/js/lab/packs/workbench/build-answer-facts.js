@@ -25,7 +25,7 @@ const CATCH_ALL = new Set([
 ]);
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const hasOwn = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => isObject(object) && Object.hasOwn(object, key);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const probsOf = (item) =>
   Array.isArray(item?.probabilities) ? item.probabilities.filter((entry) => entry && finite(entry.p) !== null) : [];

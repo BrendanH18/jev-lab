@@ -518,7 +518,7 @@ test("the page installs Lab once after the top bar, hooks the surface and render
   assert.match(PAGE, /arrange: \(items, ctx\) => LAB\.arrange\(HISTORY_ID, items, ctx\)/);
   const render = body("render");
   assert.match(render, /h\("div", \{ class: "turns", id: "turns" \}\)/);
-  assert.match(render, /LAB\.section\(labEnv, HISTORY_ID, HISTORY\)\);\n\s*renderTurns\(\);/);
+  assert.match(render, /LAB\.section\(labEnv, HISTORY_ID, HISTORY\),?\s*\);\n\s*renderTurns\(\);/);
   // No Lab callback can send a question: the source passes no ask().
   const source = PAGE.slice(PAGE.indexOf("const HISTORY = playHistoryCtx("), PAGE.indexOf("async function boot"));
   assert.doesNotMatch(source, /\bask\(|api\(/);

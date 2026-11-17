@@ -301,15 +301,13 @@ function verdictOf(raw) {
       .map((rule) => ({ id: str(rule.id), action: str(rule.action), text: str(rule.text) })),
     drivers: (Array.isArray(raw.drivers) ? raw.drivers : []).filter((id) => typeof id === "string"),
     category: textOrNull(raw.category),
-    signals: (Array.isArray(raw.signals) ? raw.signals : [])
-      .filter(isObject)
-      .map((signal) => ({
-        id: str(signal.id),
-        label: str(signal.label),
-        value: finite(signal.value),
-        weight: finite(signal.weight),
-        contribution: finite(signal.contribution),
-      })),
+    signals: (Array.isArray(raw.signals) ? raw.signals : []).filter(isObject).map((signal) => ({
+      id: str(signal.id),
+      label: str(signal.label),
+      value: finite(signal.value),
+      weight: finite(signal.weight),
+      contribution: finite(signal.contribution),
+    })),
   };
 }
 
@@ -418,7 +416,7 @@ function pageState(source) {
     return isObject(map) ? map : {};
   };
   const resultFor = (id) => {
-    const raw = Object.prototype.hasOwnProperty.call(results(), id) ? results()[id] : null;
+    const raw = Object.hasOwn(results(), id) ? results()[id] : null;
     return isObject(raw) ? raw : null;
   };
   const selectedRaw = () => {

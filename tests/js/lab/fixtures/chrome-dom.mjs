@@ -63,10 +63,9 @@ export class FakeNode {
     this._value = String(value);
   }
   get classList() {
-    const node = this;
-    const names = () => node.className.split(/\s+/).filter(Boolean);
+    const names = () => this.className.split(/\s+/).filter(Boolean);
     const write = (list) => {
-      node.className = list.join(" ");
+      this.className = list.join(" ");
     };
     return {
       contains: (name) => names().includes(name),

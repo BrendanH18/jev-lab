@@ -72,8 +72,7 @@ function pyJson(value) {
   return JSON.stringify(value);
 }
 function sliceValue(row, field) {
-  if (!isObject(row) || !Object.prototype.hasOwnProperty.call(row, field) || row[field] === null || row[field] === "")
-    return "(none)";
+  if (!isObject(row) || !Object.hasOwn(row, field) || row[field] === null || row[field] === "") return "(none)";
   const value = row[field];
   return (typeof value === "string" ? value : pyJson(value)).trim() || "(none)";
 }

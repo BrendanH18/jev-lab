@@ -143,9 +143,7 @@ export default definePack({
       help: "A question this row misses has a saved labeling guideline.",
       value: (item, ctx) => {
         const guidelines = ctx?.data?.guidelines;
-        return (
-          isObject(guidelines) && missingOf(item).some((qid) => Object.prototype.hasOwnProperty.call(guidelines, qid))
-        );
+        return isObject(guidelines) && missingOf(item).some((qid) => Object.hasOwn(guidelines, qid));
       },
     },
     {
@@ -236,7 +234,7 @@ export default definePack({
         const asked = [...new Set(items.flatMap(missingOf))];
         const order = (Array.isArray(ctx.data.questions) ? ctx.data.questions : []).map((question) => question.id);
         const without = asked
-          .filter((qid) => !Object.prototype.hasOwnProperty.call(guidelines, qid))
+          .filter((qid) => !Object.hasOwn(guidelines, qid))
           .sort((a, b) => order.indexOf(a) - order.indexOf(b));
         return without.length
           ? `No saved labeling guideline for ${without.join(", ")}. Write one under the dataset's Guidelines so every labeler decides the same way.`
@@ -495,7 +493,7 @@ export default definePack({
             ? unsaved
               ? "unsaved dataset"
               : "not loaded"
-            : Object.prototype.hasOwnProperty.call(guidelines, qid)
+            : Object.hasOwn(guidelines, qid)
               ? "saved"
               : "none";
         return h(

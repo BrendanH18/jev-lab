@@ -290,15 +290,13 @@ export default definePack({
       mime: "application/json",
       build: (ctx) =>
         `${JSON.stringify(
-          ctx
-            .shown()
-            .map((item) => ({
-              position: item.position,
-              query: item.query,
-              verdict: item.verdict,
-              exists: item.exists,
-              top: item.top ? { id: item.top.id, text: item.top.text, prob: item.top.prob } : null,
-            })),
+          ctx.shown().map((item) => ({
+            position: item.position,
+            query: item.query,
+            verdict: item.verdict,
+            exists: item.exists,
+            top: item.top ? { id: item.top.id, text: item.top.text, prob: item.top.prob } : null,
+          })),
           null,
           2,
         )}\n`,

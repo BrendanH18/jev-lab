@@ -31,7 +31,7 @@ const LABEL_PREFIXES = ["label:", "expect:", "_expect."];
 const DELIMS = { comma: ",", tab: "\t", semicolon: ";", pipe: "|" };
 const DELIM_NAMES = { ",": "comma", "\t": "tab", ";": "semicolon", "|": "pipe" };
 
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const plural = (count, word, many = `${word}s`) => `${count} ${count === 1 ? word : many}`;
 

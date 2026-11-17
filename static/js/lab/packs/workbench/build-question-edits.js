@@ -24,8 +24,7 @@ import {
 const TYPES = ["noul", "choice", "score", "box"];
 const str = (value) => (typeof value === "string" ? value : "");
 const trimmedId = (item) => str(item.id).trim();
-const hasOwn = (object, key) =>
-  !!object && typeof object === "object" && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => !!object && typeof object === "object" && Object.hasOwn(object, key);
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 function parsesAsStructure(text) {

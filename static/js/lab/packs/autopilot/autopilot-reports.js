@@ -700,23 +700,21 @@ export default definePack({
           {
             about:
               "Autopilot records from your own calls in this server run. Holds senders, subjects, scenario labels (never sent to Jev), call measurements, Shield verdicts and both worlds' plans and outcomes. No email bodies, raw answers or traces.",
-            records: ctx
-              .shown()
-              .map((item) => ({
-                id: item.id,
-                position: item.position,
-                order: item.order,
-                from_name: item.from_name,
-                from_email: item.from_email,
-                subject: item.subject,
-                label: item.label,
-                meta: item.meta,
-                shield: item.shield,
-                photo: item.photo,
-                integrated: item.integrated,
-                naive: item.naive,
-                outcome: item.outcome,
-              })),
+            records: ctx.shown().map((item) => ({
+              id: item.id,
+              position: item.position,
+              order: item.order,
+              from_name: item.from_name,
+              from_email: item.from_email,
+              subject: item.subject,
+              label: item.label,
+              meta: item.meta,
+              shield: item.shield,
+              photo: item.photo,
+              integrated: item.integrated,
+              naive: item.naive,
+              outcome: item.outcome,
+            })),
           },
           null,
           2,
@@ -909,14 +907,12 @@ export default definePack({
       help: "the raw typed answers of each shown call from your run, one line per email with its id and model; no email bodies, question text or labels",
       build: (ctx) =>
         formatJsonl(
-          ctx
-            .shown()
-            .map((item) => ({
-              id: item.id,
-              position: item.position,
-              model: item.meta?.model ?? null,
-              answers: isObject(item.answers) ? item.answers : {},
-            })),
+          ctx.shown().map((item) => ({
+            id: item.id,
+            position: item.position,
+            model: item.meta?.model ?? null,
+            answers: isObject(item.answers) ? item.answers : {},
+          })),
         ),
     },
 

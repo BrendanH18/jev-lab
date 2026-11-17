@@ -6,7 +6,7 @@
 // JSON text. Text arguments take any value (null and undefined read as ""). An argument outside a function's domain
 // (rows that are not an array, a delimiter that is not one character) gives null; nothing throws on bad input.
 
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 const isRecord = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 

@@ -760,11 +760,11 @@ test("the page installs Lab once after the top bar, hooks both surfaces and adds
   assert.match(PAGE, /import \{ counterExamplesCtx, counterTurnsCtx \} from "\.\/lab\/surfaces\/counter\.js";/);
   assert.match(
     PAGE,
-    /matches: \(item, ctx\) => LAB\.matches\(TURNS_ID, item, ctx\), arrange: \(list, ctx\) => LAB\.arrange\(TURNS_ID, list, ctx\)/,
+    /matches: \(item, ctx\) => LAB\.matches\(TURNS_ID, item, ctx\),\s*arrange: \(list, ctx\) => LAB\.arrange\(TURNS_ID, list, ctx\)/,
   );
   assert.match(
     PAGE,
-    /matches: \(item, ctx\) => LAB\.matches\(EXAMPLES_ID, item, ctx\), arrange: \(list, ctx\) => LAB\.arrange\(EXAMPLES_ID, list, ctx\)/,
+    /matches: \(item, ctx\) => LAB\.matches\(EXAMPLES_ID, item, ctx\),\s*arrange: \(list, ctx\) => LAB\.arrange\(EXAMPLES_ID, list, ctx\)/,
   );
   assert.match(
     body("render"),

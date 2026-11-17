@@ -76,6 +76,7 @@ const PAID_ENDPOINTS = Object.freeze([
   "/api/workbench/checks/drift",
   "/api/workbench/checks/upgrade",
 ]);
+// biome-ignore lint/suspicious/noShadowRestrictedNames: the deprecated global escape() is never used here
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const mentions = (source, endpoint) => new RegExp(`${escape(endpoint)}(?![\\w/-])`).test(source);
 

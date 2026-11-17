@@ -19,9 +19,7 @@ const blind = (item) => item?.kind === "audit" && item.revealed !== true;
 const untouched = (item) => isObject(item?.labels) && !Object.values(item.labels).some(has);
 const clearedGated = (item, ctx) =>
   isObject(item?.labels) &&
-  list(item.edited).some(
-    (qid) => !has(item.labels[qid]) && Object.prototype.hasOwnProperty.call(ctx.data.gates || {}, qid),
-  );
+  list(item.edited).some((qid) => !has(item.labels[qid]) && Object.hasOwn(ctx.data.gates || {}, qid));
 const suggestionsOnly = (item, ctx) => {
   const gated = Object.keys(ctx?.data?.gates || {});
   return (
@@ -266,12 +264,7 @@ function currentPanel(h, ctx, api) {
           return h(
             "tr",
             { "data-question": question.id },
-            h(
-              "td",
-              { class: "mono" },
-              question.id,
-              Object.prototype.hasOwnProperty.call(gates, question.id) ? " (gated)" : "",
-            ),
+            h("td", { class: "mono" }, question.id, Object.hasOwn(gates, question.id) ? " (gated)" : ""),
             h("td", { "data-part": "state" }, state),
             h(
               "td",

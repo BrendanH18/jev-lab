@@ -79,7 +79,7 @@ const BUILD_LAB_RESULT = "workbench.build.result";
 const parseMaybeJson = (s) => {
   if (typeof s !== "string") return s;
   const t = s.trim();
-  if (/^[\[{]/.test(t)) {
+  if (/^[[{]/.test(t)) {
     try {
       return JSON.parse(t);
     } catch {

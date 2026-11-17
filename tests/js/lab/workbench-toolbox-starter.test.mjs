@@ -66,7 +66,7 @@ checkPack(
           expect: [
             ["Proportion", 0],
             ["Lower bound", 0],
-            ["Upper bound", 1 - Math.pow(0.025, 1 / 10)],
+            ["Upper bound", 1 - 0.025 ** (1 / 10)],
           ],
           tolerance: 1e-9,
         },
@@ -74,7 +74,7 @@ checkPack(
           values: { k: 10, n: 10 },
           expect: [
             ["Proportion", 1],
-            ["Lower bound", Math.pow(0.025, 1 / 10)],
+            ["Lower bound", 0.025 ** (1 / 10)],
             ["Upper bound", 1],
           ],
           tolerance: 1e-9,
@@ -93,7 +93,7 @@ checkPack(
         {
           values: { k: 1, n: 100000, level: "0.99" },
           expect: (result) => {
-            assert.ok(Math.abs(result.rows[1][1] - (1 - Math.pow(0.995, 1e-5))) < 1e-15);
+            assert.ok(Math.abs(result.rows[1][1] - (1 - 0.995 ** 1e-5)) < 1e-15);
             assert.ok(Math.abs(result.rows[2][1] - 14.860259 / 2e5) < 1e-8);
           },
         },

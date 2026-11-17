@@ -304,11 +304,7 @@ export default definePack({
       severity: "advice",
       label: "Text field that is not text",
       check: (item) => {
-        if (
-          !isObject(item?.input) ||
-          !Object.prototype.hasOwnProperty.call(item.input, "text") ||
-          typeof item.input.text === "string"
-        )
+        if (!isObject(item?.input) || !Object.hasOwn(item.input, "text") || typeof item.input.text === "string")
           return null;
         const value = item.input.text;
         const type =

@@ -62,6 +62,7 @@ const UNIT = {
 const shown = (text) => (text.length > 40 ? `${text.slice(0, 40)}…` : text);
 const brief = (x) => String(Number(x.toPrecision(6)));
 
+// biome-ignore lint/suspicious/noShadowRestrictedNames: a module-local helper; no object here relies on valueOf
 function valueOf(cell, where) {
   const value = toNumber(cell);
   if (value === null) throw new Error(`${where}: "${shown(cell)}" is not a number.`);

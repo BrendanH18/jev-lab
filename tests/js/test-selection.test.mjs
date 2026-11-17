@@ -334,7 +334,7 @@ test("selected ID copying retains hidden selected tests and drops deleted IDs", 
 
 test("rendered test controls reset presentation filters and copy hidden selected IDs", async () => {
   const { selectedTestSummary } = await import("../../static/js/test-selection.js");
-  const defaultsSource = source.match(/const testFilterDefaults = \(\) => \(\{[^]*?\}\);/)[0];
+  const defaultsSource = source.match(/const testFilterDefaults = \(\) => \(\{[\s\S]*?\}\);/)[0];
   const testFilterDefaults = new Function(`${defaultsSource}; return testFilterDefaults;`)();
   const testView = {
     ...testFilterDefaults(),

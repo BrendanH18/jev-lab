@@ -633,14 +633,12 @@ export function datasetsHistoryCtx(source = {}) {
         changed_only: state().changedOnly === true,
         preview,
         deleted: Array.isArray(deleted)
-          ? deleted
-              .filter(isObject)
-              .map((entry) => ({
-                id: String(entry.id ?? ""),
-                name: textOr(entry.name),
-                revisions: count(entry.revisions),
-                latest: textOr(entry.latest),
-              }))
+          ? deleted.filter(isObject).map((entry) => ({
+              id: String(entry.id ?? ""),
+              name: textOr(entry.name),
+              revisions: count(entry.revisions),
+              latest: textOr(entry.latest),
+            }))
           : null,
         now: now === null ? Date.now() : now,
       });

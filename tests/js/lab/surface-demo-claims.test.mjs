@@ -743,7 +743,7 @@ test("the page wires Lab once and moves the policy, the order and the history on
   assert.match(body("renderResult"), /id: "claim-answers"[^\n]*answerNodes\(\)/);
   assert.match(
     body("renderResult"),
-    /h\("details", \{ open: LAB\.active\(RESULT_ID\) > 0 \}/,
+    /h\(\s*"details",\s*\{ open: LAB\.active\(RESULT_ID\) > 0 \}/,
     "closed as before unless a Lab setting is active",
   );
   assert.match(body("renderResultLab"), /LAB\.section\(labEnv, RESULT_ID, RESULT/);

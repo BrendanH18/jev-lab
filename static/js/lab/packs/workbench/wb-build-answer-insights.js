@@ -3,8 +3,7 @@
 // applied to it (margins, expectation checks) are local, advisory code and say so.
 import { csvText, definePack, toNumber } from "../../kit.js";
 
-const hasOwn = (object, key) =>
-  !!object && typeof object === "object" && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => !!object && typeof object === "object" && Object.hasOwn(object, key);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const RUN_NOTE = "From your latest Run in this page session.";
 const probsOf = (item) =>

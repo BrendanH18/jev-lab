@@ -102,8 +102,7 @@ function changes(map, ctx) {
   const active = activeOf(ctx),
     out = {};
   for (const [qid, t] of Object.entries(isObject(map) ? map : {})) {
-    if (Object.prototype.hasOwnProperty.call(active, qid) && num(t) !== null && Math.abs(t - active[qid]) > EPS)
-      out[qid] = t;
+    if (Object.hasOwn(active, qid) && num(t) !== null && Math.abs(t - active[qid]) > EPS) out[qid] = t;
   }
   return out;
 }

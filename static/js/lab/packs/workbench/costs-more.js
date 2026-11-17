@@ -209,9 +209,7 @@ export default definePack({
       type: "flag",
       label: "a checked Policy gate",
       help: "The mistake names a question Policy gates now, so it moves Policy's cost.",
-      value: (item, ctx) =>
-        isObject(ctx?.data?.policy?.active) &&
-        Object.prototype.hasOwnProperty.call(ctx.data.policy.active, item.question),
+      value: (item, ctx) => isObject(ctx?.data?.policy?.active) && Object.hasOwn(ctx.data.policy.active, item.question),
     },
     {
       id: "equals_default",
@@ -561,14 +559,12 @@ export default definePack({
           {
             review: value(ctx.data.review),
             error: value(ctx.data.error),
-            mistakes: ctx
-              .items()
-              .map((item) => ({
-                question: item.question,
-                label: item.label,
-                answer: item.answer,
-                cost: value(item.cost),
-              })),
+            mistakes: ctx.items().map((item) => ({
+              question: item.question,
+              label: item.label,
+              answer: item.answer,
+              cost: value(item.cost),
+            })),
           },
           null,
           2,

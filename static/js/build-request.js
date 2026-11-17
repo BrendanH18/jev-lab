@@ -94,7 +94,7 @@ export function buildContextChanged(current, original) {
 // A valid JSON object/array with repeated keys is different: parsing would silently
 // throw away part of the user's input, so every outbound action must reject it.
 export function parseBuildState(text) {
-  if (typeof text !== "string" || !/^[\[{]/.test(text.trim())) return text;
+  if (typeof text !== "string" || !/^[[{]/.test(text.trim())) return text;
   try {
     JSON.parse(text);
   } catch {
@@ -104,7 +104,7 @@ export function parseBuildState(text) {
 }
 
 export function formatBuildState(text) {
-  if (typeof text !== "string" || !/^[\[{]/.test(text.trim())) {
+  if (typeof text !== "string" || !/^[[{]/.test(text.trim())) {
     return { text, message: "This state is plain text; formatting leaves it unchanged." };
   }
   return { text: JSON.stringify(parseUniqueJson(text), null, 2), message: "Formatted the JSON state." };

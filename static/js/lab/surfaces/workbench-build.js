@@ -221,7 +221,7 @@ const EMPTY = Object.freeze([]);
 const EMPTY_OBJECT = Object.freeze({});
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const hasOwn = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => isObject(object) && Object.hasOwn(object, key);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const str = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : String(value));
 const asText = (value) =>

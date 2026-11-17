@@ -432,9 +432,9 @@ test("compacting JSON preserves values and rejects duplicates while leaving pros
   compact();
   assert.equal(W.stateText, '{"text":"é","arr":[1,false]}');
   assert.equal(edits, 1);
-  W.stateText = ' { "large": 9007199254740993, "overflow": 1e400, "negativeZero": -0, "text": "a \\\" b \\\\ c" } ';
+  W.stateText = ' { "large": 9007199254740993, "overflow": 1e400, "negativeZero": -0, "text": "a \\" b \\\\ c" } ';
   compact();
-  assert.equal(W.stateText, '{"large":9007199254740993,"overflow":1e400,"negativeZero":-0,"text":"a \\\" b \\\\ c"}');
+  assert.equal(W.stateText, '{"large":9007199254740993,"overflow":1e400,"negativeZero":-0,"text":"a \\" b \\\\ c"}');
   assert.equal(edits, 2);
   W.stateText = ' {"a":1,"a":2}';
   compact();

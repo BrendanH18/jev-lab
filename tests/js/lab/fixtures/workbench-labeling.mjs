@@ -154,7 +154,7 @@ export function sampleLabelingGuidelines() {
 }
 
 export function sampleLabelingQueueCtx(overrides = {}) {
-  const has = (key) => Object.prototype.hasOwnProperty.call(overrides, key);
+  const has = (key) => Object.hasOwn(overrides, key);
   const state = {
     busy: overrides.busy === true,
     report: has("report") ? overrides.report : sampleLabelingReport(overrides.slice || "all"),

@@ -23,7 +23,8 @@ import {
 
 const PAGE = readFileSync(new URL("../../../static/js/index.js", import.meta.url), "utf8");
 const HTML = readFileSync(new URL("../../../static/index.html", import.meta.url), "utf8");
-const HELLO_PY = readFileSync(new URL("../../../jev/hello.py", import.meta.url), "utf8");
+// The formatter may break a call after its "(", so the comparison ignores whitespace there.
+const HELLO_PY = readFileSync(new URL("../../../jev/hello.py", import.meta.url), "utf8").replace(/\(\s+/g, "(");
 const body = (name) => {
   const match = PAGE.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
   assert.ok(match, `static/js/index.js has no function ${name}`);

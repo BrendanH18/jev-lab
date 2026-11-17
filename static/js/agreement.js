@@ -25,7 +25,7 @@ export function settledItems(disagreements, choices) {
   const rows = new Map();
   for (const d of disagreements || []) {
     const key = settleKey(d.row_id, d.question);
-    if (!choices || !Object.prototype.hasOwnProperty.call(choices, key)) continue;
+    if (!choices || !Object.hasOwn(choices, key)) continue;
     const value = choices[key];
     if (value === d.first) continue;
     if (!rows.has(d.row_id)) rows.set(d.row_id, Object.create(null));
