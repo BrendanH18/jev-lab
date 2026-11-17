@@ -1,0 +1,42 @@
+name: codeql
+
+# Advanced setup so CodeQL runs on Namespace runners; GitHub's default setup only offers
+# GitHub-hosted runners. Default setup must be off, or the upload step is rejected.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "29 6 * * 3"  # Wednesdays 06:29 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}  # never cancel runs on main
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: namespace-profile-gitrunner
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066  # v4.39.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066  # v4.39.3
+        with:
+          category: "/language:${{ matrix.language }}"
