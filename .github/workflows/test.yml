@@ -98,3 +98,19 @@ jobs:
         run: |
           git add --intent-to-add static/img/samples
           git diff --exit-code --stat static/img/samples
+
+  # The check the main ruleset requires. A job that a failed job `needs` is skipped, and a skipped
+  # required check counts as passing, so this runs always() and passes only if every job above passed.
+  tests-passed:
+    name: All tests passed
+    needs: [test, fallback, lint, javascript, samples]
+    if: always()
+    runs-on: namespace-profile-gitrunner
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        run: |
+          echo "Results: $RESULTS"
+          test "$(echo "$RESULTS" | tr ' ' '\n' | sort -u)" = success
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
