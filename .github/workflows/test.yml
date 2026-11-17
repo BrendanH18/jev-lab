@@ -2,6 +2,7 @@ name: tests
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -9,7 +10,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}  # never cancel runs on main
 
 jobs:
   test:
@@ -21,8 +22,10 @@ jobs:
       matrix:
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
@@ -36,8 +39,10 @@ jobs:
     runs-on: namespace-profile-gitrunner  # Ubuntu 24.04; setup-python has no Python 3.9 build for Ubuntu 26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.9"
       - name: Run without the SDK (no API key needed)
@@ -48,32 +53,37 @@ jobs:
     runs-on: namespace-profile-gitrunner
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           python-version: "3.12"
           enable-cache: true
-      - name: Install locked dependencies
-        run: uv sync --locked
+      - name: Install Ruff (dev group only; the lint needs no SDK)
+        run: uv sync --locked --only-group dev
       - name: Lint Python
-        run: uv run --locked ruff check
+        run: uv run --locked --only-group dev ruff check
       - name: Check Python formatting
-        run: uv run --locked ruff format --check
-      - uses: biomejs/setup-biome@v2
+        run: uv run --locked --only-group dev ruff format --check
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          version: 2.6.4
+          node-version: "22"
+          cache: npm
+      - name: Install Biome from package-lock.json
+        run: npm ci
       - name: Lint and check formatting of JavaScript
-        run: biome ci .
+        run: npm run lint
 
   javascript:
     name: JavaScript modules and tests
     runs-on: namespace-profile-gitrunner
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
       - name: Check browser modules
@@ -89,7 +99,7 @@ jobs:
     runs-on: namespace-profile-gitrunner
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: Redraw the sample pictures

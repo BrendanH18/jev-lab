@@ -41,11 +41,16 @@ server. They make no external API calls. For a focused run, use unittest discove
 uv run --locked python -m unittest discover -v tests -p 'test_security.py'
 ```
 
-Lint the Python sources with the same Ruff check CI runs (a dev dependency, not imported by the app):
+Run the same lint and format checks CI runs. Ruff (Python) is a uv dev dependency and Biome
+(JavaScript) is the only npm package; neither is imported by the app:
 
 ```sh
-uv run --locked ruff check
+npm ci                                                              # once: install Biome
+uv run --locked ruff check && uv run --locked ruff format --check
+npm run lint
 ```
+
+To apply formatting and safe fixes, run `uv run --locked ruff format && npm run format`.
 
 For JavaScript edits, Node.js 22 is used in CI to check module syntax and to run the tests for the
 browser modules that need no DOM:

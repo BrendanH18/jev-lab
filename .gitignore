@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Node (Biome is the only package; see package.json)
+node_modules/
+
 # Python
 __pycache__/
 *.pyc

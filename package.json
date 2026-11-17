@@ -1,0 +1,11 @@
+{
+  "name": "jev-lab",
+  "private": true,
+  "scripts": {
+    "lint": "biome ci .",
+    "format": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.8"
+  }
+}
