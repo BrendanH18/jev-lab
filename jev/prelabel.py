@@ -59,10 +59,19 @@ def prepare(rows: Any, questions: Any, field: Any = None, value: Any = None) -> 
     if not isinstance(value, str) or value not in counts:
         value = None
     selected = [item for item in items if value is None or slices._value(item["row"], field) == value]
-    return {"items": selected, "questions": asked, "fields": fields, "field": field, "value": value,
-            "values": [{"value": key, "shown": slices._shown(key), "rows": count}
-                       for key, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))],
-            "eligible": len(items), "missing": sum(len(item["missing"]) for item in items)}
+    return {
+        "items": selected,
+        "questions": asked,
+        "fields": fields,
+        "field": field,
+        "value": value,
+        "values": [
+            {"value": key, "shown": slices._shown(key), "rows": count}
+            for key, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+        ],
+        "eligible": len(items),
+        "missing": sum(len(item["missing"]) for item in items),
+    }
 
 
 def apply(rows: Any, questions: Any, items: Any) -> dict:
@@ -128,8 +137,10 @@ def export_labels(rows: Any, questions: Any, field: Any = None, value: Any = Non
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(["row_id", "input", "missing"] + ["label:" + qid for qid in asked])
     for item in report["items"]:
-        writer.writerow([_csv_id(context, item["index"]), decisions._key(item["row"]), json.dumps(item["missing"])] +
-                        ["" for qid in asked])
+        writer.writerow(
+            [_csv_id(context, item["index"]), decisions._key(item["row"]), json.dumps(item["missing"])]
+            + ["" for qid in asked]
+        )
     return {"csv": out.getvalue(), "rows": len(report["items"])}
 
 
@@ -142,8 +153,13 @@ def import_labels(rows: Any, questions: Any, text: Any) -> dict:
     if not isinstance(text, str) or not text.strip() or len(text) > limit:
         raise WorkbenchError("Supply a nonempty labels CSV of at most %d characters" % limit)
     try:
-        parsed = [r for r in csv.reader(io.StringIO(text.lstrip("\ufeff"), newline=""),
-                                       delimiter=csvimport._delimiter(text), strict=True) if any(c.strip() for c in r)]
+        parsed = [
+            r
+            for r in csv.reader(
+                io.StringIO(text.lstrip("\ufeff"), newline=""), delimiter=csvimport._delimiter(text), strict=True
+            )
+            if any(c.strip() for c in r)
+        ]
     except csv.Error as err:
         raise WorkbenchError("Could not read the labels CSV: %s" % err) from err
     names = ["row_id", "input", "missing"] + ["label:" + qid for qid in asked]
@@ -160,12 +176,16 @@ def import_labels(rows: Any, questions: Any, text: Any) -> dict:
         values = dict(zip(header, cells))
         rid = values["row_id"].strip()
         if rid not in eligible or rid in seen:
-            raise WorkbenchError("Line %d has an unknown or repeated row_id; download CSV from the current rows and questions" % line)
+            raise WorkbenchError(
+                "Line %d has an unknown or repeated row_id; download CSV from the current rows and questions" % line
+            )
         seen.add(rid)
         item = eligible[rid]
         try:
             state = json.loads(values["input"])
-            same = isinstance(state, dict) and json.dumps(state, sort_keys=True, ensure_ascii=False) == decisions._key(item["row"])
+            same = isinstance(state, dict) and json.dumps(state, sort_keys=True, ensure_ascii=False) == decisions._key(
+                item["row"]
+            )
         except (ValueError, TypeError):
             same = False
         if not same:

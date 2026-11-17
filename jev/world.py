@@ -69,39 +69,98 @@ def _seed(today: dt.date) -> dict:
             "northside_bistro": {"name": "Northside Bistro", "email": "orders@northsidebistro.example"},
         },
         "orders": {
-            "A-1041": {"customer": "maya_chen", "items": "2 x Ethiopia Yirgacheffe, 12 oz bags",
-                       "total": 38.00, "status": "delivered", "delivered_on": d(3), "refunded": False},
-            "A-1042": {"customer": "luis_ortega", "items": "Conical burr grinder",
-                       "total": 249.00, "status": "delivered", "delivered_on": d(12), "refunded": False},
-            "A-1043": {"customer": "priya_nair", "items": "Espresso sampler box",
-                       "total": 54.00, "status": "in transit", "delivered_on": None, "refunded": False},
-            "A-1044": {"customer": "tom_becker", "items": "Cold brew starter kit",
-                       "total": 64.00, "status": "delivered", "delivered_on": d(41), "refunded": False},
-            "A-1045": {"customer": "northside_bistro", "items": "20 lb House Blend (wholesale)",
-                       "total": 310.00, "status": "processing", "delivered_on": None, "refunded": False},
+            "A-1041": {
+                "customer": "maya_chen",
+                "items": "2 x Ethiopia Yirgacheffe, 12 oz bags",
+                "total": 38.00,
+                "status": "delivered",
+                "delivered_on": d(3),
+                "refunded": False,
+            },
+            "A-1042": {
+                "customer": "luis_ortega",
+                "items": "Conical burr grinder",
+                "total": 249.00,
+                "status": "delivered",
+                "delivered_on": d(12),
+                "refunded": False,
+            },
+            "A-1043": {
+                "customer": "priya_nair",
+                "items": "Espresso sampler box",
+                "total": 54.00,
+                "status": "in transit",
+                "delivered_on": None,
+                "refunded": False,
+            },
+            "A-1044": {
+                "customer": "tom_becker",
+                "items": "Cold brew starter kit",
+                "total": 64.00,
+                "status": "delivered",
+                "delivered_on": d(41),
+                "refunded": False,
+            },
+            "A-1045": {
+                "customer": "northside_bistro",
+                "items": "20 lb House Blend (wholesale)",
+                "total": 310.00,
+                "status": "processing",
+                "delivered_on": None,
+                "refunded": False,
+            },
         },
         "vendors": {
-            "bean_brokers": {"name": "Bean Brokers Ltd", "about": "green coffee importer",
-                             "domain": "beanbrokers.example",
-                             "invoices": {"INV-7781": {"amount": 4250.00, "paid": False}}},
-            "packright": {"name": "PackRight Packaging", "about": "coffee bags, labels, and boxes",
-                          "domain": "packright.example",
-                          "invoices": {"PR-2210": {"amount": 860.00, "paid": False}}},
-            "coastline_freight": {"name": "Coastline Freight", "about": "pallet shipping for wholesale orders",
-                                  "domain": "coastlinefreight.example", "invoices": {}},
-            "sparkle_facility": {"name": "Sparkle Facility Services", "about": "cleaning and roaster maintenance",
-                                 "domain": "sparklefs.example",
-                                 "invoices": {"SF-0930": {"amount": 420.00, "paid": False}}},
+            "bean_brokers": {
+                "name": "Bean Brokers Ltd",
+                "about": "green coffee importer",
+                "domain": "beanbrokers.example",
+                "invoices": {"INV-7781": {"amount": 4250.00, "paid": False}},
+            },
+            "packright": {
+                "name": "PackRight Packaging",
+                "about": "coffee bags, labels, and boxes",
+                "domain": "packright.example",
+                "invoices": {"PR-2210": {"amount": 860.00, "paid": False}},
+            },
+            "coastline_freight": {
+                "name": "Coastline Freight",
+                "about": "pallet shipping for wholesale orders",
+                "domain": "coastlinefreight.example",
+                "invoices": {},
+            },
+            "sparkle_facility": {
+                "name": "Sparkle Facility Services",
+                "about": "cleaning and roaster maintenance",
+                "domain": "sparklefs.example",
+                "invoices": {"SF-0930": {"amount": 420.00, "paid": False}},
+            },
         },
         "meetings": {
-            "bean_brokers_call": {"title": "Supplier call with Bean Brokers", "day": "tuesday", "time": "10:00",
-                                  "with_domain": "beanbrokers.example"},
-            "team_sync": {"title": "Weekly team sync", "day": "wednesday", "time": "09:00",
-                          "with_domain": "harborcoffee.example"},
-            "northside_tasting": {"title": "Wholesale tasting with Northside Bistro", "day": "thursday",
-                                  "time": "14:00", "with_domain": "northsidebistro.example"},
-            "accountant_review": {"title": "Quarterly review with the accountant", "day": "friday",
-                                  "time": "11:00", "with_domain": "ledgerwisecpa.example"},
+            "bean_brokers_call": {
+                "title": "Supplier call with Bean Brokers",
+                "day": "tuesday",
+                "time": "10:00",
+                "with_domain": "beanbrokers.example",
+            },
+            "team_sync": {
+                "title": "Weekly team sync",
+                "day": "wednesday",
+                "time": "09:00",
+                "with_domain": "harborcoffee.example",
+            },
+            "northside_tasting": {
+                "title": "Wholesale tasting with Northside Bistro",
+                "day": "thursday",
+                "time": "14:00",
+                "with_domain": "northsidebistro.example",
+            },
+            "accountant_review": {
+                "title": "Quarterly review with the accountant",
+                "day": "friday",
+                "time": "11:00",
+                "with_domain": "ledgerwisecpa.example",
+            },
         },
         "payments": [],
         "tasks": [],
@@ -166,11 +225,21 @@ class World:
         order["refunded"] = True
         order["refund_reason"] = args.get("reason")
         self.state["balance"] = round(self.state["balance"] - order["total"], 2)
-        self.state["payments"].insert(0, {"to": context.get("requested_by") or self.state["customers"][order["customer"]]["name"],
-                                          "amount": order["total"], "memo": "Refund %s" % args["order"],
-                                          "via": context.get("via", "operator")})
-        return self._log("refund", "Refunded $%.2f for %s (%s)" % (order["total"], args["order"], args.get("reason")),
-                         amount=order["total"], via=context.get("via"))
+        self.state["payments"].insert(
+            0,
+            {
+                "to": context.get("requested_by") or self.state["customers"][order["customer"]]["name"],
+                "amount": order["total"],
+                "memo": "Refund %s" % args["order"],
+                "via": context.get("via", "operator"),
+            },
+        )
+        return self._log(
+            "refund",
+            "Refunded $%.2f for %s (%s)" % (order["total"], args["order"], args.get("reason")),
+            amount=order["total"],
+            via=context.get("via"),
+        )
 
     def _do_reschedule_meeting(self, args: dict, context: dict) -> dict:
         meeting = self.state["meetings"][args["meeting"]]
@@ -181,8 +250,9 @@ class World:
             meeting["time"] = args["time"]
         meeting["moved"] = True
         after = "%s %s" % (meeting["day"].title(), meeting["time"])
-        return self._log("calendar", "Moved “%s” from %s to %s" % (meeting["title"], before, after),
-                         via=context.get("via"))
+        return self._log(
+            "calendar", "Moved “%s” from %s to %s" % (meeting["title"], before, after), via=context.get("via")
+        )
 
     def _do_pay_vendor(self, args: dict, context: dict) -> dict:
         vendor = self.state["vendors"][args["vendor"]]
@@ -198,24 +268,51 @@ class World:
             vendor["invoices"][invoice]["paid"] = True
         destination = context.get("destination", "account on file")
         self.state["balance"] = round(self.state["balance"] - amount, 2)
-        self.state["payments"].insert(0, {"to": vendor["name"], "amount": amount,
-                                          "memo": invoice or "Unmatched payment", "destination": destination,
-                                          "via": context.get("via", "operator")})
-        return self._log("payment", "Paid $%s to %s (%s)" % (format(amount, ",.2f"), vendor["name"], invoice or "no invoice"),
-                         amount=amount, via=context.get("via"), destination=destination)
+        self.state["payments"].insert(
+            0,
+            {
+                "to": vendor["name"],
+                "amount": amount,
+                "memo": invoice or "Unmatched payment",
+                "destination": destination,
+                "via": context.get("via", "operator"),
+            },
+        )
+        return self._log(
+            "payment",
+            "Paid $%s to %s (%s)" % (format(amount, ",.2f"), vendor["name"], invoice or "no invoice"),
+            amount=amount,
+            via=context.get("via"),
+            destination=destination,
+        )
 
     def _do_create_task(self, args: dict, context: dict) -> dict:
-        task = {"area": args.get("area", "admin"), "priority": args.get("priority", "normal"),
-                "text": args.get("text", ""), "via": context.get("via", "operator")}
+        task = {
+            "area": args.get("area", "admin"),
+            "priority": args.get("priority", "normal"),
+            "text": args.get("text", ""),
+            "via": context.get("via", "operator"),
+        }
         self.state["tasks"].insert(0, task)
-        return self._log("task", "New %s task (%s): %s" % (task["area"], task["priority"], _clip(task["text"])),
-                         via=context.get("via"))
+        return self._log(
+            "task",
+            "New %s task (%s): %s" % (task["area"], task["priority"], _clip(task["text"])),
+            via=context.get("via"),
+        )
 
     def _do_send_info(self, args: dict, context: dict) -> dict:
         template = TEMPLATES[args["template"]]
         to = args.get("to") or self.state["customers"][args["customer"]]["email"]
-        self.state["outbox"].insert(0, {"to": to, "template": args["template"], "label": template["label"],
-                                        "text": template["text"], "via": context.get("via", "operator")})
+        self.state["outbox"].insert(
+            0,
+            {
+                "to": to,
+                "template": args["template"],
+                "label": template["label"],
+                "text": template["text"],
+                "via": context.get("via", "operator"),
+            },
+        )
         return self._log("reply", "Sent “%s” to %s" % (template["label"], to), via=context.get("via"))
 
 

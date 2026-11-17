@@ -38,7 +38,11 @@ def _rows(rows: Any) -> List[dict]:
         raise CalibrationError("At most %d rows" % calibrate.MAX_ROWS)
     out = []
     for r in rows:
-        if not isinstance(r, dict) or not isinstance(r.get("correct"), bool) or not isinstance(r.get("automated"), bool):
+        if (
+            not isinstance(r, dict)
+            or not isinstance(r.get("correct"), bool)
+            or not isinstance(r.get("automated"), bool)
+        ):
             raise CalibrationError("Each row needs a boolean `correct` and `automated`")
         out.append(r)
     return out
@@ -54,7 +58,7 @@ def _value(row: Any, field: str) -> str:
 
 def _shown(value: str) -> str:
     """A value cut for display only; grouping and counting use the whole value."""
-    return value if len(value) <= MAX_VALUE_CHARS else value[:MAX_VALUE_CHARS - 1] + "…"
+    return value if len(value) <= MAX_VALUE_CHARS else value[: MAX_VALUE_CHARS - 1] + "…"
 
 
 def fields(rows: List[dict]) -> List[dict]:
@@ -80,11 +84,18 @@ def _stats(group: List[dict]) -> dict:
     low, high = calibrate.wilson(correct, n)
     a_low, a_high = calibrate.wilson(auto_correct, len(auto))
     return {
-        "rows": n, "correct": correct, "accuracy": correct / n if n else None, "accuracy_low": low, "accuracy_high": high,
-        "automated": len(auto), "coverage": len(auto) / n if n else 0.0, "automated_correct": auto_correct,
+        "rows": n,
+        "correct": correct,
+        "accuracy": correct / n if n else None,
+        "accuracy_low": low,
+        "accuracy_high": high,
+        "automated": len(auto),
+        "coverage": len(auto) / n if n else 0.0,
+        "automated_correct": auto_correct,
         "wrong_automated": len(auto) - auto_correct,
         "automated_accuracy": auto_correct / len(auto) if auto else None,
-        "automated_low": a_low, "automated_high": a_high,
+        "automated_low": a_low,
+        "automated_high": a_high,
     }
 
 

@@ -15,15 +15,15 @@
 //   - shapes, degrees of freedom and counts above 1e9 lose about one digit per factor of 100, and a continued
 //     fraction or series that would need more than 500,000 steps (shapes beyond roughly 1e10) gives null.
 
-const EPSILON = 2.220446049250313e-16;       // 2^-52
-const TINY = 1e-300;                         // keeps the continued fractions away from a division by zero
+const EPSILON = 2.220446049250313e-16; // 2^-52
+const TINY = 1e-300; // keeps the continued fractions away from a division by zero
 const TWO_PI = 6.283185307179586;
-const LN_SQRT_2PI = 0.9189385332046728;      // ln sqrt(2 pi)
-const INV_SQRT_PI = 0.5641895835477563;      // 1 / sqrt(pi)
+const LN_SQRT_2PI = 0.9189385332046728; // ln sqrt(2 pi)
+const INV_SQRT_PI = 0.5641895835477563; // 1 / sqrt(pi)
 const ONE_MINUS_EULER = 0.42278433509846713; // 1 - Euler's constant
-const LOG_HALF = -0.6931471805599453;        // ln(1/2)
-const LOG_MIN = -744.4400719213812;          // ln of the smallest positive double
-const MAX_STEPS = 500000;                    // ceiling for one continued fraction or series
+const LOG_HALF = -0.6931471805599453; // ln(1/2)
+const LOG_MIN = -744.4400719213812; // ln of the smallest positive double
+const MAX_STEPS = 500000; // ceiling for one continued fraction or series
 
 const isNum = (x) => typeof x === "number" && Number.isFinite(x);
 const isInt = (x) => typeof x === "number" && Number.isSafeInteger(x);
@@ -80,26 +80,28 @@ export function round(x, digits = 0) {
   if (x === 0) return 0;
   const [mantissa, exponentText] = Math.abs(x).toExponential().split("e");
   const figures = mantissa.replace(".", "");
-  const exponent = Number(exponentText) - (figures.length - 1);   // |x| = figures * 10^exponent
-  const drop = -exponent - digits;                                 // how many trailing figures go
+  const exponent = Number(exponentText) - (figures.length - 1); // |x| = figures * 10^exponent
+  const drop = -exponent - digits; // how many trailing figures go
   if (drop <= 0) return x;
   if (drop > figures.length) return 0;
   let kept = BigInt(figures.slice(0, figures.length - drop) || "0");
-  if (figures.charCodeAt(figures.length - drop) >= 53) kept += 1n;  // the first dropped figure is 5 or more
+  if (figures.charCodeAt(figures.length - drop) >= 53) kept += 1n; // the first dropped figure is 5 or more
   const value = Number(`${kept}e${exponent + drop}`);
   if (!Number.isFinite(value)) return null;
-  return value === 0 ? 0 : (x < 0 ? -value : value);
+  return value === 0 ? 0 : x < 0 ? -value : value;
 }
 
 // ---------- special functions ----------
 
 // (-1)^k (zeta(k) - 1) / k for k = 2..30: the series of ln gamma(2 + w) after its linear term.
-const LOG_GAMMA_SERIES = [3.1044247747322276e-11, -6.4229645638381e-11, 1.330476437424449e-10, -2.7595228851242334e-10,
-  5.731367241678862e-10, -1.1921401405860912e-09, 2.4836745438024785e-09, -5.183475041970047e-09, 1.0838659214896955e-08,
-  -2.2711094608943164e-08, 4.7698101693639804e-08, -1.0043224823968099e-07, 2.1207184805554665e-07, -4.492469198764566e-07,
-  9.55141213040742e-07, -2.039215753801366e-06, 4.374866789907488e-06, -9.439488275268397e-06, 2.050721277567069e-05,
-  -4.492623673813314e-05, 9.945751278180853e-05, -0.00022315475845357939, 0.0005096695247430425, -0.001192753911703261,
-  0.0028905103307415234, -0.007385551028673986, 0.020580808427784546, -0.0673523010531981, 0.3224670334241132];
+const LOG_GAMMA_SERIES = [
+  3.1044247747322276e-11, -6.4229645638381e-11, 1.330476437424449e-10, -2.7595228851242334e-10, 5.731367241678862e-10,
+  -1.1921401405860912e-9, 2.4836745438024785e-9, -5.183475041970047e-9, 1.0838659214896955e-8, -2.2711094608943164e-8,
+  4.7698101693639804e-8, -1.0043224823968099e-7, 2.1207184805554665e-7, -4.492469198764566e-7, 9.55141213040742e-7,
+  -2.039215753801366e-6, 4.374866789907488e-6, -9.439488275268397e-6, 2.050721277567069e-5, -4.492623673813314e-5,
+  9.945751278180853e-5, -0.00022315475845357939, 0.0005096695247430425, -0.001192753911703261, 0.0028905103307415234,
+  -0.007385551028673986, 0.020580808427784546, -0.0673523010531981, 0.3224670334241132,
+];
 
 // ln gamma(2 + w) for |w| <= 1/2; exactly 0 at w = 0, so the zeros of ln gamma at 1 and 2 keep full relative accuracy.
 function logGammaNearTwo(w) {
@@ -117,12 +119,16 @@ function stirlingTail(z) {
 // ln gamma(x) for x > 0; null for x <= 0, a non-finite x, or a result that overflows (x above about 2.5e305).
 export function logGamma(x) {
   if (!isNum(x) || x <= 0) return null;
-  if (x < 0.5) return logGammaNearTwo(x) - Math.log1p(x) - Math.log(x);   // gamma(x) = gamma(2 + x) / (x (1 + x))
+  if (x < 0.5) return logGammaNearTwo(x) - Math.log1p(x) - Math.log(x); // gamma(x) = gamma(2 + x) / (x (1 + x))
   if (x < 1.5) return logGammaNearTwo(x - 1) - Math.log1p(x - 1);
   if (x <= 2.5) return logGammaNearTwo(x - 2);
   if (x < 10) {
-    let z = x, product = 1;
-    while (z > 2.5) { z -= 1; product *= z; }
+    let z = x,
+      product = 1;
+    while (z > 2.5) {
+      z -= 1;
+      product *= z;
+    }
     return logGammaNearTwo(z - 2) + Math.log(product);
   }
   return finite((x - 0.5) * Math.log(x) - x + LN_SQRT_2PI + stirlingTail(x));
@@ -137,14 +143,21 @@ export function logFactorial(n) {
 // 2^53 - 1); null otherwise.
 export function logChoose(n, k) {
   if (!isCount(n) || !isCount(k) || k > n) return null;
-  const j = Math.min(k, n - k), m = n - j;
+  const j = Math.min(k, n - k),
+    m = n - j;
   if (j < 30) {
     let total = 0;
     for (let i = 1; i <= j; i++) total += Math.log((m + i) / i);
     return total;
   }
-  return j * Math.log(n / j) - m * Math.log1p(-j / n) + 0.5 * Math.log(n / j / m / TWO_PI)
-    + stirlingTail(n) - stirlingTail(j) - stirlingTail(m);
+  return (
+    j * Math.log(n / j) -
+    m * Math.log1p(-j / n) +
+    0.5 * Math.log(n / j / m / TWO_PI) +
+    stirlingTail(n) -
+    stirlingTail(j) -
+    stirlingTail(m)
+  );
 }
 
 const CHOOSE_LIMIT = 2n ** 1024n;
@@ -154,32 +167,43 @@ const CHOOSE_LIMIT = 2n ** 1024n;
 export function choose(n, k) {
   if (!isCount(n) || !isCount(k) || k > n) return null;
   const j = Math.min(k, n - k);
-  if (j >= 1024) return null;   // C(n, j) >= 2^j
+  if (j >= 1024) return null; // C(n, j) >= 2^j
   const base = BigInt(n - j);
   let value = 1n;
   for (let i = 1; i <= j; i++) {
-    value = value * (base + BigInt(i)) / BigInt(i);   // always divides exactly: value is C(n - j + i, i)
+    value = (value * (base + BigInt(i))) / BigInt(i); // always divides exactly: value is C(n - j + i, i)
     if (value >= CHOOSE_LIMIT) return null;
   }
   return finite(Number(value));
 }
 
 // W. J. Cody's rational approximations (Math. Comp. 23, 1969; SPECFUN's CALERF), good to a few units in the last place.
-const ERF_SMALL_TOP = [1.85777706184603153e-1, 3.16112374387056560e0, 1.13864154151050156e2, 3.77485237685302021e2, 3.20937758913846947e3];
-const ERF_SMALL_BOTTOM = [1, 2.36012909523441209e1, 2.44024637934444173e2, 1.28261652607737228e3, 2.84423683343917062e3];
-const ERFC_MIDDLE_TOP = [2.15311535474403846e-8, 5.64188496988670089e-1, 8.88314979438837594e0, 6.61191906371416295e1,
-  2.98635138197400131e2, 8.81952221241769090e2, 1.71204761263407058e3, 2.05107837782607147e3, 1.23033935479799725e3];
-const ERFC_MIDDLE_BOTTOM = [1, 1.57449261107098347e1, 1.17693950891312499e2, 5.37181101862009858e2, 1.62138957456669019e3,
-  3.29079923573345963e3, 4.36261909014324716e3, 3.43936767414372164e3, 1.23033935480374942e3];
-const ERFC_FAR_TOP = [1.63153871373020978e-2, 3.05326634961232344e-1, 3.60344899949804439e-1, 1.25781726111229246e-1,
-  1.60837851487422766e-2, 6.58749161529837803e-4];
-const ERFC_FAR_BOTTOM = [1, 2.56852019228982242e0, 1.87295284992346725e0, 5.27905102951428412e-1, 6.05183413124413191e-2,
-  2.33520497626869185e-3];
+const ERF_SMALL_TOP = [
+  1.85777706184603153e-1, 3.1611237438705656, 1.13864154151050156e2, 3.77485237685302021e2, 3.20937758913846947e3,
+];
+const ERF_SMALL_BOTTOM = [
+  1, 2.36012909523441209e1, 2.44024637934444173e2, 1.28261652607737228e3, 2.84423683343917062e3,
+];
+const ERFC_MIDDLE_TOP = [
+  2.15311535474403846e-8, 5.64188496988670089e-1, 8.88314979438837594, 6.61191906371416295e1, 2.98635138197400131e2,
+  8.8195222124176909e2, 1.71204761263407058e3, 2.05107837782607147e3, 1.23033935479799725e3,
+];
+const ERFC_MIDDLE_BOTTOM = [
+  1, 1.57449261107098347e1, 1.17693950891312499e2, 5.37181101862009858e2, 1.62138957456669019e3, 3.29079923573345963e3,
+  4.36261909014324716e3, 3.43936767414372164e3, 1.23033935480374942e3,
+];
+const ERFC_FAR_TOP = [
+  1.63153871373020978e-2, 3.05326634961232344e-1, 3.60344899949804439e-1, 1.25781726111229246e-1,
+  1.60837851487422766e-2, 6.58749161529837803e-4,
+];
+const ERFC_FAR_BOTTOM = [
+  1, 2.56852019228982242, 1.87295284992346725, 5.27905102951428412e-1, 6.05183413124413191e-2, 2.33520497626869185e-3,
+];
 
 // erf(y) for 0 <= y <= 0.46875.
 function erfSmall(y) {
   const square = y * y;
-  return y * horner(ERF_SMALL_TOP, square) / horner(ERF_SMALL_BOTTOM, square);
+  return (y * horner(ERF_SMALL_TOP, square)) / horner(ERF_SMALL_BOTTOM, square);
 }
 
 // erfc(y) for y > 0.46875. exp(-y * y) is taken in two factors so the rounding of y * y does not reach the result.
@@ -190,7 +214,7 @@ function erfcLarge(y) {
   if (y <= 4) ratio = horner(ERFC_MIDDLE_TOP, y) / horner(ERFC_MIDDLE_BOTTOM, y);
   else {
     const inverse = 1 / (y * y);
-    ratio = (INV_SQRT_PI - inverse * horner(ERFC_FAR_TOP, inverse) / horner(ERFC_FAR_BOTTOM, inverse)) / y;
+    ratio = (INV_SQRT_PI - (inverse * horner(ERFC_FAR_TOP, inverse)) / horner(ERFC_FAR_BOTTOM, inverse)) / y;
   }
   const head = Math.floor(y * 16) / 16;
   return Math.exp(-head * head) * Math.exp(-(y - head) * (y + head)) * ratio;
@@ -218,7 +242,7 @@ export function erfc(x) {
 export function normalPdf(z) {
   if (!isNum(z)) return null;
   const y = Math.abs(z);
-  if (y >= 40) return 0;   // already 0 beyond 38.6; this also keeps y * 16 finite
+  if (y >= 40) return 0; // already 0 beyond 38.6; this also keeps y * 16 finite
   const head = Math.floor(y * 16) / 16;
   return Math.exp(-0.5 * head * head) * Math.exp(-0.5 * (y - head) * (y + head)) * (INV_SQRT_PI * Math.SQRT1_2);
 }
@@ -234,18 +258,30 @@ export function normalSf(z) {
 }
 
 // M. J. Wichura's algorithm AS 241 (Applied Statistics 37, 1988), the one Python's statistics.NormalDist uses.
-const QUANTILE_CENTRE_TOP = [2.5090809287301226727e3, 3.3430575583588128105e4, 6.7265770927008700853e4, 4.5921953931549871457e4,
-  1.3731693765509461125e4, 1.9715909503065514427e3, 1.3314166789178437745e2, 3.3871328727963666080e0];
-const QUANTILE_CENTRE_BOTTOM = [5.2264952788528545610e3, 2.8729085735721942674e4, 3.9307895800092710610e4, 2.1213794301586595867e4,
-  5.3941960214247511077e3, 6.8718700749205790830e2, 4.2313330701600911252e1, 1];
-const QUANTILE_MIDDLE_TOP = [7.74545014278341407640e-4, 2.27238449892691845833e-2, 2.41780725177450611770e-1, 1.27045825245236838258e0,
-  3.64784832476320460504e0, 5.76949722146069140550e0, 4.63033784615654529590e0, 1.42343711074968357734e0];
-const QUANTILE_MIDDLE_BOTTOM = [1.05075007164441684324e-9, 5.47593808499534494600e-4, 1.51986665636164571966e-2, 1.48103976427480074590e-1,
-  6.89767334985100004550e-1, 1.67638483018380384940e0, 2.05319162663775882187e0, 1];
-const QUANTILE_TAIL_TOP = [2.01033439929228813265e-7, 2.71155556874348757815e-5, 1.24266094738807843860e-3, 2.65321895265761230930e-2,
-  2.96560571828504891230e-1, 1.78482653991729133580e0, 5.46378491116411436990e0, 6.65790464350110377720e0];
-const QUANTILE_TAIL_BOTTOM = [2.04426310338993978564e-15, 1.42151175831644588870e-7, 1.84631831751005468180e-5, 7.86869131145613259100e-4,
-  1.48753612908506148525e-2, 1.36929880922735805310e-1, 5.99832206555887937690e-1, 1];
+const QUANTILE_CENTRE_TOP = [
+  2.5090809287301226727e3, 3.3430575583588128105e4, 6.7265770927008700853e4, 4.5921953931549871457e4,
+  1.3731693765509461125e4, 1.9715909503065514427e3, 1.3314166789178437745e2, 3.387132872796366608,
+];
+const QUANTILE_CENTRE_BOTTOM = [
+  5.226495278852854561e3, 2.8729085735721942674e4, 3.930789580009271061e4, 2.1213794301586595867e4,
+  5.3941960214247511077e3, 6.871870074920579083e2, 4.2313330701600911252e1, 1,
+];
+const QUANTILE_MIDDLE_TOP = [
+  7.7454501427834140764e-4, 2.27238449892691845833e-2, 2.4178072517745061177e-1, 1.27045825245236838258,
+  3.64784832476320460504, 5.7694972214606914055, 4.6303378461565452959, 1.42343711074968357734,
+];
+const QUANTILE_MIDDLE_BOTTOM = [
+  1.05075007164441684324e-9, 5.475938084995344946e-4, 1.51986665636164571966e-2, 1.4810397642748007459e-1,
+  6.8976733498510000455e-1, 1.6763848301838038494, 2.05319162663775882187, 1,
+];
+const QUANTILE_TAIL_TOP = [
+  2.01033439929228813265e-7, 2.71155556874348757815e-5, 1.2426609473880784386e-3, 2.6532189526576123093e-2,
+  2.9656057182850489123e-1, 1.7848265399172913358, 5.4637849111641143699, 6.6579046435011037772,
+];
+const QUANTILE_TAIL_BOTTOM = [
+  2.04426310338993978564e-15, 1.4215117583164458887e-7, 1.8463183175100546818e-5, 7.868691311456132591e-4,
+  1.48753612908506148525e-2, 1.3692988092273580531e-1, 5.9983220655588793769e-1, 1,
+];
 
 // The standard normal quantile: z with P[Z <= z] = p, for 0 < p < 1 (accurate to about 1e-15 relative; a p within
 // 1e-16 of 1 has already lost its tail). null for p <= 0, p >= 1 or a non-finite p.
@@ -254,11 +290,13 @@ export function normalQuantile(p) {
   const q = p - 0.5;
   if (Math.abs(q) <= 0.425) {
     const r = 0.180625 - q * q;
-    return q * horner(QUANTILE_CENTRE_TOP, r) / horner(QUANTILE_CENTRE_BOTTOM, r);
+    return (q * horner(QUANTILE_CENTRE_TOP, r)) / horner(QUANTILE_CENTRE_BOTTOM, r);
   }
   const r = Math.sqrt(-Math.log(q < 0 ? p : 1 - p));
-  const z = r <= 5 ? horner(QUANTILE_MIDDLE_TOP, r - 1.6) / horner(QUANTILE_MIDDLE_BOTTOM, r - 1.6)
-    : horner(QUANTILE_TAIL_TOP, r - 5) / horner(QUANTILE_TAIL_BOTTOM, r - 5);
+  const z =
+    r <= 5
+      ? horner(QUANTILE_MIDDLE_TOP, r - 1.6) / horner(QUANTILE_MIDDLE_BOTTOM, r - 1.6)
+      : horner(QUANTILE_TAIL_TOP, r - 5) / horner(QUANTILE_TAIL_BOTTOM, r - 5);
   return q < 0 ? -z : z;
 }
 
@@ -266,28 +304,40 @@ export function normalQuantile(p) {
 function logDeficit(u, ratio) {
   if (u < -0.5) return u - Math.log(ratio);
   if (u < -0.4 || u > 0.4) return u - Math.log1p(u);
-  const r = u / (2 + u), t = r * r;
-  let series = 0;   // 1/3 + t/5 + t^2/7 + ..., from ln(1 + u) = 2 atanh(r)
+  const r = u / (2 + u),
+    t = r * r;
+  let series = 0; // 1/3 + t/5 + t^2/7 + ..., from ln(1 + u) = 2 atanh(r)
   for (let k = 14; k >= 0; k--) series = series * t + 1 / (2 * k + 3);
   return r * (u - 2 * t * series);
 }
 
 // ln B(a, b) = ln gamma(a) + ln gamma(b) - ln gamma(a + b) for a, b > 0, stable when one argument is large.
 function logBeta(a, b) {
-  const small = Math.min(a, b), large = Math.max(a, b);
+  const small = Math.min(a, b),
+    large = Math.max(a, b);
   if (large < 10) return logGamma(small) + logGamma(large) - logGamma(small + large);
-  const total = small + large;   // ln gamma(total) - ln gamma(large) by Stirling, term by term
-  return logGamma(small) - ((large - 0.5) * Math.log1p(small / large) + small * (Math.log(total) - 1)
-    + stirlingTail(total) - stirlingTail(large));
+  const total = small + large; // ln gamma(total) - ln gamma(large) by Stirling, term by term
+  return (
+    logGamma(small) -
+    ((large - 0.5) * Math.log1p(small / large) +
+      small * (Math.log(total) - 1) +
+      stirlingTail(total) -
+      stirlingTail(large))
+  );
 }
 
 // x^a y^b / B(a, b) for 0 < x < 1 with y = 1 - x. For large a and b the exponent is built around the mean
 // a / (a + b), so nothing of size a + b is cancelled.
 function betaPrefix(x, y, a, b) {
   if (a >= 10 && b >= 10) {
-    const total = a + b, lambda = x * b - y * a;   // (a + b) (x - a / (a + b))
-    const exponent = -(a * logDeficit(lambda / a, x * total / a) + b * logDeficit(-lambda / b, y * total / b));
-    return Math.sqrt(a / TWO_PI) * Math.sqrt(b / total) * Math.exp(exponent + stirlingTail(total) - stirlingTail(a) - stirlingTail(b));
+    const total = a + b,
+      lambda = x * b - y * a; // (a + b) (x - a / (a + b))
+    const exponent = -(a * logDeficit(lambda / a, (x * total) / a) + b * logDeficit(-lambda / b, (y * total) / b));
+    return (
+      Math.sqrt(a / TWO_PI) *
+      Math.sqrt(b / total) *
+      Math.exp(exponent + stirlingTail(total) - stirlingTail(a) - stirlingTail(b))
+    );
   }
   const logX = x > 0.5 ? Math.log1p(-y) : Math.log(x);
   const logY = y > 0.5 ? Math.log1p(-x) : Math.log(y);
@@ -301,13 +351,14 @@ function betaPrefix(x, y, a, b) {
 // that quantity is at least 2x; null when it does not settle within MAX_STEPS.
 function betaFraction(x, y, a, b) {
   const lead = a * y - b * x + 1;
-  let f = a / (a + 1) * lead;
+  let f = (a / (a + 1)) * lead;
   if (Math.abs(f) < TINY) f = TINY;
-  let c = f, d = 0;
+  let c = f,
+    d = 0;
   for (let m = 1; m <= MAX_STEPS; m++) {
-    const shift = a + 2 * m - 1;   // each product is formed so that nothing overflows for shapes up to the double limit
-    const numerator = ((a + m - 1) / shift) * ((a + b + m - 1) * x) * (m * ((b - m) * x / shift));
-    const denominator = m + m * ((b - m) * x / shift) + ((a + m) / (a + 2 * m + 1)) * (lead + m * (1 + y));
+    const shift = a + 2 * m - 1; // each product is formed so that nothing overflows for shapes up to the double limit
+    const numerator = ((a + m - 1) / shift) * ((a + b + m - 1) * x) * (m * (((b - m) * x) / shift));
+    const denominator = m + m * (((b - m) * x) / shift) + ((a + m) / (a + 2 * m + 1)) * (lead + m * (1 + y));
     d = denominator + numerator * d;
     if (Math.abs(d) < TINY) d = TINY;
     c = denominator + numerator / c;
@@ -325,7 +376,7 @@ function betaFraction(x, y, a, b) {
 function betaCore(x, y, a, b) {
   if (x <= 0) return [0, 1, 0];
   if (y <= 0) return [1, 0, 0];
-  if (!(a + b < Infinity)) return null;   // shapes whose sum overflows are far beyond the continued fraction anyway
+  if (!(a + b < Infinity)) return null; // shapes whose sum overflows are far beyond the continued fraction anyway
   const prefix = betaPrefix(x, y, a, b);
   // x < (a + 1) / (a + b + 2), tested on the smaller of x and y so that a rounded x near 1 cannot decide it
   const lowerTail = x <= 0.5 ? x * (a + b + 2) <= a + 1 : y * (a + b + 2) >= b + 1;
@@ -353,17 +404,25 @@ export function incompleteBeta(x, a, b) {
 // whenever a step leaves the bracket or fails to halve the previous one. evaluate(t) returns [h, dh/dt], or null to
 // give up. `relative` picks the step tolerance: relative to t, or absolute for a logarithmic variable.
 function solveMonotone(evaluate, low, high, start, increasing, relative) {
-  let lo = low, hi = high, t = Math.min(Math.max(start, lo), hi);
+  let lo = low,
+    hi = high,
+    t = Math.min(Math.max(start, lo), hi);
   if (!(t >= lo && t <= hi)) t = 0.5 * (lo + hi);
-  let best = t, bestError = Infinity, previous = hi - lo;
+  let best = t,
+    bestError = Infinity,
+    previous = hi - lo;
   for (let i = 0; i < 300; i++) {
     const result = evaluate(t);
     if (result === null || Number.isNaN(result[0])) return null;
     const [h, slope] = result;
     const error = Math.abs(h);
-    if (error < bestError) { bestError = error; best = t; }
+    if (error < bestError) {
+      bestError = error;
+      best = t;
+    }
     if (error <= 8 * EPSILON) return t;
-    if ((h < 0) === increasing) lo = t; else hi = t;
+    if (h < 0 === increasing) lo = t;
+    else hi = t;
     let next = t - h / slope;
     if (!(next > lo && next < hi) || Math.abs(next - t) > 0.5 * Math.abs(previous)) next = 0.5 * (lo + hi);
     const step = next - t;
@@ -376,9 +435,12 @@ function solveMonotone(evaluate, low, high, start, increasing, relative) {
 
 // A starting value for the Beta(a, b) quantile when a, b >= 1 (Abramowitz and Stegun 26.5.22).
 function betaGuess(p, a, b) {
-  const z = -normalQuantile(p), lambda = (z * z - 3) / 6;
-  const ha = 1 / (2 * a - 1), hb = 1 / (2 * b - 1), h = 2 / (ha + hb);
-  const w = z * Math.sqrt(h + lambda) / h - (hb - ha) * (lambda + 5 / 6 - 2 / (3 * h));
+  const z = -normalQuantile(p),
+    lambda = (z * z - 3) / 6;
+  const ha = 1 / (2 * a - 1),
+    hb = 1 / (2 * b - 1),
+    h = 2 / (ha + hb);
+  const w = (z * Math.sqrt(h + lambda)) / h - (hb - ha) * (lambda + 5 / 6 - 2 / (3 * h));
   return a / (a + b * Math.exp(2 * w));
 }
 
@@ -400,8 +462,10 @@ function betaRoot(target, a, b, mirrored) {
   const w = solveMonotone(evaluate, LOG_MIN, LOG_HALF, guess, !mirrored, false);
   if (w === null) return null;
   const v = Math.exp(w);
-  if (v <= Number.MIN_VALUE) {   // the root may lie below the smallest double, and then it rounds to 0
-    const v0 = Number.MIN_VALUE, core = mirrored ? betaCore(1 - v0, v0, a, b) : betaCore(v0, 1 - v0, a, b);
+  if (v <= Number.MIN_VALUE) {
+    // the root may lie below the smallest double, and then it rounds to 0
+    const v0 = Number.MIN_VALUE,
+      core = mirrored ? betaCore(1 - v0, v0, a, b) : betaCore(v0, 1 - v0, a, b);
     if (core !== null && (mirrored ? core[0] < target : core[0] > target)) return 0;
   }
   return v;
@@ -442,14 +506,15 @@ function gammaPrefix(a, x) {
 // (modified Lentz) above it; null when either does not settle within MAX_STEPS.
 function gammaCore(a, x) {
   if (x <= 0) return [0, 1, 0];
-  if (a === 0) return [1, 0, 0];   // a half degree of freedom that underflowed: the limit puts all mass at 0
+  if (a === 0) return [1, 0, 0]; // a half degree of freedom that underflowed: the limit puts all mass at 0
   const prefix = gammaPrefix(a, x);
   if (x < a + 1) {
     // P = x^a e^-x / gamma(a + 1) * (1 + x / (a + 1) + x^2 / ((a + 1)(a + 2)) + ...). The factor in front is formed
     // directly, not as prefix / a, so a tiny shape (prefix underflows while P is close to 1) keeps its value.
     const front = a < 10 ? Math.exp(a * Math.log(x) - x - logGamma(a + 1)) : prefix / a;
     if (!(front > 0)) return [0, 1, prefix];
-    let term = 1, total = 1;
+    let term = 1,
+      total = 1;
     for (let n = 1; n <= MAX_STEPS; n++) {
       term *= x / (a + n);
       total += term;
@@ -461,7 +526,10 @@ function gammaCore(a, x) {
     return null;
   }
   if (!(prefix > 0)) return [1, 0, 0];
-  let b = x + 1 - a, c = 1 / TINY, d = 1 / b, h = d;
+  let b = x + 1 - a,
+    c = 1 / TINY,
+    d = 1 / b,
+    h = d;
   for (let n = 1; n <= MAX_STEPS; n++) {
     const numerator = -n * (n - a);
     b += 2;
@@ -501,7 +569,7 @@ export function incompleteGammaQ(a, x) {
 function gammaQuantile(p, a) {
   const middle = gammaCore(a, a);
   if (middle === null) return null;
-  const cube = 1 - 1 / (9 * a) + normalQuantile(p) / (3 * Math.sqrt(a));   // Wilson and Hilferty's approximation
+  const cube = 1 - 1 / (9 * a) + normalQuantile(p) / (3 * Math.sqrt(a)); // Wilson and Hilferty's approximation
   const guess = a >= 1 && cube > 0 ? a * cube * cube * cube : 0;
   if (p <= middle[0]) {
     const evaluate = (w) => {
@@ -513,7 +581,8 @@ function gammaQuantile(p, a) {
     const w = solveMonotone(evaluate, LOG_MIN, Math.log(a), start, true, false);
     if (w === null) return null;
     const x = Math.exp(w);
-    if (x <= Number.MIN_VALUE) {   // the root may lie below the smallest double, and then it rounds to 0
+    if (x <= Number.MIN_VALUE) {
+      // the root may lie below the smallest double, and then it rounds to 0
       const core = gammaCore(a, Number.MIN_VALUE);
       if (core !== null && core[0] > p) return 0;
     }
@@ -553,16 +622,16 @@ export function chiSquareSf(x, df) {
 // infinite).
 export function chiSquareQuantile(p, df) {
   if (!isNum(p) || !isNum(df) || p < 0 || p >= 1 || df <= 0) return null;
-  if (p === 0 || 0.5 * df === 0) return 0;   // df / 2 underflows only for the smallest double: all mass at 0
+  if (p === 0 || 0.5 * df === 0) return 0; // df / 2 underflows only for the smallest double: all mass at 0
   const x = gammaQuantile(p, 0.5 * df);
   return x === null ? null : finite(2 * x);
 }
 
 // [P[T >= |t|], P[0 <= T <= |t|]] for Student's t with df degrees of freedom; null when the beta function fails.
 function studentHalves(t, df) {
-  if (0.5 * df === 0) return [0.5, 0];   // df / 2 underflows only for the smallest double: the limit puts no mass near 0
+  if (0.5 * df === 0) return [0.5, 0]; // df / 2 underflows only for the smallest double: the limit puts no mass near 0
   const square = t * t;
-  let x, y;   // x = df / (df + t^2) and y = 1 - x, each formed without cancellation
+  let x, y; // x = df / (df + t^2) and y = 1 - x, each formed without cancellation
   if (square > df) {
     const r = df / square;
     if (!(r >= 1e-300)) {
@@ -603,7 +672,7 @@ export function studentTSf(t, df) {
 export function studentTQuantile(p, df) {
   if (!isNum(p) || !isNum(df) || p <= 0 || p >= 1 || df <= 0) return null;
   if (p === 0.5) return 0;
-  if (0.5 * df === 0) return null;   // df / 2 underflows only for the smallest double: every other quantile is infinite
+  if (0.5 * df === 0) return null; // df / 2 underflows only for the smallest double: every other quantile is infinite
   const pair = betaQuantilePair(2 * (p < 0.5 ? p : 1 - p), 0.5 * df, 0.5);
   if (pair === null) return null;
   const t = Math.sqrt(df) * Math.sqrt(pair[1] / pair[0]);
@@ -667,12 +736,23 @@ export function binomialSf(k, n, p) {
 // `successes` are successes. 0 for an integer k outside the possible range. null when k is not an integer, the
 // others are not counts, or successes or draws exceed population.
 export function hypergeometricPmf(k, population, successes, draws) {
-  if (!isInt(k) || !isCount(population) || !isCount(successes) || !isCount(draws) || successes > population || draws > population) return null;
+  if (
+    !isInt(k) ||
+    !isCount(population) ||
+    !isCount(successes) ||
+    !isCount(draws) ||
+    successes > population ||
+    draws > population
+  )
+    return null;
   const failures = population - successes;
   if (k < 0 || k > draws || k > successes || draws - k > failures) return 0;
   if (draws === 0) return 1;
-  const p = draws / population, q = (population - draws) / population;
-  return binomialTerm(k, successes, p, q) * binomialTerm(draws - k, failures, p, q) / binomialTerm(draws, population, p, q);
+  const p = draws / population,
+    q = (population - draws) / population;
+  return (
+    (binomialTerm(k, successes, p, q) * binomialTerm(draws - k, failures, p, q)) / binomialTerm(draws, population, p, q)
+  );
 }
 
 // Whether k and mean are an integer and a nonnegative number.
@@ -716,10 +796,11 @@ function isList(values) {
 
 // Neumaier's compensated sum of a checked list; NaN or an infinity if the running total overflows.
 function total(values) {
-  let running = 0, carry = 0;
+  let running = 0,
+    carry = 0;
   for (const value of values) {
     const next = running + value;
-    carry += Math.abs(running) >= Math.abs(value) ? (running - next) + value : (value - next) + running;
+    carry += Math.abs(running) >= Math.abs(value) ? running - next + value : value - next + running;
     running = next;
   }
   return running + carry;
@@ -742,8 +823,8 @@ export function variance(values, sample = true) {
   if (!isList(values) || (sample && values.length < 2)) return null;
   const centre = total(values) / values.length;
   const deviations = values.map((value) => value - centre);
-  const drift = total(deviations);   // zero in exact arithmetic; corrects the rounding of the mean
-  const squares = total(deviations.map((d) => d * d)) - drift * drift / values.length;
+  const drift = total(deviations); // zero in exact arithmetic; corrects the rounding of the mean
+  const squares = total(deviations.map((d) => d * d)) - (drift * drift) / values.length;
   return finite(Math.max(0, squares) / (sample ? values.length - 1 : values.length));
 }
 
@@ -765,7 +846,8 @@ function between(a, b, fraction) {
 // The median of a list (the mean of the two middle values for an even count); null where sum is null.
 export function median(values) {
   if (!isList(values)) return null;
-  const ordered = sorted(values), half = Math.floor(ordered.length / 2);
+  const ordered = sorted(values),
+    half = Math.floor(ordered.length / 2);
   return ordered.length % 2 ? ordered[half] : between(ordered[half - 1], ordered[half], 0.5);
 }
 
@@ -774,7 +856,9 @@ export function median(values) {
 // null or when q is not a probability.
 export function quantile(values, q) {
   if (!isList(values) || !isProbability(q)) return null;
-  const ordered = sorted(values), position = (ordered.length - 1) * q, index = Math.floor(position);
+  const ordered = sorted(values),
+    position = (ordered.length - 1) * q,
+    index = Math.floor(position);
   if (index >= ordered.length - 1) return ordered[ordered.length - 1];
   return between(ordered[index], ordered[index + 1], position - index);
 }
@@ -804,7 +888,7 @@ export function mulberry32(seed) {
   if (!isInt(seed)) return null;
   let state = seed >>> 0;
   return () => {
-    state = (state + 0x6D2B79F5) >>> 0;
+    state = (state + 0x6d2b79f5) >>> 0;
     let t = Math.imul(state ^ (state >>> 15), state | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;

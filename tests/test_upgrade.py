@@ -21,11 +21,22 @@ from jev.client import JevError  # noqa: E402
 from jev.workbench import WorkbenchError  # noqa: E402
 
 Q = {
-    "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "money", "tech": "bugs", "other": None}},
+    "dept": {
+        "type": "choice",
+        "instructions": "Which team?",
+        "criteria": {"billing": "money", "tech": "bugs", "other": None},
+    },
     "refund": {"type": "noul", "instructions": "Does the sender want money back?"},
 }
-SPEC = {"gates": {"dept": 0.5, "refund": 0.6}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-        "tuned_on": "jev-1.14.0", "min_accuracy": 0.9, "min_coverage": 0.5}
+SPEC = {
+    "gates": {"dept": 0.5, "refund": 0.6},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.14.0",
+    "tuned_on": "jev-1.14.0",
+    "min_accuracy": 0.9,
+    "min_coverage": 0.5,
+}
 
 
 class VersionClient(FakeClient):
@@ -63,8 +74,15 @@ class Temp(unittest.TestCase):
         self.dir = Path(tempfile.mkdtemp())
         self._orig = workbench.WORKBENCH_DIR
         workbench.WORKBENCH_DIR = self.dir
-        rows = [json.dumps({"text": ("refund %d" if i % 2 else "thanks %d") % i,
-                            "_expect": {"dept": "billing", "refund": bool(i % 2)}}) for i in range(20)]
+        rows = [
+            json.dumps(
+                {
+                    "text": ("refund %d" if i % 2 else "thanks %d") % i,
+                    "_expect": {"dept": "billing", "refund": bool(i % 2)},
+                }
+            )
+            for i in range(20)
+        ]
         workbench.save_dataset({"name": "Tickets", "rows": "\n".join(rows), "questions": Q})
         checks.save_check("tickets", SPEC)
 
@@ -85,9 +103,15 @@ class SearchTests(unittest.TestCase):
 class RunTests(Temp):
     def test_retune_explains_unavailable_grouped_cross_validation(self):
         answer = FakeClient().system_one({"text": "thanks"}, Q).answers
-        results = [{"index": i, "row": {"text": "same", "channel": "email"} if i % 2 else
-                    {"channel": "email", "text": "same"}, "answers": answer,
-                    "expect": {"dept": "billing", "refund": False}} for i in range(20)]
+        results = [
+            {
+                "index": i,
+                "row": {"text": "same", "channel": "email"} if i % 2 else {"channel": "email", "text": "same"},
+                "answers": answer,
+                "expect": {"dept": "billing", "refund": False},
+            }
+            for i in range(20)
+        ]
         report = upgrade.retune(results, SPEC)
         self.assertIsNone(report["unseen"])
         self.assertIn("distinct labeled inputs", report["holdout_problem"])
@@ -102,14 +126,18 @@ class RunTests(Temp):
                 self.assertIsNotNone(rep["proposals"][proposal])
                 self.assertNotIn("answer_sets", rep["proposals"][proposal])
                 self.assertIn("Refit Answer sets", " ".join(rep["notes"]))
-                self.assertEqual(workbench.load_dataset("tickets")["check"]["answer_sets"], fitted,
-                                 "trying a candidate never changes the saved check")
+                self.assertEqual(
+                    workbench.load_dataset("tickets")["check"]["answer_sets"],
+                    fitted,
+                    "trying a candidate never changes the saved check",
+                )
 
     def test_slice_failure_blocks_upgrade_even_when_overall_targets_pass(self):
         targets = [{"field": "text", "value": "refund 1", "min_accuracy": 1, "min_coverage": 1}]
         checks.save_check("tickets", dict(SPEC, slice_targets=targets))
-        fake = VersionClient({"jev-1.14.0": same,
-                              "jev-1.15.0": lambda text: wrong(text) if text == "refund 1" else same(text)})
+        fake = VersionClient(
+            {"jev-1.14.0": same, "jev-1.15.0": lambda text: wrong(text) if text == "refund 1" else same(text)}
+        )
         rep = upgrade.run(fake, "tickets", "jev-1.15.0")
         self.assertEqual(rep["verdict"], "stay")
         self.assertTrue(rep["candidate"]["targets"]["accuracy"]["ok"])
@@ -140,7 +168,9 @@ class RunTests(Temp):
         self.assertEqual(rep["paired"]["p"], 1.0)
         self.assertEqual([q["changed"] for q in rep["changed"]["questions"]], [0, 0])
         saved = rep["proposals"]["saved"]
-        self.assertEqual((saved["gates"], saved["model"], saved["tuned_on"]), (SPEC["gates"], "jev-1.15.0", "jev-1.15.0"))
+        self.assertEqual(
+            (saved["gates"], saved["model"], saved["tuned_on"]), (SPEC["gates"], "jev-1.15.0", "jev-1.15.0")
+        )
         self.assertEqual((saved["min_accuracy"], saved["min_coverage"]), (0.9, 0.5), "the targets stay")
         self.assertNotIn("saved_at", saved)
         self.assertEqual(rep["calls"], 40)
@@ -254,7 +284,9 @@ class ScriptTests(Temp):
         self.assertEqual(code, 1, out)
         self.assertIn("STAY", out)
         self.assertEqual(json.loads(out_file.read_text())[0]["verdict"], "stay")
-        self.assertEqual(workbench.load_dataset("tickets")["check"]["tuned_on"], "jev-1.14.0", "the script never moves it")
+        self.assertEqual(
+            workbench.load_dataset("tickets")["check"]["tuned_on"], "jev-1.14.0", "the script never moves it"
+        )
 
     def test_errors_exit_2(self):
         code, out = self.main("--upgrade-to", "jev-1.14.0", client=self.configured(same))

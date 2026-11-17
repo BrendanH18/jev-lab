@@ -820,22 +820,88 @@ REFERENCE = json.loads(r"""
 """)
 # END REFERENCE TABLE
 
-JS_EXPORTS = ["isProbability", "isCount", "clamp", "logit", "expit", "round", "logGamma", "logFactorial", "logChoose", "choose",
-              "erf", "erfc", "normalPdf", "normalCdf", "normalSf", "normalQuantile", "incompleteBeta", "betaQuantile",
-              "incompleteGammaP", "incompleteGammaQ", "chiSquareCdf", "chiSquareSf", "chiSquareQuantile", "studentTCdf",
-              "studentTSf", "studentTQuantile", "binomialPmf", "binomialCdf", "binomialSf", "hypergeometricPmf", "poissonPmf",
-              "poissonCdf", "poissonSf", "sum", "mean", "variance", "stdev", "median", "quantile", "minOf", "maxOf",
-              "mulberry32", "shuffled", "sampleIndexes"]
+JS_EXPORTS = [
+    "isProbability",
+    "isCount",
+    "clamp",
+    "logit",
+    "expit",
+    "round",
+    "logGamma",
+    "logFactorial",
+    "logChoose",
+    "choose",
+    "erf",
+    "erfc",
+    "normalPdf",
+    "normalCdf",
+    "normalSf",
+    "normalQuantile",
+    "incompleteBeta",
+    "betaQuantile",
+    "incompleteGammaP",
+    "incompleteGammaQ",
+    "chiSquareCdf",
+    "chiSquareSf",
+    "chiSquareQuantile",
+    "studentTCdf",
+    "studentTSf",
+    "studentTQuantile",
+    "binomialPmf",
+    "binomialCdf",
+    "binomialSf",
+    "hypergeometricPmf",
+    "poissonPmf",
+    "poissonCdf",
+    "poissonSf",
+    "sum",
+    "mean",
+    "variance",
+    "stdev",
+    "median",
+    "quantile",
+    "minOf",
+    "maxOf",
+    "mulberry32",
+    "shuffled",
+    "sampleIndexes",
+]
 
 # A valid set of arguments for every numeric function.
 VALID = {
-    "is_probability": [0.5], "is_count": [3], "clamp": [5, 0, 10], "logit": [0.3], "expit": [0.3], "round": [1.25, 1],
-    "log_gamma": [2.5], "log_factorial": [5], "log_choose": [10, 3], "choose": [10, 3], "erf": [0.5], "erfc": [0.5],
-    "normal_pdf": [0.5], "normal_cdf": [0.5], "normal_sf": [0.5], "normal_quantile": [0.3], "incomplete_beta": [0.3, 2, 3],
-    "beta_quantile": [0.3, 2, 3], "incomplete_gamma_p": [2, 1.5], "incomplete_gamma_q": [2, 1.5], "chi_square_cdf": [3, 4],
-    "chi_square_sf": [3, 4], "chi_square_quantile": [0.3, 4], "student_t_cdf": [1.5, 4], "student_t_sf": [1.5, 4],
-    "student_t_quantile": [0.3, 4], "binomial_pmf": [3, 10, 0.3], "binomial_cdf": [3, 10, 0.3], "binomial_sf": [3, 10, 0.3],
-    "hypergeometric_pmf": [2, 20, 7, 5], "poisson_pmf": [3, 2.5], "poisson_cdf": [3, 2.5], "poisson_sf": [3, 2.5],
+    "is_probability": [0.5],
+    "is_count": [3],
+    "clamp": [5, 0, 10],
+    "logit": [0.3],
+    "expit": [0.3],
+    "round": [1.25, 1],
+    "log_gamma": [2.5],
+    "log_factorial": [5],
+    "log_choose": [10, 3],
+    "choose": [10, 3],
+    "erf": [0.5],
+    "erfc": [0.5],
+    "normal_pdf": [0.5],
+    "normal_cdf": [0.5],
+    "normal_sf": [0.5],
+    "normal_quantile": [0.3],
+    "incomplete_beta": [0.3, 2, 3],
+    "beta_quantile": [0.3, 2, 3],
+    "incomplete_gamma_p": [2, 1.5],
+    "incomplete_gamma_q": [2, 1.5],
+    "chi_square_cdf": [3, 4],
+    "chi_square_sf": [3, 4],
+    "chi_square_quantile": [0.3, 4],
+    "student_t_cdf": [1.5, 4],
+    "student_t_sf": [1.5, 4],
+    "student_t_quantile": [0.3, 4],
+    "binomial_pmf": [3, 10, 0.3],
+    "binomial_cdf": [3, 10, 0.3],
+    "binomial_sf": [3, 10, 0.3],
+    "hypergeometric_pmf": [2, 20, 7, 5],
+    "poisson_pmf": [3, 2.5],
+    "poisson_cdf": [3, 2.5],
+    "poisson_sf": [3, 2.5],
 }
 PROBABILITIES = re.compile(r"cdf|_sf|pmf|incomplete|beta_quantile")
 
@@ -857,7 +923,9 @@ class Close:
             self.assertEqual(actual, expected, label)
             return
         error = abs(actual - expected) / abs(expected)
-        self.assertLessEqual(error, tolerance, "%s: got %r, expected %r (relative error %.2e)" % (label, actual, expected, error))
+        self.assertLessEqual(
+            error, tolerance, "%s: got %r, expected %r (relative error %.2e)" % (label, actual, expected, error)
+        )
 
 
 class SurfaceTests(unittest.TestCase):
@@ -881,7 +949,9 @@ class ReferenceTableTests(Close, unittest.TestCase):
         for name, args, expected, tolerance in REFERENCE["values"]:
             seen.add(name)
             with self.subTest(name=name, args=args):
-                self.assertNear(getattr(mathx, snake(name))(*args), expected, tolerance, "%s%r" % (snake(name), tuple(args)))
+                self.assertNear(
+                    getattr(mathx, snake(name))(*args), expected, tolerance, "%s%r" % (snake(name), tuple(args))
+                )
         numeric = {name for name in JS_EXPORTS if name not in ("mulberry32", "shuffled", "sampleIndexes")}
         self.assertEqual(seen, numeric, "the table covers every numeric function")
 
@@ -892,18 +962,21 @@ class ReferenceTableTests(Close, unittest.TestCase):
         for seed, order in REFERENCE["shuffles"]:
             self.assertEqual(mathx.shuffled(list(range(10)), seed), order, "shuffled seed %r" % seed)
         for count, size, seed, chosen in REFERENCE["samples"]:
-            self.assertEqual(mathx.sample_indexes(count, size, seed), chosen, "sample_indexes(%r, %r, %r)" % (count, size, seed))
+            self.assertEqual(
+                mathx.sample_indexes(count, size, seed), chosen, "sample_indexes(%r, %r, %r)" % (count, size, seed)
+            )
 
     def test_exact_rows_are_the_correctly_rounded_exact_values(self):
         """A check on the table: rows that come from exact rational arithmetic are recomputed with Fraction here."""
+
         def binomial(n, p, low, high):
             """sum over j in [low, high] of C(n, j) p^j (1 - p)^(n - j), in integers over the common denominator."""
             ratio = Fraction(p)
             top, bottom = ratio.numerator, ratio.denominator
             total = 0
             for j in range(max(0, low), min(n, high) + 1):
-                total += math.comb(n, j) * top ** j * (bottom - top) ** (n - j)
-            return Fraction(total, bottom ** n)
+                total += math.comb(n, j) * top**j * (bottom - top) ** (n - j)
+            return Fraction(total, bottom**n)
 
         checked = 0
         for name, args, expected, _tolerance in REFERENCE["values"]:
@@ -912,10 +985,17 @@ class ReferenceTableTests(Close, unittest.TestCase):
                 k, n, p = args
                 low, high = {"binomialPmf": (k, k), "binomialCdf": (0, k), "binomialSf": (k, n)}[name]
                 exact = binomial(n, p, low, high)
-            elif name == "hypergeometricPmf" and isinstance(expected, float) and args[1] <= 10 ** 6:
+            elif name == "hypergeometricPmf" and isinstance(expected, float) and args[1] <= 10**6:
                 k, population, successes, draws = args
-                exact = Fraction(math.comb(successes, k) * math.comb(population - successes, draws - k), math.comb(population, draws))
-            elif name == "incompleteBeta" and isinstance(expected, float) and all(isinstance(v, int) for v in args[1:]) and 0 < args[0] < 1:
+                exact = Fraction(
+                    math.comb(successes, k) * math.comb(population - successes, draws - k), math.comb(population, draws)
+                )
+            elif (
+                name == "incompleteBeta"
+                and isinstance(expected, float)
+                and all(isinstance(v, int) for v in args[1:])
+                and 0 < args[0] < 1
+            ):
                 x, a, b = args
                 exact = binomial(a + b - 1, x, a, a + b - 1)
             elif name == "choose" and expected is not None:
@@ -928,8 +1008,14 @@ class ReferenceTableTests(Close, unittest.TestCase):
         with localcontext() as context:
             context.prec = 50
             for name, args, expected, tolerance in REFERENCE["values"]:
-                if name == "chiSquareSf" and isinstance(expected, float) and isinstance(args[1], int) and args[1] > 0 and args[1] % 2 == 0 \
-                        and 0 < args[0] <= 1000:
+                if (
+                    name == "chiSquareSf"
+                    and isinstance(expected, float)
+                    and isinstance(args[1], int)
+                    and args[1] > 0
+                    and args[1] % 2 == 0
+                    and 0 < args[0] <= 1000
+                ):
                     half = Decimal(args[0]) / 2
                     term, total = Decimal(1), Decimal(1)
                     for j in range(1, args[1] // 2):
@@ -939,8 +1025,23 @@ class ReferenceTableTests(Close, unittest.TestCase):
 
 
 class DomainTests(unittest.TestCase):
-    BAD = [None, math.nan, math.inf, -math.inf, "1", "", True, False, 10 ** 400, Decimal("1"), Fraction(1, 2), complex(1, 0), [1], {},
-           object()]
+    BAD = [
+        None,
+        math.nan,
+        math.inf,
+        -math.inf,
+        "1",
+        "",
+        True,
+        False,
+        10**400,
+        Decimal("1"),
+        Fraction(1, 2),
+        complex(1, 0),
+        [1],
+        {},
+        object(),
+    ]
 
     def test_a_non_number_in_any_position_gives_none_and_never_raises(self):
         for name, args in VALID.items():
@@ -950,23 +1051,50 @@ class DomainTests(unittest.TestCase):
             for position in range(len(args)):
                 for value in self.BAD:
                     if name == "clamp" and position > 0 and value in (math.inf, -math.inf):
-                        continue   # an infinite bound means no bound
+                        continue  # an infinite bound means no bound
                     call = list(args)
                     call[position] = value
                     self.assertIs(function(*call), fallback, "%s with %r at position %d" % (name, value, position))
         for name in ("sum", "mean", "variance", "stdev", "median", "min_of", "max_of"):
-            for value in ([], [1, math.nan], [1, math.inf], [1, "2"], [1, None], [1, True], "12", None, 5, {0: 1}, {1, 2}, iter([1, 2])):
+            for value in (
+                [],
+                [1, math.nan],
+                [1, math.inf],
+                [1, "2"],
+                [1, None],
+                [1, True],
+                "12",
+                None,
+                5,
+                {0: 1},
+                {1, 2},
+                iter([1, 2]),
+            ):
                 self.assertIsNone(getattr(mathx, name)(value), "%s(%r)" % (name, value))
         for q in (math.nan, math.inf, -0.1, 1.1, "0.5", None, True):
             self.assertIsNone(mathx.quantile([1, 2, 3], q))
-        for seed in (1.5, math.nan, math.inf, "1", None, 2 ** 53, -(2 ** 53), True, Decimal(1)):
+        for seed in (1.5, math.nan, math.inf, "1", None, 2**53, -(2**53), True, Decimal(1)):
             self.assertIsNone(mathx.mulberry32(seed), repr(seed))
             self.assertIsNone(mathx.shuffled([1, 2], seed))
             self.assertIsNone(mathx.sample_indexes(5, 2, seed))
 
     def test_over_a_grid_of_edge_values_results_are_none_or_finite_floats(self):
-        edge = [0, 5e-324, 1e-300, 1e-20, 0.001, 0.5, 0.9999999999999999, 1, 2.5, 30, 1e9, 2 ** 53 - 1, 1e154,
-                1.7976931348623157e308]
+        edge = [
+            0,
+            5e-324,
+            1e-300,
+            1e-20,
+            0.001,
+            0.5,
+            0.9999999999999999,
+            1,
+            2.5,
+            30,
+            1e9,
+            2**53 - 1,
+            1e154,
+            1.7976931348623157e308,
+        ]
         values = edge + [-value for value in edge if value != 0]
         few = values[::3]
         # Huge shapes run their loops up to 500,000 steps, which takes a while in pure Python; the quantile functions
@@ -982,23 +1110,26 @@ class DomainTests(unittest.TestCase):
                 if name.startswith("is_"):
                     self.assertIsInstance(result, bool)
                     continue
-                self.assertTrue(result is None or (isinstance(result, float) and math.isfinite(result)), "%s%r gave %r" % (name, call, result))
+                self.assertTrue(
+                    result is None or (isinstance(result, float) and math.isfinite(result)),
+                    "%s%r gave %r" % (name, call, result),
+                )
                 if isinstance(result, float) and PROBABILITIES.search(name):
                     self.assertTrue(0 <= result <= 1, "%s%r gave %r" % (name, call, result))
 
     def test_python_numbers(self):
         self.assertEqual(mathx.choose(10, 3.0), 120.0)
         self.assertIsInstance(mathx.choose(10, 3), float)
-        self.assertEqual(mathx.choose(10 ** 15, 1), 1e15)
+        self.assertEqual(mathx.choose(10**15, 1), 1e15)
         self.assertLess(abs(mathx.binomial_pmf(3.0, 3, 0.5) - 0.125), 1e-16, "an integral float is an integer")
         self.assertIsNone(mathx.binomial_pmf(3.5, 3, 0.5))
-        self.assertEqual(mathx.erf(10 ** 20), 1.0)
-        self.assertIsNone(mathx.erf(10 ** 400), "an int too large for a float is not a number here")
+        self.assertEqual(mathx.erf(10**20), 1.0)
+        self.assertIsNone(mathx.erf(10**400), "an int too large for a float is not a number here")
         self.assertEqual(mathx.mean((1, 2, 3, 4)), 2.5, "a tuple is a list")
         self.assertIsInstance(mathx.min_of([3, 1, 2]), float)
         self.assertIsInstance(mathx.round(2, 0), float)
         self.assertTrue(math.copysign(1.0, mathx.round(-0.4)) > 0, "a result of zero is +0.0")
-        self.assertIsNone(mathx.round(1.5, 2 ** 53))
+        self.assertIsNone(mathx.round(1.5, 2**53))
         self.assertIsNone(mathx.round(1.7976931348623157e308, -308), "2e308 overflows")
         self.assertTrue(mathx.is_count(5.0))
         self.assertFalse(mathx.is_count(True))
@@ -1028,7 +1159,9 @@ class StandardLibraryTests(Close, unittest.TestCase):
         # absolutely, so the comparison is relative to max(1, |ln gamma|)
         for x in (1e-8, 0.1, 0.5, 0.75, 1.25, 3.0, 4.5, 9.99, 10.01, 57.3, 1000.5, 1e7):
             expected = math.lgamma(x)
-            self.assertLessEqual(abs(mathx.log_gamma(x) - expected), 5e-15 * max(1.0, abs(expected)), "log_gamma(%r)" % x)
+            self.assertLessEqual(
+                abs(mathx.log_gamma(x) - expected), 5e-15 * max(1.0, abs(expected)), "log_gamma(%r)" % x
+            )
         self.assertEqual(mathx.log_gamma(1), 0.0)
         self.assertEqual(mathx.log_gamma(2), 0.0)
         for n in range(0, 200):
@@ -1038,7 +1171,12 @@ class StandardLibraryTests(Close, unittest.TestCase):
             for k in range(0, n + 1):
                 self.assertEqual(mathx.choose(n, k), float(math.comb(n, k)), "choose(%d, %d)" % (n, k))
                 exact = math.comb(n, k)
-                self.assertNear(mathx.log_choose(n, k), float(Decimal(exact).ln()) if exact > 1 else 0.0, 2e-15, "log_choose(%d, %d)" % (n, k))
+                self.assertNear(
+                    mathx.log_choose(n, k),
+                    float(Decimal(exact).ln()) if exact > 1 else 0.0,
+                    2e-15,
+                    "log_choose(%d, %d)" % (n, k),
+                )
         self.assertIsNone(mathx.choose(1030, 515))
         self.assertEqual(mathx.choose(1029, 514), float(math.comb(1029, 514)))
 
@@ -1070,11 +1208,15 @@ class ClosedFormTests(Close, unittest.TestCase):
     def test_student_t_with_one_and_two_degrees_of_freedom(self):
         for t in (-1e6, -300.0, -3.0, -0.25, 0.25, 3.0, 300.0, 1e6):
             cauchy_tail = math.atan(1 / abs(t)) / math.pi
-            self.assertNear(mathx.student_t_cdf(t, 1), cauchy_tail if t < 0 else 1 - cauchy_tail, 5e-15, "cdf(%r, 1)" % t)
+            self.assertNear(
+                mathx.student_t_cdf(t, 1), cauchy_tail if t < 0 else 1 - cauchy_tail, 5e-15, "cdf(%r, 1)" % t
+            )
             s = math.sqrt(2 + t * t)
             tail = 1 / (s * (s + abs(t)))
             self.assertNear(mathx.student_t_sf(-t, 2), tail if t < 0 else 1 - tail, 5e-15, "sf(%r, 2)" % -t)
-        self.assertNear(mathx.student_t_cdf(-1e200, 1), 1 / (math.pi * 1e200), 1e-13, "t * t overflows, the tail does not")
+        self.assertNear(
+            mathx.student_t_cdf(-1e200, 1), 1 / (math.pi * 1e200), 1e-13, "t * t overflows, the tail does not"
+        )
         self.assertEqual(mathx.student_t_cdf(0, 3), 0.5)
 
     def test_chi_square_and_poisson_identities(self):
@@ -1086,7 +1228,9 @@ class ClosedFormTests(Close, unittest.TestCase):
                     total += term
                 q = math.exp(-x) * total
                 if 1e-6 < q < 0.999:
-                    self.assertNear(mathx.chi_square_sf(2 * x, 2 * k), q, 1e-13, "chi_square_sf(%r, %r)" % (2 * x, 2 * k))
+                    self.assertNear(
+                        mathx.chi_square_sf(2 * x, 2 * k), q, 1e-13, "chi_square_sf(%r, %r)" % (2 * x, 2 * k)
+                    )
                     self.assertNear(mathx.poisson_cdf(k - 1, x), q, 1e-13, "poisson_cdf(%r, %r)" % (k - 1, x))
         for x in (1e-10, 0.3, 4.0, 50.0):
             self.assertNear(mathx.chi_square_cdf(x, 2), -math.expm1(-x / 2), 4e-15, "chi_square_cdf(%r, 2)" % x)
@@ -1095,22 +1239,45 @@ class ClosedFormTests(Close, unittest.TestCase):
 
     def test_quantiles_published_and_closed_form(self):
         self.assertNear(mathx.student_t_quantile(0.975, 10), 2.2281388519649385, 1e-11, "as tables print it")
-        self.assertNear(mathx.student_t_quantile(0.975, 10), 2.2281388519862747, 3e-16, "the even-df closed form solved in Decimal")
+        self.assertNear(
+            mathx.student_t_quantile(0.975, 10), 2.2281388519862747, 3e-16, "the even-df closed form solved in Decimal"
+        )
         self.assertNear(mathx.chi_square_quantile(0.95, 1), 3.841458820694124, 1e-15, "chi-square 0.95, 1 df")
         self.assertNear(mathx.chi_square_quantile(0.95, 10), 18.307038053275146, 1e-15, "chi-square 0.95, 10 df")
         for p in (0.001, 0.2, 0.6, 0.975, 0.999999):
             self.assertNear(mathx.chi_square_quantile(p, 2), -2 * math.log1p(-p), 1e-15, "chi-square 2 df at %r" % p)
             closed = -1 / math.tan(math.pi * p) if p < 0.5 else 1 / math.tan(math.pi * (1 - p))
             self.assertNear(mathx.student_t_quantile(p, 1), closed, 1e-14, "t 1 df at %r" % p)
-            self.assertNear(mathx.student_t_quantile(p, 2), (2 * p - 1) / math.sqrt(2 * p * (1 - p)), 1e-13, "t 2 df at %r" % p)
+            self.assertNear(
+                mathx.student_t_quantile(p, 2), (2 * p - 1) / math.sqrt(2 * p * (1 - p)), 1e-13, "t 2 df at %r" % p
+            )
             self.assertNear(mathx.beta_quantile(p, 3.5, 1), p ** (1 / 3.5), 1e-15, "Beta(a, 1) at %r" % p)
-            self.assertNear(mathx.beta_quantile(p, 0.5, 0.5), math.sin(math.pi * p / 2) ** 2, 1e-14, "arcsine at %r" % p)
+            self.assertNear(
+                mathx.beta_quantile(p, 0.5, 0.5), math.sin(math.pi * p / 2) ** 2, 1e-14, "arcsine at %r" % p
+            )
         self.assertEqual(mathx.beta_quantile(1e-300, 0.001, 1e8), 0.0, "a root below the smallest double rounds to 0")
 
     def test_round_halves_away_from_zero_on_the_shortest_text(self):
-        cases = [(1.005, 2, 1.01), (2.675, 2, 2.68), (-1.5, 0, -2.0), (0.5, 0, 1.0), (-0.5, 0, -1.0), (2.5, 0, 3.0), (1.45, 1, 1.5),
-                 (1234.5678, -2, 1200.0), (5, -1, 10.0), (4.9, -1, 0.0), (0.005, 2, 0.01), (-0.005, 2, -0.01), (9.995, 2, 10.0),
-                 (0.1 + 0.2, 15, 0.3), (1e21, 2, 1e21), (5e-324, 323, 1e-323), (120.0, -1, 120.0), (125.0, -1, 130.0)]
+        cases = [
+            (1.005, 2, 1.01),
+            (2.675, 2, 2.68),
+            (-1.5, 0, -2.0),
+            (0.5, 0, 1.0),
+            (-0.5, 0, -1.0),
+            (2.5, 0, 3.0),
+            (1.45, 1, 1.5),
+            (1234.5678, -2, 1200.0),
+            (5, -1, 10.0),
+            (4.9, -1, 0.0),
+            (0.005, 2, 0.01),
+            (-0.005, 2, -0.01),
+            (9.995, 2, 10.0),
+            (0.1 + 0.2, 15, 0.3),
+            (1e21, 2, 1e21),
+            (5e-324, 323, 1e-323),
+            (120.0, -1, 120.0),
+            (125.0, -1, 130.0),
+        ]
         for x, digits, expected in cases:
             self.assertEqual(mathx.round(x, digits), expected, "round(%r, %r)" % (x, digits))
         self.assertEqual(mathx.round(2.5), 3.0)
@@ -1130,13 +1297,13 @@ def mulberry_ctypes(seed):
 
 class RandomnessTests(unittest.TestCase):
     def test_mulberry32_is_the_published_algorithm(self):
-        for seed in (0, 1, 42, -1, -123456, 2 ** 31, 2 ** 32 - 1, 2 ** 32, 2 ** 53 - 1, -(2 ** 53 - 1)):
+        for seed in (0, 1, 42, -1, -123456, 2**31, 2**32 - 1, 2**32, 2**53 - 1, -(2**53 - 1)):
             following, reference = mathx.mulberry32(seed), mulberry_ctypes(seed)
             for draw in range(500):
                 value = following()
                 self.assertEqual(value, next(reference), "mulberry32(%r) draw %d" % (seed, draw))
                 self.assertTrue(0 <= value < 1)
-        self.assertEqual(mathx.mulberry32(2 ** 32 + 5)(), mathx.mulberry32(5)())
+        self.assertEqual(mathx.mulberry32(2**32 + 5)(), mathx.mulberry32(5)())
         self.assertEqual(mathx.mulberry32(5.0)(), mathx.mulberry32(5)(), "an integral float is an integer seed")
 
     def test_shuffled(self):
@@ -1161,7 +1328,7 @@ class RandomnessTests(unittest.TestCase):
         self.assertIsNone(mathx.shuffled("abc", 1))
 
     def test_sample_indexes(self):
-        for count, size in ((10, 3), (100, 100), (1000, 1), (2 ** 32, 20), (7, 0), (500, 250)):
+        for count, size in ((10, 3), (100, 100), (1000, 1), (2**32, 20), (7, 0), (500, 250)):
             for seed in (0, 5, -9):
                 chosen = mathx.sample_indexes(count, size, seed)
                 self.assertEqual(len(chosen), size)
@@ -1170,7 +1337,7 @@ class RandomnessTests(unittest.TestCase):
                 self.assertEqual(mathx.sample_indexes(count, size, seed), chosen)
         self.assertEqual(mathx.sample_indexes(5, 5, 3), [0, 1, 2, 3, 4])
         self.assertIsNone(mathx.sample_indexes(5, 6, 1))
-        self.assertIsNone(mathx.sample_indexes(2 ** 32 + 1, 1, 1))
+        self.assertIsNone(mathx.sample_indexes(2**32 + 1, 1, 1))
 
 
 if __name__ == "__main__":

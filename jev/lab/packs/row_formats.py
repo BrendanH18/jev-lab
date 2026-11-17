@@ -44,8 +44,10 @@ def _object(row: Any, number: int) -> dict:
         return {"text": row}
     if isinstance(row, dict):
         return row
-    raise ValueError("row %d is %s; a rows file holds text and JSON objects" % (
-        number, "a JSON array" if isinstance(row, list) else "not text or an object"))
+    raise ValueError(
+        "row %d is %s; a rows file holds text and JSON objects"
+        % (number, "a JSON array" if isinstance(row, list) else "not text or an object")
+    )
 
 
 def _value_cell(value: Any) -> str:
@@ -80,7 +82,12 @@ def to_table(rows: List[Any]) -> Tuple[List[str], List[List[str]]]:
                 picture = True
             else:
                 fields[key] = None
-    columns = list(fields) + ([IMAGE_KEY] if picture else []) + [LABEL_PREFIX + q for q in labels] + ([TEST_KEY] if test else [])
+    columns = (
+        list(fields)
+        + ([IMAGE_KEY] if picture else [])
+        + [LABEL_PREFIX + q for q in labels]
+        + ([TEST_KEY] if test else [])
+    )
     cells = []
     for row in objects:
         line = [_value_cell(row.get(field)) for field in fields]
@@ -135,7 +142,7 @@ def from_table(columns: List[str], cells: List[List[str]]) -> List[Any]:
             if not cell.strip():
                 continue
             if name.startswith(LABEL_PREFIX) and len(name) > len(LABEL_PREFIX):
-                expect[name[len(LABEL_PREFIX):]] = _label_value(cell)
+                expect[name[len(LABEL_PREFIX) :]] = _label_value(cell)
             elif name == TEST_KEY:
                 word = cell.strip().lower()
                 if word in TRUE_WORDS:
@@ -174,7 +181,11 @@ def _restore(cell: str) -> str:
 def _parse_delimited(text: str, delimiter: str, spreadsheet: bool) -> List[Any]:
     text = text[1:] if text.startswith(BOM) else text
     try:
-        lines = [line for line in csv.reader(io.StringIO(text, newline=""), delimiter=delimiter) if any(c.strip() for c in line)]
+        lines = [
+            line
+            for line in csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
+            if any(c.strip() for c in line)
+        ]
     except csv.Error as err:
         raise ValueError("cannot read the rows: %s" % err)
     if not lines:
@@ -199,7 +210,13 @@ def _render_delimited(rows: List[Any], delimiter: str, spreadsheet: bool, ending
 
 
 def _markdown_cell(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>").replace("\r", "<br>")
+    return (
+        value.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\r\n", "<br>")
+        .replace("\n", "<br>")
+        .replace("\r", "<br>")
+    )
 
 
 def render_markdown(rows: List[Any]) -> str:
@@ -250,7 +267,13 @@ def render_html(rows: List[Any]) -> str:
     columns, cells = to_table(rows)
     if not columns:
         return ""
-    lines = ["<table>", "<thead>", "<tr>%s</tr>" % "".join("<th>%s</th>" % _html_cell(c) for c in columns), "</thead>", "<tbody>"]
+    lines = [
+        "<table>",
+        "<thead>",
+        "<tr>%s</tr>" % "".join("<th>%s</th>" % _html_cell(c) for c in columns),
+        "</thead>",
+        "<tbody>",
+    ]
     lines += ["<tr>%s</tr>" % "".join("<td>%s</td>" % _html_cell(c) for c in line) for line in cells]
     return "\n".join(lines + ["</tbody>", "</table>"]) + "\n"
 
@@ -366,38 +389,121 @@ def _delimited(delimiter: str, spreadsheet: bool, ending: str = "\n", bom: bool 
     return {"parse": parse, "render": render}
 
 
-PACK = kit.define_pack({
-    "id": "row-formats",
-    "surface": "python.formats",
-    "title": "Row formats for Bulk rows files",
-    "about": "Parsers and renderers that read and write Bulk rows (text or objects, labels under _expect, held-out "
-             "rows marked _test, pictures under _image) as JSON lines, a JSON array, CSV, TSV, semicolon CSV, "
-             "pipe-separated text, Excel CSV with a byte-order mark, Markdown and HTML tables, and plain text lines. "
-             "`lab.py rows convert` and the other rows commands use them.",
-    "features": [
-        dict({"id": "jsonl", "kind": "format", "name": "jsonl", "extensions": [".jsonl", ".ndjson"],
-              "title": "JSON lines as Bulk reads them: one text row or JSON object per line"},
-             parse=parse_jsonl, render=render_jsonl),
-        dict({"id": "json_array", "kind": "format", "name": "json", "extensions": [".json"],
-              "title": "a JSON array of text rows and objects"}, parse=parse_json, render=render_json),
-        dict({"id": "csv", "kind": "format", "name": "csv", "extensions": [".csv"],
-              "title": "CSV with a header line, labels in _expect.<question> columns and formula cells defused"},
-             **_delimited(",", True)),
-        dict({"id": "tsv", "kind": "format", "name": "tsv", "extensions": [".tsv", ".tab"],
-              "title": "tab-separated values with a header line and formula cells defused"}, **_delimited("\t", True)),
-        dict({"id": "semicolon", "kind": "format", "name": "semicolon", "extensions": [".ssv"],
-              "title": "semicolon-separated CSV, as spreadsheets in comma-decimal locales write it"},
-             **_delimited(";", True)),
-        dict({"id": "pipe", "kind": "format", "name": "pipe", "extensions": [".psv"],
-              "title": "pipe-separated text with a header line"}, **_delimited("|", False)),
-        dict({"id": "excel", "kind": "format", "name": "excel", "extensions": [],
-              "title": "Excel-style CSV: a UTF-8 byte-order mark, CRLF line ends and formula cells defused"},
-             **_delimited(",", True, "\r\n", True)),
-        dict({"id": "markdown", "kind": "format", "name": "markdown", "extensions": [".md", ".markdown"],
-              "title": "a Markdown table, pipes escaped and line breaks as <br>"}, parse=parse_markdown, render=render_markdown),
-        dict({"id": "html", "kind": "format", "name": "html", "extensions": [".html", ".htm"],
-              "title": "an HTML table with a header row, text escaped and line breaks as <br>"}, parse=parse_html, render=render_html),
-        dict({"id": "lines", "kind": "format", "name": "lines", "extensions": [".txt"],
-              "title": "plain text, one text row per line (only each row's text is written)"}, parse=parse_lines, render=render_lines),
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "row-formats",
+        "surface": "python.formats",
+        "title": "Row formats for Bulk rows files",
+        "about": "Parsers and renderers that read and write Bulk rows (text or objects, labels under _expect, held-out "
+        "rows marked _test, pictures under _image) as JSON lines, a JSON array, CSV, TSV, semicolon CSV, "
+        "pipe-separated text, Excel CSV with a byte-order mark, Markdown and HTML tables, and plain text lines. "
+        "`lab.py rows convert` and the other rows commands use them.",
+        "features": [
+            dict(
+                {
+                    "id": "jsonl",
+                    "kind": "format",
+                    "name": "jsonl",
+                    "extensions": [".jsonl", ".ndjson"],
+                    "title": "JSON lines as Bulk reads them: one text row or JSON object per line",
+                },
+                parse=parse_jsonl,
+                render=render_jsonl,
+            ),
+            dict(
+                {
+                    "id": "json_array",
+                    "kind": "format",
+                    "name": "json",
+                    "extensions": [".json"],
+                    "title": "a JSON array of text rows and objects",
+                },
+                parse=parse_json,
+                render=render_json,
+            ),
+            dict(
+                {
+                    "id": "csv",
+                    "kind": "format",
+                    "name": "csv",
+                    "extensions": [".csv"],
+                    "title": "CSV with a header line, labels in _expect.<question> columns and formula cells defused",
+                },
+                **_delimited(",", True),
+            ),
+            dict(
+                {
+                    "id": "tsv",
+                    "kind": "format",
+                    "name": "tsv",
+                    "extensions": [".tsv", ".tab"],
+                    "title": "tab-separated values with a header line and formula cells defused",
+                },
+                **_delimited("\t", True),
+            ),
+            dict(
+                {
+                    "id": "semicolon",
+                    "kind": "format",
+                    "name": "semicolon",
+                    "extensions": [".ssv"],
+                    "title": "semicolon-separated CSV, as spreadsheets in comma-decimal locales write it",
+                },
+                **_delimited(";", True),
+            ),
+            dict(
+                {
+                    "id": "pipe",
+                    "kind": "format",
+                    "name": "pipe",
+                    "extensions": [".psv"],
+                    "title": "pipe-separated text with a header line",
+                },
+                **_delimited("|", False),
+            ),
+            dict(
+                {
+                    "id": "excel",
+                    "kind": "format",
+                    "name": "excel",
+                    "extensions": [],
+                    "title": "Excel-style CSV: a UTF-8 byte-order mark, CRLF line ends and formula cells defused",
+                },
+                **_delimited(",", True, "\r\n", True),
+            ),
+            dict(
+                {
+                    "id": "markdown",
+                    "kind": "format",
+                    "name": "markdown",
+                    "extensions": [".md", ".markdown"],
+                    "title": "a Markdown table, pipes escaped and line breaks as <br>",
+                },
+                parse=parse_markdown,
+                render=render_markdown,
+            ),
+            dict(
+                {
+                    "id": "html",
+                    "kind": "format",
+                    "name": "html",
+                    "extensions": [".html", ".htm"],
+                    "title": "an HTML table with a header row, text escaped and line breaks as <br>",
+                },
+                parse=parse_html,
+                render=render_html,
+            ),
+            dict(
+                {
+                    "id": "lines",
+                    "kind": "format",
+                    "name": "lines",
+                    "extensions": [".txt"],
+                    "title": "plain text, one text row per line (only each row's text is written)",
+                },
+                parse=parse_lines,
+                render=render_lines,
+            ),
+        ],
+    }
+)

@@ -272,18 +272,31 @@ const LIMITS = deepFreeze({
 // Mirrors of jev/world.py REFUND_WINDOW_DAYS, jev/claims.py BOX_PAD and the note cut in claims.check().
 const RULES = deepFreeze({ window_days: 30, box_pad: 0.05, note_chars: 2000 });
 // Which policy settings read each answer in jev/claims.py, and which verdict check reads it.
-const CUTS = deepFreeze({ shows_item: ["shows_order"], damage_visible: ["damage_no", "damage_yes"], matches_note: ["matches_note"],
-  severity: ["full_refund_at"], damage_kind: [], damage_box: ["box_confidence"] });
+const CUTS = deepFreeze({
+  shows_item: ["shows_order"],
+  damage_visible: ["damage_no", "damage_yes"],
+  matches_note: ["matches_note"],
+  severity: ["full_refund_at"],
+  damage_kind: [],
+  damage_box: ["box_confidence"],
+});
 const CHECK_OF = Object.freeze({ shows_item: "shows_item", damage_visible: "damage", matches_note: "matches_note" });
-const DECISIONS = deepFreeze({ approve: "Approve automatically", review: "Send to a person", retake: "Ask for another photo", reject: "Reject claim" });
+const DECISIONS = deepFreeze({
+  approve: "Approve automatically",
+  review: "Send to a person",
+  retake: "Ask for another photo",
+  reject: "Reject claim",
+});
 const REMEDIES = deepFreeze({ full_refund: "Full refund", replacement_or_credit: "50% credit or a replacement" });
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const plain = (value) => (typeof value === "string" ? value : "");
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : JSON.stringify(value) ?? "");
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const percent = (value, digits = 0) => `${(value * 100).toFixed(digits)}%`;
-const labelMap = (value) => (isObject(value) ? Object.fromEntries(Object.entries(value).filter(([, label]) => typeof label === "string")) : {});
+const labelMap = (value) =>
+  isObject(value) ? Object.fromEntries(Object.entries(value).filter(([, label]) => typeof label === "string")) : {};
 const wordsOf = (text) => text.split(/\s+/).filter(Boolean).length;
 
 function deepFreeze(value) {
@@ -300,7 +313,11 @@ const frozenCopy = (value) => (value && typeof value === "object" ? deepFreeze(c
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -327,7 +344,8 @@ function shownOf(source, ctx, items) {
 // { sample, url, about } or an upload { format, data_base64, width, height, url, name }); null when none.
 export function claimsPhotoOf(image) {
   if (!isObject(image)) return null;
-  if (typeof image.sample === "string" && image.sample) return { source: "sample", name: image.sample, about: plain(image.about) };
+  if (typeof image.sample === "string" && image.sample)
+    return { source: "sample", name: image.sample, about: plain(image.about) };
   return { source: "upload", name: plain(image.name), about: "" };
 }
 
@@ -336,19 +354,39 @@ export function claimsExampleOf(input, examples) {
   if (!isObject(input) || !Array.isArray(examples)) return null;
   const photo = isObject(input.photo) ? input.photo : null;
   if (!photo || photo.source !== "sample") return null;
-  const index = examples.findIndex((example) => isObject(example) && example.order === input.order && plain(example.note).trim() === plain(input.note).trim()
-    && example.sample === photo.name);
-  return index < 0 ? null : (plain(examples[index].label) || `Example ${index + 1}`);
+  const index = examples.findIndex(
+    (example) =>
+      isObject(example) &&
+      example.order === input.order &&
+      plain(example.note).trim() === plain(input.note).trim() &&
+      example.sample === photo.name,
+  );
+  return index < 0 ? null : plain(examples[index].label) || `Example ${index + 1}`;
 }
 
-const policyCopy = (value) => (isObject(value)
-  ? Object.freeze(Object.fromEntries(Object.keys(LIMITS).filter((key) => finite(value[key]) !== null).map((key) => [key, value[key]]))) : null);
+const policyCopy = (value) =>
+  isObject(value)
+    ? Object.freeze(
+        Object.fromEntries(
+          Object.keys(LIMITS)
+            .filter((key) => finite(value[key]) !== null)
+            .map((key) => [key, value[key]]),
+        ),
+      )
+    : null;
 
 function metaOf(meta) {
   const value = isObject(meta) ? meta : {};
   const num = (key) => finite(value[key]);
-  return { model: typeof value.model === "string" ? value.model : null, latency_ms: num("latency_ms"), question_count: num("question_count"),
-    input_tokens: num("input_tokens"), output_tokens: num("output_tokens"), cost_usd: num("cost_usd"), backend: typeof value.backend === "string" ? value.backend : null };
+  return {
+    model: typeof value.model === "string" ? value.model : null,
+    latency_ms: num("latency_ms"),
+    question_count: num("question_count"),
+    input_tokens: num("input_tokens"),
+    output_tokens: num("output_tokens"),
+    cost_usd: num("cost_usd"),
+    backend: typeof value.backend === "string" ? value.backend : null,
+  };
 }
 
 const ENTRIES = new WeakMap();
@@ -356,7 +394,13 @@ function historyEntry(raw, examples) {
   const known = ENTRIES.get(raw);
   if (known && known.examples === examples) return known.entry;
   const input = isObject(raw.input) ? raw.input : {};
-  const photo = isObject(input.photo) ? { source: input.photo.source === "sample" ? "sample" : "upload", name: plain(input.photo.name), about: plain(input.photo.about) } : null;
+  const photo = isObject(input.photo)
+    ? {
+        source: input.photo.source === "sample" ? "sample" : "upload",
+        name: plain(input.photo.name),
+        about: plain(input.photo.about),
+      }
+    : null;
   const verdict = isObject(raw.verdict) ? raw.verdict : {};
   const entry = deepFreeze({
     call: finite(raw.call),
@@ -368,8 +412,12 @@ function historyEntry(raw, examples) {
     answers: isObject(raw.answers) ? clone(raw.answers) : {},
     evidence: isObject(raw.evidence) ? clone(raw.evidence) : null,
     facts: isObject(raw.facts) ? clone(raw.facts) : null,
-    decided: { decision: typeof verdict.decision === "string" ? verdict.decision : null, remedy: typeof verdict.remedy === "string" ? verdict.remedy : null,
-      amount: finite(verdict.amount), policy: policyCopy(raw.policy) ? { ...policyCopy(raw.policy) } : null },
+    decided: {
+      decision: typeof verdict.decision === "string" ? verdict.decision : null,
+      remedy: typeof verdict.remedy === "string" ? verdict.remedy : null,
+      amount: finite(verdict.amount),
+      policy: policyCopy(raw.policy) ? { ...policyCopy(raw.policy) } : null,
+    },
     meta: metaOf(raw.meta),
     box_supported: raw.box_supported === true,
   });
@@ -381,7 +429,12 @@ function historyOf(source) {
   const list = read(source, "history", EMPTY);
   if (!Array.isArray(list)) return EMPTY;
   const examples = Array.isArray(setupOf(source)?.examples) ? setupOf(source).examples : EMPTY;
-  return Object.freeze(list.filter(isObject).slice(-HISTORY_SHOWN).map((raw) => historyEntry(raw, examples)));
+  return Object.freeze(
+    list
+      .filter(isObject)
+      .slice(-HISTORY_SHOWN)
+      .map((raw) => historyEntry(raw, examples)),
+  );
 }
 
 function callsOf(source, history) {
@@ -396,9 +449,20 @@ function orderItem(raw, index, selected, history) {
   const delivered = status === "delivered";
   const days = delivered ? finite(raw.days_since_delivery) : null;
   const id = plain(raw.id) || plain(raw.order) || `order-${index + 1}`;
-  return { id, position: index + 1, items: plain(raw.items), customer: plain(raw.customer), total: finite(raw.total), status, delivered,
-    days_since_delivery: days, within_window: delivered && days !== null ? days <= RULES.window_days : null, refunded: raw.refunded === true,
-    selected: id === selected, checked: history.filter((entry) => entry.order === id).length };
+  return {
+    id,
+    position: index + 1,
+    items: plain(raw.items),
+    customer: plain(raw.customer),
+    total: finite(raw.total),
+    status,
+    delivered,
+    days_since_delivery: days,
+    within_window: delivered && days !== null ? days <= RULES.window_days : null,
+    refunded: raw.refunded === true,
+    selected: id === selected,
+    checked: history.filter((entry) => entry.order === id).length,
+  };
 }
 
 function ordersOf(source, cache) {
@@ -408,7 +472,9 @@ function ordersOf(source, cache) {
   const parts = [orders, selected, history.length, history[history.length - 1]];
   if (!cache.key || cache.key.some((part, index) => part !== parts[index])) {
     cache.key = parts;
-    cache.items = Array.isArray(orders) ? deepFreeze(orders.filter(isObject).map((raw, index) => orderItem(raw, index, selected, history))) : EMPTY;
+    cache.items = Array.isArray(orders)
+      ? deepFreeze(orders.filter(isObject).map((raw, index) => orderItem(raw, index, selected, history)))
+      : EMPTY;
   }
   return cache.items;
 }
@@ -428,18 +494,36 @@ export function claimsOrdersCtx(source = {}) {
     items,
     shown: () => shownOf(source, ctx, items()),
     data: {
-      get selected() { return setupOf(source) ? plain(read(source, "selected", "")) || null : null; },
-      get running() { return running(source); },
+      get selected() {
+        return setupOf(source) ? plain(read(source, "selected", "")) || null : null;
+      },
+      get running() {
+        return running(source);
+      },
       get result_order() {
         const result = read(source, "result", null);
-        return isObject(result) && isObject(result.facts) && typeof result.facts.order === "string" ? result.facts.order : null;
+        return isObject(result) && isObject(result.facts) && typeof result.facts.order === "string"
+          ? result.facts.order
+          : null;
       },
-      get settings() { return setupOf(source) ? policyCopy(read(source, "settings", null)) : null; },
-      get defaults() { return policyCopy(setupOf(source)?.policy); },
-      get limits() { return LIMITS; },
-      get rules() { return RULES; },
-      get calls() { return callsOf(source, historyOf(source)); },
-      get history() { return historyOf(source); },
+      get settings() {
+        return setupOf(source) ? policyCopy(read(source, "settings", null)) : null;
+      },
+      get defaults() {
+        return policyCopy(setupOf(source)?.policy);
+      },
+      get limits() {
+        return LIMITS;
+      },
+      get rules() {
+        return RULES;
+      },
+      get calls() {
+        return callsOf(source, historyOf(source));
+      },
+      get history() {
+        return historyOf(source);
+      },
     },
     actions: {
       select(id) {
@@ -456,7 +540,9 @@ export function claimsOrdersCtx(source = {}) {
         return call(source, "focusOrder");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;
@@ -476,10 +562,33 @@ function exampleItem(raw, index, samples, draft, history) {
   const sample = plain(raw.sample);
   const about = samples.find((entry) => isObject(entry) && entry.name === sample);
   const expect = ["approve", "review", "retake", "reject"].includes(raw.expect) ? raw.expect : null;
-  const loaded = !!draft && draft.order === order && draft.note === note && draft.photo?.source === "sample" && draft.photo.name === sample;
-  const checked = history.filter((entry) => entry.order === order && entry.note.trim() === note.trim() && entry.photo?.source === "sample" && entry.photo.name === sample).length;
-  return { index, position: index + 1, label: plain(raw.label) || `Example ${index + 1}`, order, sample, sample_about: about ? plain(about.about) : "",
-    note, chars: [...note].length, words: wordsOf(note), expect, loaded, checked };
+  const loaded =
+    !!draft &&
+    draft.order === order &&
+    draft.note === note &&
+    draft.photo?.source === "sample" &&
+    draft.photo.name === sample;
+  const checked = history.filter(
+    (entry) =>
+      entry.order === order &&
+      entry.note.trim() === note.trim() &&
+      entry.photo?.source === "sample" &&
+      entry.photo.name === sample,
+  ).length;
+  return {
+    index,
+    position: index + 1,
+    label: plain(raw.label) || `Example ${index + 1}`,
+    order,
+    sample,
+    sample_about: about ? plain(about.about) : "",
+    note,
+    chars: [...note].length,
+    words: wordsOf(note),
+    expect,
+    loaded,
+    checked,
+  };
 }
 
 // source: {
@@ -498,10 +607,21 @@ export function claimsExamplesCtx(source = {}) {
     const samples = Array.isArray(setup?.samples) ? setup.samples : EMPTY;
     const draft = draftOf(source);
     const history = historyOf(source);
-    const parts = [examples, samples, draft?.order, draft?.note, draft?.photo?.source, draft?.photo?.name, history.length, history[history.length - 1]];
+    const parts = [
+      examples,
+      samples,
+      draft?.order,
+      draft?.note,
+      draft?.photo?.source,
+      draft?.photo?.name,
+      history.length,
+      history[history.length - 1],
+    ];
     if (!cache.key || cache.key.some((part, index) => part !== parts[index])) {
       cache.key = parts;
-      cache.items = Array.isArray(examples) ? deepFreeze(examples.filter(isObject).map((raw, index) => exampleItem(raw, index, samples, draft, history))) : EMPTY;
+      cache.items = Array.isArray(examples)
+        ? deepFreeze(examples.filter(isObject).map((raw, index) => exampleItem(raw, index, samples, draft, history)))
+        : EMPTY;
     }
     return cache.items;
   };
@@ -511,23 +631,40 @@ export function claimsExamplesCtx(source = {}) {
     data: {
       get samples() {
         const samples = setupOf(source)?.samples;
-        return deepFreeze(Array.isArray(samples) ? samples.filter(isObject).map((entry) => ({ name: plain(entry.name), about: plain(entry.about) })) : []);
+        return deepFreeze(
+          Array.isArray(samples)
+            ? samples.filter(isObject).map((entry) => ({ name: plain(entry.name), about: plain(entry.about) }))
+            : [],
+        );
       },
-      get orders() { return ordersOf(source, orderCache); },
-      get draft() { return setupOf(source) ? deepFreeze(draftOf(source)) : null; },
+      get orders() {
+        return ordersOf(source, orderCache);
+      },
+      get draft() {
+        return setupOf(source) ? deepFreeze(draftOf(source)) : null;
+      },
       get loaded() {
         const index = items().findIndex((item) => item.loaded);
         return index < 0 ? null : items()[index].index;
       },
-      get running() { return running(source); },
-      get labels() { return deepFreeze({ decisions: { ...DECISIONS } }); },
-      get calls() { return callsOf(source, historyOf(source)); },
-      get history() { return historyOf(source); },
+      get running() {
+        return running(source);
+      },
+      get labels() {
+        return deepFreeze({ decisions: { ...DECISIONS } });
+      },
+      get calls() {
+        return callsOf(source, historyOf(source));
+      },
+      get history() {
+        return historyOf(source);
+      },
     },
     actions: {
       use(index) {
         if (!setupOf(source)) throw new Error("The examples have not loaded yet.");
-        if (!Number.isInteger(index) || !items().some((item) => item.index === index)) throw new Error(`There is no example number ${asText(index)}.`);
+        if (!Number.isInteger(index) || !items().some((item) => item.index === index))
+          throw new Error(`There is no example number ${asText(index)}.`);
         if (running(source)) throw new Error("Wait for the check to finish before loading an example.");
         return call(source, "use", index);
       },
@@ -540,7 +677,9 @@ export function claimsExamplesCtx(source = {}) {
         return call(source, "focusRun");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.label === "string" && item.label ? item.label : String(index + 1)),
   };
   return ctx;
@@ -550,12 +689,21 @@ export function claimsExamplesCtx(source = {}) {
 
 function answerItem(id, answer, question, position, policy, verdict, kinds) {
   const type = typeof answer.type === "string" ? answer.type : "";
-  let value = null, display = "", label = "", scale = null, box = null;
+  let value = null,
+    display = "",
+    label = "",
+    scale = null,
+    box = null;
   let probabilities = [];
   if (type === "choice") {
     value = answer.choice === null || answer.choice === undefined ? null : String(answer.choice);
-    if (value !== null) { display = value.replace(/_/g, " "); label = kinds[value] || display; }
-    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) => (finite(p) === null ? [] : [{ key, p }]));
+    if (value !== null) {
+      display = value.replace(/_/g, " ");
+      label = kinds[value] || display;
+    }
+    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) =>
+      finite(p) === null ? [] : [{ key, p }],
+    );
   } else if (type === "score") {
     value = finite(answer.score);
     const legend = isObject(answer.legend) ? answer.legend : {};
@@ -565,12 +713,17 @@ function answerItem(id, answer, question, position, policy, verdict, kinds) {
       display = scale === null ? value.toFixed(2) : `${value.toFixed(2)} / ${scale}`;
       label = asText(legend[String(Math.round(value))]);
     }
-    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) => (finite(p) === null ? [] : [{ key, p }]));
+    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) =>
+      finite(p) === null ? [] : [{ key, p }],
+    );
   } else if (type === "noul") {
     value = finite(answer.noul);
     if (value !== null) {
       display = percent(value, 1);
-      probabilities = [{ key: "yes", p: value }, { key: "no", p: 1 - value }];
+      probabilities = [
+        { key: "yes", p: value },
+        { key: "no", p: 1 - value },
+      ];
     }
   } else if (type === "box" && isObject(answer.box)) {
     const edges = ["left", "top", "right", "bottom"].map((edge) => finite(answer.box[edge]));
@@ -584,21 +737,44 @@ function answerItem(id, answer, question, position, policy, verdict, kinds) {
   const cuts = (CUTS[id] || []).flatMap((key) => (finite(policy?.[key]) === null ? [] : [{ key, at: policy[key] }]));
   const checks = Array.isArray(verdict?.checks) ? verdict.checks : [];
   const found = CHECK_OF[id] ? checks.find((entry) => isObject(entry) && entry.id === CHECK_OF[id]) : null;
-  return { id, position, type, instructions: isObject(question) ? asText(question.instructions) : "", value, display, label, scale, probabilities,
-    top: top ? { ...top } : null, confidence: type === "noul" ? null : finite(answer.confidence), box, cuts,
-    check: found ? { id: plain(found.id), ok: found.ok === true, level: plain(found.level), label: plain(found.label), detail: plain(found.detail) } : null,
-    answer: clone(answer) };
+  return {
+    id,
+    position,
+    type,
+    instructions: isObject(question) ? asText(question.instructions) : "",
+    value,
+    display,
+    label,
+    scale,
+    probabilities,
+    top: top ? { ...top } : null,
+    confidence: type === "noul" ? null : finite(answer.confidence),
+    box,
+    cuts,
+    check: found
+      ? {
+          id: plain(found.id),
+          ok: found.ok === true,
+          level: plain(found.level),
+          label: plain(found.label),
+          detail: plain(found.detail),
+        }
+      : null,
+    answer: clone(answer),
+  };
 }
 
 function snapPolicy(settings, changes) {
-  if (!isObject(changes) || !Object.keys(changes).length) throw new Error("Name at least one policy setting to change.");
+  if (!isObject(changes) || !Object.keys(changes).length)
+    throw new Error("Name at least one policy setting to change.");
   const next = { ...settings };
   for (const [key, raw] of Object.entries(changes)) {
     const limit = LIMITS[key];
     if (!limit) throw new Error(`There is no policy setting "${key}".`);
     const value = typeof raw === "string" ? toNumber(raw) : finite(raw);
     if (value === null) throw new Error(`${limit.label} must be a number.`);
-    if (value < limit.min - 1e-9 || value > limit.max + 1e-9) throw new Error(`${limit.label} must be from ${limit.min} to ${limit.max}.`);
+    if (value < limit.min - 1e-9 || value > limit.max + 1e-9)
+      throw new Error(`${limit.label} must be from ${limit.min} to ${limit.max}.`);
     const steps = (value - limit.min) / limit.step;
     if (Math.abs(steps - Math.round(steps)) > 1e-6) throw new Error(`${limit.label} moves in steps of ${limit.step}.`);
     next[key] = Number((limit.min + Math.round(steps) * limit.step).toFixed(2));
@@ -633,8 +809,14 @@ export function claimsResultCtx(source = {}) {
       const policy = isObject(r.policy) ? r.policy : null;
       const verdict = isObject(r.verdict) ? r.verdict : null;
       const names = kinds();
-      built = { key: parts, items: deepFreeze(Object.entries(r.answers).filter(([, answer]) => isObject(answer))
-        .map(([id, answer], index) => answerItem(id, answer, questions[id], index + 1, policy, verdict, names))) };
+      built = {
+        key: parts,
+        items: deepFreeze(
+          Object.entries(r.answers)
+            .filter(([, answer]) => isObject(answer))
+            .map(([id, answer], index) => answerItem(id, answer, questions[id], index + 1, policy, verdict, names)),
+        ),
+      };
     }
     return built.items;
   };
@@ -642,7 +824,9 @@ export function claimsResultCtx(source = {}) {
     const value = read(source, "settings", null);
     return setupOf(source) && isObject(value) ? value : null;
   };
-  const needSetup = () => { if (!setupOf(source) || !settings()) throw new Error("The policy has not loaded yet."); };
+  const needSetup = () => {
+    if (!setupOf(source) || !settings()) throw new Error("The policy has not loaded yet.");
+  };
   const fromResult = (name) => {
     const r = result();
     return r && isObject(r[name]) ? frozenCopy(r[name]) : null;
@@ -655,34 +839,91 @@ export function claimsResultCtx(source = {}) {
         if (!result()) return null;
         const input = read(source, "input", null);
         if (!isObject(input)) return null;
-        const photo = isObject(input.photo) ? { source: input.photo.source === "sample" ? "sample" : "upload", name: plain(input.photo.name), about: plain(input.photo.about) } : null;
+        const photo = isObject(input.photo)
+          ? {
+              source: input.photo.source === "sample" ? "sample" : "upload",
+              name: plain(input.photo.name),
+              about: plain(input.photo.about),
+            }
+          : null;
         const examples = Array.isArray(setupOf(source)?.examples) ? setupOf(source).examples : EMPTY;
-        return deepFreeze({ order: plain(input.order), note: plain(input.note), photo, example: claimsExampleOf({ order: input.order, note: input.note, photo }, examples) });
+        return deepFreeze({
+          order: plain(input.order),
+          note: plain(input.note),
+          photo,
+          example: claimsExampleOf({ order: input.order, note: input.note, photo }, examples),
+        });
       },
-      get facts() { return fromResult("facts"); },
-      get evidence() { return fromResult("evidence"); },
-      get location() { return fromResult("location"); },
-      get verdict() { return fromResult("verdict"); },
-      get policy() { return policyCopy(result()?.policy); },
-      get settings() { return policyCopy(settings()); },
-      get defaults() { return policyCopy(setupOf(source)?.policy); },
-      get limits() { return LIMITS; },
-      get rules() { return RULES; },
+      get facts() {
+        return fromResult("facts");
+      },
+      get evidence() {
+        return fromResult("evidence");
+      },
+      get location() {
+        return fromResult("location");
+      },
+      get verdict() {
+        return fromResult("verdict");
+      },
+      get policy() {
+        return policyCopy(result()?.policy);
+      },
+      get settings() {
+        return policyCopy(settings());
+      },
+      get defaults() {
+        return policyCopy(setupOf(source)?.policy);
+      },
+      get limits() {
+        return LIMITS;
+      },
+      get rules() {
+        return RULES;
+      },
       get changed() {
-        const now = settings(), defaults = setupOf(source)?.policy;
+        const now = settings(),
+          defaults = setupOf(source)?.policy;
         if (!now || !isObject(defaults)) return EMPTY;
-        return Object.freeze(Object.keys(LIMITS).filter((key) => finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) > 1e-9));
+        return Object.freeze(
+          Object.keys(LIMITS).filter(
+            (key) =>
+              finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) > 1e-9,
+          ),
+        );
       },
-      get labels() { return deepFreeze({ decisions: { ...DECISIONS }, kinds: kinds(), remedies: { ...REMEDIES } }); },
-      get questions() { const q = result()?.trace?.request?.questions; return isObject(q) ? frozenCopy(q) : null; },
-      get meta() { return result() && isObject(result().meta) ? deepFreeze(metaOf(result().meta)) : null; },
-      get trace() { return fromResult("trace"); },
-      get image() { return fromResult("image"); },
-      get box_supported() { const r = result(); return r ? r.box_supported === true : null; },
-      get note() { return plain(read(source, "note", "")); },
-      get running() { return running(source); },
-      get calls() { return callsOf(source, historyOf(source)); },
-      get history() { return historyOf(source); },
+      get labels() {
+        return deepFreeze({ decisions: { ...DECISIONS }, kinds: kinds(), remedies: { ...REMEDIES } });
+      },
+      get questions() {
+        const q = result()?.trace?.request?.questions;
+        return isObject(q) ? frozenCopy(q) : null;
+      },
+      get meta() {
+        return result() && isObject(result().meta) ? deepFreeze(metaOf(result().meta)) : null;
+      },
+      get trace() {
+        return fromResult("trace");
+      },
+      get image() {
+        return fromResult("image");
+      },
+      get box_supported() {
+        const r = result();
+        return r ? r.box_supported === true : null;
+      },
+      get note() {
+        return plain(read(source, "note", ""));
+      },
+      get running() {
+        return running(source);
+      },
+      get calls() {
+        return callsOf(source, historyOf(source));
+      },
+      get history() {
+        return historyOf(source);
+      },
     },
     actions: {
       setPolicy(changes) {
@@ -706,7 +947,9 @@ export function claimsResultCtx(source = {}) {
         return call(source, "inspect");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;
@@ -721,9 +964,12 @@ export function claimsOrderOptions(orders, shown, selected) {
   const list = Array.isArray(orders) ? orders.filter(isObject) : [];
   const current = list.find((order) => order.id === selected) || list[0] || null;
   const byId = new Map(list.map((order) => [order.id, order]));
-  const options = (Array.isArray(shown) ? shown : []).map((item) => byId.get(item?.id)).filter(Boolean)
+  const options = (Array.isArray(shown) ? shown : [])
+    .map((item) => byId.get(item?.id))
+    .filter(Boolean)
     .map((order) => ({ order, selected: order === current, hidden: false }));
-  if (current && !options.some((option) => option.order === current)) options.unshift({ order: current, selected: true, hidden: true });
+  if (current && !options.some((option) => option.order === current))
+    options.unshift({ order: current, selected: true, hidden: true });
   return options;
 }
 

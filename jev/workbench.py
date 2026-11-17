@@ -117,8 +117,9 @@ def request_images(state: Any, questions: Dict[str, dict], specs: Any) -> Dict[s
         raise WorkbenchError(str(err)) from err
     unused = images.unreferenced(assets, state, questions)
     if unused:
-        raise WorkbenchError("Image %s is not referenced. Put its reference in the state or a question, "
-                             "or remove it." % unused[0])
+        raise WorkbenchError(
+            "Image %s is not referenced. Put its reference in the state or a question, or remove it." % unused[0]
+        )
     if has_box(questions) and not assets:
         raise WorkbenchError("Box questions need an image. Add one under Images and reference it in the state.")
     return assets
@@ -351,8 +352,10 @@ def validate_rows(rows: Any) -> List[Any]:
     if not rows:
         raise WorkbenchError("No rows to save")
     if len(rows) > MAX_BULK_ROWS:
-        raise WorkbenchError("A dataset holds up to %d rows, the most one Bulk run takes; this has %d. "
-                             "Split the rows into several datasets." % (MAX_BULK_ROWS, len(rows)))
+        raise WorkbenchError(
+            "A dataset holds up to %d rows, the most one Bulk run takes; this has %d. "
+            "Split the rows into several datasets." % (MAX_BULK_ROWS, len(rows))
+        )
     for number, row in enumerate(rows, 1):
         if not isinstance(row, (str, dict, list)):
             raise WorkbenchError("Row %d must be text, a JSON object, or a JSON array" % number)
@@ -370,8 +373,10 @@ def picture_name(name: Any) -> str:
     """A row picture's name, checked: a bundled sample, or a file saved in data/workbench/images."""
     if isinstance(name, str) and (name in images.SAMPLES or IMAGE_FILE.fullmatch(name)):
         return name
-    raise WorkbenchError("%s must name a sample picture (%s) or a picture saved with Add pictures"
-                         % (IMAGE_KEY, ", ".join(images.SAMPLES)))
+    raise WorkbenchError(
+        "%s must name a sample picture (%s) or a picture saved with Add pictures"
+        % (IMAGE_KEY, ", ".join(images.SAMPLES))
+    )
 
 
 def row_test(row: Any) -> bool:
@@ -401,8 +406,9 @@ def row_picture(row: Any) -> Optional[str]:
     if not isinstance(row, dict) or IMAGE_KEY not in row:
         return None
     if PHOTO_FIELD in row:
-        raise WorkbenchError("a row with %s cannot also have its own %r field: the picture is sent under it"
-                             % (IMAGE_KEY, PHOTO_FIELD))
+        raise WorkbenchError(
+            "a row with %s cannot also have its own %r field: the picture is sent under it" % (IMAGE_KEY, PHOTO_FIELD)
+        )
     return picture_name(row[IMAGE_KEY])
 
 
@@ -470,14 +476,28 @@ def dataset_summary(dataset: dict) -> dict:
     check = dataset.get("check")
     check = check if isinstance(check, dict) else None
     pin = pin_note(str(check.get("model") or ""), check.get("tuned_on")) if check else None
-    return {"id": dataset.get("id"), "name": dataset.get("name"), "notes": dataset.get("notes", ""),
-            "saved_at": dataset.get("saved_at"), "rows": len(rows), "labeled": labeled_rows, "labels": labeled,
-            "questions": len(dataset.get("questions") or {}), "check": check, "check_notes": [pin] if pin else [],
-            "guidelines": len(dataset["guidelines"]) if isinstance(dataset.get("guidelines"), dict) else 0,
-            "test": {"rows": test_rows, "labeled": test_labeled,
-                     "share": test_labeled / labeled_rows if labeled_rows else None,
-                     "looks": len(test.get("looks") or []) if test else 0,
-                     "locked_at": test.get("locked_at") if test else None} if test_rows else None}
+    return {
+        "id": dataset.get("id"),
+        "name": dataset.get("name"),
+        "notes": dataset.get("notes", ""),
+        "saved_at": dataset.get("saved_at"),
+        "rows": len(rows),
+        "labeled": labeled_rows,
+        "labels": labeled,
+        "questions": len(dataset.get("questions") or {}),
+        "check": check,
+        "check_notes": [pin] if pin else [],
+        "guidelines": len(dataset["guidelines"]) if isinstance(dataset.get("guidelines"), dict) else 0,
+        "test": {
+            "rows": test_rows,
+            "labeled": test_labeled,
+            "share": test_labeled / labeled_rows if labeled_rows else None,
+            "looks": len(test.get("looks") or []) if test else 0,
+            "locked_at": test.get("locked_at") if test else None,
+        }
+        if test_rows
+        else None,
+    }
 
 
 def _dataset_text(dataset: dict) -> str:
@@ -531,8 +551,12 @@ def prepare_dataset(spec: dict) -> dict:
     name = str(spec.get("name") or "").strip()[:120]
     if not SLUG.sub("", name.lower()):
         raise WorkbenchError("Give the dataset a name")
-    dataset = {"id": slugify(name), "name": name, "notes": str(spec.get("notes") or "")[:2000],
-               "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    dataset = {
+        "id": slugify(name),
+        "name": name,
+        "notes": str(spec.get("notes") or "")[:2000],
+        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
     if spec.get("questions"):
         dataset["questions"] = bulk_questions(spec["questions"])
     if spec.get("rules"):  # Policy's consistency rules (jev/rules.py), as written, comments included
@@ -550,8 +574,9 @@ def prepare_dataset(spec: dict) -> dict:
     dropped = None
     if prior is not None:
         try:
-            dataset["check"] = dict(checks.validate_check(prior, dataset.get("questions")),
-                                    saved_at=prior.get("saved_at"))
+            dataset["check"] = dict(
+                checks.validate_check(prior, dataset.get("questions")), saved_at=prior.get("saved_at")
+            )
         except WorkbenchError as err:
             dropped = str(err)
     if spec.get("guidelines") is not None:  # human-only: never part of a request, a check, or a gate
@@ -564,8 +589,10 @@ def prepare_dataset(spec: dict) -> dict:
     if any(row_test(split_labels(r, i + 1)[0]) for i, r in enumerate(dataset["rows"])):
         # Keep the record of how often the test rows were scored; a dataset saved with test rows and no record starts one.
         prior = _prior(dataset["id"], "test") or {}
-        dataset["test"] = {"locked_at": prior.get("locked_at") or dataset["saved_at"],
-                           "looks": prior.get("looks") if isinstance(prior.get("looks"), list) else []}
+        dataset["test"] = {
+            "locked_at": prior.get("locked_at") or dataset["saved_at"],
+            "looks": prior.get("looks") if isinstance(prior.get("looks"), list) else [],
+        }
     if dataset.get("questions"):  # a dataset reruns its questions, so a Box question needs a picture on every row
         _need_pictures([split_labels(r, i + 1) for i, r in enumerate(dataset["rows"])], dataset["questions"])
     if len(_dataset_text(dataset)) > MAX_DATASET_CHARS:
@@ -631,8 +658,14 @@ def run_item(client: JevClient, item: dict) -> dict:
         assets = item_images(item)
         result = client.system_one(item["state"], item["questions"], assets=assets or None)
     except (JevError, WorkbenchError, images.ImageError) as err:
-        return {"id": item.get("id"), "name": item.get("name"), "error": str(err), "ok": False,
-                "results": {}, "elapsed_ms": (time.perf_counter() - started) * 1000}
+        return {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "error": str(err),
+            "ok": False,
+            "results": {},
+            "elapsed_ms": (time.perf_counter() - started) * 1000,
+        }
     results = {}
     expectations = item.get("expect") or {}
     ok = True
@@ -653,8 +686,15 @@ def run_item(client: JevClient, item: dict) -> dict:
         if verdict["ok"] is False:
             ok = False
         results[qid] = dict(verdict, answer=answer)
-    return {"id": item.get("id"), "name": item.get("name"), "ok": bool(ok), "results": results,
-            "meta": result.meta(), "trace": result.trace(), "elapsed_ms": (time.perf_counter() - started) * 1000}
+    return {
+        "id": item.get("id"),
+        "name": item.get("name"),
+        "ok": bool(ok),
+        "results": results,
+        "meta": result.meta(),
+        "trace": result.trace(),
+        "elapsed_ms": (time.perf_counter() - started) * 1000,
+    }
 
 
 def run_items(client: JevClient, items: List[dict]) -> dict:
@@ -662,9 +702,13 @@ def run_items(client: JevClient, items: List[dict]) -> dict:
     with ThreadPoolExecutor(max_workers=min(BULK_CONCURRENCY, max(1, len(items)))) as pool:
         runs = list(pool.map(lambda it: run_item(client, it), items))
     passed = sum(1 for r in runs if r["ok"])
-    return {"runs": runs, "passed": passed, "failed": len(runs) - passed,
-            "wall_ms": (time.perf_counter() - started) * 1000,
-            "cost_usd": sum(r.get("meta", {}).get("cost_usd", 0.0) for r in runs)}
+    return {
+        "runs": runs,
+        "passed": passed,
+        "failed": len(runs) - passed,
+        "wall_ms": (time.perf_counter() - started) * 1000,
+        "cost_usd": sum(r.get("meta", {}).get("cost_usd", 0.0) for r in runs),
+    }
 
 
 # --- bulk ----------------------------------------------------------------------------------
@@ -721,8 +765,10 @@ def _need_pictures(split: List[tuple], questions: Dict[str, dict], indices: Opti
         selected = range(len(split)) if indices is None else indices
         bare = [i + 1 for i in selected if row_picture(split[i][0]) is None]
         if bare:
-            raise WorkbenchError("Box questions need a picture on every row: row %d has no %s. Add pictures, or "
-                                 "remove the Box questions." % (bare[0], IMAGE_KEY))
+            raise WorkbenchError(
+                "Box questions need a picture on every row: row %d has no %s. Add pictures, or "
+                "remove the Box questions." % (bare[0], IMAGE_KEY)
+            )
 
 
 def _split_rows(rows: List[Any]) -> List[tuple]:
@@ -834,8 +880,9 @@ def prepare_bulk_selection(rows: List[Any], questions: Any, indices: Any = None)
         selected = list(range(len(split)))
     else:
         if not isinstance(indices, list) or any(type(i) is not int or not 0 <= i < len(split) for i in indices):
-            raise WorkbenchError("indices must be a list of row numbers within the first %d rows (starting at 0)"
-                                 % len(split))
+            raise WorkbenchError(
+                "indices must be a list of row numbers within the first %d rows (starting at 0)" % len(split)
+            )
         if len(set(indices)) != len(indices):
             raise WorkbenchError("indices must not repeat a row number")
         selected = list(indices)
@@ -843,8 +890,14 @@ def prepare_bulk_selection(rows: List[Any], questions: Any, indices: Any = None)
     return questions, split, selected
 
 
-def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "text", model: Optional[str] = None,
-             indices: Any = None) -> dict:
+def run_bulk(
+    client: JevClient,
+    rows: List[Any],
+    questions: Any,
+    field: str = "text",
+    model: Optional[str] = None,
+    indices: Any = None,
+) -> dict:
     """Selected rows with the same questions. Freeze the requested model once for the whole batch."""
     questions, split, selected = prepare_bulk_selection(rows, questions, indices)
     asked = model or client.model
@@ -852,11 +905,17 @@ def run_bulk(client: JevClient, rows: List[Any], questions: Any, field: str = "t
     outcomes, stopped = _run_jobs(client, split, [(i, questions, asked, None) for i in selected], field)
     results = [dict(_row_base(split, i), **outcome) for i, outcome in zip(selected, outcomes)]
     done = [r for r in results if "answers" in r]
-    return {"results": results, "wall_ms": (time.perf_counter() - started) * 1000,
-            "rows": len(selected), "completed": len(done), "stopped": stopped, "model": asked,
-            "labeled": sum(1 for r in results if r.get("expect")),
-            "cost_usd": sum(r["meta"]["cost_usd"] for r in done),
-            "input_tokens": sum(r["meta"]["input_tokens"] for r in done)}
+    return {
+        "results": results,
+        "wall_ms": (time.perf_counter() - started) * 1000,
+        "rows": len(selected),
+        "completed": len(done),
+        "stopped": stopped,
+        "model": asked,
+        "labeled": sum(1 for r in results if r.get("expect")),
+        "cost_usd": sum(r["meta"]["cost_usd"] for r in done),
+        "input_tokens": sum(r["meta"]["input_tokens"] for r in done),
+    }
 
 
 # --- compare -------------------------------------------------------------------------------
@@ -885,10 +944,12 @@ def validate_variants(variants: Any) -> List[dict]:
         if not isinstance(average, bool):
             raise WorkbenchError("Variant %s: average_orders must be true or false" % name)
         if average and not orders.averaged_ids(questions):
-            raise WorkbenchError("Variant %s: averaging over both orders needs a Choice question with two or more options"
-                                 % name)
-        out.append({"questions": questions, "model": (model or "").strip() or None, "perturb": kind,
-                    "average_orders": average})
+            raise WorkbenchError(
+                "Variant %s: averaging over both orders needs a Choice question with two or more options" % name
+            )
+        out.append(
+            {"questions": questions, "model": (model or "").strip() or None, "perturb": kind, "average_orders": average}
+        )
     return out
 
 
@@ -914,7 +975,9 @@ def prepare_compare(client: JevClient, rows: List[Any], variants: Any) -> tuple:
     # Resolve a blank model once: the current model can change in Settings while the run is going,
     # and every call of a variant must use the same model.
     models = [v["model"] or client.model for v in variants]
-    asked = [[v["questions"]] + ([orders.reverse_options(v["questions"])] if v["average_orders"] else []) for v in variants]
+    asked = [
+        [v["questions"]] + ([orders.reverse_options(v["questions"])] if v["average_orders"] else []) for v in variants
+    ]
     split = _split_rows(rows)
     held_out = sum(1 for row, _ in split if row_test(row))
     split = [s for s in split if not row_test(s[0])]  # test rows never choose between variants
@@ -922,8 +985,12 @@ def prepare_compare(client: JevClient, rows: List[Any], variants: Any) -> tuple:
         raise WorkbenchError("Every row is a test row. Compare chooses between variants, so it leaves test rows out.")
     for v in variants:
         _need_pictures(split, v["questions"])
-    jobs = [(i, questions, model, v["perturb"]) for i in range(len(split))
-            for v, model, sets in zip(variants, models, asked) for questions in sets]
+    jobs = [
+        (i, questions, model, v["perturb"])
+        for i in range(len(split))
+        for v, model, sets in zip(variants, models, asked)
+        for questions in sets
+    ]
     return variants, models, asked, split, held_out, jobs
 
 
@@ -937,9 +1004,9 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     width = sum(len(sets) for sets in asked)
     results = []
     for i in range(len(split)):
-        calls, runs = flat[i * width:(i + 1) * width], []
+        calls, runs = flat[i * width : (i + 1) * width], []
         for v, sets in zip(variants, asked):
-            taken, calls = calls[:len(sets)], calls[len(sets):]
+            taken, calls = calls[: len(sets)], calls[len(sets) :]
             runs.append(_pair(taken, v["questions"]) if len(taken) == 2 else taken[0])
         results.append(dict(_row_base(split, i), runs=runs))
     summaries = []
@@ -948,25 +1015,45 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
         spent = [r["runs"][v]["meta"] for r in results if "meta" in r["runs"][v]]
         latencies = [o["meta"]["latency_ms"] for o in done]
         kind = variant["perturb"]
-        summaries.append({"name": compare.NAMES[v], "model": models[v], "perturb": kind,
-                          # rows sent rewritten, and rows sent as written because the rewrite left them unchanged
-                          "perturbed_rows": sum(1 for r in results if "input" in r["runs"][v]),
-                          "unperturbed_rows": sum(1 for r in results if kind and "input" not in r["runs"][v]
-                                                  and "skipped" not in r["runs"][v]),
-                          "average_orders": variant["average_orders"],
-                          "orders": orders.disagreement([r["runs"][v] for r in results], variant["questions"])
-                          if variant["average_orders"] else None,
-                          "questions": variant["questions"], "completed": len(done),
-                          "errors": sum(1 for r in results if "error" in r["runs"][v]),
-                          "cost_usd": sum(m["cost_usd"] for m in spent),
-                          "input_tokens": sum(m["input_tokens"] for m in spent),
-                          "latency_ms_median": statistics.median(latencies) if latencies else None})
-    return {"variants": summaries, "results": results, "rows": len(split), "held_out": held_out, "stopped": stopped,
-            "agreement": compare.agreement(results, [v["questions"] for v in variants], models[0] == models[1],
-                                           [v["perturb"] for v in variants], [v["average_orders"] for v in variants]),
-            "labeled": sum(1 for r in results if r.get("expect")),
-            "wall_ms": (time.perf_counter() - started) * 1000,
-            "cost_usd": sum(s["cost_usd"] for s in summaries)}
+        summaries.append(
+            {
+                "name": compare.NAMES[v],
+                "model": models[v],
+                "perturb": kind,
+                # rows sent rewritten, and rows sent as written because the rewrite left them unchanged
+                "perturbed_rows": sum(1 for r in results if "input" in r["runs"][v]),
+                "unperturbed_rows": sum(
+                    1 for r in results if kind and "input" not in r["runs"][v] and "skipped" not in r["runs"][v]
+                ),
+                "average_orders": variant["average_orders"],
+                "orders": orders.disagreement([r["runs"][v] for r in results], variant["questions"])
+                if variant["average_orders"]
+                else None,
+                "questions": variant["questions"],
+                "completed": len(done),
+                "errors": sum(1 for r in results if "error" in r["runs"][v]),
+                "cost_usd": sum(m["cost_usd"] for m in spent),
+                "input_tokens": sum(m["input_tokens"] for m in spent),
+                "latency_ms_median": statistics.median(latencies) if latencies else None,
+            }
+        )
+    return {
+        "variants": summaries,
+        "results": results,
+        "rows": len(split),
+        "held_out": held_out,
+        "stopped": stopped,
+        "agreement": compare.agreement(
+            results,
+            [v["questions"] for v in variants],
+            models[0] == models[1],
+            [v["perturb"] for v in variants],
+            [v["average_orders"] for v in variants],
+        ),
+        "labeled": sum(1 for r in results if r.get("expect")),
+        "wall_ms": (time.perf_counter() - started) * 1000,
+        "cost_usd": sum(s["cost_usd"] for s in summaries),
+    }
 
 
 def map_until_stopped(fn: Callable, items: list, max_workers: int, stop: threading.Event, skipped: Callable) -> list:
@@ -1037,7 +1124,9 @@ def python_questions(questions: Dict[str, dict]) -> List[str]:
             lines.append("    %r: Noul(" % qid)
             if q.get("criteria"):
                 c = q["criteria"]
-                args.append("criteria=NoulCriteria(true=%s, false=%s)" % (_py(c.get("true"), 8), _py(c.get("false"), 8)))
+                args.append(
+                    "criteria=NoulCriteria(true=%s, false=%s)" % (_py(c.get("true"), 8), _py(c.get("false"), 8))
+                )
         lines.append("        " + ",\n        ".join(args) + ",")
         lines.append("    ),")
     return lines + ["}"]
@@ -1047,17 +1136,35 @@ def export_python(state: Any, questions: Dict[str, dict], model: str, refs: Dict
     refs = refs or {}
     names = ["Choice", "Noul", "NoulCriteria", "Score", "TypeSafeClient"] + (["Box"] if has_box(questions) else [])
     names += ["Image"] if refs else []
-    lines = (["from pathlib import Path", ""] if refs else []) + [
-        "from typesafe_sdk import %s" % ", ".join(sorted(names)), "",
-        "client = TypeSafeClient(model=%r)  # reads TYPESAFE_API_KEY from the environment" % model, "",
-        "state = %s" % _py(state), ""] + python_questions(questions)
+    lines = (
+        (["from pathlib import Path", ""] if refs else [])
+        + [
+            "from typesafe_sdk import %s" % ", ".join(sorted(names)),
+            "",
+            "client = TypeSafeClient(model=%r)  # reads TYPESAFE_API_KEY from the environment" % model,
+            "",
+            "state = %s" % _py(state),
+            "",
+        ]
+        + python_questions(questions)
+    )
     if refs:
-        lines += ["", "# Each reference in the text is replaced by its picture. Save the pictures beside this file.",
-                  "assets = {"] + ["    %r: Image(Path(%r))," % (ref, image_file(ref, spec)) for ref, spec in refs.items()] + [
-            "}", "",
-            "# Images and Box questions are early TypeSafe features and need this header. Box needs Jev 1.14+.",
-            "result = client.system_one(state, questions, assets=assets,",
-            "                           extra_headers={\"TypeSafe-Danger-Zone-Images\": \"true\"})", ""]
+        lines += (
+            [
+                "",
+                "# Each reference in the text is replaced by its picture. Save the pictures beside this file.",
+                "assets = {",
+            ]
+            + ["    %r: Image(Path(%r))," % (ref, image_file(ref, spec)) for ref, spec in refs.items()]
+            + [
+                "}",
+                "",
+                "# Images and Box questions are early TypeSafe features and need this header. Box needs Jev 1.14+.",
+                "result = client.system_one(state, questions, assets=assets,",
+                '                           extra_headers={"TypeSafe-Danger-Zone-Images": "true"})',
+                "",
+            ]
+        )
     else:
         lines += ["", "result = client.system_one(state, questions)", ""]
     lines.append("answers = {")
@@ -1070,51 +1177,65 @@ def export_python(state: Any, questions: Dict[str, dict], model: str, refs: Dict
             lines.append("    %r: result.scores[%r],    # .score, .probabilities, .confidence" % (qid, qid))
         else:
             lines.append("    %r: result.nouls[%r],     # .noul is P(yes)" % (qid, qid))
-    lines += ["}", "", "# Your code owns the decision. Read answers by question id:",
-              "# answer = answers[%r]" % next(iter(questions))]
+    lines += [
+        "}",
+        "",
+        "# Your code owns the decision. Read answers by question id:",
+        "# answer = answers[%r]" % next(iter(questions)),
+    ]
     return "\n".join(lines) + "\n"
 
 
 def export_javascript(state: Any, questions: Dict[str, dict], model: str, refs: Dict[str, dict] = None) -> str:
     body = json.dumps({"state": state, "model": model, "questions": questions}, indent=2, ensure_ascii=False)
     if not refs:
-        return ("import { TypeSafeClient } from \"@typesafe-ai/sdk\";\n\n"
-                "const client = new TypeSafeClient(); // reads TYPESAFE_API_KEY\n\n"
-                "const { state, model, questions } = %s;\n\n"
-                "const result = await client.systemOne({ state, model, questions });\n"
-                "console.log(result.answers);\n" % body)
-    assets = "\n".join("  %s: image(await openAsBlob(%s))," % (json.dumps(ref), json.dumps(image_file(ref, spec)))
-                       for ref, spec in refs.items())
-    return ("import { openAsBlob } from \"node:fs\";\n"
-            "import { image, TypeSafeClient } from \"@typesafe-ai/sdk\";\n\n"
+        return (
+            'import { TypeSafeClient } from "@typesafe-ai/sdk";\n\n'
             "const client = new TypeSafeClient(); // reads TYPESAFE_API_KEY\n\n"
             "const { state, model, questions } = %s;\n\n"
-            "// Each reference in the text is replaced by its picture. Save the pictures beside this file.\n"
-            "const assets = {\n%s\n};\n\n"
-            "// Images and Box questions are early TypeSafe features and need this header. Box needs Jev 1.14+.\n"
-            "const result = await client.systemOne({ state, model, questions, assets },\n"
-            "  { headers: { \"TypeSafe-Danger-Zone-Images\": \"true\" } });\n"
-            "console.log(result.answers);\n" % (body, assets))
+            "const result = await client.systemOne({ state, model, questions });\n"
+            "console.log(result.answers);\n" % body
+        )
+    assets = "\n".join(
+        "  %s: image(await openAsBlob(%s))," % (json.dumps(ref), json.dumps(image_file(ref, spec)))
+        for ref, spec in refs.items()
+    )
+    return (
+        'import { openAsBlob } from "node:fs";\n'
+        'import { image, TypeSafeClient } from "@typesafe-ai/sdk";\n\n'
+        "const client = new TypeSafeClient(); // reads TYPESAFE_API_KEY\n\n"
+        "const { state, model, questions } = %s;\n\n"
+        "// Each reference in the text is replaced by its picture. Save the pictures beside this file.\n"
+        "const assets = {\n%s\n};\n\n"
+        "// Images and Box questions are early TypeSafe features and need this header. Box needs Jev 1.14+.\n"
+        "const result = await client.systemOne({ state, model, questions, assets },\n"
+        '  { headers: { "TypeSafe-Danger-Zone-Images": "true" } });\n'
+        "console.log(result.answers);\n" % (body, assets)
+    )
 
 
 def export_curl(state: Any, questions: Dict[str, dict], model: str, refs: Dict[str, dict] = None) -> str:
     request = {"state": state, "model": model, "questions": questions}
     if not refs:
         body = json.dumps(request, indent=2, ensure_ascii=False)
-        return ("curl -X POST https://api.typesafe.ai/v1/systemone \\\n"
-                "  -H \"Authorization: Bearer $TYPESAFE_API_KEY\" \\\n"
-                "  -H \"Content-Type: application/json\" \\\n"
-                "  -d @- <<'EOF'\n%s\nEOF\n" % body)
+        return (
+            "curl -X POST https://api.typesafe.ai/v1/systemone \\\n"
+            '  -H "Authorization: Bearer $TYPESAFE_API_KEY" \\\n'
+            '  -H "Content-Type: application/json" \\\n'
+            "  -d @- <<'EOF'\n%s\nEOF\n" % body
+        )
     parts = {ref: "image-%d" % i for i, ref in enumerate(refs)}
     request["assets"] = {ref: {"type": "image", "part": part} for ref, part in parts.items()}
     body = json.dumps(request, indent=2, ensure_ascii=False)
     files = "".join(" \\\n  -F '%s=@%s'" % (part, image_file(ref, refs[ref])) for ref, part in parts.items())
-    return ("# Multipart: the JSON request first, then one file part per picture.\n"
-            "cat > request.json <<'EOF'\n%s\nEOF\n\n"
-            "curl https://api.typesafe.ai/v1/systemone \\\n"
-            "  -H \"Authorization: Bearer $TYPESAFE_API_KEY\" \\\n"
-            "  -H \"TypeSafe-Danger-Zone-Images: true\" \\\n"
-            "  -F 'request=<request.json;type=application/json'%s\n" % (body, files))
+    return (
+        "# Multipart: the JSON request first, then one file part per picture.\n"
+        "cat > request.json <<'EOF'\n%s\nEOF\n\n"
+        "curl https://api.typesafe.ai/v1/systemone \\\n"
+        '  -H "Authorization: Bearer $TYPESAFE_API_KEY" \\\n'
+        '  -H "TypeSafe-Danger-Zone-Images: true" \\\n'
+        "  -F 'request=<request.json;type=application/json'%s\n" % (body, files)
+    )
 
 
 def export(state: Any, questions: Any, model: str, image_specs: Any = None) -> dict:
@@ -1137,6 +1258,8 @@ def export(state: Any, questions: Any, model: str, image_specs: Any = None) -> d
                 if fmt not in ("png", "jpg"):
                     raise WorkbenchError("Image format must be png or jpg, not %r" % (fmt,))
                 refs[ref] = {"format": fmt}
-    return {"python": export_python(state, questions, model, refs),
-            "javascript": export_javascript(state, questions, model, refs),
-            "curl": export_curl(state, questions, model, refs)}
+    return {
+        "python": export_python(state, questions, model, refs),
+        "javascript": export_javascript(state, questions, model, refs),
+        "curl": export_curl(state, questions, model, refs),
+    }

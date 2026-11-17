@@ -9,8 +9,10 @@ from jev import compare, compare_workflows, prelabel
 from jev.workbench import WorkbenchError
 
 
-QUESTIONS = {"urgent": {"type": "noul", "instructions": "Urgent?"},
-             "level": {"type": "score", "instructions": "Severity?", "criteria": ["Low", "High"]}}
+QUESTIONS = {
+    "urgent": {"type": "noul", "instructions": "Urgent?"},
+    "level": {"type": "score", "instructions": "Severity?", "criteria": ["Low", "High"]},
+}
 
 
 def answer(value):
@@ -20,29 +22,44 @@ def answer(value):
 class CompareSliceTests(unittest.TestCase):
     def test_slices_score_same_pairs_with_current_signal_and_basis(self):
         rows = [
-            {"index": 0, "row": {"channel": "email"}, "label": True, "answers": [answer(.9), answer(.2)]},
-            {"index": 1, "row": {"channel": "email"}, "label": True, "answers": [answer(.8), None]},
-            {"index": 2, "row": {"channel": "chat"}, "label": False, "answers": [answer(.8), answer(.1)]},
-            {"index": 3, "row": {"channel": "secret-held", "_test": True}, "label": True,
-             "answers": [answer(.9), answer(.1)]},
+            {"index": 0, "row": {"channel": "email"}, "label": True, "answers": [answer(0.9), answer(0.2)]},
+            {"index": 1, "row": {"channel": "email"}, "label": True, "answers": [answer(0.8), None]},
+            {"index": 2, "row": {"channel": "chat"}, "label": False, "answers": [answer(0.8), answer(0.1)]},
+            {
+                "index": 3,
+                "row": {"channel": "secret-held", "_test": True},
+                "label": True,
+                "answers": [answer(0.9), answer(0.1)],
+            },
         ]
-        with patch("jev.client.JevClient.system_one", side_effect=AssertionError("no calls")), \
-                patch("jev.workbench.write_dataset", side_effect=AssertionError("no writes")):
+        with (
+            patch("jev.client.JevClient.system_one", side_effect=AssertionError("no calls")),
+            patch("jev.workbench.write_dataset", side_effect=AssertionError("no writes")),
+        ):
             report = compare_workflows.by_slice(rows, "channel", "top_probability", "B", "lower")
-        self.assertEqual((report["paired_rows"], report["field"], report["bound"], report["signal"]),
-                         (2, "channel", "lower", "top_probability"))
+        self.assertEqual(
+            (report["paired_rows"], report["field"], report["bound"], report["signal"]),
+            (2, "channel", "lower", "top_probability"),
+        )
         for group in report["slices"]:
-            expected = compare.evaluate([r for r in rows if r["row"]["channel"] == group["value"]],
-                                        "top_probability", "B", "lower")
+            expected = compare.evaluate(
+                [r for r in rows if r["row"]["channel"] == group["value"]], "top_probability", "B", "lower"
+            )
             self.assertEqual(group["paired"], expected["paired"])
-            self.assertEqual([v["correct"] for v in group["variants"]],
-                             [v["correct"] for v in expected["variants"]])
+            self.assertEqual([v["correct"] for v in group["variants"]], [v["correct"] for v in expected["variants"]])
         self.assertNotIn("secret-held", json.dumps(report))
 
     def test_fields_hide_values_until_selected_and_keep_full_identity(self):
         values = ["x" * 100 + "A", "x" * 100 + "B"]
-        rows = [{"index": index, "row": {"group": value, "_expect": {"urgent": True}},
-                 "label": True, "answers": [answer(.9), answer(.8)]} for index, value in enumerate(values)]
+        rows = [
+            {
+                "index": index,
+                "row": {"group": value, "_expect": {"urgent": True}},
+                "label": True,
+                "answers": [answer(0.9), answer(0.8)],
+            }
+            for index, value in enumerate(values)
+        ]
         blank = compare_workflows.by_slice(rows)
         self.assertEqual(blank["fields"], [{"name": "group", "values": 2}])
         self.assertEqual(blank["slices"], [])
@@ -53,9 +70,16 @@ class CompareSliceTests(unittest.TestCase):
     def test_invalid_choice_label_excluded_from_both_and_missing_labels_not_scored(self):
         def choice(pick, keys):
             return {"type": "choice", "choice": pick, "probabilities": {key: 1 / len(keys) for key in keys}}
-        rows = [{"index": i, "row": {"group": group}, "label": label,
-                 "answers": [choice("a", ["a", "b"]), choice("a", ["a", "c"])]}
-                for i, (group, label) in enumerate([("one", "b"), ("one", "a"), ("two", None)])]
+
+        rows = [
+            {
+                "index": i,
+                "row": {"group": group},
+                "label": label,
+                "answers": [choice("a", ["a", "b"]), choice("a", ["a", "c"])],
+            }
+            for i, (group, label) in enumerate([("one", "b"), ("one", "a"), ("two", None)])
+        ]
         report = compare_workflows.by_slice(rows, "group")
         self.assertEqual(report["slices"][0]["excluded"], 1)
         self.assertEqual([v["labeled"] for v in report["slices"][0]["variants"]], [1, 1])
@@ -64,14 +88,18 @@ class CompareSliceTests(unittest.TestCase):
 
 class CompareLabelingTests(unittest.TestCase):
     def test_maps_compare_positions_to_original_rows_and_preserves_source(self):
-        rows = [{"text": "held-secret", "_test": True, "_expect": {"urgent": True}},
-                {"text": "duplicate", "_image": "torn-bag"},
-                {"text": "already", "_expect": {"urgent": False, "level": 0}},
-                {"text": "duplicate", "_image": "torn-bag"},
-                ["array"]]
+        rows = [
+            {"text": "held-secret", "_test": True, "_expect": {"urgent": True}},
+            {"text": "duplicate", "_image": "torn-bag"},
+            {"text": "already", "_expect": {"urgent": False, "level": 0}},
+            {"text": "duplicate", "_image": "torn-bag"},
+            ["array"],
+        ]
         original = copy.deepcopy(rows)
-        with patch("jev.client.JevClient.system_one", side_effect=AssertionError("no calls")), \
-                patch("jev.workbench.write_dataset", side_effect=AssertionError("no writes")):
+        with (
+            patch("jev.client.JevClient.system_one", side_effect=AssertionError("no calls")),
+            patch("jev.workbench.write_dataset", side_effect=AssertionError("no writes")),
+        ):
             report = compare_workflows.labeling(rows, QUESTIONS, [0, 1, 2, 3], "urgent")
         self.assertEqual(rows, original)
         self.assertEqual([item["index"] for item in report["items"]], [1, 3])

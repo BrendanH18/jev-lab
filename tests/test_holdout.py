@@ -59,8 +59,7 @@ class FoldTests(unittest.TestCase):
         for key in set(keys):
             self.assertEqual(len({f for k, f in zip(keys, assigned) if k == key}), 1)
         order = list(reversed(range(len(keys))))
-        self.assertEqual(holdout.assign([keys[i] for i in order], [999] * len(keys), 5),
-                         [assigned[i] for i in order])
+        self.assertEqual(holdout.assign([keys[i] for i in order], [999] * len(keys), 5), [assigned[i] for i in order])
         self.assertEqual(set(assigned), set(range(5)))
 
     def test_input_identity_ignores_labels_markers_and_json_order_but_keeps_pictures(self):
@@ -68,8 +67,10 @@ class FoldTests(unittest.TestCase):
         right = {"row": {"channel": "email", "text": "ticket", "_test": True}, "key": "ignored"}
         self.assertEqual(holdout._key(left), holdout._key(right))
         self.assertEqual(holdout._key({"row": "ticket"}), holdout._key({"row": {"text": "ticket"}}))
-        self.assertNotEqual(holdout._key({"row": {"text": "ticket", "_image": "a.png"}}),
-                            holdout._key({"row": {"text": "ticket", "_image": "b.png"}}))
+        self.assertNotEqual(
+            holdout._key({"row": {"text": "ticket", "_image": "a.png"}}),
+            holdout._key({"row": {"text": "ticket", "_image": "b.png"}}),
+        )
 
 
 class EvaluateTests(unittest.TestCase):
@@ -147,7 +148,9 @@ class EvaluateTests(unittest.TestCase):
                                 break
                         if lowest is None:
                             continue
-                        held = [right[i] for i in range(len(rows)) if fold[i] == f and signal[i] + calibrate._EPS >= lowest]
+                        held = [
+                            right[i] for i in range(len(rows)) if fold[i] == f and signal[i] + calibrate._EPS >= lowest
+                        ]
                         auto += len(held)
                         good += sum(held)
                     unseen = report["targets"][t]["unseen"]
@@ -202,8 +205,10 @@ class EvaluateTests(unittest.TestCase):
     def test_sample_rows_end_to_end(self):
         sample = workbench.load_sample_rows()
         report = workbench.run_bulk(FakeClient(), sample, examples.BULK_QUESTIONS)
-        rows = [{"index": r["index"], "answers": r["answers"], "labels": r["expect"], "key": str(r["row"])}
-                for r in report["results"]]
+        rows = [
+            {"index": r["index"], "answers": r["answers"], "labels": r["expect"], "key": str(r["row"])}
+            for r in report["results"]
+        ]
         qids = list(examples.BULK_QUESTIONS)
         result = holdout.evaluate(rows, qids)
         self.assertEqual((result["labeled"], result["folds"]), (40, 5))

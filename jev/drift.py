@@ -142,7 +142,7 @@ def mann_whitney(x: Sequence[float], y: Sequence[float]) -> Optional[float]:
         rank = (i + j) / 2 + 1
         ranks += [rank] * size
         rank_x += rank * sum(1 for k in range(i, j + 1) if pooled[k][1] == 0)
-        ties += size ** 3 - size
+        ties += size**3 - size
         i = j + 1
     small = min(n1, n2)
     if comb(n, small) <= EXACT_ARRANGEMENTS:
@@ -209,7 +209,9 @@ def _band(value: float) -> int:
     return sum(1 for cut in BANDS if value + calibrate._EPS >= cut)
 
 
-def _route(rows: List[dict], gates: Dict[str, float], rules: Optional[List[dict]] = None) -> Tuple[List[dict], List[dict]]:
+def _route(
+    rows: List[dict], gates: Dict[str, float], rules: Optional[List[dict]] = None
+) -> Tuple[List[dict], List[dict]]:
     """(routed rows, automated rows). A row is routed when every gated answer is readable, and automated when every
     signal clears its threshold and no rule holds it (jev/rules.py)."""
     routed = [r for r in rows if all(q in r["read"] for q in gates)]
@@ -281,7 +283,9 @@ def interval(ref: list, new: list, reps: int = DRAWS, seed: int = 0) -> Tuple[Op
         drawn = {g: rng.betavariate(g[2] + 0.5, g[3] - g[2] + 0.5) for g in kinds}
         values.append(sum(drawn[rng.choice(groups)] for _ in groups) / len(groups))
     values.sort()
-    point = sum(right / n for _lv, _g, right, n in groups) / len(groups)  # the estimate itself, which the interval holds
+    point = sum(right / n for _lv, _g, right, n in groups) / len(
+        groups
+    )  # the estimate itself, which the interval holds
     return min(point, values[int(0.025 * (reps - 1))]), max(point, values[int(0.975 * (reps - 1) + 0.5)])
 
 
@@ -290,17 +294,26 @@ def interval(ref: list, new: list, reps: int = DRAWS, seed: int = 0) -> Tuple[Op
 
 def _share(automated: int, routed: int) -> dict:
     low, high = calibrate.wilson(automated, routed)
-    return {"routed": routed, "automated": automated, "share": automated / routed if routed else None,
-            "share_low": low, "share_high": high}
+    return {
+        "routed": routed,
+        "automated": automated,
+        "share": automated / routed if routed else None,
+        "share_low": low,
+        "share_high": high,
+    }
 
 
 def _signal_summary(values: List[float]) -> dict:
-    return {"mean": statistics.fmean(values) if values else None,
-            "median": statistics.median(values) if values else None, "n": len(values)}
+    return {
+        "mean": statistics.fmean(values) if values else None,
+        "median": statistics.median(values) if values else None,
+        "n": len(values),
+    }
 
 
-def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict[str, dict],
-            dataset: Optional[dict] = None) -> dict:
+def compare(
+    reference: List[dict], new: List[dict], check: dict, questions: Dict[str, dict], dataset: Optional[dict] = None
+) -> dict:
     """Compare a run of the dataset's rows (workbench.run_bulk "results", labels under "expect") with a run of new
     rows, through a validated check's gate. Labels on the new rows are ignored."""
     gates = check["gates"]
@@ -316,9 +329,15 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
     # Which labeled dataset rows the gate automates, and whether each is right, scored as the check scores them.
     labeled: List[Tuple[tuple, int, bool]] = []
     accuracy = {"accuracy": None, "accuracy_low": None, "accuracy_high": None, "labeled_automated": 0}
-    scored_rows = [{"index": r["index"], "answers": r["answers"],
-                    "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates}}
-                   for r in reference if isinstance(r.get("answers"), dict)]
+    scored_rows = [
+        {
+            "index": r["index"],
+            "answers": r["answers"],
+            "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates},
+        }
+        for r in reference
+        if isinstance(r.get("answers"), dict)
+    ]
     if scored_rows:
         try:
             rep = policy.evaluate(scored_rows, gates, signal, check.get("rules"))
@@ -330,12 +349,19 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
                 if item["automated"] and item["index"] in by_index:
                     answers, band = _key(by_index[item["index"]]["read"], gates)
                     labeled.append((answers, band, item["correct"]))
-            accuracy = {"accuracy": rep["accuracy"], "accuracy_low": rep["accuracy_low"],
-                        "accuracy_high": rep["accuracy_high"], "labeled_automated": rep["automated"]}
+            accuracy = {
+                "accuracy": rep["accuracy"],
+                "accuracy_low": rep["accuracy_low"],
+                "accuracy_high": rep["accuracy_high"],
+                "labeled_automated": rep["automated"],
+            }
 
     tests: List[Optional[float]] = []
-    automation_p = (fisher_exact(len(ref_auto), len(ref_routed) - len(ref_auto), len(new_auto), len(new_routed) - len(new_auto))
-                    if ref_routed and new_routed else None)
+    automation_p = (
+        fisher_exact(len(ref_auto), len(ref_routed) - len(ref_auto), len(new_auto), len(new_routed) - len(new_auto))
+        if ref_routed and new_routed
+        else None
+    )
     tests.append(automation_p)
 
     per_question = []
@@ -353,19 +379,48 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
         n1, n2 = sum(ref_counts.values()), sum(new_counts.values())
         mix_p, method = mix_test(ref_counts, new_counts)
         signal_p = mann_whitney(ref_signals, new_signals)
-        mix = [{"answer": c, "reference": ref_counts[c], "new": new_counts.get(c, 0),
+        mix = [
+            {
+                "answer": c,
+                "reference": ref_counts[c],
+                "new": new_counts.get(c, 0),
                 "reference_share": ref_counts[c] / n1 if n1 else None,
-                "new_share": new_counts.get(c, 0) / n2 if n2 else None} for c in ref_counts]
-        mix += [{"answer": c, "reference": 0, "new": v, "reference_share": 0.0 if n1 else None,
-                 "new_share": v / n2 if n2 else None} for c, v in new_counts.items() if c not in ref_counts]
+                "new_share": new_counts.get(c, 0) / n2 if n2 else None,
+            }
+            for c in ref_counts
+        ]
+        mix += [
+            {
+                "answer": c,
+                "reference": 0,
+                "new": v,
+                "reference_share": 0.0 if n1 else None,
+                "new_share": v / n2 if n2 else None,
+            }
+            for c, v in new_counts.items()
+            if c not in ref_counts
+        ]
         distance = (sum(abs(m["reference_share"] - m["new_share"]) for m in mix) / 2) if n1 and n2 else None
         tests += [mix_p, signal_p]
-        per_question.append({
-            "qid": qid, "type": qtype, "gated": qid in gates, "threshold": gates.get(qid),
-            "reference_answered": n1, "new_answered": n2, "mix": mix, "distance": distance,
-            "mix_p": mix_p, "mix_method": method,
-            "signal": {"reference": _signal_summary(ref_signals), "new": _signal_summary(new_signals), "p": signal_p},
-        })
+        per_question.append(
+            {
+                "qid": qid,
+                "type": qtype,
+                "gated": qid in gates,
+                "threshold": gates.get(qid),
+                "reference_answered": n1,
+                "new_answered": n2,
+                "mix": mix,
+                "distance": distance,
+                "mix_p": mix_p,
+                "mix_method": method,
+                "signal": {
+                    "reference": _signal_summary(ref_signals),
+                    "new": _signal_summary(new_signals),
+                    "p": signal_p,
+                },
+            }
+        )
 
     adjusted = holm(tests)
     shifted = [p is not None and p < ALPHA for p in adjusted]
@@ -381,32 +436,58 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
     for answers, _band_, _right in labeled:
         support[answers] = support.get(answers, 0) + 1
     thin = [r for r, (answers, _b) in zip(new_auto, new_keys) if support.get(answers, 0) < MIN_STRATUM]
-    est = {"accuracy": value, "low": low, "high": high, "automated": len(new_auto),
-           "levels": {lv: levels.count(lv) for lv in LEVELS}}
+    est = {
+        "accuracy": value,
+        "low": low,
+        "high": high,
+        "automated": len(new_auto),
+        "levels": {lv: levels.count(lv) for lv in LEVELS},
+    }
 
     reasons: List[str] = []
     ref_share, new_share = _share(len(ref_auto), len(ref_routed)), _share(len(new_auto), len(new_routed))
     for name, rows, routed in (("dataset", ref_rows, ref_routed), ("new", new_rows, new_routed)):
         if routed and len(routed) < len(rows):
-            reasons.append("%d of %d %s rows have no readable answer to a gated question, so the comparison is not "
-                           "over every row. Run it again." % (len(rows) - len(routed), len(rows), name))
+            reasons.append(
+                "%d of %d %s rows have no readable answer to a gated question, so the comparison is not "
+                "over every row. Run it again." % (len(rows) - len(routed), len(rows), name)
+            )
     if not ref_routed or not new_routed:
-        reasons.append("No %s row has a readable answer to every gated question, so the runs cannot be compared."
-                       % ("dataset" if not ref_routed else "new"))
+        reasons.append(
+            "No %s row has a readable answer to every gated question, so the runs cannot be compared."
+            % ("dataset" if not ref_routed else "new")
+        )
     if automation["shifted"]:
-        reasons.append("The gate automates %s of the new rows and %s of the dataset's (adjusted p %s)."
-                       % (_pct(new_share["share"]), _pct(ref_share["share"]), _p(automation["p_adjusted"])))
+        reasons.append(
+            "The gate automates %s of the new rows and %s of the dataset's (adjusted p %s)."
+            % (_pct(new_share["share"]), _pct(ref_share["share"]), _p(automation["p_adjusted"]))
+        )
     for q in per_question:
         if q["mix_shifted"]:
             moved = max(q["mix"], key=_moved)
-            reasons.append("%s answers are mixed differently: %s is %s of new answers and %s of the dataset's "
-                           "(adjusted p %s)." % (q["qid"], moved["answer"], _pct(moved["new_share"]),
-                                                   _pct(moved["reference_share"]), _p(q["mix_p_adjusted"])))
+            reasons.append(
+                "%s answers are mixed differently: %s is %s of new answers and %s of the dataset's "
+                "(adjusted p %s)."
+                % (
+                    q["qid"],
+                    moved["answer"],
+                    _pct(moved["new_share"]),
+                    _pct(moved["reference_share"]),
+                    _p(q["mix_p_adjusted"]),
+                )
+            )
         if q["signal"]["shifted"]:
             s = q["signal"]
-            reasons.append("%s is %s confident on the new rows: median %.2f, against %.2f (adjusted p %s)."
-                           % (q["qid"], "less" if s["new"]["median"] < s["reference"]["median"] else "more",
-                              s["new"]["median"], s["reference"]["median"], _p(s["p_adjusted"])))
+            reasons.append(
+                "%s is %s confident on the new rows: median %.2f, against %.2f (adjusted p %s)."
+                % (
+                    q["qid"],
+                    "less" if s["new"]["median"] < s["reference"]["median"] else "more",
+                    s["new"]["median"],
+                    s["reference"]["median"],
+                    _p(s["p_adjusted"]),
+                )
+            )
 
     targets: Dict[str, dict] = {}
     bound = check["bound"]
@@ -414,22 +495,31 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
         ok = new_share["share"] + checks.EPS >= check["min_coverage"]
         targets["coverage"] = {"ok": ok, "value": new_share["share"], "target": check["min_coverage"]}
         if not ok:
-            reasons.append("The gate automates %s of the new rows, below the check's %s minimum."
-                           % (_pct(new_share["share"]), _pct(check["min_coverage"])))
+            reasons.append(
+                "The gate automates %s of the new rows, below the check's %s minimum."
+                % (_pct(new_share["share"]), _pct(check["min_coverage"]))
+            )
     if value is not None:
         measured = value if bound == "estimate" else low
         ok = measured + checks.EPS >= check["min_accuracy"]
         targets["accuracy"] = {"ok": ok, "value": measured, "target": check["min_accuracy"], "bound": bound}
         if not ok:
-            reasons.append("The estimated accuracy on the new automated rows is %s%s, below the check's %s target."
-                           % (_pct(value), " (95%% lower bound %s)" % _pct(low) if bound == "lower" else "",
-                              _pct(check["min_accuracy"])))
+            reasons.append(
+                "The estimated accuracy on the new automated rows is %s%s, below the check's %s target."
+                % (
+                    _pct(value),
+                    " (95%% lower bound %s)" % _pct(low) if bound == "lower" else "",
+                    _pct(check["min_accuracy"]),
+                )
+            )
     elif new_auto:
         reasons.append("No labeled dataset row is automated, so the accuracy on the new rows cannot be estimated.")
     if thin:
-        reasons.append("%d of %d new automated rows have gated answers fewer than %d labeled dataset rows share, so "
-                       "their estimate leans on unlike rows. Label some of them and add them to the dataset."
-                       % (len(thin), len(new_auto), MIN_STRATUM))
+        reasons.append(
+            "%d of %d new automated rows have gated answers fewer than %d labeled dataset rows share, so "
+            "their estimate leans on unlike rows. Label some of them and add them to the dataset."
+            % (len(thin), len(new_auto), MIN_STRATUM)
+        )
 
     if not ref_routed or not new_routed or len(ref_routed) < len(ref_rows) or len(new_routed) < len(new_rows):
         status = "error"
@@ -438,13 +528,26 @@ def compare(reference: List[dict], new: List[dict], check: dict, questions: Dict
     else:
         status = "steady"
     report = {
-        "status": status, "reasons": reasons, "alpha": ALPHA, "signal": signal, "gates": gates,
+        "status": status,
+        "reasons": reasons,
+        "alpha": ALPHA,
+        "signal": signal,
+        "gates": gates,
         "reference": dict(ref_share, rows=len(reference), answered=len(ref_rows), **accuracy),
         "new": dict(new_share, rows=len(new), answered=len(new_rows)),
-        "automation": automation, "questions": per_question, "estimate": est, "targets": targets,
+        "automation": automation,
+        "questions": per_question,
+        "estimate": est,
+        "targets": targets,
         "tests": sum(1 for p in tests if p is not None),
-        "thin": [{"index": r["index"], "row": checks._row_text(r["row"]),
-                  "answers": _shown(_key(r["read"], gates)[0], gates)} for r in thin[:ROWS_SHOWN]],
+        "thin": [
+            {
+                "index": r["index"],
+                "row": checks._row_text(r["row"]),
+                "answers": _shown(_key(r["read"], gates)[0], gates),
+            }
+            for r in thin[:ROWS_SHOWN]
+        ],
         "thin_total": len(thin),
     }
     if dataset is not None:
@@ -475,12 +578,24 @@ def _labeling(dataset: dict, thin: List[dict], questions: Dict[str, dict], gates
             # Arrays have no place for labels; wrapping one would change the state sent to the model.
             counts["unsupported"] += 1
             continue
-        items.append({"index": result["index"], "line": result["index"] + 1, "row": row,
-                      "labels": {q: None for q in questions}, "open": list(gates)})
+        items.append(
+            {
+                "index": result["index"],
+                "line": result["index"] + 1,
+                "row": row,
+                "labels": {q: None for q in questions},
+                "open": list(gates),
+            }
+        )
     counts["queued"] = len(items)
-    return {"questions": questions, "gates": gates, "items": items, "counts": counts,
-            "session_context": driftsession.context(dataset, items),
-            "room": max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"]))}
+    return {
+        "questions": questions,
+        "gates": gates,
+        "items": items,
+        "counts": counts,
+        "session_context": driftsession.context(dataset, items),
+        "room": max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"])),
+    }
 
 
 @workbench.dataset_update()
@@ -512,18 +627,25 @@ def append_labels(dataset_id: str, items: Any, questions: Any) -> dict:
         added.append(dict(item["row"], **{workbench.LABEL_KEY: item["labels"]}))
     room = max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"]))
     if len(added) > room:
-        raise WorkbenchError("The dataset has room for %d more rows; %d new labeled rows were supplied. "
-                             "Add fewer rows or save a new dataset." % (room, len(added)))
+        raise WorkbenchError(
+            "The dataset has room for %d more rows; %d new labeled rows were supplied. "
+            "Add fewer rows or save a new dataset." % (room, len(added))
+        )
     if added:
         workbench.validate_rows(added)
-        workbench._need_pictures([workbench.split_labels(row, i + 1) for i, row in enumerate(added)],
-                                 dataset["questions"])
+        workbench._need_pictures(
+            [workbench.split_labels(row, i + 1) for i, row in enumerate(added)], dataset["questions"]
+        )
         for name in {workbench.row_picture(row) for row in added} - {None}:
             workbench.picture_asset(name)  # a missing photo must fail before any dataset write
         dataset["rows"] = workbench.validate_rows(dataset["rows"] + added)
         workbench.write_dataset(dataset)
-    return {"dataset": workbench.dataset_summary(dataset), "added": len(added), "already": already,
-            "room": room - len(added)}
+    return {
+        "dataset": workbench.dataset_summary(dataset),
+        "added": len(added),
+        "already": already,
+        "room": room - len(added),
+    }
 
 
 def _moved(m: dict) -> Tuple[float, float]:
@@ -553,8 +675,10 @@ def new_rows(rows: Any) -> List[Any]:
     if not rows:
         raise WorkbenchError("Paste the new rows to compare, one per line")
     if len(rows) > workbench.MAX_BULK_ROWS:
-        raise WorkbenchError("Compare up to %d new rows at a time, the most one Bulk run takes; these are %d."
-                             % (workbench.MAX_BULK_ROWS, len(rows)))
+        raise WorkbenchError(
+            "Compare up to %d new rows at a time, the most one Bulk run takes; these are %d."
+            % (workbench.MAX_BULK_ROWS, len(rows))
+        )
     for number, row in enumerate(rows, 1):
         if not isinstance(row, (str, dict, list)):
             raise WorkbenchError("New row %d must be text, a JSON object, or a JSON array" % number)
@@ -575,8 +699,10 @@ def _incomplete(bulk: dict, what: str) -> List[str]:
         out.append("The run of the %s stopped early: %s" % (what, bulk["stopped"]))
     missing = bulk["rows"] - bulk["completed"]
     if missing:
-        out.append("%d of %d %s got no answer, so the comparison is not over every row. Run it again."
-                   % (missing, bulk["rows"], what))
+        out.append(
+            "%d of %d %s got no answer, so the comparison is not over every row. Run it again."
+            % (missing, bulk["rows"], what)
+        )
     return out
 
 
@@ -602,8 +728,15 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
     dataset, check, fresh, held_out, questions, asked = prepare(dataset_id, rows, model)
     ref = workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=asked)
     if ref["stopped"]:  # a missing key or the budget: the new rows would stop too
-        new = {"results": [], "rows": len(fresh), "completed": 0, "stopped": None, "cost_usd": 0.0,
-               "input_tokens": 0, "wall_ms": 0.0}
+        new = {
+            "results": [],
+            "rows": len(fresh),
+            "completed": 0,
+            "stopped": None,
+            "cost_usd": 0.0,
+            "input_tokens": 0,
+            "wall_ms": 0.0,
+        }
     else:
         new = workbench.run_bulk(client, fresh, questions, model=asked)
     report = compare(ref["results"], new["results"], check, questions, dataset)
@@ -611,23 +744,38 @@ def run(client: JevClient, dataset_id: str, rows: Any, model: Optional[str] = No
     if problems:
         report["status"] = "error"
         report["reasons"] = problems + report["reasons"]
-    by = {side: sorted({r["meta"].get("model") for r in bulk["results"] if "answers" in r and r["meta"].get("model")})
-          for side, bulk in (("reference", ref), ("new", new))}
+    by = {
+        side: sorted({r["meta"].get("model") for r in bulk["results"] if "answers" in r and r["meta"].get("model")})
+        for side, bulk in (("reference", ref), ("new", new))
+    }
     notes = checks.run_notes(check, by["reference"])
     if held_out:
-        notes.append("%d of the new rows %s test rows, left out so their answers stay hidden."
-                     % (held_out, "is a" if held_out == 1 else "are"))
+        notes.append(
+            "%d of the new rows %s test rows, left out so their answers stay hidden."
+            % (held_out, "is a" if held_out == 1 else "are")
+        )
     if by["reference"] and by["new"] and by["reference"] != by["new"]:
-        notes.append("The dataset rows were answered by %s and the new rows by %s, so a difference may come from the "
-                     "model rather than the rows. Run it again." % (", ".join(by["reference"]), ", ".join(by["new"])))
+        notes.append(
+            "The dataset rows were answered by %s and the new rows by %s, so a difference may come from the "
+            "model rather than the rows. Run it again." % (", ".join(by["reference"]), ", ".join(by["new"]))
+        )
     gate_check = checks.evaluate(ref["results"], check, ref["stopped"])
     latencies = [r["meta"]["latency_ms"] for bulk in (ref, new) for r in bulk["results"] if "answers" in r]
-    report.update({
-        "id": dataset_id, "name": dataset.get("name") or dataset_id, "check": check, "model": asked,
-        "answered_by": sorted(set(by["reference"]) | set(by["new"])), "notes": notes,
-        "check_status": gate_check["status"], "check_reasons": gate_check["reasons"],
-        "cost_usd": ref["cost_usd"] + new["cost_usd"], "input_tokens": ref["input_tokens"] + new["input_tokens"],
-        "calls": ref["completed"] + new["completed"], "wall_ms": ref["wall_ms"] + new["wall_ms"],
-        "latency_ms_median": statistics.median(latencies) if latencies else None,
-    })
+    report.update(
+        {
+            "id": dataset_id,
+            "name": dataset.get("name") or dataset_id,
+            "check": check,
+            "model": asked,
+            "answered_by": sorted(set(by["reference"]) | set(by["new"])),
+            "notes": notes,
+            "check_status": gate_check["status"],
+            "check_reasons": gate_check["reasons"],
+            "cost_usd": ref["cost_usd"] + new["cost_usd"],
+            "input_tokens": ref["input_tokens"] + new["input_tokens"],
+            "calls": ref["completed"] + new["completed"],
+            "wall_ms": ref["wall_ms"] + new["wall_ms"],
+            "latency_ms_median": statistics.median(latencies) if latencies else None,
+        }
+    )
     return report

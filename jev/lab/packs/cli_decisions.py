@@ -90,7 +90,11 @@ def parse_line(line: str) -> dict:
     out = {"route": d["route"], "answers": d["answers"], "held": list(held), "rules": list(broken), "row": row}
     if "provenance" in d:
         value = d["provenance"]
-        if not isinstance(value, dict) or type(value.get("version")) is not int or not isinstance(value.get("fingerprint"), str):
+        if (
+            not isinstance(value, dict)
+            or type(value.get("version")) is not int
+            or not isinstance(value.get("fingerprint"), str)
+        ):
             raise ValueError("has provenance without a version number and a fingerprint")
         out["provenance"] = value
     return out
@@ -120,7 +124,7 @@ def _valid(path: str) -> List[dict]:
 
 def _preview(row: Any) -> str:
     text = json.dumps(row, ensure_ascii=False)
-    return text if len(text) <= PREVIEW_CHARS else text[:PREVIEW_CHARS - 1] + "…"
+    return text if len(text) <= PREVIEW_CHARS else text[: PREVIEW_CHARS - 1] + "…"
 
 
 def _shown(value: Any) -> str:
@@ -193,7 +197,9 @@ def _file_argument(parser: Any) -> None:
 def _configure_summary(parser: Any) -> None:
     _file_argument(parser)
     parser.add_argument("--by", metavar="FIELD", help="one row per value of this row field, with its route counts")
-    parser.add_argument("--max-review", type=float, metavar="PCT", help="exit 1 when more than PCT percent went to review")
+    parser.add_argument(
+        "--max-review", type=float, metavar="PCT", help="exit 1 when more than PCT percent went to review"
+    )
     kit.add_format(parser)
 
 
@@ -214,14 +220,25 @@ def run_summary(args: Any) -> int:
         rows.sort(key=lambda row: (-row[1], row[0]))
         kit.emit(args, [args.by, "decisions", "auto", "review", "review %"], rows)
     else:
-        rows = [["decisions", n], ["auto", auto], ["review", review], ["auto %", _pct(auto, n)], ["review %", _pct(review, n)],
-                ["held a question", sum(bool(d["held"]) for d in found)], ["broke a rule", sum(bool(d["rules"]) for d in found)],
-                ["with provenance", sum("provenance" in d for d in found)],
-                ["distinct rows", len({decisions._key(d["row"]) for d in found})], ["malformed lines", len(problems)]]
+        rows = [
+            ["decisions", n],
+            ["auto", auto],
+            ["review", review],
+            ["auto %", _pct(auto, n)],
+            ["review %", _pct(review, n)],
+            ["held a question", sum(bool(d["held"]) for d in found)],
+            ["broke a rule", sum(bool(d["rules"]) for d in found)],
+            ["with provenance", sum("provenance" in d for d in found)],
+            ["distinct rows", len({decisions._key(d["row"]) for d in found})],
+            ["malformed lines", len(problems)],
+        ]
         kit.emit(args, ["metric", "value"], rows)
     if args.max_review is not None and 100.0 * review / n > args.max_review:
-        print("review share %s%% is above --max-review %s%%" % (kit.cell_text(_pct(review, n)), kit.cell_text(args.max_review)),
-              file=sys.stderr)
+        print(
+            "review share %s%% is above --max-review %s%%"
+            % (kit.cell_text(_pct(review, n)), kit.cell_text(args.max_review)),
+            file=sys.stderr,
+        )
         return 1
     return 0
 
@@ -301,7 +318,7 @@ def run_review(args: Any) -> int:
         field, value = _pair(args.where, "--where")
         picked = [d for d in picked if slices._value(d["row"], field) == value]
     if args.limit is not None:
-        picked = picked[:args.limit]
+        picked = picked[: args.limit]
     rows = [[d["line"], ", ".join(d["held"]), "; ".join(d["rules"]), _preview(d["row"])] for d in picked]
     _table_or(args, ["line", "held", "rules", "row"], rows, "no review rows match")
     return 0
@@ -312,7 +329,9 @@ def run_review(args: Any) -> int:
 
 def _configure_validate(parser: Any) -> None:
     _file_argument(parser)
-    parser.add_argument("--dataset", metavar="ID", help="also check each line against this dataset's questions and check")
+    parser.add_argument(
+        "--dataset", metavar="ID", help="also check each line against this dataset's questions and check"
+    )
     parser.add_argument("--strict", action="store_true", help="a line without provenance is a problem too")
     kit.add_format(parser)
 
@@ -344,7 +363,9 @@ def run_validate(args: Any) -> int:
 
 def _configure_provenance(parser: Any) -> None:
     _file_argument(parser)
-    parser.add_argument("--dataset", metavar="ID", help="compare with the provenance of this dataset's check; exit 1 on a mismatch")
+    parser.add_argument(
+        "--dataset", metavar="ID", help="compare with the provenance of this dataset's check; exit 1 on a mismatch"
+    )
     parser.add_argument("--lines", action="store_true", help="one row per decision instead of one per configuration")
     kit.add_format(parser)
 
@@ -364,8 +385,11 @@ def run_provenance(args: Any) -> int:
 
     extra = ["status"] if expected is not None else []
     if args.lines:
-        rows = [[d["line"], _fingerprint(d.get("provenance")), (d.get("provenance") or {}).get("model")] + status(d.get("provenance"))
-                for d in found]
+        rows = [
+            [d["line"], _fingerprint(d.get("provenance")), (d.get("provenance") or {}).get("model")]
+            + status(d.get("provenance"))
+            for d in found
+        ]
         kit.emit(args, ["line", "fingerprint", "model"] + extra, rows)
     else:
         groups: Dict[str, List[Any]] = {}
@@ -373,7 +397,12 @@ def run_provenance(args: Any) -> int:
             provenance = d.get("provenance")
             key = json.dumps(provenance, sort_keys=True)
             if key not in groups:
-                groups[key] = [_fingerprint(provenance), (provenance or {}).get("version"), (provenance or {}).get("model"), 0] + status(provenance)
+                groups[key] = [
+                    _fingerprint(provenance),
+                    (provenance or {}).get("version"),
+                    (provenance or {}).get("model"),
+                    0,
+                ] + status(provenance)
             groups[key][3] += 1
         kit.emit(args, ["fingerprint", "version", "model", "decisions"] + extra, list(groups.values()))
     if expected is not None and args.format == "table":
@@ -406,8 +435,12 @@ def run_reasons(args: Any) -> int:
 
 def _configure_export(parser: Any) -> None:
     _file_argument(parser)
-    parser.add_argument("--route", choices=ROUTES + ("all",), default="review", help="which rows to export (default: review)")
-    parser.add_argument("--csv", action="store_true", help="write CSV, one column per input field, instead of JSON lines")
+    parser.add_argument(
+        "--route", choices=ROUTES + ("all",), default="review", help="which rows to export (default: review)"
+    )
+    parser.add_argument(
+        "--csv", action="store_true", help="write CSV, one column per input field, instead of JSON lines"
+    )
     parser.add_argument("--exclude-dataset", metavar="ID", help="leave out rows this saved dataset already has")
     parser.add_argument("--out", metavar="PATH", help="write the rows to this file instead of printing them")
     parser.add_argument("--force", action="store_true", help="replace the --out file if it exists")
@@ -439,7 +472,9 @@ def run_export(args: Any) -> int:
         rows.append(workbench.without_marks(d["row"]))
     if args.csv:
         columns = list(dict.fromkeys(field for row in rows for field in row))
-        text = kit.csv_text([columns] + [[_csv_cell(row.get(field)) for field in columns] for row in rows]) if rows else ""
+        text = (
+            kit.csv_text([columns] + [[_csv_cell(row.get(field)) for field in columns] for row in rows]) if rows else ""
+        )
     else:
         text = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
     if target is None:
@@ -484,68 +519,165 @@ def run_compare(args: Any) -> int:
             moved[routes] += 1
         qids = _answers_changed(a[key], b[key])
         if routes[0] != routes[1] or qids:
-            changed.append([a[key]["line"], b[key]["line"], routes[0], routes[1], ", ".join(qids), _preview(a[key]["row"])])
+            changed.append(
+                [a[key]["line"], b[key]["line"], routes[0], routes[1], ", ".join(qids), _preview(a[key]["row"])]
+            )
     if args.changed:
-        _table_or(args, ["line A", "line B", "route A", "route B", "answers changed", "row"], changed, "no shared row changed")
+        _table_or(
+            args, ["line A", "line B", "route A", "route B", "answers changed", "row"], changed, "no shared row changed"
+        )
     else:
-        rows = [["rows in A", len(a)], ["rows in B", len(b)], ["in both", len(both)], ["only in A", len(a) - len(both)],
-                ["only in B", len(b) - len(both)], ["same route", len(both) - sum(moved.values())],
-                ["auto -> review", moved[("auto", "review")]], ["review -> auto", moved[("review", "auto")]],
-                ["answers changed", sum(bool(row[4]) for row in changed)]]
+        rows = [
+            ["rows in A", len(a)],
+            ["rows in B", len(b)],
+            ["in both", len(both)],
+            ["only in A", len(a) - len(both)],
+            ["only in B", len(b) - len(both)],
+            ["same route", len(both) - sum(moved.values())],
+            ["auto -> review", moved[("auto", "review")]],
+            ["review -> auto", moved[("review", "auto")]],
+            ["answers changed", sum(bool(row[4]) for row in changed)],
+        ]
         kit.emit(args, ["metric", "value"], rows)
     return 1 if sum(moved.values()) else 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-decisions",
-    "surface": "python.cli",
-    "title": "Gate decisions commands",
-    "about": "Offline commands for the JSON lines an exported gate prints: route and question summaries, review rows with "
-             "filters, a check of every line and of its provenance against a saved check, answer counts, review reasons, "
-             "a comparison of two runs, and an export of the rows' inputs only. No model call; no dataset label shown.",
-    "features": [
-        {"id": "summary", "kind": "cli", "command": ["decisions", "summary"], "configure": _configure_summary, "run": run_summary,
-         "title": "Summarize a decisions file: auto and review counts and shares, held and rule rows, provenance, distinct rows",
-         "options": [{"id": "by", "title": "--by FIELD gives each row field value its auto and review counts and review share"},
-                     {"id": "max_review", "title": "--max-review PCT exits 1 when a larger share went to review"},
-                     dict(FORMAT)]},
-        {"id": "questions", "kind": "cli", "command": ["decisions", "questions"], "configure": _configure_questions, "run": run_questions,
-         "title": "Per question: decisions that answered it, missing answers, and how often the gate held it",
-         "options": [{"id": "held_only", "title": "--held-only keeps questions the gate held at least once"}, dict(FORMAT)]},
-        {"id": "answers", "kind": "cli", "command": ["decisions", "answers"], "configure": _configure_answers, "run": run_answers,
-         "title": "Count each question's answers in a decisions file, with their share and auto and review split",
-         "options": [{"id": "question", "title": "--question ID counts one question's answers"},
-                     {"id": "route", "title": "--route auto|review counts only decisions with that route"},
-                     dict(FORMAT)]},
-        {"id": "review", "kind": "cli", "command": ["decisions", "review"], "configure": _configure_review, "run": run_review,
-         "title": "List the rows the gate sent to review with their line, held questions, broken rules and input",
-         "options": [{"id": "held", "title": "--held ID keeps rows that held this question"},
-                     {"id": "rule", "title": "--rule TEXT keeps rows that broke a rule containing TEXT"},
-                     {"id": "where", "title": "--where FIELD=VALUE keeps rows whose input field has this value"},
-                     {"id": "limit", "title": "--limit N keeps the first N review rows"},
-                     dict(FORMAT)]},
-        {"id": "validate", "kind": "cli", "command": ["decisions", "validate"], "configure": _configure_validate, "run": run_validate,
-         "title": "Check every line of a decisions file and name each malformed or inconsistent one; exit 1 if any",
-         "options": [{"id": "dataset", "title": "--dataset ID also checks answers, rows and provenance against a saved check"},
-                     {"id": "strict", "title": "--strict reports lines without provenance"},
-                     dict(FORMAT)]},
-        {"id": "provenance", "kind": "cli", "command": ["decisions", "provenance"], "configure": _configure_provenance, "run": run_provenance,
-         "title": "Group decisions by the gate configuration that made them: fingerprint, version, model and count",
-         "options": [{"id": "dataset", "title": "--dataset ID marks each configuration as matching a saved check or not; exit 1 on a mismatch"},
-                     {"id": "lines", "title": "--lines lists each decision's line with its fingerprint"},
-                     dict(FORMAT)]},
-        {"id": "reasons", "kind": "cli", "command": ["decisions", "reasons"], "configure": _configure_reasons, "run": run_reasons,
-         "title": "Group review rows by why they went to review: the held questions and broken rules, with counts and shares",
-         "options": [dict(FORMAT)]},
-        {"id": "export", "kind": "cli", "command": ["decisions", "export"], "configure": _configure_export, "run": run_export,
-         "title": "Export the review rows' inputs as JSON lines, without answers or labels, each distinct row once",
-         "options": [{"id": "route", "title": "--route auto|review|all chooses which rows to export"},
-                     {"id": "csv", "title": "--csv writes CSV with one column per input field"},
-                     {"id": "exclude_dataset", "title": "--exclude-dataset ID leaves out rows a saved dataset already has"},
-                     {"id": "out", "title": "--out PATH writes the rows to a file outside the Workbench data directory"},
-                     {"id": "force", "title": "--force replaces an existing --out file"}]},
-        {"id": "compare", "kind": "cli", "command": ["decisions", "compare"], "configure": _configure_compare, "run": run_compare,
-         "title": "Compare two decisions files on their shared rows: route moves and changed answers; exit 1 if a route moved",
-         "options": [{"id": "changed", "title": "--changed lists each shared row whose route or answers changed"}, dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-decisions",
+        "surface": "python.cli",
+        "title": "Gate decisions commands",
+        "about": "Offline commands for the JSON lines an exported gate prints: route and question summaries, review rows with "
+        "filters, a check of every line and of its provenance against a saved check, answer counts, review reasons, "
+        "a comparison of two runs, and an export of the rows' inputs only. No model call; no dataset label shown.",
+        "features": [
+            {
+                "id": "summary",
+                "kind": "cli",
+                "command": ["decisions", "summary"],
+                "configure": _configure_summary,
+                "run": run_summary,
+                "title": "Summarize a decisions file: auto and review counts and shares, held and rule rows, provenance, distinct rows",
+                "options": [
+                    {
+                        "id": "by",
+                        "title": "--by FIELD gives each row field value its auto and review counts and review share",
+                    },
+                    {"id": "max_review", "title": "--max-review PCT exits 1 when a larger share went to review"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "questions",
+                "kind": "cli",
+                "command": ["decisions", "questions"],
+                "configure": _configure_questions,
+                "run": run_questions,
+                "title": "Per question: decisions that answered it, missing answers, and how often the gate held it",
+                "options": [
+                    {"id": "held_only", "title": "--held-only keeps questions the gate held at least once"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "answers",
+                "kind": "cli",
+                "command": ["decisions", "answers"],
+                "configure": _configure_answers,
+                "run": run_answers,
+                "title": "Count each question's answers in a decisions file, with their share and auto and review split",
+                "options": [
+                    {"id": "question", "title": "--question ID counts one question's answers"},
+                    {"id": "route", "title": "--route auto|review counts only decisions with that route"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "review",
+                "kind": "cli",
+                "command": ["decisions", "review"],
+                "configure": _configure_review,
+                "run": run_review,
+                "title": "List the rows the gate sent to review with their line, held questions, broken rules and input",
+                "options": [
+                    {"id": "held", "title": "--held ID keeps rows that held this question"},
+                    {"id": "rule", "title": "--rule TEXT keeps rows that broke a rule containing TEXT"},
+                    {"id": "where", "title": "--where FIELD=VALUE keeps rows whose input field has this value"},
+                    {"id": "limit", "title": "--limit N keeps the first N review rows"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "validate",
+                "kind": "cli",
+                "command": ["decisions", "validate"],
+                "configure": _configure_validate,
+                "run": run_validate,
+                "title": "Check every line of a decisions file and name each malformed or inconsistent one; exit 1 if any",
+                "options": [
+                    {
+                        "id": "dataset",
+                        "title": "--dataset ID also checks answers, rows and provenance against a saved check",
+                    },
+                    {"id": "strict", "title": "--strict reports lines without provenance"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "provenance",
+                "kind": "cli",
+                "command": ["decisions", "provenance"],
+                "configure": _configure_provenance,
+                "run": run_provenance,
+                "title": "Group decisions by the gate configuration that made them: fingerprint, version, model and count",
+                "options": [
+                    {
+                        "id": "dataset",
+                        "title": "--dataset ID marks each configuration as matching a saved check or not; exit 1 on a mismatch",
+                    },
+                    {"id": "lines", "title": "--lines lists each decision's line with its fingerprint"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "reasons",
+                "kind": "cli",
+                "command": ["decisions", "reasons"],
+                "configure": _configure_reasons,
+                "run": run_reasons,
+                "title": "Group review rows by why they went to review: the held questions and broken rules, with counts and shares",
+                "options": [dict(FORMAT)],
+            },
+            {
+                "id": "export",
+                "kind": "cli",
+                "command": ["decisions", "export"],
+                "configure": _configure_export,
+                "run": run_export,
+                "title": "Export the review rows' inputs as JSON lines, without answers or labels, each distinct row once",
+                "options": [
+                    {"id": "route", "title": "--route auto|review|all chooses which rows to export"},
+                    {"id": "csv", "title": "--csv writes CSV with one column per input field"},
+                    {
+                        "id": "exclude_dataset",
+                        "title": "--exclude-dataset ID leaves out rows a saved dataset already has",
+                    },
+                    {"id": "out", "title": "--out PATH writes the rows to a file outside the Workbench data directory"},
+                    {"id": "force", "title": "--force replaces an existing --out file"},
+                ],
+            },
+            {
+                "id": "compare",
+                "kind": "cli",
+                "command": ["decisions", "compare"],
+                "configure": _configure_compare,
+                "run": run_compare,
+                "title": "Compare two decisions files on their shared rows: route moves and changed answers; exit 1 if a route moved",
+                "options": [
+                    {"id": "changed", "title": "--changed lists each shared row whose route or answers changed"},
+                    dict(FORMAT),
+                ],
+            },
+        ],
+    }
+)

@@ -24,9 +24,13 @@ def fake_answers(questions, picks=None):
             out[qid] = {"type": "choice", "choice": chosen, "probabilities": probs, "confidence": 0.9}
         elif q["type"] == "score":
             n = len(q["criteria"])
-            out[qid] = {"type": "score", "score": pick if pick is not None else 0.0,
-                        "legend": {str(i): c for i, c in enumerate(q["criteria"])},
-                        "probabilities": {str(i): 1 / n for i in range(n)}, "confidence": 0.8}
+            out[qid] = {
+                "type": "score",
+                "score": pick if pick is not None else 0.0,
+                "legend": {str(i): c for i, c in enumerate(q["criteria"])},
+                "probabilities": {str(i): 1 / n for i in range(n)},
+                "confidence": 0.8,
+            }
         elif q["type"] == "box":
             edges = pick if pick is not None else {"left": 0.4, "top": 0.3, "right": 0.6, "bottom": 0.5}
             out[qid] = {"type": "box", "box": dict(edges), "confidence": edges.get("confidence", 0.85)}
@@ -51,5 +55,8 @@ class FakeClient:
         self.models.append(model)
         self.assets = assets
         answers = fake_answers(questions, self.picker(state, questions))
-        return JevResult({"state": state, "model": model or self.model, "questions": questions},
-                         {"model": self.model, "answers": answers, "usage": {"input_tokens": self.input_tokens}}, 12.0)
+        return JevResult(
+            {"state": state, "model": model or self.model, "questions": questions},
+            {"model": self.model, "answers": answers, "usage": {"input_tokens": self.input_tokens}},
+            12.0,
+        )

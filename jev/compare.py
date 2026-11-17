@@ -43,11 +43,22 @@ def mcnemar(a_only: int, b_only: int) -> float:
     if n == 0:
         return 1.0
     tail = sum(comb(n, i) for i in range(min(a_only, b_only) + 1))
-    return min(1.0, 2 * tail / 2 ** n)
+    return min(1.0, 2 * tail / 2**n)
 
 
 def _summary(report: dict) -> dict:
-    keys = ("labeled", "unlabeled", "invalid", "correct", "accuracy", "accuracy_low", "accuracy_high", "ece", "sweep", "targets")
+    keys = (
+        "labeled",
+        "unlabeled",
+        "invalid",
+        "correct",
+        "accuracy",
+        "accuracy_low",
+        "accuracy_high",
+        "ece",
+        "sweep",
+        "targets",
+    )
     return {k: report[k] for k in keys}
 
 
@@ -95,9 +106,12 @@ def cascade(scored: List[Dict[str, dict]], usage: Dict[str, list], first: int) -
     def alone(v: int) -> dict:
         correct = sum(1 for r in rows if r[v]["correct"])
         spent = [r[2 + v] for r in rows]
-        return {"correct": correct, "accuracy": correct / n,
-                "cost_usd": sum(u[0] for u in spent) if known else None,
-                "latency_ms": sum(u[1] for u in spent) / n if known else None}
+        return {
+            "correct": correct,
+            "accuracy": correct / n,
+            "cost_usd": sum(u[0] for u in spent) if known else None,
+            "latency_ms": sum(u[1] for u in spent) / n if known else None,
+        }
 
     points = []
     for i in range(calibrate.STEPS + 1):
@@ -111,16 +125,31 @@ def cascade(scored: List[Dict[str, dict]], usage: Dict[str, list], first: int) -
             if known:
                 cost += uf[0] + (0 if keep else us[0])
                 latency += uf[1] + (0 if keep else us[1])
-        points.append({"threshold": round(t, 2), "escalated": escalated, "share": escalated / n,
-                       "correct": correct, "accuracy": correct / n,
-                       "cost_usd": cost if known else None, "latency_ms": latency / n if known else None})
+        points.append(
+            {
+                "threshold": round(t, 2),
+                "escalated": escalated,
+                "share": escalated / n,
+                "correct": correct,
+                "accuracy": correct / n,
+                "cost_usd": cost if known else None,
+                "latency_ms": latency / n if known else None,
+            }
+        )
     target = alone(1)["accuracy"]
     # Thresholds rise with the escalated share, so the first point to reach a level is the cheapest.
     match = next((p for p in points if p["accuracy"] + calibrate._EPS >= target), None)
     best = max(points, key=lambda p: (p["accuracy"], -p["escalated"]))
-    return {"first": NAMES[first], "second": NAMES[second], "rows": n,
-            "first_alone": alone(0), "second_alone": alone(1),
-            "sweep": points, "match": match, "best": best}
+    return {
+        "first": NAMES[first],
+        "second": NAMES[second],
+        "rows": n,
+        "first_alone": alone(0),
+        "second_alone": alone(1),
+        "sweep": points,
+        "match": match,
+        "best": best,
+    }
 
 
 def evaluate(rows: Any, signal: str = "confidence", first: str = "A", bound: str = "estimate") -> dict:
@@ -154,24 +183,37 @@ def evaluate(rows: Any, signal: str = "confidence", first: str = "A", bound: str
         if all(present):
             pairs.append((row, answers))
             meta = row.get("meta")
-            usage[str(row.get("index"))] = [_usage(m) for m in meta] if isinstance(meta, list) and len(meta) == 2 else [None, None]
+            usage[str(row.get("index"))] = (
+                [_usage(m) for m in meta] if isinstance(meta, list) and len(meta) == 2 else [None, None]
+            )
         elif any(present):
             only[present.index(True)] += 1
     for v, name in enumerate(NAMES):
         if types[v] is None:
-            raise CalibrationError("Variant %s has no answers to this question, so there is nothing to compare. "
-                                   "Check its failed calls." % name)
+            raise CalibrationError(
+                "Variant %s has no answers to this question, so there is nothing to compare. "
+                "Check its failed calls." % name
+            )
     if types[0] != types[1]:
-        raise CalibrationError("This question is a %s in A and a %s in B. Compare needs the same type in both."
-                               % (types[0], types[1]))
+        raise CalibrationError(
+            "This question is a %s in A and a %s in B. Compare needs the same type in both." % (types[0], types[1])
+        )
     if not pairs:
-        raise CalibrationError("No row has answers from both variants to this question, so there is nothing to compare.")
+        raise CalibrationError(
+            "No row has answers from both variants to this question, so there is nothing to compare."
+        )
 
     # Both variants are scored on the same rows: those both answered, minus any label that either one
     # cannot score (say, an option only the other variant offers). The ignored labels stay listed.
     def scorable(v: int, dropped: set) -> List[dict]:
-        return [{"index": row.get("index"), "answer": answers[v],
-                 "label": None if str(row.get("index")) in dropped else row.get("label")} for row, answers in pairs]
+        return [
+            {
+                "index": row.get("index"),
+                "answer": answers[v],
+                "label": None if str(row.get("index")) in dropped else row.get("label"),
+            }
+            for row, answers in pairs
+        ]
 
     first = [calibrate.evaluate(scorable(v, set()), signal, bound) for v in (0, 1)]
     dropped = {str(x["index"]) for rep in first for x in rep["invalid"]}
@@ -196,19 +238,28 @@ def evaluate(rows: Any, signal: str = "confidence", first: str = "A", bound: str
         if reads[0][0] == reads[1][0]:
             agree += 1
             continue
-        disagreements.append({
-            "index": row.get("index"),
-            "label": hits[0]["label"] if hits[0] else (hits[1]["label"] if hits[1] else None),
-            "verdict": verdict,
-            "answers": [{"predicted": p, "signal": s, "correct": h["correct"] if h else None}
-                        for (p, s), h in zip(reads, hits)],
-        })
+        disagreements.append(
+            {
+                "index": row.get("index"),
+                "label": hits[0]["label"] if hits[0] else (hits[1]["label"] if hits[1] else None),
+                "verdict": verdict,
+                "answers": [
+                    {"predicted": p, "signal": s, "correct": h["correct"] if h else None}
+                    for (p, s), h in zip(reads, hits)
+                ],
+            }
+        )
     return {
-        "type": types[0], "signal": signal, "bound": bound,
+        "type": types[0],
+        "signal": signal,
+        "bound": bound,
         "variants": [_summary(rep) for rep in reports],
         "paired": dict(counts, rows=sum(counts.values()), p_value=mcnemar(counts["a_only"], counts["b_only"])),
-        "answered_both": agree + len(disagreements), "agree": agree,
-        "only_a": only[0], "only_b": only[1], "excluded": len(dropped),
+        "answered_both": agree + len(disagreements),
+        "agree": agree,
+        "only_a": only[0],
+        "only_b": only[1],
+        "excluded": len(dropped),
         "disagreements": disagreements,
         "cascade": cascade(scored, usage, lead),
     }
@@ -219,12 +270,22 @@ def reordered(qa: Any, qb: Any) -> bool:
     if not (isinstance(qa, dict) and isinstance(qb, dict)) or qa.get("type") != "choice" or qb.get("type") != "choice":
         return False
     ca, cb = qa.get("criteria"), qb.get("criteria")
-    return (isinstance(ca, dict) and isinstance(cb, dict) and ca == cb and list(ca) != list(cb)
-            and qa.get("instructions") == qb.get("instructions"))
+    return (
+        isinstance(ca, dict)
+        and isinstance(cb, dict)
+        and ca == cb
+        and list(ca) != list(cb)
+        and qa.get("instructions") == qb.get("instructions")
+    )
 
 
-def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model: bool = True,
-              perturbs: Optional[List[Optional[str]]] = None, averaged: Optional[List[bool]] = None) -> List[dict]:
+def agreement(
+    results: List[dict],
+    questions: List[Dict[str, dict]],
+    same_model: bool = True,
+    perturbs: Optional[List[Optional[str]]] = None,
+    averaged: Optional[List[bool]] = None,
+) -> List[dict]:
     """For each question id both variants ask with the same type, in A's order: how many rows both
     answered and how many of those got a different answer from each, with a 95% interval on the share.
 
@@ -274,9 +335,17 @@ def agreement(results: List[dict], questions: List[Dict[str, dict]], same_model:
             if lists and all(p in names for p, names in zip(picks, lists)):
                 same_position += lists[0].index(picks[0]) == lists[1].index(picks[1])
         low, high = calibrate.wilson(changed, answered)
-        entry = {"qid": qid, "type": q.get("type"), "answered": answered, "changed": changed,
-                 "rate": changed / answered if answered else None, "low": low, "high": high, "reordered": moved,
-                 "perturbed": input_only}
+        entry = {
+            "qid": qid,
+            "type": q.get("type"),
+            "answered": answered,
+            "changed": changed,
+            "rate": changed / answered if answered else None,
+            "low": low,
+            "high": high,
+            "reordered": moved,
+            "perturbed": input_only,
+        }
         if moved:
             entry["same_position"] = same_position
             entry["options"] = len(lists[0])

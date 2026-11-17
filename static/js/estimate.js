@@ -5,8 +5,8 @@
 // and api() so this module never imports common.js.
 
 const ENDPOINT = "/api/workbench/estimate";
-const WAIT_MS = 400;     // debounce after typing
-const FRESH_MS = 10000;  // a preview this recent is shown again without asking the server
+const WAIT_MS = 400; // debounce after typing
+const FRESH_MS = 10000; // a preview this recent is shown again without asking the server
 
 // Dollars rounded up to two significant digits (at least two decimals), so an upper bound never reads lower than it is.
 export function usdUp(value) {
@@ -49,19 +49,27 @@ export function estimateDetail(est) {
   const extra = [];
   if (est.held_out) extra.push(`${plural(est.held_out, "test row")} left out, as the run leaves them out`);
   if (est.capped) extra.push(`${plural(est.capped, "row")} past the 200-row cap not sent`);
-  return ["Upper bound, not a measured cost: the most each call can hold against the session budget. No model call was made to estimate it.",
-    ...parts, ...extra, ...(est.notes || [])].join("\n");
+  return [
+    "Upper bound, not a measured cost: the most each call can hold against the session budget. No model call was made to estimate it.",
+    ...parts,
+    ...extra,
+    ...(est.notes || []),
+  ].join("\n");
 }
 
 export function confirmMessage(est) {
-  return `This run makes up to ${plural(est.calls, "live call")} and may cost up to ${usdUp(est.usd)} (an upper bound, not a measured cost), `
-    + `more than the ${usdDown(est.remaining_usd)} left in this session's budget. The budget stops the run once it is spent, so the rows after that `
-    + "get no answer. Start it anyway?";
+  return (
+    `This run makes up to ${plural(est.calls, "live call")} and may cost up to ${usdUp(est.usd)} (an upper bound, not a measured cost), ` +
+    `more than the ${usdDown(est.remaining_usd)} left in this session's budget. The budget stops the run once it is spent, so the rows after that ` +
+    "get no answer. Start it anyway?"
+  );
 }
 
 export function errorMessage(e) {
-  return `The spend preview failed (${e?.message || e}), so this run's cost and the budget left are unknown. `
-    + "Start it anyway? Cancel to retry the preview.";
+  return (
+    `The spend preview failed (${e?.message || e}), so this run's cost and the budget left are unknown. ` +
+    "Start it anyway? Cancel to retry the preview."
+  );
 }
 
 // Ask for a fresh preview just before a paid run. Resolves true to go ahead: the run fits, or the user confirmed,
@@ -73,17 +81,23 @@ let confirming = false;
 export async function confirmSpend(api, kind, body, ask = (m) => globalThis.confirm(m)) {
   if (confirming) return false;
   confirming = true;
-  cache.clear();  // the run changes what is left; every line asks again
+  cache.clear(); // the run changes what is left; every line asks again
   try {
     let est;
-    try { est = await api(ENDPOINT, { ...body, kind }); } catch (e) { return Boolean(ask(errorMessage(e))); }
+    try {
+      est = await api(ENDPOINT, { ...body, kind });
+    } catch (e) {
+      return Boolean(ask(errorMessage(e)));
+    }
     return needsConfirm(est) ? Boolean(ask(confirmMessage(est))) : true;
-  } finally { confirming = false; }
+  } finally {
+    confirming = false;
+  }
 }
 
 // ---------- live lines ----------
 const lines = new Set();
-const cache = new Map();  // request key -> { at, promise }
+const cache = new Map(); // request key -> { at, promise }
 let listening = false;
 let timer = null;
 
@@ -91,7 +105,9 @@ function requestOf(line) {
   try {
     const body = line.getBody();
     return body ? { ...body, kind: line.kind } : null;
-  } catch { return null; }  // inputs not complete yet, such as a Compare variant that does not parse
+  } catch {
+    return null;
+  } // inputs not complete yet, such as a Compare variant that does not parse
 }
 
 function show(line, text, warn = false, title = "") {
@@ -102,7 +118,11 @@ function show(line, text, warn = false, title = "") {
 
 async function refresh(line) {
   const request = requestOf(line);
-  if (!request) { line.key = null; show(line, ""); return; }
+  if (!request) {
+    line.key = null;
+    show(line, "");
+    return;
+  }
   const key = JSON.stringify(request);
   line.key = key;
   let hit = cache.get(key);
@@ -112,7 +132,7 @@ async function refresh(line) {
   }
   try {
     const est = await hit.promise;
-    if (line.key !== key) return;  // the inputs changed while it was on its way
+    if (line.key !== key) return; // the inputs changed while it was on its way
     show(line, estimateText(est), needsConfirm(est), estimateDetail(est));
   } catch (e) {
     if (cache.get(key) === hit) cache.delete(key);
@@ -123,7 +143,8 @@ async function refresh(line) {
 function refreshAll() {
   timer = null;
   for (const line of lines) {
-    if (!line.el.isConnected) lines.delete(line);  // replaced by a render
+    if (!line.el.isConnected)
+      lines.delete(line); // replaced by a render
     else refresh(line);
   }
 }
@@ -145,7 +166,8 @@ export function estimateLine(h, api, kind, getBody) {
     document.addEventListener("change", schedule, true);
   }
   const request = requestOf(line);
-  if (request && cache.has(JSON.stringify(request))) refresh(line);  // a render: show the preview it already has
+  if (request && cache.has(JSON.stringify(request)))
+    refresh(line); // a render: show the preview it already has
   else schedule();
   return el;
 }

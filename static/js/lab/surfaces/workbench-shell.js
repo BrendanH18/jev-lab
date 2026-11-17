@@ -149,14 +149,33 @@ import { clone } from "../kit.js";
 import { exampleCounts } from "../../examples-refinements.js";
 
 const EMPTY = Object.freeze([]);
-const VIEW_KEYS = Object.freeze(["query", "type", "images", "expectations", "stateType", "sort", "compact", "searchScope", "searchMode", "exclude",
-  "minQuestions", "maxQuestions", "minCriteria", "maxCriteria", "minStateBytes", "maxStateBytes", "typeMix", "pinned"]);
+const VIEW_KEYS = Object.freeze([
+  "query",
+  "type",
+  "images",
+  "expectations",
+  "stateType",
+  "sort",
+  "compact",
+  "searchScope",
+  "searchMode",
+  "exclude",
+  "minQuestions",
+  "maxQuestions",
+  "minCriteria",
+  "maxCriteria",
+  "minStateBytes",
+  "maxStateBytes",
+  "typeMix",
+  "pinned",
+]);
 const UNSAVED_KEYS = Object.freeze(["build", "bulk", "labeling", "review", "drift", "datasetEdits", "agreement"]);
 const WORKSPACE_COUNTS = Object.freeze(["questionCount", "rowCount", "gateableCount"]);
 const WORKSPACE_FLAGS = Object.freeze(["currentRun", "healthCurrent", "hasSavedCheck"]);
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : JSON.stringify(value) ?? "");
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const whole = (value) => (Number.isInteger(value) && value >= 0 ? value : 0);
 
 function deepFreeze(value) {
@@ -170,7 +189,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now. A callback that throws reads as missing.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -213,30 +236,51 @@ export function shellCtx(source = {}) {
   const tabs = () => tabPairs(source);
   const current = () => {
     const tab = read(source, "tab", "");
-    return typeof tab === "string" && tab ? tab : (tabs()[0]?.[0] || "");
+    return typeof tab === "string" && tab ? tab : tabs()[0]?.[0] || "";
   };
   const steps = () => {
     const list = read(source, "steps", EMPTY);
-    return (Array.isArray(list) ? list : []).filter(isObject).map((step, index) => ({ id: asText(step.id), position: index + 1, title: asText(step.title),
-      tab: asText(step.tab), target: asText(step.target), action: asText(step.action), status: asText(step.status), enabled: step.enabled === true }));
+    return (Array.isArray(list) ? list : []).filter(isObject).map((step, index) => ({
+      id: asText(step.id),
+      position: index + 1,
+      title: asText(step.title),
+      tab: asText(step.tab),
+      target: asText(step.target),
+      action: asText(step.action),
+      status: asText(step.status),
+      enabled: step.enabled === true,
+    }));
   };
   const ctx = {
     items: () => EMPTY,
     shown: () => EMPTY,
     data: {
-      get tab() { return current(); },
+      get tab() {
+        return current();
+      },
       get tabs() {
         const open = current();
         const saved = read(source, "counts", null);
-        return deepFreeze(tabs().map(([id, label], index) => ({ id, label, position: index + 1, active: id === open,
-          count: id === "tests" ? (isObject(saved) ? whole(saved.savedTests) : 0) : null })));
+        return deepFreeze(
+          tabs().map(([id, label], index) => ({
+            id,
+            label,
+            position: index + 1,
+            active: id === open,
+            count: id === "tests" ? (isObject(saved) ? whole(saved.savedTests) : 0) : null,
+          })),
+        );
       },
       get previousTab() {
         const tab = read(source, "previousTab", null);
         return typeof tab === "string" && tab && tab !== current() && tabs().some(([id]) => id === tab) ? tab : null;
       },
-      get guideOpen() { return read(source, "guideOpen", false) === true; },
-      get steps() { return deepFreeze(steps()); },
+      get guideOpen() {
+        return read(source, "guideOpen", false) === true;
+      },
+      get steps() {
+        return deepFreeze(steps());
+      },
       get workspace() {
         const snapshot = read(source, "workspace", null);
         if (!isObject(snapshot)) return null;
@@ -248,14 +292,23 @@ export function shellCtx(source = {}) {
       get counts() {
         const counts = read(source, "counts", null);
         if (!isObject(counts)) return null;
-        return Object.freeze({ savedTests: whole(counts.savedTests), examples: whole(counts.examples), datasets: whole(counts.datasets), checks: whole(counts.checks) });
+        return Object.freeze({
+          savedTests: whole(counts.savedTests),
+          examples: whole(counts.examples),
+          datasets: whole(counts.datasets),
+          checks: whole(counts.checks),
+        });
       },
       get unsaved() {
         const raw = read(source, "unsaved", {});
         const out = {};
         for (const key of UNSAVED_KEYS) {
           let value = isObject(raw) ? raw[key] : false;
-          try { if (typeof value === "function") value = value(); } catch { value = false; }
+          try {
+            if (typeof value === "function") value = value();
+          } catch {
+            value = false;
+          }
           out[key] = value === true;
         }
         out.any = UNSAVED_KEYS.some((key) => out[key]);
@@ -276,7 +329,9 @@ export function shellCtx(source = {}) {
       },
       focusTabs: () => call(source, "focusTabs"),
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: nameOf,
   };
   return ctx;
@@ -309,16 +364,25 @@ export function shellToolboxCtx(source = {}) {
           const value = limits[camel] ?? limits[snake];
           return Number.isInteger(value) && value > 0 ? value : null;
         };
-        const out = { minSide: pick("min_side", "minSide"), maxSide: pick("max_side", "maxSide"), maxImages: pick("max_images", "maxImages") };
+        const out = {
+          minSide: pick("min_side", "minSide"),
+          maxSide: pick("max_side", "maxSide"),
+          maxImages: pick("max_images", "maxImages"),
+        };
         return out.minSide === null && out.maxSide === null && out.maxImages === null ? null : Object.freeze(out);
       },
       get prices() {
         const typed = read(source, "prices", {});
-        return Object.freeze({ review: isObject(typed) ? price(typed.review) : null, error: isObject(typed) ? price(typed.error) : null });
+        return Object.freeze({
+          review: isObject(typed) ? price(typed.review) : null,
+          error: isObject(typed) ? price(typed.error) : null,
+        });
       },
     },
     actions: { openTab: openTabAction(source) },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: nameOf,
   };
 }
@@ -341,19 +405,47 @@ function exampleItem(raw, index) {
   const list = Object.entries(questions).map(([id, question], position) => {
     const q = isObject(question) ? question : {};
     const type = typeof q.type === "string" ? q.type : "";
-    return { id, position: position + 1, type, instructions: asText(q.instructions), criteria: criteriaList(type, q.criteria) };
+    return {
+      id,
+      position: position + 1,
+      type,
+      instructions: asText(q.instructions),
+      criteria: criteriaList(type, q.criteria),
+    };
   });
   const images = isObject(raw.images) ? raw.images : {};
   const state = raw.state === undefined ? null : clone(raw.state);
   let counts;
-  try { counts = exampleCounts({ state: raw.state, questions: Object.fromEntries(Object.entries(questions).filter(([, q]) => isObject(q))) }); }
-  catch { counts = { criteria: 0, stateBytes: 0 }; }
+  try {
+    counts = exampleCounts({
+      state: raw.state,
+      questions: Object.fromEntries(Object.entries(questions).filter(([, q]) => isObject(q))),
+    });
+  } catch {
+    counts = { criteria: 0, stateBytes: 0 };
+  }
   return deepFreeze({
-    id: asText(raw.id), position: index + 1, title: asText(raw.title), pattern: asText(raw.pattern), blurb: asText(raw.blurb), code: asText(raw.code),
-    state, state_type: Array.isArray(raw.state) ? "array" : raw.state !== null && typeof raw.state === "object" ? "object" : "text",
-    state_bytes: whole(counts.stateBytes), questions: list, question_count: list.length, types: [...new Set(list.map((q) => q.type))].sort(),
+    id: asText(raw.id),
+    position: index + 1,
+    title: asText(raw.title),
+    pattern: asText(raw.pattern),
+    blurb: asText(raw.blurb),
+    code: asText(raw.code),
+    state,
+    state_type: Array.isArray(raw.state)
+      ? "array"
+      : raw.state !== null && typeof raw.state === "object"
+        ? "object"
+        : "text",
+    state_bytes: whole(counts.stateBytes),
+    questions: list,
+    question_count: list.length,
+    types: [...new Set(list.map((q) => q.type))].sort(),
     criteria_count: whole(counts.criteria),
-    pictures: Object.entries(images).map(([name, spec]) => ({ name, sample: isObject(spec) && typeof spec.sample === "string" && spec.sample ? spec.sample : null })),
+    pictures: Object.entries(images).map(([name, spec]) => ({
+      name,
+      sample: isObject(spec) && typeof spec.sample === "string" && spec.sample ? spec.sample : null,
+    })),
     picture_count: Object.keys(images).length,
     expectation_count: isObject(raw.expect) ? Object.keys(raw.expect).length : 0,
   });
@@ -380,7 +472,8 @@ export function shellExamplesCtx(source = {}) {
   };
   const items = () => {
     const list = raws();
-    if (list !== built.list) built = { list, items: Object.freeze(list.map((raw, index) => exampleItem(isObject(raw) ? raw : {}, index))) };
+    if (list !== built.list)
+      built = { list, items: Object.freeze(list.map((raw, index) => exampleItem(isObject(raw) ? raw : {}, index))) };
     return built.items;
   };
   const find = (id) => {
@@ -394,16 +487,30 @@ export function shellExamplesCtx(source = {}) {
     const all = items();
     const position = new Map(list.map((raw, index) => [raw, index]));
     const itemOf = (raw) => all[position.get(raw)];
-    const hooks = withLab ? {
-      matches: (raw) => !source.matches || !itemOf(raw) || source.matches(itemOf(raw), ctx) !== false,
-      arrange: (shown) => (source.arrange ? source.arrange(shown.map(itemOf).filter(Boolean), ctx).map((item) => list[item.position - 1]) : shown),
-    } : null;
-    const out = typeof source.visible === "function" ? source.visible(hooks) : hooks ? hooks.arrange(list.filter(hooks.matches)) : list;
+    const hooks = withLab
+      ? {
+          matches: (raw) => !source.matches || !itemOf(raw) || source.matches(itemOf(raw), ctx) !== false,
+          arrange: (shown) =>
+            source.arrange
+              ? source.arrange(shown.map(itemOf).filter(Boolean), ctx).map((item) => list[item.position - 1])
+              : shown,
+        }
+      : null;
+    const out =
+      typeof source.visible === "function"
+        ? source.visible(hooks)
+        : hooks
+          ? hooks.arrange(list.filter(hooks.matches))
+          : list;
     return (Array.isArray(out) ? out : []).map(itemOf).filter(Boolean);
   };
   const ids = (name) => {
     const chosen = new Set(idList(read(source, name, EMPTY)));
-    return Object.freeze(items().filter((item) => chosen.has(item.id)).map((item) => item.id));
+    return Object.freeze(
+      items()
+        .filter((item) => chosen.has(item.id))
+        .map((item) => item.id),
+    );
   };
   const ctx = {
     items,
@@ -412,16 +519,24 @@ export function shellExamplesCtx(source = {}) {
       get view() {
         const view = read(source, "view", {});
         const out = {};
-        for (const key of VIEW_KEYS) out[key] = key === "compact" ? (isObject(view) && view.compact === true) : asText(isObject(view) ? view[key] : "");
+        for (const key of VIEW_KEYS)
+          out[key] =
+            key === "compact" ? isObject(view) && view.compact === true : asText(isObject(view) ? view[key] : "");
         return Object.freeze(out);
       },
-      get pins() { return ids("pins"); },
-      get expanded() { return ids("expanded"); },
+      get pins() {
+        return ids("pins");
+      },
+      get expanded() {
+        return ids("expanded");
+      },
       get loaded() {
         const id = read(source, "loaded", null);
         return typeof id === "string" && id ? id : null;
       },
-      get pageShown() { return pageList(false).length; },
+      get pageShown() {
+        return pageList(false).length;
+      },
     },
     actions: {
       open: (id) => call(source, "open", raws()[find(id).position - 1]),
@@ -431,7 +546,9 @@ export function shellExamplesCtx(source = {}) {
       collapse: (id) => call(source, "collapse", find(id).id),
       resetView: () => call(source, "resetView"),
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: nameOf,
   };
   return ctx;

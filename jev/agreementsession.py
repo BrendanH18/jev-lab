@@ -23,8 +23,10 @@ def _labels(items: Any, sample: dict) -> list:
             raise WorkbenchError("Second labels need only their row_id and human labels")
         rid, labels = item["row_id"], item["labels"]
         if not isinstance(rid, str) or rid not in eligible or rid in seen:
-            raise WorkbenchError("Second labels name an unknown or repeated sampled row; session recovery requires the "
-                                 "original sample. Keep the filled-in CSV when comparing a different sample.")
+            raise WorkbenchError(
+                "Second labels name an unknown or repeated sampled row; session recovery requires the "
+                "original sample. Keep the filled-in CSV when comparing a different sample."
+            )
         seen.add(rid)
         if not isinstance(labels, dict):
             raise WorkbenchError("Second labels must be keyed by question id")
@@ -73,8 +75,17 @@ def export_session(dataset_id: str, snapshot: Any, rows: Any, seed: Any, items: 
         raise WorkbenchError("Dataset changed. Draw a new sample before downloading an agreement session")
     clean = _labels(items, sample)
     settled = _settlements(dataset_id, clean, [] if settlements is None else settlements, sample)
-    return {"format": "jev-agreement-session", "version": 1, "dataset": dataset_id, "context": snapshot,
-            "rows": rows, "seed": seed, "members": _members(sample), "items": clean, "settlements": settled}
+    return {
+        "format": "jev-agreement-session",
+        "version": 1,
+        "dataset": dataset_id,
+        "context": snapshot,
+        "rows": rows,
+        "seed": seed,
+        "members": _members(sample),
+        "items": clean,
+        "settlements": settled,
+    }
 
 
 @workbench.dataset_update()
@@ -89,8 +100,12 @@ def import_session(dataset_id: str, session: Any) -> dict:
         raise WorkbenchError("Agreement session is not valid JSON") from err
     if size > workbench.MAX_DATASET_CHARS:
         raise WorkbenchError("Agreement session is too large")
-    if (session["format"] != "jev-agreement-session" or type(session["version"]) is not int
-            or session["version"] != 1 or session["dataset"] != dataset_id):
+    if (
+        session["format"] != "jev-agreement-session"
+        or type(session["version"]) is not int
+        or session["version"] != 1
+        or session["dataset"] != dataset_id
+    ):
         raise WorkbenchError("Agreement session does not match this dataset")
     sample = agreement.sample(dataset_id, session["rows"], session["seed"])
     if session["context"] != sample["session_context"]:
@@ -99,6 +114,14 @@ def import_session(dataset_id: str, session: Any) -> dict:
         raise WorkbenchError("Agreement session sample membership changed")
     items = _labels(session["items"], sample)
     settlements = _settlements(dataset_id, items, session["settlements"], sample)
-    return {"sample": sample, "items": items, "settlements": settlements,
-            "counts": {"rows": len(sample["items"]), "edited_rows": len(items),
-                       "labels": sum(len(item["labels"]) for item in items), "settlements": len(settlements)}}
+    return {
+        "sample": sample,
+        "items": items,
+        "settlements": settlements,
+        "counts": {
+            "rows": len(sample["items"]),
+            "edited_rows": len(items),
+            "labels": sum(len(item["labels"]) for item in items),
+            "settlements": len(settlements),
+        },
+    }

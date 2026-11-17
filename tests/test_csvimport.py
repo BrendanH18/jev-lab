@@ -11,8 +11,11 @@ from jev import csvimport, workbench  # noqa: E402
 from jev.workbench import MAX_BULK_ROWS, WorkbenchError  # noqa: E402
 
 QUESTIONS = {
-    "department": {"type": "choice", "instructions": "Which team?",
-                   "criteria": {"billing": "Charges", "shipping": "Parcels", "other": None}},
+    "department": {
+        "type": "choice",
+        "instructions": "Which team?",
+        "criteria": {"billing": "Charges", "shipping": "Parcels", "other": None},
+    },
     "wants_refund": {"type": "noul", "instructions": "Asks for a refund?"},
     "frustration": {"type": "score", "instructions": "How frustrated?", "criteria": ["Calm", "Annoyed", "Angry"]},
 }
@@ -53,20 +56,39 @@ class ParseTests(unittest.TestCase):
 
 class ConvertTests(unittest.TestCase):
     def test_label_columns_become_expect_and_other_columns_state(self):
-        text = ("text,channel,department,wants_refund,frustration\n"
-                "Charged twice,email,Billing,yes,2\n"
-                "Where is it?,chat,shipping,no,0\n"
-                "Thanks!,chat,,,\n")
+        text = (
+            "text,channel,department,wants_refund,frustration\n"
+            "Charged twice,email,Billing,yes,2\n"
+            "Where is it?,chat,shipping,no,0\n"
+            "Thanks!,chat,,,\n"
+        )
         rep = csvimport.convert(text, QUESTIONS)
-        self.assertEqual(uses(rep), {"text": "state", "channel": "state", "department": "label:department",
-                                     "wants_refund": "label:wants_refund", "frustration": "label:frustration"})
-        self.assertEqual(rep["rows"], [
-            {"text": "Charged twice", "channel": "email",
-             "_expect": {"department": "billing", "wants_refund": True, "frustration": 2}},
-            {"text": "Where is it?", "channel": "chat",
-             "_expect": {"department": "shipping", "wants_refund": False, "frustration": 0}},
-            {"text": "Thanks!", "channel": "chat"},
-        ])
+        self.assertEqual(
+            uses(rep),
+            {
+                "text": "state",
+                "channel": "state",
+                "department": "label:department",
+                "wants_refund": "label:wants_refund",
+                "frustration": "label:frustration",
+            },
+        )
+        self.assertEqual(
+            rep["rows"],
+            [
+                {
+                    "text": "Charged twice",
+                    "channel": "email",
+                    "_expect": {"department": "billing", "wants_refund": True, "frustration": 2},
+                },
+                {
+                    "text": "Where is it?",
+                    "channel": "chat",
+                    "_expect": {"department": "shipping", "wants_refund": False, "frustration": 0},
+                },
+                {"text": "Thanks!", "channel": "chat"},
+            ],
+        )
         self.assertEqual((rep["labeled"], rep["labels"]), (2, {"department": 2, "wants_refund": 2, "frustration": 2}))
         self.assertEqual(rep["columns"][1]["samples"], ["email", "chat", "chat"])
         # The rows run as they are: Bulk strips the labels and returns them beside the answers.
@@ -75,16 +97,21 @@ class ConvertTests(unittest.TestCase):
     def test_values_that_fit_no_answer_are_counted_and_left_out(self):
         text = "text,department,wants_refund,frustration\na,refunds,maybe,3\nb,refunds,Y,1.0\nc,other,0,-1\n"
         rep = csvimport.convert(text + "d,,,nan\ne,,,inf\n", QUESTIONS)
-        self.assertEqual([r.get("_expect") for r in rep["rows"][:3]],
-                         [None, {"wants_refund": True, "frustration": 1}, {"department": "other", "wants_refund": False}])
-        self.assertEqual(rep["problems"], [
-            {"column": "department", "question": "department", "value": "refunds", "rows": 2},
-            {"column": "frustration", "question": "frustration", "value": "-1", "rows": 1},
-            {"column": "frustration", "question": "frustration", "value": "3", "rows": 1},
-            {"column": "frustration", "question": "frustration", "value": "inf", "rows": 1},
-            {"column": "frustration", "question": "frustration", "value": "nan", "rows": 1},
-            {"column": "wants_refund", "question": "wants_refund", "value": "maybe", "rows": 1},
-        ])
+        self.assertEqual(
+            [r.get("_expect") for r in rep["rows"][:3]],
+            [None, {"wants_refund": True, "frustration": 1}, {"department": "other", "wants_refund": False}],
+        )
+        self.assertEqual(
+            rep["problems"],
+            [
+                {"column": "department", "question": "department", "value": "refunds", "rows": 2},
+                {"column": "frustration", "question": "frustration", "value": "-1", "rows": 1},
+                {"column": "frustration", "question": "frustration", "value": "3", "rows": 1},
+                {"column": "frustration", "question": "frustration", "value": "inf", "rows": 1},
+                {"column": "frustration", "question": "frustration", "value": "nan", "rows": 1},
+                {"column": "wants_refund", "question": "wants_refund", "value": "maybe", "rows": 1},
+            ],
+        )
 
     def test_choice_case_is_forgiven_only_when_one_option_matches(self):
         q = {"type": "choice", "criteria": {"Billing": None, "billing": None, "Other": None}}
@@ -95,13 +122,20 @@ class ConvertTests(unittest.TestCase):
 
     def test_prefixed_label_columns_win_over_answer_columns(self):
         # The Workbench's own download: `row`, answer columns named by question, and `label:` columns.
-        text = ('row,department,label:department\n'
-                'Charged twice,billing,billing\n'
-                '"{""text"": ""Lost parcel"", ""order"": ""A-1""}",other,shipping\n')
+        text = (
+            "row,department,label:department\n"
+            "Charged twice,billing,billing\n"
+            '"{""text"": ""Lost parcel"", ""order"": ""A-1""}",other,shipping\n'
+        )
         rep = csvimport.convert(text, QUESTIONS)
         self.assertEqual(uses(rep), {"row": "state", "department": "skip", "label:department": "label:department"})
-        self.assertEqual(rep["rows"], [{"text": "Charged twice", "_expect": {"department": "billing"}},
-                                       {"text": "Lost parcel", "order": "A-1", "_expect": {"department": "shipping"}}])
+        self.assertEqual(
+            rep["rows"],
+            [
+                {"text": "Charged twice", "_expect": {"department": "billing"}},
+                {"text": "Lost parcel", "order": "A-1", "_expect": {"department": "shipping"}},
+            ],
+        )
 
     def test_a_row_column_beside_other_state_is_an_ordinary_field(self):
         rep = csvimport.convert("row,text\n1,hello\n", QUESTIONS)
@@ -116,8 +150,15 @@ class ConvertTests(unittest.TestCase):
 
     def test_names_match_questions_ignoring_case_and_one_column_per_question(self):
         rep = csvimport.convert("Text,Department,DEPARTMENT,Label:Wants_Refund\nhi,billing,other,no\n", QUESTIONS)
-        self.assertEqual(uses(rep), {"Text": "state", "Department": "label:department", "DEPARTMENT": "skip",
-                                     "Label:Wants_Refund": "label:wants_refund"})
+        self.assertEqual(
+            uses(rep),
+            {
+                "Text": "state",
+                "Department": "label:department",
+                "DEPARTMENT": "skip",
+                "Label:Wants_Refund": "label:wants_refund",
+            },
+        )
         self.assertEqual(rep["rows"], [{"Text": "hi", "_expect": {"department": "billing", "wants_refund": False}}])
         # Case is forgiven only when it picks out one question.
         twins = {"a": {"type": "noul", "instructions": "x"}, "A": {"type": "noul", "instructions": "y"}}
@@ -131,7 +172,9 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(uses(csvimport.convert("text,text\na,b\n"))["text_2"], "state")
 
     def test_a_chosen_label_for_a_question_no_longer_run_keeps_the_suggestion(self):
-        rep = csvimport.convert("text,department\nhi,billing\n", QUESTIONS, {"text": "state", "department": "label:gone"})
+        rep = csvimport.convert(
+            "text,department\nhi,billing\n", QUESTIONS, {"text": "state", "department": "label:gone"}
+        )
         self.assertEqual(uses(rep)["department"], "label:department")
 
     def test_chosen_uses_override_the_suggestion(self):
@@ -174,6 +217,7 @@ class ConvertTests(unittest.TestCase):
         import csv
         import io
         from jev import examples
+
         rows = workbench.load_sample_rows()
         qids = list(examples.BULK_QUESTIONS)
         out = io.StringIO()
@@ -181,7 +225,9 @@ class ConvertTests(unittest.TestCase):
         w.writerow(["text"] + qids)
         for r in rows:
             exp = r.get("_expect", {})
-            w.writerow([r["text"]] + [json.dumps(exp[q]) if isinstance(exp.get(q), bool) else exp.get(q, "") for q in qids])
+            w.writerow(
+                [r["text"]] + [json.dumps(exp[q]) if isinstance(exp.get(q), bool) else exp.get(q, "") for q in qids]
+            )
         rep = csvimport.convert(out.getvalue(), examples.BULK_QUESTIONS)
         self.assertEqual(rep["problems"], [])
         self.assertEqual(rep["rows"], [{k: v for k, v in r.items() if k != "_expect" or v} for r in rows])

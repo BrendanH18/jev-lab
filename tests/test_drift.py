@@ -20,17 +20,31 @@ from jev.client import JevError  # noqa: E402
 from jev.workbench import WorkbenchError  # noqa: E402
 
 Q = {
-    "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "money", "tech": "bugs", "other": None}},
+    "dept": {
+        "type": "choice",
+        "instructions": "Which team?",
+        "criteria": {"billing": "money", "tech": "bugs", "other": None},
+    },
     "refund": {"type": "noul", "instructions": "Does the sender want money back?"},
     "urgency": {"type": "score", "instructions": "How urgent?", "criteria": ["Not", "Soon", "Now"]},
 }
-SPEC = {"gates": {"dept": 0.5, "refund": 0.6}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-        "min_accuracy": 0.9, "min_coverage": 0.5}
+SPEC = {
+    "gates": {"dept": 0.5, "refund": 0.6},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.14.0",
+    "min_accuracy": 0.9,
+    "min_coverage": 0.5,
+}
 
 
 def result(index, dept, p, labels=None, text=None, urgency=0.0):
-    out = {"index": index, "row": text or "row %d" % index,
-           "answers": fake_answers(Q, {"dept": dept, "refund": p, "urgency": urgency}), "meta": {}}
+    out = {
+        "index": index,
+        "row": text or "row %d" % index,
+        "answers": fake_answers(Q, {"dept": dept, "refund": p, "urgency": urgency}),
+        "meta": {},
+    }
     if labels is not None:
         out["expect"] = labels
     return out
@@ -50,8 +64,15 @@ CHECK = checks.validate_check(SPEC, Q)
 
 class StatsTests(unittest.TestCase):
     def test_chi_square_tail_at_the_usual_critical_values(self):
-        for x, df in ((3.841459, 1), (5.991465, 2), (7.814728, 3), (9.487729, 4), (11.070498, 5), (18.307038, 10),
-                      (124.342113, 100)):
+        for x, df in (
+            (3.841459, 1),
+            (5.991465, 2),
+            (7.814728, 3),
+            (9.487729, 4),
+            (11.070498, 5),
+            (18.307038, 10),
+            (124.342113, 100),
+        ):
             self.assertAlmostEqual(drift.chi2_sf(x, df), 0.05, places=5, msg="df=%d" % df)
         self.assertEqual(drift.chi2_sf(0, 3), 1.0)
         self.assertLess(drift.chi2_sf(5000, 2), 1e-100)
@@ -93,7 +114,7 @@ class StatsTests(unittest.TestCase):
 
 class EstimateTests(unittest.TestCase):
     def test_borrows_from_the_closest_group_with_enough_rows(self):
-        ref = ([(("billing",), 2, True)] * 6 + [(("tech",), 2, False)] * 3 + [(("tech",), 1, True)] * 3)
+        ref = [(("billing",), 2, True)] * 6 + [(("tech",), 2, False)] * 3 + [(("tech",), 1, True)] * 3
         value, levels = drift.estimate(ref, [(("billing",), 2)])
         self.assertEqual((value, levels), (1.0, ["answers_band"]))
         # tech, band 2 has 3 rows (too few), so it borrows from all 6 tech rows: half right.
@@ -179,7 +200,9 @@ class CompareTests(unittest.TestCase):
         self.assertFalse(rep["targets"]["accuracy"]["ok"])
         self.assertFalse(rep["automation"]["shifted"], "every row is still automated")
         text = " ".join(rep["reasons"])
-        self.assertIn("dept answers are mixed differently: tech is 90.0% of new answers and 50.0% of the dataset's", text)
+        self.assertIn(
+            "dept answers are mixed differently: tech is 90.0% of new answers and 50.0% of the dataset's", text
+        )
         self.assertIn("estimated accuracy on the new automated rows is 10.0%", text)
         self.assertEqual(rep["status"], "shift")
 
@@ -188,7 +211,9 @@ class CompareTests(unittest.TestCase):
         new = unlabeled(10, "billing", 0.98) + [result(10, "other", 0.98, text="A brand new kind of message")]
         rep = drift.compare(ref, new, CHECK, Q)
         self.assertEqual(rep["thin_total"], 1)
-        self.assertEqual(rep["thin"], [{"index": 10, "row": "A brand new kind of message", "answers": "dept=other, refund=yes"}])
+        self.assertEqual(
+            rep["thin"], [{"index": 10, "row": "A brand new kind of message", "answers": "dept=other, refund=yes"}]
+        )
         self.assertEqual(rep["estimate"]["levels"]["all"], 1)
         self.assertIn("1 of 11 new automated rows", " ".join(rep["reasons"]))
 
@@ -225,7 +250,9 @@ class Temp(unittest.TestCase):
         self.dir = Path(tempfile.mkdtemp())
         self._orig = workbench.WORKBENCH_DIR
         workbench.WORKBENCH_DIR = self.dir
-        rows = [json.dumps({"text": "billing %d" % i, "_expect": {"dept": "billing", "refund": True}}) for i in range(12)]
+        rows = [
+            json.dumps({"text": "billing %d" % i, "_expect": {"dept": "billing", "refund": True}}) for i in range(12)
+        ]
         workbench.save_dataset({"name": "Tickets", "rows": "\n".join(rows), "questions": Q})
         checks.save_check("tickets", SPEC)
 
@@ -236,8 +263,12 @@ class Temp(unittest.TestCase):
     @staticmethod
     def client():
         # Billing rows want a refund with confidence; "unsure" rows do not clear the 0.6 refund gate.
-        return FakeClient(lambda state, qs: {"dept": "tech" if "tech" in state["text"] else "billing",
-                                             "refund": 0.7 if "unsure" in state["text"] else 0.98})
+        return FakeClient(
+            lambda state, qs: {
+                "dept": "tech" if "tech" in state["text"] else "billing",
+                "refund": 0.7 if "unsure" in state["text"] else 0.98,
+            }
+        )
 
 
 class RunTests(Temp):
@@ -305,8 +336,12 @@ class RunTests(Temp):
 
 class LabelingTests(Temp):
     def test_full_inputs_and_pictures_are_queued_without_suggested_labels(self):
-        photo = {"text": "tech " + "long message " * 100, "_image": "torn-bag", "channel": "email",
-                 "_expect": {"dept": "other", "refund": False}}
+        photo = {
+            "text": "tech " + "long message " * 100,
+            "_image": "torn-bag",
+            "channel": "email",
+            "_expect": {"dept": "other", "refund": False},
+        }
         rows = ["tech %d" % i for i in range(25)] + [photo]
         fake = self.client()
         report = drift.run(fake, "tickets", rows)
@@ -328,23 +363,30 @@ class LabelingTests(Temp):
         saved = workbench.load_dataset("tickets")
         saved["rows"].append({"text": "tech saved", "_expect": {"dept": "tech", "refund": True}})
         workbench.write_dataset(saved)
-        fake = FakeClient(lambda state, qs: {"dept": "tech" if isinstance(state, list) or "tech" in state["text"]
-                                            else "billing", "refund": 0.98})
+        fake = FakeClient(
+            lambda state, qs: {
+                "dept": "tech" if isinstance(state, list) or "tech" in state["text"] else "billing",
+                "refund": 0.98,
+            }
+        )
         report = drift.run(fake, "tickets", ["tech saved", "tech new", {"text": "tech new"}, ["tech array"]])
         queue = report["labeling"]
-        self.assertEqual(queue["counts"], {"eligible": 4, "in_dataset": 1, "repeated": 1,
-                                           "unsupported": 1, "queued": 1})
+        self.assertEqual(
+            queue["counts"], {"eligible": 4, "in_dataset": 1, "repeated": 1, "unsupported": 1, "queued": 1}
+        )
         self.assertEqual(queue["items"][0]["row"], {"text": "tech new"})
 
     def test_marked_and_unmarked_test_rows_never_reach_the_new_run(self):
         saved = workbench.load_dataset("tickets")
-        saved["rows"].append({"text": "tech held", "_test": True,
-                              "_expect": {"dept": "tech", "refund": True}})
+        saved["rows"].append({"text": "tech held", "_test": True, "_expect": {"dept": "tech", "refund": True}})
         saved["test"] = {"locked_at": "2026-11-05T00:00:00Z", "looks": []}
         workbench.write_dataset(saved)
         fake = self.client()
-        report = drift.run(fake, "tickets", ["tech held", {"text": "tech held"},
-                                             {"text": "tech marked", "_test": True}, "tech available"])
+        report = drift.run(
+            fake,
+            "tickets",
+            ["tech held", {"text": "tech held"}, {"text": "tech marked", "_test": True}, "tech available"],
+        )
         self.assertEqual(report["new"]["rows"], 1)
         self.assertEqual(report["labeling"]["items"][0]["row"], {"text": "tech available"})
         self.assertEqual(len(fake.calls), 13)
@@ -360,8 +402,13 @@ class LabelingTests(Temp):
         workbench.write_dataset(saved)
         row = {"text": "tech " + "full input " * 100, "_image": "torn-bag"}
         labels = {"dept": "other", "refund": False, "urgency": 0}
-        item = {"row": row, "labels": labels, "kind": "audit", "answers": {"dept": "tech"},
-                "candidates": {"dept": ["tech"]}}
+        item = {
+            "row": row,
+            "labels": labels,
+            "kind": "audit",
+            "answers": {"dept": "tech"},
+            "candidates": {"dept": ["tech"]},
+        }
         with patch.object(decisions, "audit_report", side_effect=AssertionError("targeted rows are not an audit")):
             out = drift.append_labels("tickets", [item], Q)
         self.assertEqual((out["added"], out["already"], out["room"]), (1, 0, 187))
@@ -417,8 +464,7 @@ class LabelingTests(Temp):
         saved = workbench.load_dataset("tickets")
         saved["rows"] += ["existing %d" % i for i in range(187)]
         workbench.write_dataset(saved)
-        items = [{"row": {"text": "tech %d" % i}, "labels": {"dept": "tech", "refund": True}}
-                 for i in range(2)]
+        items = [{"row": {"text": "tech %d" % i}, "labels": {"dept": "tech", "refund": True}} for i in range(2)]
         with self.assertRaisesRegex(WorkbenchError, "room for 1 more rows"):
             drift.append_labels("tickets", items, Q)
         self.assertEqual(workbench.load_dataset("tickets"), saved)
@@ -427,8 +473,15 @@ class LabelingTests(Temp):
 
     def test_picture_checks_keep_box_questions_out_of_label_controls(self):
         questions = dict(Q, damage={"type": "box", "instructions": "The damage in `photo`"})
-        workbench.save_dataset({"name": "Photos", "questions": questions, "rows": [
-            {"text": "billing photo", "_image": "intact-bag", "_expect": {"dept": "billing", "refund": True}}]})
+        workbench.save_dataset(
+            {
+                "name": "Photos",
+                "questions": questions,
+                "rows": [
+                    {"text": "billing photo", "_image": "intact-bag", "_expect": {"dept": "billing", "refund": True}}
+                ],
+            }
+        )
         checks.save_check("photos", SPEC)
         report = drift.run(self.client(), "photos", [{"text": "tech photo", "_image": "torn-bag"}])
         queue = report["labeling"]
@@ -438,8 +491,11 @@ class LabelingTests(Temp):
         drift.append_labels("photos", [item], queue["questions"])
         self.assertEqual(workbench.load_dataset("photos")["rows"][-1]["_image"], "torn-bag")
         with self.assertRaisesRegex(WorkbenchError, "Box questions need a picture"):
-            drift.append_labels("photos", [{"row": {"text": "no picture"},
-                                            "labels": {"dept": "tech", "refund": False}}], queue["questions"])
+            drift.append_labels(
+                "photos",
+                [{"row": {"text": "no picture"}, "labels": {"dept": "tech", "refund": False}}],
+                queue["questions"],
+            )
 
 
 class ScriptTests(Temp):
@@ -475,7 +531,9 @@ class ScriptTests(Temp):
         self.assertEqual(json.loads(out_file.read_text())["status"], "shift")
 
     def test_errors_exit_2(self):
-        workbench.save_dataset({"name": "Other", "rows": json.dumps({"text": "x", "_expect": {"refund": True}}), "questions": Q})
+        workbench.save_dataset(
+            {"name": "Other", "rows": json.dumps({"text": "x", "_expect": {"refund": True}}), "questions": Q}
+        )
         checks.save_check("other", SPEC)
         path = self.rows_file(["a"])
         code, out = self.main("--drift", path, client=self.configured())

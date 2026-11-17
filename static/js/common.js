@@ -2,24 +2,42 @@
 // building, probability bars, the request inspector, the key/settings modal, and the top bar.
 // The parts of the chrome that need no DOM (nav links, theme preference, layers, Tab wrap) live in chrome.js.
 
-import { FOCUSABLE, MAIN_ID, NAV_LINKS, THEMES, THEME_KEY, THEME_LABELS, applyTheme, createLayers, normalizeTheme, readTheme, trapFocus,
-  writeTheme } from "./chrome.js";
+import {
+  FOCUSABLE,
+  MAIN_ID,
+  NAV_LINKS,
+  THEMES,
+  THEME_KEY,
+  THEME_LABELS,
+  applyTheme,
+  createLayers,
+  normalizeTheme,
+  readTheme,
+  trapFocus,
+  writeTheme,
+} from "./chrome.js";
 import { handoffFromTrace, writeHandoff } from "./handoff.js";
 
 const TOKEN = document.querySelector('meta[name="jev-csrf"]')?.content || "";
 let status = { configured: false };
 
 export async function api(path, body) {
-  const opts = body === undefined
-    ? { headers: { "X-Jev-Token": TOKEN } }
-    : { method: "POST", headers: { "Content-Type": "application/json", "X-Jev-Token": TOKEN }, body: JSON.stringify(body) };
+  const opts =
+    body === undefined
+      ? { headers: { "X-Jev-Token": TOKEN } }
+      : {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Jev-Token": TOKEN },
+          body: JSON.stringify(body),
+        };
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({ error: "Invalid response from server" }));
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
     err.status = res.status;
     err.reason = data.reason;
-    if (res.status === 401 && data.jev_status === 401 && !status.configured) openSettings("Connect a key to make live calls.");
+    if (res.status === 401 && data.jev_status === 401 && !status.configured)
+      openSettings("Connect a key to make live calls.");
     else if (res.status === 403 && data.reason === "token") toast("Session changed. Reload the page.", "error");
     throw err;
   }
@@ -30,7 +48,8 @@ export async function api(path, body) {
 // ---------- formatting ----------
 export const pct = (p, digits = 0) => `${(p * 100).toFixed(digits)}%`;
 export const ms = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`);
-export const money = (v) => `$${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const money = (v) =>
+  `$${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export function usd(v) {
   if (!v) return "$0";
   if (v < 0.0001) return `$${v.toFixed(7)}`;
@@ -47,7 +66,7 @@ export function h(tag, attrs = {}, ...children) {
     if (k === "class") node.className = v;
     else if (k === "style" && typeof v === "object") Object.assign(node.style, v);
     else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
-    else if (k === "value" && ("value" in node)) node.value = v;
+    else if (k === "value" && "value" in node) node.value = v;
     else if (k === "checked") node.checked = !!v;
     else node.setAttribute(k, v === true ? "" : v);
   }
@@ -66,18 +85,29 @@ export function mount(target, ...nodes) {
 }
 export function debounce(fn, wait) {
   let t;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
 }
 export async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); toast("Copied"); }
-  catch { toast("Copy failed. Select the text and copy it manually.", "error"); }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Copied");
+  } catch {
+    toast("Copy failed. Select the text and copy it manually.", "error");
+  }
 }
 
 // ---------- theme ----------
 // System, light or dark, shown through data-theme on <html> (app.css) and remembered in localStorage under
 // THEME_KEY, which holds only that word. Applied as this module loads, before the page draws its content.
 function themeStore() {
-  try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; }
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
 }
 let theme = readTheme(themeStore());
 function showTheme() {
@@ -86,7 +116,11 @@ function showTheme() {
 showTheme();
 export const themePreference = () => theme;
 export function systemPrefersLight() {
-  try { return window.matchMedia("(prefers-color-scheme: light)").matches === true; } catch { return false; }
+  try {
+    return window.matchMedia("(prefers-color-scheme: light)").matches === true;
+  } catch {
+    return false;
+  }
 }
 // Returns whether the browser will remember the choice; it applies to this page either way.
 export function setTheme(preference) {
@@ -115,12 +149,16 @@ export function openLayer(name, close) {
   if (!escapeBound) {
     escapeBound = true;
     // Capture phase, so the newest layer closes before a handler under it sees the key.
-    document.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape" || event.isComposing || !layers.top()) return;
-      event.preventDefault();
-      event.stopPropagation();
-      layers.closeTop();
-    }, true);
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Escape" || event.isComposing || !layers.top()) return;
+        event.preventDefault();
+        event.stopPropagation();
+        layers.closeTop();
+      },
+      true,
+    );
   }
   const opener = document.activeElement || null;
   const release = layers.open(name, close);
@@ -170,7 +208,8 @@ const ICONS = {
   copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2"/>',
   plus: '<path d="M10 4v12M4 10h12"/>',
   sparkle: '<path d="M10 2.5l1.8 5.2 5.2 1.8-5.2 1.8L10 16.5l-1.8-5.2L3 9.5l5.2-1.8z"/>',
-  image: '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><circle cx="7" cy="8" r="1.6"/><path d="M17.5 13l-4-4-8 7.5"/>',
+  image:
+    '<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><circle cx="7" cy="8" r="1.6"/><path d="M17.5 13l-4-4-8 7.5"/>',
   upload: '<path d="M10 13V3.5M6 7.5l4-4 4 4M3.5 13v2.5a1 1 0 001 1h11a1 1 0 001-1V13"/>',
   frame: '<path d="M3 7V4a1 1 0 011-1h3M13 3h3a1 1 0 011 1v3M17 13v3a1 1 0 01-1 1h-3M7 17H4a1 1 0 01-1-1v-3"/>',
 };
@@ -215,49 +254,84 @@ export function statusBadge(kind, label, extra = "") {
 // ---------- probability visuals ----------
 export function barRow(label, p, { top = false, title = null, valueText = null } = {}) {
   const fill = h("i");
-  const row = h("div", { class: `bar-row${top ? " top" : ""}`, title: title || `${label}: ${pct(p, 1)}` },
+  const row = h(
+    "div",
+    { class: `bar-row${top ? " top" : ""}`, title: title || `${label}: ${pct(p, 1)}` },
     h("span", { class: "lbl" }, label),
     h("div", { class: "bar" }, fill),
-    h("span", { class: "val" }, valueText ?? pct(p)));
-  requestAnimationFrame(() => { fill.style.width = `${Math.max(0, Math.min(1, p)) * 100}%`; });
+    h("span", { class: "val" }, valueText ?? pct(p)),
+  );
+  requestAnimationFrame(() => {
+    fill.style.width = `${Math.max(0, Math.min(1, p)) * 100}%`;
+  });
   return row;
 }
 
 export function choiceBars(answer, labels = {}, limit = 6) {
-  const entries = Object.entries(answer.probabilities || {}).sort((a, b) => b[1] - a[1]).slice(0, limit);
-  return h("div", { class: "bars" }, entries.map(([k, p], i) => barRow(labels[k] || k, p, { top: i === 0 })));
+  const entries = Object.entries(answer.probabilities || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
+  return h(
+    "div",
+    { class: "bars" },
+    entries.map(([k, p], i) => barRow(labels[k] || k, p, { top: i === 0 })),
+  );
 }
 
 // One answer of any type, rendered as a card. Used by the playground, Workbench, and tests.
 export function answerCard(qid, answer, question = null) {
   const type = answer.type;
-  let big, body, title = "";
-  if (question) title = typeof question.instructions === "string" ? question.instructions : JSON.stringify(question.instructions);
+  let big,
+    body,
+    title = "";
+  if (question)
+    title = typeof question.instructions === "string" ? question.instructions : JSON.stringify(question.instructions);
   if (type === "choice") {
     big = String(answer.choice).replace(/_/g, " ");
     body = choiceBars(answer, {}, 4);
   } else if (type === "score") {
     const levels = Object.keys(answer.legend || {}).length - 1;
     big = `${answer.score.toFixed(2)} / ${levels}`;
-    body = h("div", { class: "bars" }, Object.entries(answer.legend || {}).map(([lvl, text]) => {
-      const label = typeof text === "string" ? text.split(":")[0] : JSON.stringify(text);
-      return barRow(label, answer.probabilities?.[lvl] ?? 0, { top: Math.round(answer.score) === Number(lvl), title: typeof text === "string" ? text : label });
-    }));
+    body = h(
+      "div",
+      { class: "bars" },
+      Object.entries(answer.legend || {}).map(([lvl, text]) => {
+        const label = typeof text === "string" ? text.split(":")[0] : JSON.stringify(text);
+        return barRow(label, answer.probabilities?.[lvl] ?? 0, {
+          top: Math.round(answer.score) === Number(lvl),
+          title: typeof text === "string" ? text : label,
+        });
+      }),
+    );
   } else if (type === "box") {
     const b = answer.box || {};
     big = `${pct(b.right - b.left)} × ${pct(b.bottom - b.top)}`;
-    body = h("div", { class: "box-edges mono" },
-      ["left", "top", "right", "bottom"].map((k) => h("span", {}, h("i", {}, k), (b[k] ?? 0).toFixed(3))));
+    body = h(
+      "div",
+      { class: "box-edges mono" },
+      ["left", "top", "right", "bottom"].map((k) => h("span", {}, h("i", {}, k), (b[k] ?? 0).toFixed(3))),
+    );
   } else {
     big = pct(answer.noul, 1);
     body = h("div", { class: "bars" }, barRow("P(yes)", answer.noul, { top: true }));
   }
-  return h("div", { class: "ans pop" },
+  return h(
+    "div",
+    { class: "ans pop" },
     h("div", { class: "t" }, h("span", { class: "typ" }, type), h("code", {}, qid)),
-    title ? h("div", { class: "muted", style: { fontSize: "12px" }, title }, title.length > 110 ? title.slice(0, 109) + "…" : title) : null,
+    title
+      ? h(
+          "div",
+          { class: "muted", style: { fontSize: "12px" }, title },
+          title.length > 110 ? title.slice(0, 109) + "…" : title,
+        )
+      : null,
     h("div", { class: "big" }, big),
     body,
-    type !== "noul" ? h("div", { class: "faint", style: { fontSize: "11.5px" } }, `confidence ${pct(answer.confidence)}`) : null);
+    type !== "noul"
+      ? h("div", { class: "faint", style: { fontSize: "11.5px" } }, `confidence ${pct(answer.confidence)}`)
+      : null,
+  );
 }
 
 // ---------- images ----------
@@ -274,7 +348,8 @@ export async function prepareImage(file) {
   if (Math.min(bitmap.width, bitmap.height) * scale < min) scale = min / Math.min(bitmap.width, bitmap.height);
   const width = Math.round(bitmap.width * scale);
   const height = Math.round(bitmap.height * scale);
-  if (width > max || height > max) throw new Error(`That image is too narrow: each side must fit between ${min} and ${max} pixels after resizing.`);
+  if (width > max || height > max)
+    throw new Error(`That image is too narrow: each side must fit between ${min} and ${max} pixels after resizing.`);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -292,10 +367,21 @@ export function photoView(url, boxes = [], { alt = "", caption = null } = {}) {
   const frame = h("div", { class: "photo" }, h("img", { src: url, alt }));
   for (const b of boxes.filter(Boolean)) {
     const e = b.box;
-    frame.append(h("div", {
-      class: `photo-box${b.dashed ? " dashed" : ""}`,
-      style: { left: pct(e.left, 2), top: pct(e.top, 2), width: pct(e.right - e.left, 2), height: pct(e.bottom - e.top, 2) },
-    }, b.label ? h("span", {}, b.label) : null));
+    frame.append(
+      h(
+        "div",
+        {
+          class: `photo-box${b.dashed ? " dashed" : ""}`,
+          style: {
+            left: pct(e.left, 2),
+            top: pct(e.top, 2),
+            width: pct(e.right - e.left, 2),
+            height: pct(e.bottom - e.top, 2),
+          },
+        },
+        b.label ? h("span", {}, b.label) : null,
+      ),
+    );
   }
   return caption ? h("figure", { class: "photo-fig" }, frame, h("figcaption", { class: "faint" }, caption)) : frame;
 }
@@ -303,19 +389,24 @@ export function photoView(url, boxes = [], { alt = "", caption = null } = {}) {
 // ---------- JSON inspector ----------
 function highlight(json) {
   const esc = json.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return esc.replace(/("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, (m) => {
-    let cls = "j-num";
-    if (/^"/.test(m)) cls = /:$/.test(m) ? "j-key" : "j-str";
-    else if (/true|false|null/.test(m)) cls = "j-lit";
-    return `<span class="${cls}">${m}</span>`;
-  });
+  return esc.replace(
+    /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+    (m) => {
+      let cls = "j-num";
+      if (/^"/.test(m)) cls = /:$/.test(m) ? "j-key" : "j-str";
+      else if (/true|false|null/.test(m)) cls = "j-lit";
+      return `<span class="${cls}">${m}</span>`;
+    },
+  );
 }
 
 // Put the inspected request in the Workbench's Build tab, in a new tab so the demo keeps its place.
 async function openInWorkbench() {
   try {
     writeHandoff(localStorage, await handoffFromTrace(drawer.current, drawer.source, drawer.uploads));
-  } catch (e) { return toast(e.message, "error"); }
+  } catch (e) {
+    return toast(e.message, "error");
+  }
   if (!window.open("/workbench#build", "_blank")) location.href = "/workbench#build";
 }
 
@@ -324,20 +415,58 @@ let drawer;
 // pictures this page uploaded, since the trace leaves their bytes out; Open in Workbench needs them.
 export function inspect(trace, title = "Jev request", { source = null, uploads = [] } = {}) {
   if (!drawer) {
-    const tabs = ["request", "response"].map((t) => h("button", { class: "tab", "data-tab": t, "aria-pressed": "false" }, t === "request" ? "Request" : "Response"));
+    const tabs = ["request", "response"].map((t) =>
+      h("button", { class: "tab", "data-tab": t, "aria-pressed": "false" }, t === "request" ? "Request" : "Response"),
+    );
     const meta = h("div", { class: "stat-row" });
     const heading = h("h3");
     const pre = h("pre", { tabindex: "0", role: "region", "aria-label": "Request and response JSON" });
     const backdrop = h("div", { class: "drawer-backdrop", onclick: () => close() });
-    const copyBtn = h("button", { class: "btn ghost sm", title: "Copy JSON", onclick: () => copyText(JSON.stringify(drawer.current[drawer.which], null, 2)) }, icon("copy"));
-    const workbenchBtn = h("button", { class: "btn sm", title: "Edit and rerun this request in the Workbench, in a new tab. Its answers stay here.", onclick: () => openInWorkbench() }, icon("arrow"), "Open in Workbench");
+    const copyBtn = h(
+      "button",
+      {
+        class: "btn ghost sm",
+        title: "Copy JSON",
+        onclick: () => copyText(JSON.stringify(drawer.current[drawer.which], null, 2)),
+      },
+      icon("copy"),
+    );
+    const workbenchBtn = h(
+      "button",
+      {
+        class: "btn sm",
+        title: "Edit and rerun this request in the Workbench, in a new tab. Its answers stay here.",
+        onclick: () => openInWorkbench(),
+      },
+      icon("arrow"),
+      "Open in Workbench",
+    );
     const closeBtn = h("button", { class: "btn ghost sm", onclick: () => close(), "aria-label": "Close" }, icon("x"));
     // Closed, the drawer is inert: it sits off screen, so nothing in it may take focus or be read out.
-    const panel = h("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Request inspector", inert: true,
-      onkeydown: (e) => trapTab(e, panel) },
-    h("div", { class: "panel-head" }, icon("code"), heading, h("div", { class: "spacer" }), h("div", { class: "tabs" }, tabs), workbenchBtn, copyBtn, closeBtn),
-    h("div", { style: { padding: "12px 18px", borderBottom: "1px solid var(--line)" } }, meta),
-    pre);
+    const panel = h(
+      "aside",
+      {
+        class: "drawer",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-label": "Request inspector",
+        inert: true,
+        onkeydown: (e) => trapTab(e, panel),
+      },
+      h(
+        "div",
+        { class: "panel-head" },
+        icon("code"),
+        heading,
+        h("div", { class: "spacer" }),
+        h("div", { class: "tabs" }, tabs),
+        workbenchBtn,
+        copyBtn,
+        closeBtn,
+      ),
+      h("div", { style: { padding: "12px 18px", borderBottom: "1px solid var(--line)" } }, meta),
+      pre,
+    );
     document.body.append(backdrop, panel);
     let release = null;
     // Escape (through the layer), the backdrop and the Close button all end here; focus goes back to the opener.
@@ -357,7 +486,21 @@ export function inspect(trace, title = "Jev request", { source = null, uploads =
       backdrop.classList.add("open");
       closeBtn.focus();
     };
-    drawer = { pre, tabs, meta, heading, panel, backdrop, workbenchBtn, open, close, current: null, which: "request", source: "", uploads: [] };
+    drawer = {
+      pre,
+      tabs,
+      meta,
+      heading,
+      panel,
+      backdrop,
+      workbenchBtn,
+      open,
+      close,
+      current: null,
+      which: "request",
+      source: "",
+      uploads: [],
+    };
     tabs.forEach((t) => t.addEventListener("click", () => show(t.getAttribute("data-tab"))));
     function show(which) {
       drawer.which = which;
@@ -377,26 +520,35 @@ export function inspect(trace, title = "Jev request", { source = null, uploads =
   drawer.uploads = uploads;
   drawer.workbenchBtn.style.display = location.pathname === "/workbench" || !trace?.request?.questions ? "none" : "";
   const m = trace.meta || {};
-  mount(drawer.meta,
-    stat("model", m.model), stat("questions", m.question_count),
+  mount(
+    drawer.meta,
+    stat("model", m.model),
+    stat("questions", m.question_count),
     stat("latency", ms(m.latency_ms)),
-    stat("input tokens", num(m.input_tokens)), stat("cost", usd(m.cost_usd), true));
+    stat("input tokens", num(m.input_tokens)),
+    stat("cost", usd(m.cost_usd), true),
+  );
   drawer.show("request");
   drawer.open();
 }
-export function closeInspector() { drawer?.close(); }
+export function closeInspector() {
+  drawer?.close();
+}
 
 export function stat(k, v, accent = false) {
   return h("span", { class: `stat${accent ? " accent" : ""}` }, k, h("b", {}, v));
 }
 
 export function callStats(meta, onInspect, calls = 1) {
-  return h("div", { class: "stat-row" },
+  return h(
+    "div",
+    { class: "stat-row" },
     stat(`${calls} call${calls > 1 ? "s" : ""}`, `${meta.question_count} questions`),
     stat("latency", ms(meta.latency_ms), true),
     stat("tokens", num(meta.input_tokens)),
     stat("cost", usd(meta.cost_usd)),
-    onInspect && h("button", { class: "btn sm ghost", onclick: onInspect }, icon("code"), "Inspect JSON"));
+    onInspect && h("button", { class: "btn sm ghost", onclick: onInspect }, icon("code"), "Inspect JSON"),
+  );
 }
 
 // ---------- toast ----------
@@ -419,14 +571,18 @@ export function toast(message, kind = "") {
 }
 
 // ---------- status pill + settings modal ----------
-export function currentStatus() { return status; }
+export function currentStatus() {
+  return status;
+}
 
 export async function refreshStatus() {
   try {
     status = await api("/api/status");
     renderPill();
     window.dispatchEvent(new CustomEvent("jev:status", { detail: status }));
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error(e);
+  }
   return status;
 }
 const refreshStatusSoon = debounce(refreshStatus, 350);
@@ -437,7 +593,12 @@ function renderPill() {
   pill.classList.toggle("ok", status.configured);
   const s = status.spend || {};
   const parts = status.configured
-    ? [h("span", { class: "dot" }), `${status.model}`, h("span", { class: "sep" }), `${usd(s.spent_usd)} · ${num(s.live_calls)} live`]
+    ? [
+        h("span", { class: "dot" }),
+        `${status.model}`,
+        h("span", { class: "sep" }),
+        `${usd(s.spent_usd)} · ${num(s.live_calls)} live`,
+      ]
     : [h("span", { class: "dot" }), "Connect API key"];
   mount(pill, ...parts);
 }
@@ -448,49 +609,179 @@ export function openSettings(reason = "") {
   modalOpen = true;
   const env = status.env || {};
   const s = status.spend || {};
-  const input = h("input", { class: "input mono", type: "password", placeholder: "paste your TypeSafe API key", autocomplete: "new-password", spellcheck: "false" });
+  const input = h("input", {
+    class: "input mono",
+    type: "password",
+    placeholder: "paste your TypeSafe API key",
+    autocomplete: "new-password",
+    spellcheck: "false",
+  });
   const save = h("input", { type: "checkbox", checked: env.can_save });
   if (!env.can_save) save.disabled = true;
   const error = h("p", { style: { color: "var(--critical-text)", minHeight: "18px", fontSize: "12.5px" } }, reason);
   const connect = h("button", { class: "btn primary" }, icon("key"), "Validate & connect");
-  const wrap = h("div", { class: "modal-wrap", onclick: (e) => { if (e.target === wrap) close(); }, onkeydown: (e) => trapTab(e, wrap) });
+  const wrap = h("div", {
+    class: "modal-wrap",
+    onclick: (e) => {
+      if (e.target === wrap) close();
+    },
+    onkeydown: (e) => trapTab(e, wrap),
+  });
   const closeBtn = h("button", { class: "btn ghost", onclick: () => close() }, "Close");
   // Registered before the modal takes focus, so closing it (Escape included) returns focus to what opened it.
   const release = openLayer("settings", () => close());
   const replaceable = !status.configured || status.key_source === "memory";
 
-  const sourceText = { env: "the TYPESAFE_API_KEY environment variable", file: ".env in the project folder", memory: "this server's memory (until restart)" }[status.key_source];
-  const keySection = h("div", { class: "grid", style: { gap: "10px" } },
+  const sourceText = {
+    env: "the TYPESAFE_API_KEY environment variable",
+    file: ".env in the project folder",
+    memory: "this server's memory (until restart)",
+  }[status.key_source];
+  const keySection = h(
+    "div",
+    { class: "grid", style: { gap: "10px" } },
     status.configured
-      ? h("div", { class: "callout good" }, icon("check"), h("div", {}, h("b", {}, "Connected"), h("div", { class: "muted" }, `Key loaded from ${sourceText}. It is never sent to the browser.`)))
-      : h("div", { class: "callout" }, icon("key"), h("div", {}, h("b", {}, "No key yet"), h("div", { class: "muted" }, "Create one at ", h("a", { href: "https://console.typesafe.ai/settings/keys", target: "_blank", rel: "noopener" }, "console.typesafe.ai"), ", paste it here, and it is validated against TypeSafe before anything is stored."))),
+      ? h(
+          "div",
+          { class: "callout good" },
+          icon("check"),
+          h(
+            "div",
+            {},
+            h("b", {}, "Connected"),
+            h("div", { class: "muted" }, `Key loaded from ${sourceText}. It is never sent to the browser.`),
+          ),
+        )
+      : h(
+          "div",
+          { class: "callout" },
+          icon("key"),
+          h(
+            "div",
+            {},
+            h("b", {}, "No key yet"),
+            h(
+              "div",
+              { class: "muted" },
+              "Create one at ",
+              h(
+                "a",
+                { href: "https://console.typesafe.ai/settings/keys", target: "_blank", rel: "noopener" },
+                "console.typesafe.ai",
+              ),
+              ", paste it here, and it is validated against TypeSafe before anything is stored.",
+            ),
+          ),
+        ),
     replaceable ? input : null,
-    replaceable ? h("label", { class: "toggle", style: { alignItems: "flex-start" } }, save, h("span", { class: "track", style: { marginTop: "2px", flex: "none" } }),
-      h("span", {}, "Save to ", h("code", {}, ".env"), " in the project folder so it survives restarts",
-        h("div", { class: "faint", style: { fontSize: "11.5px", marginTop: "2px" } },
-          env.can_save
-            ? "Written with owner-only permissions (0600) to a file that is gitignored and not tracked by git. The key never leaves this machine."
-            : `Disabled: ${(env.problems || []).join(" ")}`))) : null,
+    replaceable
+      ? h(
+          "label",
+          { class: "toggle", style: { alignItems: "flex-start" } },
+          save,
+          h("span", { class: "track", style: { marginTop: "2px", flex: "none" } }),
+          h(
+            "span",
+            {},
+            "Save to ",
+            h("code", {}, ".env"),
+            " in the project folder so it survives restarts",
+            h(
+              "div",
+              { class: "faint", style: { fontSize: "11.5px", marginTop: "2px" } },
+              env.can_save
+                ? "Written with owner-only permissions (0600) to a file that is gitignored and not tracked by git. The key never leaves this machine."
+                : `Disabled: ${(env.problems || []).join(" ")}`,
+            ),
+          ),
+        )
+      : null,
     !replaceable && status.key_source === "file" && env.perms_ok === false
-      ? h("div", { class: "callout" }, icon("alert"), h("div", {}, h("b", {}, ".env is readable by other users"), h("div", { class: "muted" }, "Run ", h("code", {}, "chmod 600 .env"), " to make it owner-only."))) : null,
+      ? h(
+          "div",
+          { class: "callout" },
+          icon("alert"),
+          h(
+            "div",
+            {},
+            h("b", {}, ".env is readable by other users"),
+            h("div", { class: "muted" }, "Run ", h("code", {}, "chmod 600 .env"), " to make it owner-only."),
+          ),
+        )
+      : null,
     error,
-    h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" } },
-      status.configured ? h("button", { class: "btn danger", onclick: forget }, icon("trash"), status.key_source === "file" ? "Forget key (remove from .env)" : status.key_source === "env" ? "Ignore env key for this run" : "Forget key") : null,
-      closeBtn, replaceable ? connect : null));
+    h(
+      "div",
+      { style: { display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" } },
+      status.configured
+        ? h(
+            "button",
+            { class: "btn danger", onclick: forget },
+            icon("trash"),
+            status.key_source === "file"
+              ? "Forget key (remove from .env)"
+              : status.key_source === "env"
+                ? "Ignore env key for this run"
+                : "Forget key",
+          )
+        : null,
+      closeBtn,
+      replaceable ? connect : null,
+    ),
+  );
 
   const budgetPct = s.budget_usd ? Math.min(1, s.spent_usd / s.budget_usd) : 0;
-  const spendSection = h("div", { class: "grid", style: { gap: "8px" } },
+  const spendSection = h(
+    "div",
+    { class: "grid", style: { gap: "8px" } },
     h("div", { class: "section-label" }, "Spend guard · this server run"),
-    h("div", { class: "meter" }, h("i", { style: { width: pct(budgetPct, 1), background: budgetPct > 0.8 ? "var(--warning)" : "var(--series)" } })),
-    h("div", { class: "muted", style: { fontSize: "12.5px" } }, `${usd(s.spent_usd)} of a ${money(s.budget_usd)} budget · ${num(s.live_calls)} live calls · ${num(s.input_tokens)} input tokens · local cap ${s.rpm}/min. Change with `, h("code", {}, "JEV_LAB_BUDGET_USD"), " and ", h("code", {}, "JEV_LAB_RPM"), "."));
+    h(
+      "div",
+      { class: "meter" },
+      h("i", { style: { width: pct(budgetPct, 1), background: budgetPct > 0.8 ? "var(--warning)" : "var(--series)" } }),
+    ),
+    h(
+      "div",
+      { class: "muted", style: { fontSize: "12.5px" } },
+      `${usd(s.spent_usd)} of a ${money(s.budget_usd)} budget · ${num(s.live_calls)} live calls · ${num(s.input_tokens)} input tokens · local cap ${s.rpm}/min. Change with `,
+      h("code", {}, "JEV_LAB_BUDGET_USD"),
+      " and ",
+      h("code", {}, "JEV_LAB_RPM"),
+      ".",
+    ),
+  );
 
   const modelSection = status.configured ? modelPicker() : null;
 
-  mount(wrap, h("div", { class: "panel modal pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "settings-title",
-    style: { width: "min(600px, 100%)", maxHeight: "92vh", overflow: "auto" } },
-  h("div", { class: "panel-head" }, icon("key"), h("h3", { id: "settings-title" }, "API key & safety"), h("div", { class: "spacer" }),
-    h("span", { class: "faint", style: { fontSize: "12px" } }, status.backend)),
-  h("div", { class: "panel-body grid", style: { gap: "18px" } }, keySection, modelSection, spendSection, themePicker())));
+  mount(
+    wrap,
+    h(
+      "div",
+      {
+        class: "panel modal pop",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-labelledby": "settings-title",
+        style: { width: "min(600px, 100%)", maxHeight: "92vh", overflow: "auto" },
+      },
+      h(
+        "div",
+        { class: "panel-head" },
+        icon("key"),
+        h("h3", { id: "settings-title" }, "API key & safety"),
+        h("div", { class: "spacer" }),
+        h("span", { class: "faint", style: { fontSize: "12px" } }, status.backend),
+      ),
+      h(
+        "div",
+        { class: "panel-body grid", style: { gap: "18px" } },
+        keySection,
+        modelSection,
+        spendSection,
+        themePicker(),
+      ),
+    ),
+  );
 
   function close() {
     if (!modalOpen) return;
@@ -513,7 +804,9 @@ export function openSettings(reason = "") {
       window.dispatchEvent(new CustomEvent("jev:status", { detail: status }));
     } catch (e) {
       error.textContent = e.message;
-    } finally { connect.disabled = false; }
+    } finally {
+      connect.disabled = false;
+    }
   }
   async function forget() {
     try {
@@ -522,10 +815,14 @@ export function openSettings(reason = "") {
       close();
       toast(status.removed_from_file ? "Key removed from .env and from memory" : "Key removed from memory");
       window.dispatchEvent(new CustomEvent("jev:status", { detail: status }));
-    } catch (e) { error.textContent = e.message; }
+    } catch (e) {
+      error.textContent = e.message;
+    }
   }
   connect.addEventListener("click", submit);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submit();
+  });
   document.body.append(wrap);
   // The key field when there is one to fill in; otherwise Close, so focus is always inside the dialog.
   (replaceable ? input : closeBtn).focus();
@@ -534,11 +831,27 @@ export const openKeyModal = openSettings;
 
 // System, light or dark for this browser. Each button shows whether it is the current choice.
 function themePicker() {
-  const buttons = THEMES.map((name) => h("button", { class: "chip", type: "button", "data-theme-choice": name,
-    onclick: () => { setTheme(name); sync(); } }, THEME_LABELS[name]));
+  const buttons = THEMES.map((name) =>
+    h(
+      "button",
+      {
+        class: "chip",
+        type: "button",
+        "data-theme-choice": name,
+        onclick: () => {
+          setTheme(name);
+          sync();
+        },
+      },
+      THEME_LABELS[name],
+    ),
+  );
   // A choice made elsewhere while the dialog is open (the command palette, another tab) shows here too; the
   // listener goes away with the dialog.
-  const follow = () => { if (buttons[0].isConnected === false) window.removeEventListener("jev:theme", follow); else sync(); };
+  const follow = () => {
+    if (buttons[0].isConnected === false) window.removeEventListener("jev:theme", follow);
+    else sync();
+  };
   window.addEventListener("jev:theme", follow);
   function sync() {
     buttons.forEach((button, index) => {
@@ -548,33 +861,53 @@ function themePicker() {
     });
   }
   sync();
-  return h("div", { class: "grid", style: { gap: "8px" } },
+  return h(
+    "div",
+    { class: "grid", style: { gap: "8px" } },
     h("div", { class: "section-label" }, "Appearance · this browser"),
     h("div", { class: "chips", role: "group", "aria-label": "Theme" }, buttons),
-    h("div", { class: "faint", style: { fontSize: "11.5px" } }, "System follows your device. The choice is remembered in this browser only, and nothing else is stored with it."));
+    h(
+      "div",
+      { class: "faint", style: { fontSize: "11.5px" } },
+      "System follows your device. The choice is remembered in this browser only, and nothing else is stored with it.",
+    ),
+  );
 }
 
 // Choose the model for this server run. The list comes from GET /v1/models for the connected key.
 function modelPicker() {
-  const select = h("select", { class: "input", "aria-label": "Model" }, h("option", { value: status.model }, status.model));
+  const select = h(
+    "select",
+    { class: "input", "aria-label": "Model" },
+    h("option", { value: status.model }, status.model),
+  );
   const note = h("div", { class: "faint", style: { fontSize: "11.5px" } }, "Loading the models this key can use…");
   const describe = () => {
-    const box = status.supports_box ? "Answers Box questions."
+    const box = status.supports_box
+      ? "Answers Box questions."
       : "Box questions need Jev 1.14 or later: pick jev-latest, or set TYPESAFE_DEFAULT_MODEL to jev-1.14.0.";
-    const source = status.model_source === "selected"
-      ? `Selected for this run; restarting returns to ${status.default_model}.`
-      : "From TYPESAFE_DEFAULT_MODEL (or the default).";
+    const source =
+      status.model_source === "selected"
+        ? `Selected for this run; restarting returns to ${status.default_model}.`
+        : "From TYPESAFE_DEFAULT_MODEL (or the default).";
     note.textContent = `${source} ${box}`;
   };
-  api("/api/models").then((res) => {
-    const names = (res.models || []).map((m) => m.name);
-    if (!names.includes(status.model)) names.unshift(status.model);
-    mount(select, names.map((n) => {
-      const m = (res.models || []).find((x) => x.name === n);
-      return h("option", { value: n, selected: n === status.model }, m ? `${n} · ${m.release_date}` : n);
-    }));
-    describe();
-  }).catch((e) => { note.textContent = `Could not list models: ${e.message}`; });
+  api("/api/models")
+    .then((res) => {
+      const names = (res.models || []).map((m) => m.name);
+      if (!names.includes(status.model)) names.unshift(status.model);
+      mount(
+        select,
+        names.map((n) => {
+          const m = (res.models || []).find((x) => x.name === n);
+          return h("option", { value: n, selected: n === status.model }, m ? `${n} · ${m.release_date}` : n);
+        }),
+      );
+      describe();
+    })
+    .catch((e) => {
+      note.textContent = `Could not list models: ${e.message}`;
+    });
   select.addEventListener("change", async () => {
     try {
       status = await api("/api/model", { model: select.value });
@@ -582,10 +915,17 @@ function modelPicker() {
       describe();
       toast(`Using ${status.model}`);
       window.dispatchEvent(new CustomEvent("jev:status", { detail: status }));
-    } catch (e) { note.textContent = e.message; }
+    } catch (e) {
+      note.textContent = e.message;
+    }
   });
-  return h("div", { class: "grid", style: { gap: "8px" } },
-    h("div", { class: "section-label" }, "Model · this server run"), select, note);
+  return h(
+    "div",
+    { class: "grid", style: { gap: "8px" } },
+    h("div", { class: "section-label" }, "Model · this server run"),
+    select,
+    note,
+  );
 }
 
 // ---------- nav ----------
@@ -606,13 +946,47 @@ export async function initChrome(active) {
     if (!main.id) main.id = MAIN_ID;
     main.setAttribute("tabindex", "-1");
   }
-  const skip = h("a", { class: "skip-link", href: `#${main?.id || MAIN_ID}`, onclick: (e) => { e.preventDefault(); focusMain(); } }, "Skip to content");
-  const bar = h("header", { class: "topbar" },
-    h("a", { class: "brand", href: "/" }, h("span", { class: "brand-mark" }, "J"), "Jev Lab", h("small", {}, "TypeSafe System One")),
-    h("nav", { class: "nav", "aria-label": "Demos" }, NAV_LINKS.map(([href, label]) => h("a", { href, class: href === active ? "active" : "",
-      "aria-current": href === active ? "page" : null }, label))),
+  const skip = h(
+    "a",
+    {
+      class: "skip-link",
+      href: `#${main?.id || MAIN_ID}`,
+      onclick: (e) => {
+        e.preventDefault();
+        focusMain();
+      },
+    },
+    "Skip to content",
+  );
+  const bar = h(
+    "header",
+    { class: "topbar" },
+    h(
+      "a",
+      { class: "brand", href: "/" },
+      h("span", { class: "brand-mark" }, "J"),
+      "Jev Lab",
+      h("small", {}, "TypeSafe System One"),
+    ),
+    h(
+      "nav",
+      { class: "nav", "aria-label": "Demos" },
+      NAV_LINKS.map(([href, label]) =>
+        h(
+          "a",
+          { href, class: href === active ? "active" : "", "aria-current": href === active ? "page" : null },
+          label,
+        ),
+      ),
+    ),
     h("div", { class: "spacer" }),
-    h("button", { id: "key-pill", class: "key-pill", onclick: () => openSettings(), title: "API key and spend settings" }, h("span", { class: "dot" }), "Checking…"));
+    h(
+      "button",
+      { id: "key-pill", class: "key-pill", onclick: () => openSettings(), title: "API key and spend settings" },
+      h("span", { class: "dot" }),
+      "Checking…",
+    ),
+  );
   document.body.prepend(skip, bar);
   toastHost();
   return refreshStatus();

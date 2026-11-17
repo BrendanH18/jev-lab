@@ -59,7 +59,9 @@ def _labeled(row: Any) -> bool:
 
 
 def _file_argument(parser: Any) -> None:
-    parser.add_argument("file", help="a dataset bundle (.zip) exported from the Datasets panel or `lab.py bundles export`")
+    parser.add_argument(
+        "file", help="a dataset bundle (.zip) exported from the Datasets panel or `lab.py bundles export`"
+    )
 
 
 # ---------- bundles show ----------
@@ -75,13 +77,22 @@ def run_show(args: Any) -> int:
     rows = dataset["rows"]
     check = dataset.get("check") if isinstance(dataset.get("check"), dict) else None
     test = dataset.get("test") if isinstance(dataset.get("test"), dict) else {}
-    facts = {"name": dataset["name"], "id": dataset["id"], "bytes": len(raw), "rows": len(rows),
-             "held_out_rows": sum(_held_out(row) for row in rows),
-             "labeled_tuning_rows": sum(_labeled(row) for row in rows if not _held_out(row)),
-             "questions": len(dataset.get("questions") or {}), "pictures": len(pictures),
-             "picture_bytes": sum(len(data) for data in pictures.values()), "rules": bool(dataset.get("rules")),
-             "check_model": check.get("model") if check else None, "guidelines": len(dataset.get("guidelines") or {}),
-             "test_looks": len(test.get("looks") or []), "saved_dataset_exists": workbench._dataset_path(dataset["id"]).exists()}
+    facts = {
+        "name": dataset["name"],
+        "id": dataset["id"],
+        "bytes": len(raw),
+        "rows": len(rows),
+        "held_out_rows": sum(_held_out(row) for row in rows),
+        "labeled_tuning_rows": sum(_labeled(row) for row in rows if not _held_out(row)),
+        "questions": len(dataset.get("questions") or {}),
+        "pictures": len(pictures),
+        "picture_bytes": sum(len(data) for data in pictures.values()),
+        "rules": bool(dataset.get("rules")),
+        "check_model": check.get("model") if check else None,
+        "guidelines": len(dataset.get("guidelines") or {}),
+        "test_looks": len(test.get("looks") or []),
+        "saved_dataset_exists": workbench._dataset_path(dataset["id"]).exists(),
+    }
     if args.json:
         print(json.dumps(facts, ensure_ascii=False))
     else:
@@ -127,10 +138,24 @@ def run_pictures(args: Any) -> int:
         for entry in sorted(name for name in archive.namelist() if name.startswith("images/")):
             info = images.check(archive.read(entry))
             stored = "%s.%s" % (info["sha"], info["format"])
-            rows.append([entry[len("images/"):], stored, info["format"], info["width"], info["height"], info["bytes"], uses.get(stored, 0),
-                         (workbench.images_dir() / stored).is_file()])
-    cli_gates._table_or(args, ["in bundle", "saved as", "format", "width", "height", "bytes", "rows", "already saved"], rows,
-                        "the bundle holds no pictures")
+            rows.append(
+                [
+                    entry[len("images/") :],
+                    stored,
+                    info["format"],
+                    info["width"],
+                    info["height"],
+                    info["bytes"],
+                    uses.get(stored, 0),
+                    (workbench.images_dir() / stored).is_file(),
+                ]
+            )
+    cli_gates._table_or(
+        args,
+        ["in bundle", "saved as", "format", "width", "height", "bytes", "rows", "already saved"],
+        rows,
+        "the bundle holds no pictures",
+    )
     return 0
 
 
@@ -157,10 +182,22 @@ def run_questions(args: Any) -> int:
                     valid += ok and label is not None
         criteria = question.get("criteria")
         gated = qid in ((dataset.get("check") or {}).get("gates") or {})
-        rows.append([qid, qtype, len(criteria) if isinstance(criteria, (dict, list)) else 0, valid if qtype in LABEL_TYPES else None,
-                     gated, bool((dataset.get("guidelines") or {}).get(qid))])
-    cli_gates._table_or(args, ["question", "type", "options or levels", "labeled tuning rows", "gated", "guideline"], rows,
-                        "the bundle holds no questions")
+        rows.append(
+            [
+                qid,
+                qtype,
+                len(criteria) if isinstance(criteria, (dict, list)) else 0,
+                valid if qtype in LABEL_TYPES else None,
+                gated,
+                bool((dataset.get("guidelines") or {}).get(qid)),
+            ]
+        )
+    cli_gates._table_or(
+        args,
+        ["question", "type", "options or levels", "labeled tuning rows", "gated", "guideline"],
+        rows,
+        "the bundle holds no questions",
+    )
     return 0
 
 
@@ -169,7 +206,9 @@ def run_questions(args: Any) -> int:
 
 def _configure_diff(parser: Any) -> None:
     _file_argument(parser)
-    parser.add_argument("--dataset", metavar="ID", help="compare with this saved dataset instead of the one the bundle's name gives")
+    parser.add_argument(
+        "--dataset", metavar="ID", help="compare with this saved dataset instead of the one the bundle's name gives"
+    )
     kit.add_format(parser)
 
 
@@ -186,19 +225,30 @@ def run_diff(args: Any) -> int:
     guides = summary["guidelines"]
     rows: List[list] = [
         ["rows", summary["rows"]["before"], summary["rows"]["after"]],
-        ["rows added", None, summary["rows"]["added"]], ["rows removed", None, summary["rows"]["removed"]],
+        ["rows added", None, summary["rows"]["added"]],
+        ["rows removed", None, summary["rows"]["removed"]],
         ["row order changed", None, summary["rows"]["order_changed"]],
-        ["labels added", None, summary["labels"]["added"]], ["labels removed", None, summary["labels"]["removed"]],
+        ["labels added", None, summary["labels"]["added"]],
+        ["labels removed", None, summary["labels"]["removed"]],
         ["labels changed", None, summary["labels"]["changed"]],
-        ["questions changed", None, summary["questions_changed"]], ["rules changed", None, summary["rules_changed"]],
-        ["name or notes changed", None, summary["metadata_changed"]], ["check changed", None, summary["check_changed"]],
+        ["questions changed", None, summary["questions_changed"]],
+        ["rules changed", None, summary["rules_changed"]],
+        ["name or notes changed", None, summary["metadata_changed"]],
+        ["check changed", None, summary["check_changed"]],
         ["guidelines", guides["before"], guides["after"]],
-        ["guidelines added, removed or changed", None, len(guides["added"]) + len(guides["removed"]) + len(guides["changed"])],
+        [
+            "guidelines added, removed or changed",
+            None,
+            len(guides["added"]) + len(guides["removed"]) + len(guides["changed"]),
+        ],
         ["held-out rows", summary["test"]["before"], summary["test"]["after"]],
         ["rows moved in or out of the split", None, summary["test"]["changed_membership"]],
     ]
     if args.format == "table":
-        print("importing %s over %s" % (args.file, ("saved dataset %s" % target) if prior else "no saved dataset (it would be new)"))
+        print(
+            "importing %s over %s"
+            % (args.file, ("saved dataset %s" % target) if prior else "no saved dataset (it would be new)")
+        )
     kit.emit(args, ["change", "saved", "bundle"], rows)
     changed = any(row[2] not in (0, False) if row[1] is None else row[1] != row[2] for row in rows)
     return 1 if changed else 0
@@ -209,7 +259,9 @@ def run_diff(args: Any) -> int:
 
 def _configure_export(parser: Any) -> None:
     parser.add_argument("dataset", help="the id of a saved dataset")
-    parser.add_argument("--out", required=True, metavar="PATH", help="the .zip file to write, outside the Workbench data directory")
+    parser.add_argument(
+        "--out", required=True, metavar="PATH", help="the .zip file to write, outside the Workbench data directory"
+    )
     parser.add_argument("--force", action="store_true", help="replace the --out file if it exists")
 
 
@@ -221,30 +273,71 @@ def run_export(args: Any) -> int:
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-bundles",
-    "surface": "python.cli",
-    "title": "Dataset bundle commands",
-    "about": "Offline `lab.py bundles` commands that inspect a dataset bundle before importing it (summary, validation, "
-             "pictures, questions, and what importing it over a saved dataset would change, in counts) and export a "
-             "saved dataset's bundle to a file. Nothing is imported, and no label value is printed.",
-    "features": [
-        {"id": "show", "kind": "cli", "command": ["bundles", "show"], "configure": _configure_show, "run": run_show,
-         "title": "Summarize a bundle file: name, rows, held-out and labeled rows, questions, pictures, rules, check model, guidelines and looks",
-         "options": [{"id": "json", "title": "--json prints the summary as one JSON object"}]},
-        {"id": "validate", "kind": "cli", "command": ["bundles", "validate"], "configure": _configure_validate, "run": run_validate,
-         "title": "Validate a bundle file exactly as the import would, without importing it; exit 1 when it is invalid"},
-        {"id": "pictures", "kind": "cli", "command": ["bundles", "pictures"], "configure": _configure_pictures, "run": run_pictures,
-         "title": "List a bundle's pictures: the name in the bundle, the name it is saved as, format, size, rows and whether it is already saved",
-         "options": [dict(FORMAT)]},
-        {"id": "questions", "kind": "cli", "command": ["bundles", "questions"], "configure": _configure_questions, "run": run_questions,
-         "title": "List a bundle's questions with their options or levels, valid labels on tuning rows, and whether a gate or guideline covers them",
-         "options": [dict(FORMAT)]},
-        {"id": "diff", "kind": "cli", "command": ["bundles", "diff"], "configure": _configure_diff, "run": run_diff,
-         "title": "Say in counts what importing a bundle over the saved dataset would change: rows, labels, questions, rules, check, guidelines and split; exit 1 if anything",
-         "options": [{"id": "dataset", "title": "--dataset ID compares with another saved dataset"}, dict(FORMAT)]},
-        {"id": "export", "kind": "cli", "command": ["bundles", "export"], "configure": _configure_export, "run": run_export,
-         "title": "Write a saved dataset's bundle (.zip) to a file outside the Workbench data directory",
-         "options": [{"id": "force", "title": "--force replaces an existing --out file"}]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-bundles",
+        "surface": "python.cli",
+        "title": "Dataset bundle commands",
+        "about": "Offline `lab.py bundles` commands that inspect a dataset bundle before importing it (summary, validation, "
+        "pictures, questions, and what importing it over a saved dataset would change, in counts) and export a "
+        "saved dataset's bundle to a file. Nothing is imported, and no label value is printed.",
+        "features": [
+            {
+                "id": "show",
+                "kind": "cli",
+                "command": ["bundles", "show"],
+                "configure": _configure_show,
+                "run": run_show,
+                "title": "Summarize a bundle file: name, rows, held-out and labeled rows, questions, pictures, rules, check model, guidelines and looks",
+                "options": [{"id": "json", "title": "--json prints the summary as one JSON object"}],
+            },
+            {
+                "id": "validate",
+                "kind": "cli",
+                "command": ["bundles", "validate"],
+                "configure": _configure_validate,
+                "run": run_validate,
+                "title": "Validate a bundle file exactly as the import would, without importing it; exit 1 when it is invalid",
+            },
+            {
+                "id": "pictures",
+                "kind": "cli",
+                "command": ["bundles", "pictures"],
+                "configure": _configure_pictures,
+                "run": run_pictures,
+                "title": "List a bundle's pictures: the name in the bundle, the name it is saved as, format, size, rows and whether it is already saved",
+                "options": [dict(FORMAT)],
+            },
+            {
+                "id": "questions",
+                "kind": "cli",
+                "command": ["bundles", "questions"],
+                "configure": _configure_questions,
+                "run": run_questions,
+                "title": "List a bundle's questions with their options or levels, valid labels on tuning rows, and whether a gate or guideline covers them",
+                "options": [dict(FORMAT)],
+            },
+            {
+                "id": "diff",
+                "kind": "cli",
+                "command": ["bundles", "diff"],
+                "configure": _configure_diff,
+                "run": run_diff,
+                "title": "Say in counts what importing a bundle over the saved dataset would change: rows, labels, questions, rules, check, guidelines and split; exit 1 if anything",
+                "options": [
+                    {"id": "dataset", "title": "--dataset ID compares with another saved dataset"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "export",
+                "kind": "cli",
+                "command": ["bundles", "export"],
+                "configure": _configure_export,
+                "run": run_export,
+                "title": "Write a saved dataset's bundle (.zip) to a file outside the Workbench data directory",
+                "options": [{"id": "force", "title": "--force replaces an existing --out file"}],
+            },
+        ],
+    }
+)

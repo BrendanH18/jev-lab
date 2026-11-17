@@ -1,4 +1,5 @@
 """Counter's rules and API boundaries, without a model or network."""
+
 import copy
 import sys
 from pathlib import Path
@@ -73,8 +74,16 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(rows, before)
 
     def test_policy_coercion_and_clamps(self):
-        p = counter.full_policy({"person_at": "0.8", "streak_turns": 0, "missed_turns": 99,
-                                 "resolved_at": float("nan"), "frustration_at": "bad", "intent_min": None})
+        p = counter.full_policy(
+            {
+                "person_at": "0.8",
+                "streak_turns": 0,
+                "missed_turns": 99,
+                "resolved_at": float("nan"),
+                "frustration_at": "bad",
+                "intent_min": None,
+            }
+        )
         self.assertEqual((p["person_at"], p["streak_turns"], p["missed_turns"]), (0.8, 1, 20))
         for k in ("resolved_at", "frustration_at", "intent_min"):
             self.assertEqual(p[k], counter.DEFAULT_POLICY[k])
@@ -108,7 +117,9 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(state["conversation"], transcript)
         for k in ("meta", "trace", "answers", "policy"):
             self.assertIn(k, r)
-        again = server.api_counter_decide({"turn_answers": [r["answers"], r2["answers"]], "policy": {"streak_turns": 3}})
+        again = server.api_counter_decide(
+            {"turn_answers": [r["answers"], r2["answers"]], "policy": {"streak_turns": 3}}
+        )
         self.assertEqual([d["action"] for d in again["decisions"]], ["reply", "reply"])
         self.assertIn("compute_ms", again)
         self.assertEqual(len(self.client.calls), 2)
@@ -116,8 +127,11 @@ class RouteTests(unittest.TestCase):
     def test_invalid_transcripts_make_no_calls(self):
         bad = [None, {}, [], ["text"]]
         bad += [[{"speaker": "customer", "text": t}] for t in (None, " ", "x" * 2001)]
-        bad += [[{"speaker": "bot", "text": "hi"}], self.transcript * 40,
-                self.transcript + [{"speaker": "bot", "text": "invented"}] + self.transcript]
+        bad += [
+            [{"speaker": "bot", "text": "hi"}],
+            self.transcript * 40,
+            self.transcript + [{"speaker": "bot", "text": "invented"}] + self.transcript,
+        ]
         for transcript in bad:
             with self.subTest(transcript=transcript), self.assertRaises(server.BadRequest):
                 server.api_counter_turn({"transcript": transcript})
@@ -128,9 +142,13 @@ class RouteTests(unittest.TestCase):
 
     def test_invalid_saved_answers(self):
         bad = [None, {}, [None], [{}], [answers()] * 21]
-        for key, value in (("intent", {"choice": "unknown"}), ("frustration", {"score": 5}),
-                           ("resolved", {"noul": True}), ("missed", {"noul": float("nan")}),
-                           ("asks_for_person", {"noul": -1})):
+        for key, value in (
+            ("intent", {"choice": "unknown"}),
+            ("frustration", {"score": 5}),
+            ("resolved", {"noul": True}),
+            ("missed", {"noul": float("nan")}),
+            ("asks_for_person", {"noul": -1}),
+        ):
             bad.append([dict(answers(), **{key: value})])
         a = answers()
         a["intent"]["probabilities"]["other"] = "x"

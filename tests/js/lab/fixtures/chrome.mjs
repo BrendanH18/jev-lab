@@ -23,39 +23,109 @@ import { chromeCtx } from "../../../../static/js/lab/surfaces/chrome.js";
 // Raw GET /api/status answers, as the server sends them (server.py api_status).
 export const STATUS = Object.freeze({
   // A key from .env, a $2.00 budget with a little spent and one call's reserve outstanding.
-  connected: Object.freeze({ version: "0.9.0", configured: true, key_source: "file", model: "jev-1.14.0", model_source: "default",
-    default_model: "jev-1.14.0", supports_box: true, backend: "typesafe-sdk", price_per_mtok_input: 0.4,
+  connected: Object.freeze({
+    version: "0.9.0",
+    configured: true,
+    key_source: "file",
+    model: "jev-1.14.0",
+    model_source: "default",
+    default_model: "jev-1.14.0",
+    supports_box: true,
+    backend: "typesafe-sdk",
+    price_per_mtok_input: 0.4,
     spend: { budget_usd: 2, spent_usd: 0.0125, reserved_usd: 0.0005, live_calls: 7, input_tokens: 31250, rpm: 120 },
-    env: { path: ".env", exists: true, perms_ok: true, git_repo: true, problems: [], can_save: true } }),
+    env: { path: ".env", exists: true, perms_ok: true, git_repo: true, problems: [], can_save: true },
+  }),
   // Connected for this run only (pasted, not saved), a model picked in the settings that cannot answer Box questions.
-  memory: Object.freeze({ version: "0.9.0", configured: true, key_source: "memory", model: "jev-1.13.2", model_source: "selected",
-    default_model: "jev-1.14.0", supports_box: false, backend: "stdlib", price_per_mtok_input: 0.35,
+  memory: Object.freeze({
+    version: "0.9.0",
+    configured: true,
+    key_source: "memory",
+    model: "jev-1.13.2",
+    model_source: "selected",
+    default_model: "jev-1.14.0",
+    supports_box: false,
+    backend: "stdlib",
+    price_per_mtok_input: 0.35,
     spend: { budget_usd: 5, spent_usd: 4.75, reserved_usd: 0, live_calls: 812, input_tokens: 13571428, rpm: 60 },
-    env: { path: ".env", exists: false, perms_ok: null, git_repo: true, problems: [".env is not ignored by git."], can_save: false } }),
+    env: {
+      path: ".env",
+      exists: false,
+      perms_ok: null,
+      git_repo: true,
+      problems: [".env is not ignored by git."],
+      can_save: false,
+    },
+  }),
   // No key yet: the pill says "Connect API key".
-  noKey: Object.freeze({ version: "0.9.0", configured: false, key_source: null, model: "jev-1.14.0", model_source: "default",
-    default_model: "jev-1.14.0", supports_box: true, backend: "typesafe-sdk", price_per_mtok_input: 0.4,
+  noKey: Object.freeze({
+    version: "0.9.0",
+    configured: false,
+    key_source: null,
+    model: "jev-1.14.0",
+    model_source: "default",
+    default_model: "jev-1.14.0",
+    supports_box: true,
+    backend: "typesafe-sdk",
+    price_per_mtok_input: 0.4,
     spend: { budget_usd: 2, spent_usd: 0, reserved_usd: 0, live_calls: 0, input_tokens: 0, rpm: 120 },
-    env: { path: ".env", exists: false, perms_ok: null, git_repo: true, problems: [], can_save: true } }),
+    env: { path: ".env", exists: false, perms_ok: null, git_repo: true, problems: [], can_save: true },
+  }),
   // JEV_LAB_BUDGET_USD=0: no budget, so nothing is "left".
-  noBudget: Object.freeze({ version: "0.9.0", configured: true, key_source: "env", model: "jev-latest", model_source: "default",
-    default_model: "jev-latest", supports_box: true, backend: "typesafe-sdk", price_per_mtok_input: 0.4,
+  noBudget: Object.freeze({
+    version: "0.9.0",
+    configured: true,
+    key_source: "env",
+    model: "jev-latest",
+    model_source: "default",
+    default_model: "jev-latest",
+    supports_box: true,
+    backend: "typesafe-sdk",
+    price_per_mtok_input: 0.4,
     spend: { budget_usd: 0, spent_usd: 0.31, reserved_usd: 0, live_calls: 40, input_tokens: 775000, rpm: 120 },
-    env: { path: ".env", exists: true, perms_ok: false, git_repo: true, problems: [], can_save: true } }),
+    env: { path: ".env", exists: true, perms_ok: false, git_repo: true, problems: [], can_save: true },
+  }),
   // Spent past the budget (the guard refuses the next call): remaining is 0, not negative.
-  overBudget: Object.freeze({ version: "0.9.0", configured: true, key_source: "file", model: "jev-1.14.0", model_source: "default",
-    default_model: "jev-1.14.0", supports_box: true, backend: "typesafe-sdk", price_per_mtok_input: 0.4,
+  overBudget: Object.freeze({
+    version: "0.9.0",
+    configured: true,
+    key_source: "file",
+    model: "jev-1.14.0",
+    model_source: "default",
+    default_model: "jev-1.14.0",
+    supports_box: true,
+    backend: "typesafe-sdk",
+    price_per_mtok_input: 0.4,
     spend: { budget_usd: 0.05, spent_usd: 0.0512, reserved_usd: 0, live_calls: 128, input_tokens: 128000, rpm: 120 },
-    env: { path: ".env", exists: true, perms_ok: true, git_repo: true, problems: [], can_save: true } }),
+    env: { path: ".env", exists: true, perms_ok: true, git_repo: true, problems: [], can_save: true },
+  }),
   // Before the first status answer of the page load (common.js starts with this).
   loading: Object.freeze({ configured: false }),
 });
 
 // Mounted commands as commandRows() reports them: a chrome command with a shortcut, one without, and a page command.
 export const COMMANDS = Object.freeze([
-  Object.freeze({ key: "chrome-essentials/keyboard_help", title: "Show keyboard shortcuts", keys: "?", group: "Help", surface: "chrome" }),
-  Object.freeze({ key: "chrome-essentials/go_workbench", title: "Go to Workbench", keys: null, group: "Go to", surface: "chrome" }),
-  Object.freeze({ key: "shield-inbox/next_message", title: "Select the next message", keys: "j", group: "Inbox", surface: "shield.inbox" }),
+  Object.freeze({
+    key: "chrome-essentials/keyboard_help",
+    title: "Show keyboard shortcuts",
+    keys: "?",
+    group: "Help",
+    surface: "chrome",
+  }),
+  Object.freeze({
+    key: "chrome-essentials/go_workbench",
+    title: "Go to Workbench",
+    keys: null,
+    group: "Go to",
+    surface: "chrome",
+  }),
+  Object.freeze({
+    key: "shield-inbox/next_message",
+    title: "Select the next message",
+    keys: "j",
+    group: "Inbox",
+    surface: "shield.inbox",
+  }),
 ]);
 
 export function sampleChromeCtx(overrides = {}) {
@@ -72,14 +142,33 @@ export function sampleChromeCtx(overrides = {}) {
     layers: overrides.layers || [],
     commands: overrides.commands || COMMANDS,
     mac: overrides.mac === true,
-    go: (target) => { calls.push(["go", target]); },
-    openSettings: () => { calls.push(["openSettings"]); },
-    openPalette: () => { calls.push(["openPalette"]); },
-    setTheme: (preference) => { calls.push(["setTheme", preference]); theme = preference; return overrides.storageBlocked !== true; },
-    copy: (text) => { calls.push(["copy", text]); },
-    openHelp: () => { calls.push(["openHelp"]); },
-    focusMain: () => { calls.push(["focusMain"]); return overrides.mainMissing !== true; },
-    openOfficial: (url) => { calls.push(["openOfficial", url]); },
+    go: (target) => {
+      calls.push(["go", target]);
+    },
+    openSettings: () => {
+      calls.push(["openSettings"]);
+    },
+    openPalette: () => {
+      calls.push(["openPalette"]);
+    },
+    setTheme: (preference) => {
+      calls.push(["setTheme", preference]);
+      theme = preference;
+      return overrides.storageBlocked !== true;
+    },
+    copy: (text) => {
+      calls.push(["copy", text]);
+    },
+    openHelp: () => {
+      calls.push(["openHelp"]);
+    },
+    focusMain: () => {
+      calls.push(["focusMain"]);
+      return overrides.mainMissing !== true;
+    },
+    openOfficial: (url) => {
+      calls.push(["openOfficial", url]);
+    },
   };
   for (const name of missing) delete source[name];
   const ctx = chromeCtx(source);

@@ -43,7 +43,7 @@ class PerturbTests(unittest.TestCase):
         out = perturb.apply("distractor", ROW, 1)
         self.assertEqual({k: v for k, v in out.items() if k != "text"}, {k: v for k, v in ROW.items() if k != "text"})
         self.assertTrue(out["text"].startswith(ROW["text"] + " "))
-        self.assertIn(out["text"][len(ROW["text"]) + 1:], perturb.DISTRACTORS)
+        self.assertIn(out["text"][len(ROW["text"]) + 1 :], perturb.DISTRACTORS)
         same = perturb.apply("distractor", {"a": "same words", "b": "same words"}, 0)
         self.assertEqual(sum(v != "same words" for v in same.values()), 1)
         self.assertEqual(perturb.apply("distractor", {"n": 1}, 0), {"n": 1})
@@ -63,8 +63,9 @@ class PerturbTests(unittest.TestCase):
         good = {"questions": {"u": {"type": "noul", "instructions": "Urgent?"}}}
         with self.assertRaisesRegex(workbench.WorkbenchError, "Variant B: perturb"):
             workbench.validate_variants([good, dict(good, perturb="reverse")])
-        self.assertEqual([v["perturb"] for v in workbench.validate_variants([good, dict(good, perturb="typos")])],
-                         [None, "typos"])
+        self.assertEqual(
+            [v["perturb"] for v in workbench.validate_variants([good, dict(good, perturb="typos")])], [None, "typos"]
+        )
 
 
 if __name__ == "__main__":

@@ -45,7 +45,11 @@ def _parse(path: str) -> Any:
 
 def _is_request(data: Any) -> bool:
     """A request holds its questions under "questions"; a bare questions object holds questions keyed by id."""
-    return isinstance(data, dict) and isinstance(data.get("questions"), dict) and not isinstance(data["questions"].get("type"), str)
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("questions"), dict)
+        and not isinstance(data["questions"].get("type"), str)
+    )
 
 
 def _request(path: str) -> dict:
@@ -71,7 +75,9 @@ def _write_out(path: str, text: str, force: Optional[bool] = None) -> None:
     if target.is_dir():
         raise kit.CliError("--out %s is a folder; name a file" % path)
     if target.exists() and not force:
-        raise kit.CliError("%s already exists; choose another --out path%s" % (path, "" if force is None else " or pass --force"))
+        raise kit.CliError(
+            "%s already exists; choose another --out path%s" % (path, "" if force is None else " or pass --force")
+        )
     if not target.parent.is_dir():
         raise kit.CliError("the folder for --out %s does not exist" % path)
     target.write_text(text, encoding="utf-8")
@@ -162,21 +168,35 @@ def _configure_outline(parser: Any) -> None:
     parser.add_argument("file", help="a questions JSON file, or a request JSON file with a questions field")
     parser.add_argument("--type", choices=TYPES, help="only questions of this type")
     parser.add_argument("--criteria", action="store_true", help="one row per criterion instead of one per question")
-    parser.add_argument("--sort", choices=("position", "id", "type", "criteria", "words"), default="position",
-                        help="order rows by position (default), id, type, or most criteria / instruction words first")
+    parser.add_argument(
+        "--sort",
+        choices=("position", "id", "type", "criteria", "words"),
+        default="position",
+        help="order rows by position (default), id, type, or most criteria / instruction words first",
+    )
     kit.add_format(parser)
 
 
 def run_outline(args: Any) -> int:
     questions = _questions(args.file)
-    picked = [(position, qid, q) for position, (qid, q) in enumerate(questions.items(), 1) if not args.type or q["type"] == args.type]
+    picked = [
+        (position, qid, q)
+        for position, (qid, q) in enumerate(questions.items(), 1)
+        if not args.type or q["type"] == args.type
+    ]
     if args.criteria:
         rows = [[qid, q["type"], key, _words(value)] for _position, qid, q in picked for key, value in _entries(q)]
         kit.emit(args, ["question", "type", "key", "words"], rows)
         return 0
-    rows = [[position, qid, q["type"], _criteria_count(q), _words(q.get("instructions"))] for position, qid, q in picked]
-    keys = {"id": lambda row: row[1], "type": lambda row: (TYPES.index(row[2]), row[0]),
-            "criteria": lambda row: (-row[3], row[0]), "words": lambda row: (-row[4], row[0])}
+    rows = [
+        [position, qid, q["type"], _criteria_count(q), _words(q.get("instructions"))] for position, qid, q in picked
+    ]
+    keys = {
+        "id": lambda row: row[1],
+        "type": lambda row: (TYPES.index(row[2]), row[0]),
+        "criteria": lambda row: (-row[3], row[0]),
+        "words": lambda row: (-row[4], row[0]),
+    }
     if args.sort in keys:
         rows.sort(key=keys[args.sort])
     kit.emit(args, ["#", "id", "type", "criteria", "words"], rows)
@@ -247,7 +267,10 @@ def run_validate(args: Any) -> int:
             print("invalid: %s" % message)
     else:
         questions = workbench.validate_questions(request["questions"])
-        print("valid: %s (%s)%s" % (_count(len(questions)), _type_summary(questions), " and a valid state" if args.state else ""))
+        print(
+            "valid: %s (%s)%s"
+            % (_count(len(questions)), _type_summary(questions), " and a valid state" if args.state else "")
+        )
     return 1 if problems else 0
 
 
@@ -257,8 +280,13 @@ def run_validate(args: Any) -> int:
 def _configure_lint(parser: Any) -> None:
     parser.add_argument("file", help="a questions or request JSON file")
     parser.add_argument("--state", metavar="FILE", help="read the request state from this file (JSON, or plain text)")
-    parser.add_argument("--picture", action="append", default=[], metavar="NAME",
-                        help="a picture reference the request carries, which is not a state path (repeatable)")
+    parser.add_argument(
+        "--picture",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="a picture reference the request carries, which is not a state path (repeatable)",
+    )
     parser.add_argument("--level", choices=lint.LEVELS, help="only findings of this level")
     parser.add_argument("--no-lab", action="store_true", help="leave out the Lab packs' findings")
     parser.add_argument("--strict", action="store_true", help="exit 1 on advice too, not only on problems")
@@ -285,9 +313,15 @@ def run_lint(args: Any) -> int:
         found += [("lab", item) for item in result["lab"]["findings"]]
     if state is None:
         found = [(source, item) for source, item in found if item["code"] != "missing_path"]
-        print("lab.py: %s has no state, so backticked paths were not checked (pass --state FILE)" % args.file, file=sys.stderr)
-    rows = [[source, item["level"], item["code"], item["question"] or "", item["message"]] for source, item in found
-            if not args.level or item["level"] == args.level]
+        print(
+            "lab.py: %s has no state, so backticked paths were not checked (pass --state FILE)" % args.file,
+            file=sys.stderr,
+        )
+    rows = [
+        [source, item["level"], item["code"], item["question"] or "", item["message"]]
+        for source, item in found
+        if not args.level or item["level"] == args.level
+    ]
     _table_or(args, ["source", "level", "code", "question", "message"], rows, "no findings")
     if any(row[1] == "problem" for row in rows) or (args.strict and rows):
         return 1
@@ -300,33 +334,52 @@ def run_lint(args: Any) -> int:
 def _configure_stats(parser: Any) -> None:
     parser.add_argument("file", help="a questions or request JSON file")
     parser.add_argument("--by-type", action="store_true", help="one row per question type")
-    parser.add_argument("--words-over", type=int, metavar="N", help="list questions whose instructions run past N words; exit 1 if any")
+    parser.add_argument(
+        "--words-over", type=int, metavar="N", help="list questions whose instructions run past N words; exit 1 if any"
+    )
     kit.add_format(parser)
 
 
 def run_stats(args: Any) -> int:
     questions = _questions(args.file)
     if args.words_over is not None:
-        rows = [[qid, q["type"], _words(q.get("instructions"))] for qid, q in questions.items() if _words(q.get("instructions")) > args.words_over]
-        _table_or(args, ["question", "type", "words"], rows, "no question has more than %d words of instructions" % args.words_over)
+        rows = [
+            [qid, q["type"], _words(q.get("instructions"))]
+            for qid, q in questions.items()
+            if _words(q.get("instructions")) > args.words_over
+        ]
+        _table_or(
+            args,
+            ["question", "type", "words"],
+            rows,
+            "no question has more than %d words of instructions" % args.words_over,
+        )
         return 1 if rows else 0
     if args.by_type:
-        rows = [[qtype, sum(1 for q in questions.values() if q["type"] == qtype),
-                 sum(_criteria_count(q) for q in questions.values() if q["type"] == qtype),
-                 sum(_words(q.get("instructions")) for q in questions.values() if q["type"] == qtype)]
-                for qtype in TYPES if any(q["type"] == qtype for q in questions.values())]
+        rows = [
+            [
+                qtype,
+                sum(1 for q in questions.values() if q["type"] == qtype),
+                sum(_criteria_count(q) for q in questions.values() if q["type"] == qtype),
+                sum(_words(q.get("instructions")) for q in questions.values() if q["type"] == qtype),
+            ]
+            for qtype in TYPES
+            if any(q["type"] == qtype for q in questions.values())
+        ]
         kit.emit(args, ["type", "questions", "criteria", "words"], rows)
         return 0
     words = {qid: _words(q.get("instructions")) for qid, q in questions.items()}
     longest = max(words, key=lambda qid: words[qid])
     rows: List[list] = [["questions", len(questions)]]
     rows += [[qtype, count] for qtype, count in _type_counts(questions).items()]
-    rows += [["criteria", sum(_criteria_count(q) for q in questions.values())],
-             ["choice options", sum(len(_entries(q)) for q in questions.values() if q["type"] == "choice")],
-             ["score levels", sum(len(_entries(q)) for q in questions.values() if q["type"] == "score")],
-             ["instruction words", sum(words.values())],
-             ["mean words", round(sum(words.values()) / len(words), 1)],
-             ["longest", "%s (%d words)" % (longest, words[longest])]]
+    rows += [
+        ["criteria", sum(_criteria_count(q) for q in questions.values())],
+        ["choice options", sum(len(_entries(q)) for q in questions.values() if q["type"] == "choice")],
+        ["score levels", sum(len(_entries(q)) for q in questions.values() if q["type"] == "score")],
+        ["instruction words", sum(words.values())],
+        ["mean words", round(sum(words.values()) / len(words), 1)],
+        ["longest", "%s (%d words)" % (longest, words[longest])],
+    ]
     kit.emit(args, ["metric", "value"], rows)
     return 0
 
@@ -338,7 +391,9 @@ def _configure_diff(parser: Any) -> None:
     parser.add_argument("old", help="the first questions or request JSON file")
     parser.add_argument("new", help="the second questions or request JSON file")
     parser.add_argument("--ignore-order", action="store_true", help="do not report questions that only moved")
-    parser.add_argument("--ignore-whitespace", action="store_true", help="treat text that differs only in spacing as the same")
+    parser.add_argument(
+        "--ignore-whitespace", action="store_true", help="treat text that differs only in spacing as the same"
+    )
     parser.add_argument("--criteria", action="store_true", help="one row per added, removed or changed criterion")
     parser.add_argument("--stat", action="store_true", help="only count added, removed, changed and moved questions")
     kit.add_format(parser)
@@ -392,10 +447,23 @@ def run_diff(args: Any) -> int:
             edited = [key for key in before if key in after and not same(before[key], after[key])]
             reordered = not (added or removed or edited) and a["type"] == "choice" and list(before) != list(after)
             if args.criteria:
-                rows += [["criterion", qid, "%s: %s" % (key, what)] for what, keys in (("added", added), ("removed", removed), ("changed", edited))
-                         for key in keys]
+                rows += [
+                    ["criterion", qid, "%s: %s" % (key, what)]
+                    for what, keys in (("added", added), ("removed", removed), ("changed", edited))
+                    for key in keys
+                ]
             elif added or removed or edited:
-                rows.append(["criteria", qid, ", ".join(["+" + key for key in added] + ["-" + key for key in removed] + ["~" + key for key in edited])])
+                rows.append(
+                    [
+                        "criteria",
+                        qid,
+                        ", ".join(
+                            ["+" + key for key in added]
+                            + ["-" + key for key in removed]
+                            + ["~" + key for key in edited]
+                        ),
+                    ]
+                )
             if reordered:
                 rows.append(["criteria", qid, "options reordered"])
             if added or removed or edited or reordered:
@@ -404,8 +472,12 @@ def run_diff(args: Any) -> int:
             rows.append(["moved", qid, "position %d -> %d" % (position_old[qid], position_new[qid])])
             moved.add(qid)
     if args.stat:
-        counts = [["added", sum(qid not in old for qid in new)], ["removed", sum(qid not in new for qid in old)],
-                  ["changed", len(changed)], ["moved", len(moved)]]
+        counts = [
+            ["added", sum(qid not in old for qid in new)],
+            ["removed", sum(qid not in new for qid in old)],
+            ["changed", len(changed)],
+            ["moved", len(moved)],
+        ]
         kit.emit(args, ["change", "questions"], counts)
     else:
         _table_or(args, ["change", "question", "detail"], rows, "no differences")
@@ -474,7 +546,9 @@ def questions_from_csv(text: str) -> Dict[str, dict]:
                 raise kit.CliError("line %d: the text is marked as JSON but is not JSON" % number)
         question = built.setdefault(qid, {"type": qtype, "_criteria": []})
         if question["type"] != qtype:
-            raise kit.CliError("line %d: question %r has type %r here but %r above" % (number, qid, qtype, question["type"]))
+            raise kit.CliError(
+                "line %d: question %r has type %r here but %r above" % (number, qid, qtype, question["type"])
+            )
         if field == "instructions":
             if "instructions" in question:
                 raise kit.CliError("line %d: question %r has a second instructions row" % (number, qid))
@@ -519,7 +593,9 @@ def run_from_csv(args: Any) -> int:
 
 def _configure_to_markdown(parser: Any) -> None:
     parser.add_argument("file", help="a questions or request JSON file")
-    parser.add_argument("--full", action="store_true", help="a section per question with every criterion, instead of one table")
+    parser.add_argument(
+        "--full", action="store_true", help="a section per question with every criterion, instead of one table"
+    )
     parser.add_argument("--out", metavar="PATH", help="write the Markdown to this new file instead of printing it")
 
 
@@ -530,7 +606,10 @@ def _markdown_full(questions: Dict[str, dict]) -> str:
         entries = _entries(q)
         if entries:
             lines.append("")
-            lines += ["- `%s`: %s" % (key, "(no description)" if _empty(value) else _markdown_value(value)) for key, value in entries]
+            lines += [
+                "- `%s`: %s" % (key, "(no description)" if _empty(value) else _markdown_value(value))
+                for key, value in entries
+            ]
         parts.append("\n".join(lines))
     return "\n\n".join(parts)
 
@@ -544,7 +623,10 @@ def run_to_markdown(args: Any) -> int:
     if args.full:
         text = _markdown_full(questions)
     else:
-        rows = [[position, qid, q["type"], _criteria_count(q), _inline(q["instructions"])] for position, (qid, q) in enumerate(questions.items(), 1)]
+        rows = [
+            [position, qid, q["type"], _criteria_count(q), _inline(q["instructions"])]
+            for position, (qid, q) in enumerate(questions.items(), 1)
+        ]
         text = kit.markdown_table(["#", "id", "type", "criteria", "instructions"], rows)
     if args.out:
         _write_out(args.out, text + "\n")
@@ -566,14 +648,20 @@ def _load_editable(path: str) -> Tuple[Any, Dict[str, Any], bool]:
     return data, questions, request
 
 
-def _rebuild(data: Any, questions: Dict[str, Any], request: bool, expect_ids: Optional[Dict[str, Optional[str]]] = None) -> Any:
+def _rebuild(
+    data: Any, questions: Dict[str, Any], request: bool, expect_ids: Optional[Dict[str, Optional[str]]] = None
+) -> Any:
     """The file's data with new questions. expect_ids maps each kept expectation id to its new id (None drops it)."""
     if not request:
         return questions
     out = dict(data)
     out["questions"] = questions
     if isinstance(data.get("expect"), dict) and expect_ids is not None:
-        out["expect"] = {expect_ids.get(qid, qid): value for qid, value in data["expect"].items() if expect_ids.get(qid, qid) is not None}
+        out["expect"] = {
+            expect_ids.get(qid, qid): value
+            for qid, value in data["expect"].items()
+            if expect_ids.get(qid, qid) is not None
+        }
     return out
 
 
@@ -582,7 +670,9 @@ def _configure_rename(parser: Any) -> None:
     parser.add_argument("old", help="the question id to rename")
     parser.add_argument("new", help="its new id")
     parser.add_argument("--out", metavar="PATH", help="write the renamed file here instead of printing it")
-    parser.add_argument("--force", action="store_true", help="let --out replace an existing file, such as the input itself")
+    parser.add_argument(
+        "--force", action="store_true", help="let --out replace an existing file, such as the input itself"
+    )
 
 
 def run_rename(args: Any) -> int:
@@ -596,7 +686,9 @@ def run_rename(args: Any) -> int:
         raise kit.CliError("%s already has a question %r" % (args.file, new))
     expect = data.get("expect") if request else None
     if isinstance(expect, dict) and new != args.old and new in expect:
-        raise kit.CliError("%s already has an expectation for %r; remove it before renaming %r" % (args.file, new, args.old))
+        raise kit.CliError(
+            "%s already has an expectation for %r; remove it before renaming %r" % (args.file, new, args.old)
+        )
     renamed = {(new if qid == args.old else qid): question for qid, question in questions.items()}
     _valid(args.file, renamed)
     text = _json_text(_rebuild(data, renamed, request, {args.old: new}))
@@ -673,8 +765,11 @@ def run_fields(args: Any) -> int:
         raise kit.CliError("the state in %s is not a JSON object, so it has no fields" % args.file)
     rows = []
     for field, value in state.items():
-        users = [qid for qid, q in questions.items()
-                 if any(path == field or path.startswith(field + ".") or path.startswith(field + "[") for path in _paths(q))]
+        users = [
+            qid
+            for qid, q in questions.items()
+            if any(path == field or path.startswith(field + ".") or path.startswith(field + "[") for path in _paths(q))
+        ]
         rows.append([field, _kind(value), len(users), ", ".join(users)])
     if args.unused:
         rows = [row for row in rows if row[2] == 0]
@@ -686,68 +781,168 @@ def run_fields(args: Any) -> int:
 
 FORMAT = {"id": "format", "title": "--format table|json|csv|markdown prints the rows in another format"}
 
-PACK = kit.define_pack({
-    "id": "cli-questions",
-    "surface": "python.cli",
-    "title": "Question set commands",
-    "about": "Offline commands for a question set file (a questions JSON object, or a request that holds one): outline, "
-             "validate, lint, stats, diff, CSV and Markdown conversion, renaming and picking questions, and the state "
-             "fields questions name. Only files named with --out are written.",
-    "features": [
-        {"id": "outline", "kind": "cli", "command": ["questions", "outline"], "configure": _configure_outline, "run": run_outline,
-         "title": "Outline a question file: position, id, type, criteria count and instruction words",
-         "options": [{"id": "type", "title": "--type keeps only questions of one type"},
-                     {"id": "criteria", "title": "--criteria lists every criterion key with its word count"},
-                     {"id": "sort", "title": "--sort orders questions by id, type, most criteria or most words"},
-                     dict(FORMAT)]},
-        {"id": "validate", "kind": "cli", "command": ["questions", "validate"], "configure": _configure_validate, "run": run_validate,
-         "title": "Validate a question file as the Workbench would; exit 1 when it is invalid",
-         "options": [{"id": "state", "title": "--state also validates the request's state"},
-                     {"id": "all", "title": "--all reports every invalid question, not only the first problem"},
-                     {"id": "quiet", "title": "--quiet prints nothing and answers with the exit code alone"},
-                     dict(FORMAT, title="--format json|csv|markdown lists the problems as rows")]},
-        {"id": "lint", "kind": "cli", "command": ["questions", "lint"], "configure": _configure_lint, "run": run_lint,
-         "title": "Run the built-in question checks and the Lab packs' checks on a file; exit 1 on problems",
-         "options": [{"id": "state", "title": "--state FILE checks backticked paths against a separate state file"},
-                     {"id": "picture", "title": "--picture NAME treats a picture reference as present, not a missing path"},
-                     {"id": "level", "title": "--level keeps only problems or only advice"},
-                     {"id": "no_lab", "title": "--no-lab leaves out the Lab packs' findings"},
-                     {"id": "strict", "title": "--strict exits 1 on advice too"},
-                     dict(FORMAT)]},
-        {"id": "stats", "kind": "cli", "command": ["questions", "stats"], "configure": _configure_stats, "run": run_stats,
-         "title": "Count a question file's types, criteria, options, levels and instruction words",
-         "options": [{"id": "by_type", "title": "--by-type gives questions, criteria and words per question type"},
-                     {"id": "words_over", "title": "--words-over N lists questions with longer instructions and exits 1 if any"},
-                     dict(FORMAT)]},
-        {"id": "diff", "kind": "cli", "command": ["questions", "diff"], "configure": _configure_diff, "run": run_diff,
-         "title": "Compare two question files: added, removed, retyped, reworded, re-criteria'd and moved questions; exit 1 when they differ",
-         "options": [{"id": "ignore_order", "title": "--ignore-order does not report questions that only moved"},
-                     {"id": "ignore_whitespace", "title": "--ignore-whitespace treats text that differs only in spacing as the same"},
-                     {"id": "criteria", "title": "--criteria gives one row per added, removed or changed criterion"},
-                     {"id": "stat", "title": "--stat prints only the counts of added, removed, changed and moved questions"},
-                     dict(FORMAT)]},
-        {"id": "to_csv", "kind": "cli", "command": ["questions", "to-csv"], "configure": _configure_to_csv, "run": run_to_csv,
-         "title": "Convert a question file to a flat CSV outline, one row per instruction and criterion",
-         "options": [{"id": "out", "title": "--out PATH writes the CSV to a new file"}]},
-        {"id": "from_csv", "kind": "cli", "command": ["questions", "from-csv"], "configure": _configure_from_csv, "run": run_from_csv,
-         "title": "Convert the flat CSV outline back to validated Workbench question JSON",
-         "options": [{"id": "out", "title": "--out PATH writes the question JSON to a new file"},
-                     {"id": "force", "title": "--force lets --out replace an existing file"}]},
-        {"id": "to_markdown", "kind": "cli", "command": ["questions", "to-markdown"], "configure": _configure_to_markdown, "run": run_to_markdown,
-         "title": "Convert a question file to a Markdown table of its questions",
-         "options": [{"id": "full", "title": "--full writes a section per question with every criterion"},
-                     {"id": "out", "title": "--out PATH writes the Markdown to a new file"}]},
-        {"id": "rename", "kind": "cli", "command": ["questions", "rename"], "configure": _configure_rename, "run": run_rename,
-         "title": "Rename a question id where it stands, moving a request's expectation with it",
-         "options": [{"id": "out", "title": "--out PATH writes the renamed file instead of printing it"},
-                     {"id": "force", "title": "--force lets --out replace an existing file, such as the input"}]},
-        {"id": "pick", "kind": "cli", "command": ["questions", "pick"], "configure": _configure_pick, "run": run_pick,
-         "title": "Keep only the named questions of a file, in their order, with their expectations",
-         "options": [{"id": "exclude", "title": "--exclude keeps every question except the named ones"},
-                     {"id": "out", "title": "--out PATH writes the result to a new file"}]},
-        {"id": "fields", "kind": "cli", "command": ["questions", "fields"], "configure": _configure_fields, "run": run_fields,
-         "title": "List a request's state fields with the questions that name each one in backticks",
-         "options": [{"id": "unused", "title": "--unused lists only fields no question names and exits 1 if any"},
-                     dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-questions",
+        "surface": "python.cli",
+        "title": "Question set commands",
+        "about": "Offline commands for a question set file (a questions JSON object, or a request that holds one): outline, "
+        "validate, lint, stats, diff, CSV and Markdown conversion, renaming and picking questions, and the state "
+        "fields questions name. Only files named with --out are written.",
+        "features": [
+            {
+                "id": "outline",
+                "kind": "cli",
+                "command": ["questions", "outline"],
+                "configure": _configure_outline,
+                "run": run_outline,
+                "title": "Outline a question file: position, id, type, criteria count and instruction words",
+                "options": [
+                    {"id": "type", "title": "--type keeps only questions of one type"},
+                    {"id": "criteria", "title": "--criteria lists every criterion key with its word count"},
+                    {"id": "sort", "title": "--sort orders questions by id, type, most criteria or most words"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "validate",
+                "kind": "cli",
+                "command": ["questions", "validate"],
+                "configure": _configure_validate,
+                "run": run_validate,
+                "title": "Validate a question file as the Workbench would; exit 1 when it is invalid",
+                "options": [
+                    {"id": "state", "title": "--state also validates the request's state"},
+                    {"id": "all", "title": "--all reports every invalid question, not only the first problem"},
+                    {"id": "quiet", "title": "--quiet prints nothing and answers with the exit code alone"},
+                    dict(FORMAT, title="--format json|csv|markdown lists the problems as rows"),
+                ],
+            },
+            {
+                "id": "lint",
+                "kind": "cli",
+                "command": ["questions", "lint"],
+                "configure": _configure_lint,
+                "run": run_lint,
+                "title": "Run the built-in question checks and the Lab packs' checks on a file; exit 1 on problems",
+                "options": [
+                    {"id": "state", "title": "--state FILE checks backticked paths against a separate state file"},
+                    {
+                        "id": "picture",
+                        "title": "--picture NAME treats a picture reference as present, not a missing path",
+                    },
+                    {"id": "level", "title": "--level keeps only problems or only advice"},
+                    {"id": "no_lab", "title": "--no-lab leaves out the Lab packs' findings"},
+                    {"id": "strict", "title": "--strict exits 1 on advice too"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "stats",
+                "kind": "cli",
+                "command": ["questions", "stats"],
+                "configure": _configure_stats,
+                "run": run_stats,
+                "title": "Count a question file's types, criteria, options, levels and instruction words",
+                "options": [
+                    {"id": "by_type", "title": "--by-type gives questions, criteria and words per question type"},
+                    {
+                        "id": "words_over",
+                        "title": "--words-over N lists questions with longer instructions and exits 1 if any",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "diff",
+                "kind": "cli",
+                "command": ["questions", "diff"],
+                "configure": _configure_diff,
+                "run": run_diff,
+                "title": "Compare two question files: added, removed, retyped, reworded, re-criteria'd and moved questions; exit 1 when they differ",
+                "options": [
+                    {"id": "ignore_order", "title": "--ignore-order does not report questions that only moved"},
+                    {
+                        "id": "ignore_whitespace",
+                        "title": "--ignore-whitespace treats text that differs only in spacing as the same",
+                    },
+                    {"id": "criteria", "title": "--criteria gives one row per added, removed or changed criterion"},
+                    {
+                        "id": "stat",
+                        "title": "--stat prints only the counts of added, removed, changed and moved questions",
+                    },
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "to_csv",
+                "kind": "cli",
+                "command": ["questions", "to-csv"],
+                "configure": _configure_to_csv,
+                "run": run_to_csv,
+                "title": "Convert a question file to a flat CSV outline, one row per instruction and criterion",
+                "options": [{"id": "out", "title": "--out PATH writes the CSV to a new file"}],
+            },
+            {
+                "id": "from_csv",
+                "kind": "cli",
+                "command": ["questions", "from-csv"],
+                "configure": _configure_from_csv,
+                "run": run_from_csv,
+                "title": "Convert the flat CSV outline back to validated Workbench question JSON",
+                "options": [
+                    {"id": "out", "title": "--out PATH writes the question JSON to a new file"},
+                    {"id": "force", "title": "--force lets --out replace an existing file"},
+                ],
+            },
+            {
+                "id": "to_markdown",
+                "kind": "cli",
+                "command": ["questions", "to-markdown"],
+                "configure": _configure_to_markdown,
+                "run": run_to_markdown,
+                "title": "Convert a question file to a Markdown table of its questions",
+                "options": [
+                    {"id": "full", "title": "--full writes a section per question with every criterion"},
+                    {"id": "out", "title": "--out PATH writes the Markdown to a new file"},
+                ],
+            },
+            {
+                "id": "rename",
+                "kind": "cli",
+                "command": ["questions", "rename"],
+                "configure": _configure_rename,
+                "run": run_rename,
+                "title": "Rename a question id where it stands, moving a request's expectation with it",
+                "options": [
+                    {"id": "out", "title": "--out PATH writes the renamed file instead of printing it"},
+                    {"id": "force", "title": "--force lets --out replace an existing file, such as the input"},
+                ],
+            },
+            {
+                "id": "pick",
+                "kind": "cli",
+                "command": ["questions", "pick"],
+                "configure": _configure_pick,
+                "run": run_pick,
+                "title": "Keep only the named questions of a file, in their order, with their expectations",
+                "options": [
+                    {"id": "exclude", "title": "--exclude keeps every question except the named ones"},
+                    {"id": "out", "title": "--out PATH writes the result to a new file"},
+                ],
+            },
+            {
+                "id": "fields",
+                "kind": "cli",
+                "command": ["questions", "fields"],
+                "configure": _configure_fields,
+                "run": run_fields,
+                "title": "List a request's state fields with the questions that name each one in backticks",
+                "options": [
+                    {"id": "unused", "title": "--unused lists only fields no question names and exits 1 if any"},
+                    dict(FORMAT),
+                ],
+            },
+        ],
+    }
+)

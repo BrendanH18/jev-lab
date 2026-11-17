@@ -11,8 +11,15 @@ const QUESTIONS = {
   receipt: { type: "box", instructions: "Where is the total?" },
 };
 
-const outcome = (automated, { labeled = 100, gates = { a: 0.5 } } = {}) =>
-  ({ gates, labeled, automated, coverage: automated / labeled, accuracy: 0.96, low: 0.9, high: 0.99 });
+const outcome = (automated, { labeled = 100, gates = { a: 0.5 } } = {}) => ({
+  gates,
+  labeled,
+  automated,
+  coverage: automated / labeled,
+  accuracy: 0.96,
+  low: 0.9,
+  high: 0.99,
+});
 
 test("drops the named questions and keeps the others in order", () => {
   const out = withoutQuestions(QUESTIONS, new Set(["urgency", "receipt"]));
@@ -25,7 +32,9 @@ test("drops the named questions and keeps the others in order", () => {
 });
 
 test("keeps a question whose id is __proto__", () => {
-  const questions = JSON.parse('{"__proto__": {"type": "noul", "instructions": "x"}, "team": {"type": "noul", "instructions": "y"}}');
+  const questions = JSON.parse(
+    '{"__proto__": {"type": "noul", "instructions": "x"}, "team": {"type": "noul", "instructions": "y"}}',
+  );
   assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(withoutQuestions(questions, ["team"])))), ["__proto__"]);
   assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(withoutQuestions(questions, ["__proto__"])))), ["team"]);
 });

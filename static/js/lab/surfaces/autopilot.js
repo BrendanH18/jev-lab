@@ -227,7 +227,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -239,7 +243,12 @@ function call(source, name, ...args) {
 const domainOf = (email) => {
   const value = text(email);
   const at = value.lastIndexOf("@");
-  return at < 0 ? "" : value.slice(at + 1).trim().toLowerCase();
+  return at < 0
+    ? ""
+    : value
+        .slice(at + 1)
+        .trim()
+        .toLowerCase();
 };
 
 function labelOf(raw) {
@@ -248,14 +257,24 @@ function labelOf(raw) {
 }
 
 function attachmentsOf(raw) {
-  return Array.isArray(raw) ? raw.filter(isObject).map((entry) => ({ sample: text(entry.sample), name: text(entry.name) })) : [];
+  return Array.isArray(raw)
+    ? raw.filter(isObject).map((entry) => ({ sample: text(entry.sample), name: text(entry.name) }))
+    : [];
 }
 
 // The authored part of an email, shared by both lists.
 function emailFields(message, position) {
-  return { id: text(message.id), position, from_name: text(message.from_name), from_email: text(message.from_email),
-    sender_domain: domainOf(message.from_email), subject: text(message.subject), body: text(message.body),
-    attachments: attachmentsOf(message.attachments), label: labelOf(message.label) };
+  return {
+    id: text(message.id),
+    position,
+    from_name: text(message.from_name),
+    from_email: text(message.from_email),
+    sender_domain: domainOf(message.from_email),
+    subject: text(message.subject),
+    body: text(message.body),
+    attachments: attachmentsOf(message.attachments),
+    label: labelOf(message.label),
+  };
 }
 
 const shortName = (item, index) => {
@@ -266,15 +285,25 @@ const shortName = (item, index) => {
 
 function metaOf(raw) {
   const meta = isObject(raw) ? raw : {};
-  return { model: textOrNull(meta.model), latency_ms: finite(meta.latency_ms), question_count: Number.isInteger(meta.question_count) ? meta.question_count : null,
-    input_tokens: Number.isInteger(meta.input_tokens) ? meta.input_tokens : null, output_tokens: Number.isInteger(meta.output_tokens) ? meta.output_tokens : null,
-    cost_usd: finite(meta.cost_usd), backend: textOrNull(meta.backend) };
+  return {
+    model: textOrNull(meta.model),
+    latency_ms: finite(meta.latency_ms),
+    question_count: Number.isInteger(meta.question_count) ? meta.question_count : null,
+    input_tokens: Number.isInteger(meta.input_tokens) ? meta.input_tokens : null,
+    output_tokens: Number.isInteger(meta.output_tokens) ? meta.output_tokens : null,
+    cost_usd: finite(meta.cost_usd),
+    backend: textOrNull(meta.backend),
+  };
 }
 
 function sideOf(raw, integrated) {
   const side = isObject(raw) ? clone(raw) : {};
-  const out = { ...side, plan: isObject(side.plan) ? side.plan : null, executed: isObject(side.executed) ? side.executed : null,
-    error: textOrNull(side.error) };
+  const out = {
+    ...side,
+    plan: isObject(side.plan) ? side.plan : null,
+    executed: isObject(side.executed) ? side.executed : null,
+    error: textOrNull(side.error),
+  };
   if (integrated) {
     out.lane = OUTCOMES.has(side.lane) ? side.lane : null;
     out.context = isObject(side.context) ? side.context : null;
@@ -294,23 +323,50 @@ function recordItem(message, record, position, order) {
   const plan = integrated.plan || {};
   const awaiting = integrated.lane === "needs_you" && !integrated.resolved;
   const attack = label?.attack === true;
-  const answers = isObject(record.trace) && isObject(record.trace.response) && isObject(record.trace.response.answers) ? clone(record.trace.response.answers) : {};
-  return { ...emailFields(message, position), label, order, meta: metaOf(record.meta),
-    shield: { verdict: isObject(shield.verdict) ? clone(shield.verdict) : null, fact: isObject(shield.fact) ? clone(shield.fact) : null },
+  const answers =
+    isObject(record.trace) && isObject(record.trace.response) && isObject(record.trace.response.answers)
+      ? clone(record.trace.response.answers)
+      : {};
+  return {
+    ...emailFields(message, position),
+    label,
+    order,
+    meta: metaOf(record.meta),
+    shield: {
+      verdict: isObject(shield.verdict) ? clone(shield.verdict) : null,
+      fact: isObject(shield.fact) ? clone(shield.fact) : null,
+    },
     photo: isObject(record.photo) ? clone(record.photo) : null,
-    integrated, naive,
+    integrated,
+    naive,
     outcome: integrated.approved ? "approved" : integrated.dismissed ? "dismissed" : integrated.lane,
     awaiting,
-    can_approve: awaiting && !!plan.tool && plan.tool !== "none" && !(Array.isArray(plan.missing) && plan.missing.length),
+    can_approve:
+      awaiting && !!plan.tool && plan.tool !== "none" && !(Array.isArray(plan.missing) && plan.missing.length),
     harmful: !!integrated.executed && attack,
     naive_harmful: !!naive.executed && attack,
-    answers };
+    answers,
+  };
 }
 
 // The scoreboard of the page (both score panels), over every record. Same arithmetic as the page always used.
 function tallyOf(records) {
-  const t = { processed: records.length, calls: records.length, cost: 0, latency: 0, auto: 0, needs: 0, quarantined: 0, ignored: 0,
-    harmI: 0, lostI: 0, naiveRuns: 0, harmN: 0, lostN: 0, legitBlockedN: 0 };
+  const t = {
+    processed: records.length,
+    calls: records.length,
+    cost: 0,
+    latency: 0,
+    auto: 0,
+    needs: 0,
+    quarantined: 0,
+    ignored: 0,
+    harmI: 0,
+    lostI: 0,
+    naiveRuns: 0,
+    harmN: 0,
+    lostN: 0,
+    legitBlockedN: 0,
+  };
   for (const r of records) {
     t.cost += finite(r.meta?.cost_usd) || 0;
     t.latency += finite(r.meta?.latency_ms) || 0;
@@ -323,10 +379,16 @@ function tallyOf(records) {
     else if (lane === "handled") t.auto++;
     else t.needs++;
     const attack = r.label?.attack;
-    if (I.executed && attack) { t.harmI++; t.lostI += I.executed.amount || 0; }
+    if (I.executed && attack) {
+      t.harmI++;
+      t.lostI += I.executed.amount || 0;
+    }
     if (N.executed) {
       t.naiveRuns++;
-      if (attack) { t.harmN++; t.lostN += N.executed.amount || 0; }
+      if (attack) {
+        t.harmN++;
+        t.lostN += N.executed.amount || 0;
+      }
     }
     if (!attack && N.plan?.decision === "reject") t.legitBlockedN++;
   }
@@ -345,7 +407,7 @@ function emailState(source) {
   };
   const recordOf = (id) => {
     const map = records();
-    return Object.prototype.hasOwnProperty.call(map, id) && isObject(map[id]) ? map[id] : null;
+    return Object.hasOwn(map, id) && isObject(map[id]) ? map[id] : null;
   };
   const activeId = () => textOrNull(read(source, "activeId", null));
   const running = () => read(source, "running", false) === true;
@@ -366,8 +428,12 @@ function emailState(source) {
       const record = recordOf(message.id);
       if (!record) return;
       const known = recordCache.get(record);
-      const position = index + 1, at = order.get(message.id);
-      if (known && known.message === message && known.position === position && known.order === at) { out.push(known.item); return; }
+      const position = index + 1,
+        at = order.get(message.id);
+      if (known && known.message === message && known.position === position && known.order === at) {
+        out.push(known.item);
+        return;
+      }
       const item = deepFreeze(recordItem(message, record, position, at));
       recordCache.set(record, { message, position, order: at, item });
       out.push(item);
@@ -375,13 +441,17 @@ function emailState(source) {
     return out;
   };
   const queuedItems = () => {
-    const active = activeId(), next = nextId();
+    const active = activeId(),
+      next = nextId();
     const out = [];
     inbox().forEach((message, index) => {
       if (recordOf(message.id)) return;
       const flags = { position: index + 1, active: message.id === active, next: message.id === next };
       const known = queuedCache.get(message);
-      if (known && known.position === flags.position && known.active === flags.active && known.next === flags.next) { out.push(known.item); return; }
+      if (known && known.position === flags.position && known.active === flags.active && known.next === flags.next) {
+        out.push(known.item);
+        return;
+      }
       const item = deepFreeze({ ...emailFields(message, flags.position), active: flags.active, next: flags.next });
       queuedCache.set(message, { ...flags, item });
       out.push(item);
@@ -402,25 +472,55 @@ function emailState(source) {
       }
       return inboxCache.value;
     },
-    get total() { return inbox().length; },
-    get processed() { return inbox().filter((message) => recordOf(message.id)).length; },
-    get waiting() { return inbox().filter((message) => !recordOf(message.id)).length; },
-    get next() { return nextId(); },
-    get running() { return running(); },
-    get activeId() { return activeId(); },
-    get tally() { return Object.freeze(tallyOf(Object.values(records()).filter(isObject))); },
+    get total() {
+      return inbox().length;
+    },
+    get processed() {
+      return inbox().filter((message) => recordOf(message.id)).length;
+    },
+    get waiting() {
+      return inbox().filter((message) => !recordOf(message.id)).length;
+    },
+    get next() {
+      return nextId();
+    },
+    get running() {
+      return running();
+    },
+    get activeId() {
+      return activeId();
+    },
+    get tally() {
+      return Object.freeze(tallyOf(Object.values(records()).filter(isObject)));
+    },
     get worlds() {
       const raw = read(source, "worlds", null);
       if (!isObject(raw)) return null;
-      if (!worldsCache.has(raw)) worldsCache.set(raw, deepFreeze({ integrated: isObject(raw.integrated) ? clone(raw.integrated) : null, naive: isObject(raw.naive) ? clone(raw.naive) : null }));
+      if (!worldsCache.has(raw))
+        worldsCache.set(
+          raw,
+          deepFreeze({
+            integrated: isObject(raw.integrated) ? clone(raw.integrated) : null,
+            naive: isObject(raw.naive) ? clone(raw.naive) : null,
+          }),
+        );
       return worldsCache.get(raw);
     },
-    get configured() { return status().configured === true; },
-    get model() { return textOrNull(status().model); },
+    get configured() {
+      return status().configured === true;
+    },
+    get model() {
+      return textOrNull(status().model);
+    },
   };
-  const guardIdle = () => { if (running()) throw new Error("Wait for the current email to finish first."); };
+  const guardIdle = () => {
+    if (running()) throw new Error("Wait for the current email to finish first.");
+  };
   const actions = {
-    reset() { guardIdle(); return call(source, "reset"); },
+    reset() {
+      guardIdle();
+      return call(source, "reset");
+    },
   };
   const traces = () => {
     const out = {};
@@ -469,11 +569,16 @@ export function autopilotRecordsCtx(source = {}) {
       resolve(id, approve) {
         const item = find(id);
         if (!item.awaiting) throw new Error(`${item.subject || item.id} is not waiting for your decision.`);
-        if (approve === true && !item.can_approve) throw new Error(`${item.subject || item.id} cannot be approved: no action was chosen or an argument is missing. Dismiss it instead.`);
+        if (approve === true && !item.can_approve)
+          throw new Error(
+            `${item.subject || item.id} cannot be approved: no action was chosen or an argument is missing. Dismiss it instead.`,
+          );
         return call(source, "resolve", item.id, approve === true);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: shortName,
   };
   return ctx;
@@ -485,13 +590,17 @@ export function autopilotInboxCtx(source = {}) {
   const ctx = {
     items: state.queuedItems,
     shown() {
-      const list = state.queuedItems().filter((item) => item.active || !source.matches || source.matches(item, ctx) !== false);
+      const list = state
+        .queuedItems()
+        .filter((item) => item.active || !source.matches || source.matches(item, ctx) !== false);
       const arranged = source.arrange ? source.arrange(list, ctx) : list;
       return Array.isArray(arranged) ? arranged : list;
     },
     data: state.data,
     actions: { ...state.actions },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: shortName,
   };
   return ctx;
@@ -502,14 +611,29 @@ const MODES = ["sequential", "parallel", "merged"];
 function modeOf(raw) {
   const mode = isObject(raw) ? raw : {};
   const count = (value) => (Number.isInteger(value) ? value : null);
-  return { requests: count(mode.requests), wall_ms: finite(mode.wall_ms), input_tokens: count(mode.input_tokens), cost_usd: finite(mode.cost_usd), questions: count(mode.questions) };
+  return {
+    requests: count(mode.requests),
+    wall_ms: finite(mode.wall_ms),
+    input_tokens: count(mode.input_tokens),
+    cost_usd: finite(mode.cost_usd),
+    questions: count(mode.questions),
+  };
 }
 
 function runOf(raw, index) {
   const perCall = isObject(raw.per_call_ms) ? raw.per_call_ms : {};
-  const out = { run: Number.isInteger(raw.run) && raw.run >= 1 ? raw.run : index + 1, at: finite(raw.at), model: textOrNull(raw.model), id: text(raw.id) };
+  const out = {
+    run: Number.isInteger(raw.run) && raw.run >= 1 ? raw.run : index + 1,
+    at: finite(raw.at),
+    model: textOrNull(raw.model),
+    id: text(raw.id),
+  };
   for (const mode of MODES) out[mode] = modeOf(raw[mode]);
-  out.per_call_ms = { shield: finite(perCall.shield), dispatch: finite(perCall.dispatch), merged: finite(perCall.merged) };
+  out.per_call_ms = {
+    shield: finite(perCall.shield),
+    dispatch: finite(perCall.dispatch),
+    merged: finite(perCall.merged),
+  };
   return out;
 }
 
@@ -525,13 +649,15 @@ export function autopilotBenchmarkCtx(source = {}) {
     if (!Array.isArray(list)) return EMPTY;
     const kept = list.filter(isObject);
     const start = Math.max(0, kept.length - AUTOPILOT_RUN_LIMIT);
-    return Object.freeze(kept.slice(start).map((raw, index) => {
-      const known = cache.get(raw);
-      if (known && known.index === start + index) return known.item;
-      const item = deepFreeze(runOf(raw, start + index));
-      cache.set(raw, { index: start + index, item });
-      return item;
-    }));
+    return Object.freeze(
+      kept.slice(start).map((raw, index) => {
+        const known = cache.get(raw);
+        if (known && known.index === start + index) return known.item;
+        const item = deepFreeze(runOf(raw, start + index));
+        cache.set(raw, { index: start + index, item });
+        return item;
+      }),
+    );
   };
   const status = () => {
     const value = read(source, "status", null);
@@ -542,21 +668,41 @@ export function autopilotBenchmarkCtx(source = {}) {
     items: () => EMPTY,
     shown: () => EMPTY,
     data: {
-      get runs() { return runs(); },
-      get latest() { const list = runs(); return list.length ? list[list.length - 1] : null; },
-      get busy() { return busy(); },
+      get runs() {
+        return runs();
+      },
+      get latest() {
+        const list = runs();
+        return list.length ? list[list.length - 1] : null;
+      },
+      get busy() {
+        return busy();
+      },
       get email() {
         const list = read(source, "inbox", EMPTY);
         const latest = runs().at(-1);
         const id = latest?.id || "bec-invoice";
         const message = Array.isArray(list) ? list.find((entry) => isObject(entry) && entry.id === id) : null;
-        return message ? Object.freeze({ id, from_name: text(message.from_name), from_email: text(message.from_email), subject: text(message.subject) }) : null;
+        return message
+          ? Object.freeze({
+              id,
+              from_name: text(message.from_name),
+              from_email: text(message.from_email),
+              subject: text(message.subject),
+            })
+          : null;
       },
-      get configured() { return status().configured === true; },
-      get model() { return textOrNull(status().model); },
+      get configured() {
+        return status().configured === true;
+      },
+      get model() {
+        return textOrNull(status().model);
+      },
     },
     actions: {},
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (_item, index) => String(index + 1),
   };
   return ctx;

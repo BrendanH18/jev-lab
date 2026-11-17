@@ -12,35 +12,66 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import server  # noqa: E402
 from helpers import FakeClient  # noqa: E402
-from jev import (agreement, bundles, checks, dataset_changes, drift, gate, guidelines, testsplit,  # noqa: E402
-                 upgrade, workbench)
+from jev import (
+    agreement,
+    bundles,
+    checks,
+    dataset_changes,
+    drift,
+    gate,
+    guidelines,
+    testsplit,  # noqa: E402
+    upgrade,
+    workbench,
+)
 from jev.workbench import WorkbenchError  # noqa: E402
 
 Q = {
-    "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "money", "tech": "bugs", "other": None}},
+    "dept": {
+        "type": "choice",
+        "instructions": "Which team?",
+        "criteria": {"billing": "money", "tech": "bugs", "other": None},
+    },
     "refund": {"type": "noul", "instructions": "Does the sender want money back?"},
     "tone": {"type": "score", "instructions": "How upset?", "criteria": ["calm", "annoyed", "angry"]},
 }
-SPEC = {"gates": {"dept": 0.5, "refund": 0.6}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-        "tuned_on": "jev-1.14.0", "min_accuracy": 0.9, "min_coverage": 0.5}
+SPEC = {
+    "gates": {"dept": 0.5, "refund": 0.6},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.14.0",
+    "tuned_on": "jev-1.14.0",
+    "min_accuracy": 0.9,
+    "min_coverage": 0.5,
+}
 # Marker strings that must never appear in a model request, an exported gate, or a preview report.
 NOTE = "GUIDE-NOTE-7f3a"
 INPUT = "GUIDE-INPUT-9c1e"
 WHY = "GUIDE-WHY-2b8d"
 GUIDES = {
-    "dept": {"note": NOTE + " Billing is anything about charges.",
-             "examples": [{"input": INPUT + " I was charged twice", "label": "billing", "why": WHY},
-                          {"input": "The app crashes on launch", "label": "tech"}]},
-    "refund": {"note": "Yes only when the sender asks for money back.",
-               "examples": [{"input": "Please refund my order", "label": "yes"}]},
+    "dept": {
+        "note": NOTE + " Billing is anything about charges.",
+        "examples": [
+            {"input": INPUT + " I was charged twice", "label": "billing", "why": WHY},
+            {"input": "The app crashes on launch", "label": "tech"},
+        ],
+    },
+    "refund": {
+        "note": "Yes only when the sender asks for money back.",
+        "examples": [{"input": "Please refund my order", "label": "yes"}],
+    },
     "tone": {"examples": [{"input": "This is the third time!", "label": "2", "why": "Repeated complaint"}]},
 }
 MARKERS = (NOTE, INPUT, WHY)
 
 
 def rows(n=20):
-    return "\n".join(json.dumps({"text": ("refund %d" if i % 2 else "thanks %d") % i,
-                                 "_expect": {"dept": "billing", "refund": bool(i % 2)}}) for i in range(n))
+    return "\n".join(
+        json.dumps(
+            {"text": ("refund %d" if i % 2 else "thanks %d") % i, "_expect": {"dept": "billing", "refund": bool(i % 2)}}
+        )
+        for i in range(n)
+    )
 
 
 class Temp(unittest.TestCase):
@@ -54,7 +85,9 @@ class Temp(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def save(self, **extra):
-        return workbench.save_dataset(dict({"name": "Tickets", "rows": rows(), "questions": Q, "guidelines": GUIDES}, **extra))
+        return workbench.save_dataset(
+            dict({"name": "Tickets", "rows": rows(), "questions": Q, "guidelines": GUIDES}, **extra)
+        )
 
     def assertNoMarkers(self, value, what):
         text = value if isinstance(value, str) else json.dumps(value, default=str)
@@ -67,7 +100,9 @@ class ValidateTests(unittest.TestCase):
         out = guidelines.validate(GUIDES, Q)
         self.assertIs(out["refund"]["examples"][0]["label"], True)
         self.assertEqual(out["tone"]["examples"][0]["label"], 2)
-        self.assertEqual(out["dept"]["examples"][0], {"input": INPUT + " I was charged twice", "label": "billing", "why": WHY})
+        self.assertEqual(
+            out["dept"]["examples"][0], {"input": INPUT + " I was charged twice", "label": "billing", "why": WHY}
+        )
         self.assertNotIn("why", out["dept"]["examples"][1])
         folded = guidelines.validate({"dept": {"examples": [{"input": "x", "label": "BILLING"}]}}, Q)
         self.assertEqual(folded["dept"]["examples"][0]["label"], "billing")
@@ -105,7 +140,9 @@ class ValidateTests(unittest.TestCase):
 
     def test_box_questions_take_a_note_but_no_examples(self):
         q = {"where": {"type": "box", "instructions": "Where is the cup?"}}
-        self.assertEqual(guidelines.validate({"where": {"note": "Box the whole cup"}}, q), {"where": {"note": "Box the whole cup"}})
+        self.assertEqual(
+            guidelines.validate({"where": {"note": "Box the whole cup"}}, q), {"where": {"note": "Box the whole cup"}}
+        )
         with self.assertRaises(WorkbenchError) as ctx:
             guidelines.validate({"where": {"examples": [{"input": "x", "label": "0.1"}]}}, q)
         self.assertIn("Box questions take a note", str(ctx.exception))
@@ -115,14 +152,19 @@ class ValidateTests(unittest.TestCase):
             ({"dept": {"note": "x" * (guidelines.MAX_NOTE_CHARS + 1)}}, "too long"),
             ({"dept": {"examples": [{"input": "x", "label": "tech"}] * (guidelines.MAX_EXAMPLES + 1)}}, "at most"),
             ({"dept": {"examples": [{"input": "x" * (guidelines.MAX_INPUT_CHARS + 1), "label": "tech"}]}}, "too long"),
-            ({"dept": {"examples": [{"input": "x", "label": "tech", "why": "y" * (guidelines.MAX_WHY_CHARS + 1)}]}}, "too long"),
+            (
+                {"dept": {"examples": [{"input": "x", "label": "tech", "why": "y" * (guidelines.MAX_WHY_CHARS + 1)}]}},
+                "too long",
+            ),
         ]
         for raw, message in cases:
             with self.subTest(message=message), self.assertRaises(WorkbenchError) as ctx:
                 guidelines.validate(raw, Q)
             self.assertIn(message, str(ctx.exception))
-        self.assertEqual(len(guidelines.validate({"dept": {"note": "x" * guidelines.MAX_NOTE_CHARS}}, Q)["dept"]["note"]),
-                         guidelines.MAX_NOTE_CHARS)
+        self.assertEqual(
+            len(guidelines.validate({"dept": {"note": "x" * guidelines.MAX_NOTE_CHARS}}, Q)["dept"]["note"]),
+            guidelines.MAX_NOTE_CHARS,
+        )
 
 
 class ReconcileTests(unittest.TestCase):
@@ -133,9 +175,13 @@ class ReconcileTests(unittest.TestCase):
         self.assertNotIn("refund", out)
         self.assertEqual([e["label"] for e in out["dept"]["examples"]], ["billing"], "the tech example no longer fits")
         self.assertEqual(out["tone"], clean["tone"])
-        self.assertEqual(sorted(warnings), [
-            "Dropped 1 labeling example for dept: its label no longer fits the question",
-            "Dropped the labeling guideline for refund: the question is no longer in the dataset"])
+        self.assertEqual(
+            sorted(warnings),
+            [
+                "Dropped 1 labeling example for dept: its label no longer fits the question",
+                "Dropped the labeling guideline for refund: the question is no longer in the dataset",
+            ],
+        )
         self.assertNotIn("tech", " ".join(warnings), "a warning never repeats a label")
 
     def test_never_raises(self):
@@ -182,8 +228,9 @@ class DatasetTests(Temp):
 
     def test_explicit_guidelines_for_a_missing_question_are_rejected(self):
         with self.assertRaises(WorkbenchError):
-            workbench.save_dataset({"name": "Tickets", "rows": rows(), "questions": Q,
-                                    "guidelines": {"nope": {"note": "x"}}})
+            workbench.save_dataset(
+                {"name": "Tickets", "rows": rows(), "questions": Q, "guidelines": {"nope": {"note": "x"}}}
+            )
         self.assertFalse((self.dir / "datasets" / "tickets.json").exists())
 
     def test_server_save_reports_dropped_guidelines(self):
@@ -211,7 +258,9 @@ class DatasetTests(Temp):
         self.assertEqual(loaded["warnings"], [])
         with self.assertRaises(WorkbenchError):
             server.api_wb_guidelines_save({"id": "tickets", "guidelines": {"nope": {"note": "x"}}})
-        self.assertEqual(workbench.load_dataset("tickets")["guidelines"], out["guidelines"], "a failed save changes nothing")
+        self.assertEqual(
+            workbench.load_dataset("tickets")["guidelines"], out["guidelines"], "a failed save changes nothing"
+        )
         server.api_wb_guidelines_save({"id": "tickets", "guidelines": {}})
         self.assertNotIn("guidelines", workbench.load_dataset("tickets"))
         self.assertIn(("POST", "/api/workbench/datasets/guidelines"), server.ROUTES)
@@ -270,8 +319,9 @@ class NeverSentTests(Temp):
         self.save()
         checks.save_check("tickets", SPEC)
         self.dataset = workbench.load_dataset("tickets")
-        self.fake = FakeClient(lambda st, qs: {"dept": "billing",
-                                               "refund": 0.98 if "refund" in json.dumps(st) else 0.02})
+        self.fake = FakeClient(
+            lambda st, qs: {"dept": "billing", "refund": 0.98 if "refund" in json.dumps(st) else 0.02}
+        )
 
     def test_rows_and_questions_never_carry_them(self):
         self.assertNoMarkers(self.dataset["rows"], "dataset rows")
@@ -292,7 +342,10 @@ class NeverSentTests(Temp):
         self.assertNoMarkers(rep, "a drift report")
 
     def test_compare(self):
-        variants = [{"questions": self.dataset["questions"]}, {"questions": self.dataset["questions"], "model": "jev-1.15.0"}]
+        variants = [
+            {"questions": self.dataset["questions"]},
+            {"questions": self.dataset["questions"], "model": "jev-1.15.0"},
+        ]
         workbench.run_compare(self.fake, workbench.tuning_rows(self.dataset), variants)
         self.assertTrue(self.fake.calls)
         self.assertNoMarkers(self.fake.calls, "a Compare request")
@@ -303,7 +356,9 @@ class NeverSentTests(Temp):
         provenance = gate.provenance(self.dataset["questions"], SPEC["gates"], "confidence", SPEC["model"])
         guidelines.save("tickets", {})
         self.assertEqual(gate.export_check("tickets"), with_guides, "guidelines are not gate configuration")
-        self.assertEqual(gate.provenance(self.dataset["questions"], SPEC["gates"], "confidence", SPEC["model"]), provenance)
+        self.assertEqual(
+            gate.provenance(self.dataset["questions"], SPEC["gates"], "confidence", SPEC["model"]), provenance
+        )
 
     def test_request_export(self):
         out = workbench.export({"text": "hello"}, self.dataset["questions"], "jev-1.14.0")
@@ -326,6 +381,7 @@ class BundleTests(Temp):
         import base64
         import io
         import zipfile
+
         raw = base64.b64decode(bundles.export_bundle("tickets")["data"])
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             manifest = json.loads(archive.read("dataset.json"))
@@ -341,16 +397,22 @@ class BundleTests(Temp):
 class PreviewTests(Temp):
     def test_reports_changes_by_question_id_without_values(self):
         self.save()
-        changed = {"dept": {"note": NOTE + " changed", "examples": [{"input": INPUT, "label": "tech", "why": WHY}]},
-                   "tone": GUIDES["tone"], "refund": None}
+        changed = {
+            "dept": {"note": NOTE + " changed", "examples": [{"input": INPUT, "label": "tech", "why": WHY}]},
+            "tone": GUIDES["tone"],
+            "refund": None,
+        }
         changed = {k: v for k, v in changed.items() if v}
         rep = dataset_changes.preview({"name": "Tickets", "rows": rows(), "questions": Q, "guidelines": changed})
-        self.assertEqual(rep["guidelines"], {"before": 3, "after": 2, "added": [], "removed": ["refund"],
-                                             "changed": ["dept"], "dropped": []})
+        self.assertEqual(
+            rep["guidelines"],
+            {"before": 3, "after": 2, "added": [], "removed": ["refund"], "changed": ["dept"], "dropped": []},
+        )
         self.assertNoMarkers(rep, "a replacement preview")
         self.assertNotIn("tech", json.dumps(rep["guidelines"]))
-        self.assertEqual(workbench.load_dataset("tickets")["guidelines"], guidelines.validate(GUIDES, Q),
-                         "a preview writes nothing")
+        self.assertEqual(
+            workbench.load_dataset("tickets")["guidelines"], guidelines.validate(GUIDES, Q), "a preview writes nothing"
+        )
 
     def test_reports_guidelines_dropped_with_their_question(self):
         self.save()

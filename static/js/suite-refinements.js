@@ -1,17 +1,23 @@
 // Local saved-suite planning: authored counts and explicit selection only.
-const authoredText = (value) => typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
+const authoredText = (value) => (typeof value === "string" ? value : value == null ? "" : JSON.stringify(value));
 
 export function suiteAuthoredMetrics(item) {
   const questions = item.questions || {};
-  let criteria = 0, criteriaCharacters = 0, scoreLevels = 0;
+  let criteria = 0,
+    criteriaCharacters = 0,
+    scoreLevels = 0;
   for (const question of Object.values(questions)) {
     const values = Array.isArray(question.criteria) ? question.criteria : Object.values(question.criteria || {});
     criteria += values.length;
     criteriaCharacters += values.reduce((sum, value) => sum + Array.from(authoredText(value)).length, 0);
     if (question.type === "score") scoreLevels += values.length;
   }
-  return { criteria, criteriaCharacters, scoreLevels,
-    orphanExpectations: Object.keys(item.expect || {}).filter((id) => !Object.hasOwn(questions, id)).length };
+  return {
+    criteria,
+    criteriaCharacters,
+    scoreLevels,
+    orphanExpectations: Object.keys(item.expect || {}).filter((id) => !Object.hasOwn(questions, id)).length,
+  };
 }
 
 const metrics = [
@@ -22,10 +28,14 @@ const metrics = [
 ];
 
 export function refineSuite(items, filters = {}) {
-  const active = metrics.some(([, min, max, ascending, descending]) =>
-    [min, max].some((key) => filters[key] != null && String(filters[key]).trim() !== "")
-    || filters.sort === ascending || filters.sort === descending)
-    || (filters.orphanExpectations && filters.orphanExpectations !== "all");
+  const active =
+    metrics.some(
+      ([, min, max, ascending, descending]) =>
+        [min, max].some((key) => filters[key] != null && String(filters[key]).trim() !== "") ||
+        filters.sort === ascending ||
+        filters.sort === descending,
+    ) ||
+    (filters.orphanExpectations && filters.orphanExpectations !== "all");
   if (!active) return items;
   const counts = new Map();
   const metric = (item) => {
@@ -37,13 +47,19 @@ export function refineSuite(items, filters = {}) {
     const number = Number(bound);
     return Number.isInteger(number) && number >= 0 && (minimum ? value >= number : value <= number);
   };
-  const shown = items.filter((item) => metrics.every(([key, min, max]) => boundMatches(metric(item)[key], filters[min], true)
-    && boundMatches(metric(item)[key], filters[max], false))
-    && (!filters.orphanExpectations || filters.orphanExpectations === "all"
-      || (metric(item).orphanExpectations > 0) === (filters.orphanExpectations === "with")));
+  const shown = items.filter(
+    (item) =>
+      metrics.every(
+        ([key, min, max]) =>
+          boundMatches(metric(item)[key], filters[min], true) && boundMatches(metric(item)[key], filters[max], false),
+      ) &&
+      (!filters.orphanExpectations ||
+        filters.orphanExpectations === "all" ||
+        metric(item).orphanExpectations > 0 === (filters.orphanExpectations === "with")),
+  );
   for (const [key, , , ascending, descending] of metrics) {
-    if (filters.sort === ascending || filters.sort === descending) shown.sort((a, b) =>
-      (filters.sort === ascending ? 1 : -1) * (metric(a)[key] - metric(b)[key]));
+    if (filters.sort === ascending || filters.sort === descending)
+      shown.sort((a, b) => (filters.sort === ascending ? 1 : -1) * (metric(a)[key] - metric(b)[key]));
   }
   return shown;
 }
@@ -51,13 +67,14 @@ export function refineSuite(items, filters = {}) {
 // IDs, types and occurrence counts only. No authored instructions, inputs or label values.
 export function suiteQuestionInventory(items) {
   const rows = new Map();
-  for (const item of items) for (const [id, question] of Object.entries(item.questions || {})) {
-    const row = rows.get(id) || { id, tests: 0, withExpectations: 0, types: new Set() };
-    row.tests++;
-    if (Object.hasOwn(item.expect || {}, id)) row.withExpectations++;
-    row.types.add(question.type);
-    rows.set(id, row);
-  }
+  for (const item of items)
+    for (const [id, question] of Object.entries(item.questions || {})) {
+      const row = rows.get(id) || { id, tests: 0, withExpectations: 0, types: new Set() };
+      row.tests++;
+      if (Object.hasOwn(item.expect || {}, id)) row.withExpectations++;
+      row.types.add(question.type);
+      rows.set(id, row);
+    }
   return [...rows.values()].map((row) => ({ ...row, types: [...row.types].sort() }));
 }
 
@@ -69,10 +86,19 @@ export function suiteInventoryText(items) {
 }
 
 export function previewSuiteIds(items, text) {
-  const requested = [...new Set(String(text || "").split(/\r?\n/).map((id) => id.trim()).filter(Boolean))];
+  const requested = [
+    ...new Set(
+      String(text || "")
+        .split(/\r?\n/)
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
   const saved = new Set(items.map((item) => item.id));
-  return { matched: items.filter((item) => requested.includes(item.id)).map((item) => item.id),
-    unknown: requested.filter((id) => !saved.has(id)) };
+  return {
+    matched: items.filter((item) => requested.includes(item.id)).map((item) => item.id),
+    unknown: requested.filter((id) => !saved.has(id)),
+  };
 }
 
 export function applySuiteIds(items, selected, preview, mode = "add") {

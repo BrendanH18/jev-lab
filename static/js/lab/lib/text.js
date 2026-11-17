@@ -11,7 +11,11 @@
 function str(value) {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return "";
-  try { return String(value); } catch { return ""; }
+  try {
+    return String(value);
+  } catch {
+    return "";
+  }
 }
 
 const points = (text) => Array.from(str(text));
@@ -21,11 +25,21 @@ const isLetterOrDigit = (char) => /[\p{L}\p{N}]/u.test(char);
 function eachUtf8Byte(text, visit) {
   for (const char of str(text)) {
     let code = char.codePointAt(0);
-    if (code >= 0xD800 && code <= 0xDFFF) code = 0xFFFD;
+    if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
     if (code < 0x80) visit(code);
-    else if (code < 0x800) { visit(0xC0 | (code >> 6)); visit(0x80 | (code & 0x3F)); }
-    else if (code < 0x10000) { visit(0xE0 | (code >> 12)); visit(0x80 | ((code >> 6) & 0x3F)); visit(0x80 | (code & 0x3F)); }
-    else { visit(0xF0 | (code >> 18)); visit(0x80 | ((code >> 12) & 0x3F)); visit(0x80 | ((code >> 6) & 0x3F)); visit(0x80 | (code & 0x3F)); }
+    else if (code < 0x800) {
+      visit(0xc0 | (code >> 6));
+      visit(0x80 | (code & 0x3f));
+    } else if (code < 0x10000) {
+      visit(0xe0 | (code >> 12));
+      visit(0x80 | ((code >> 6) & 0x3f));
+      visit(0x80 | (code & 0x3f));
+    } else {
+      visit(0xf0 | (code >> 18));
+      visit(0x80 | ((code >> 12) & 0x3f));
+      visit(0x80 | ((code >> 6) & 0x3f));
+      visit(0x80 | (code & 0x3f));
+    }
   }
 }
 
@@ -45,8 +59,14 @@ let segmenter;
 export function graphemeCount(text) {
   const value = str(text);
   if (segmenter === undefined) {
-    try { segmenter = typeof Intl === "object" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null; }
-    catch { segmenter = null; }
+    try {
+      segmenter =
+        typeof Intl === "object" && typeof Intl.Segmenter === "function"
+          ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+          : null;
+    } catch {
+      segmenter = null;
+    }
   }
   if (!segmenter) return codePoints(value);
   let count = 0;
@@ -57,7 +77,9 @@ export function graphemeCount(text) {
 // The size in bytes of the text encoded as UTF-8 (1 to 4 bytes per code point; a lone surrogate counts 3).
 export function utf8Bytes(text) {
   let count = 0;
-  eachUtf8Byte(text, () => { count += 1; });
+  eachUtf8Byte(text, () => {
+    count += 1;
+  });
   return count;
 }
 
@@ -200,12 +222,18 @@ export function collapseWhitespace(text) {
 // The text with whitespace removed from both ends of every line. Line breaks stay exactly as they were (CRLF stays
 // CRLF) and blank lines are kept. Use trimLineEnds to keep indentation.
 export function trimLines(text) {
-  return str(text).split(/(\r\n|\r|\n)/).map((part, index) => (index % 2 ? part : part.trim())).join("");
+  return str(text)
+    .split(/(\r\n|\r|\n)/)
+    .map((part, index) => (index % 2 ? part : part.trim()))
+    .join("");
 }
 
 // The text with trailing whitespace removed from every line; indentation and line breaks stay as they were.
 export function trimLineEnds(text) {
-  return str(text).split(/(\r\n|\r|\n)/).map((part, index) => (index % 2 ? part : part.trimEnd())).join("");
+  return str(text)
+    .split(/(\r\n|\r|\n)/)
+    .map((part, index) => (index % 2 ? part : part.trimEnd()))
+    .join("");
 }
 
 // The text without control characters (C0, DEL, C1); tab, CR and LF are kept.
@@ -215,7 +243,9 @@ export function stripControlCharacters(text) {
 
 // The text with curly quotes made straight: ‘ ’ ‚ ‛ become ' and “ ” „ ‟ become ".
 export function normalizeQuotes(text) {
-  return str(text).replace(/[\u2018\u2019\u201A\u201B]/g, "'").replace(/[\u201C\u201D\u201E\u201F]/g, '"');
+  return str(text)
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"');
 }
 
 // The text with every Unicode hyphen and dash (U+2010 to U+2015: hyphen, non-breaking hyphen, figure, en and em dash,
@@ -232,25 +262,42 @@ export function normalizeUnicode(text, form = "NFC") {
 
 // ---------- identifiers ----------
 
-const LATIN_FALLBACK = { "\u00DF": "ss", "\u00E6": "ae", "\u0153": "oe", "\u00F8": "o", "\u0111": "d", "\u0142": "l", "\u00FE": "th", "\u00F0": "d" };
+const LATIN_FALLBACK = {
+  "\u00DF": "ss",
+  "\u00E6": "ae",
+  "\u0153": "oe",
+  "\u00F8": "o",
+  "\u0111": "d",
+  "\u0142": "l",
+  "\u00FE": "th",
+  "\u00F0": "d",
+};
 
 // A lower-case ASCII slug: accents are removed ("Crème Brûlée" is "creme-brulee"), apostrophes are dropped
 // ("Don't" is "dont"), and every other run of characters that are not a-z or 0-9 becomes one separator, with none
 // at the ends. Letters with no ASCII form are dropped, so the result can be "". A separator that is not text is "-".
 export function slugify(text, separator = "-") {
   const joiner = typeof separator === "string" ? separator : "-";
-  return str(text).normalize("NFKD").replace(/\p{M}+/gu, "").replace(/['\u2019]/g, "").toLowerCase()
+  return str(text)
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .replace(/['\u2019]/g, "")
+    .toLowerCase()
     .replace(/[\u00DF\u00E6\u0153\u00F8\u0111\u0142\u00FE\u00F0]/g, (char) => LATIN_FALLBACK[char])
-    .split(/[^a-z0-9]+/).filter(Boolean).join(joiner);
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .join(joiner);
 }
 
 // The words of a name or phrase: split at anything that is not a letter or digit, at a lower-to-upper step
 // ("orderStatus") and before the last capital of an acronym ("HTTPServer" is HTTP, Server). Apostrophes are dropped.
 function nameWords(text) {
-  return str(text).replace(/['\u2019]/g, "")
+  return str(text)
+    .replace(/['\u2019]/g, "")
     .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
     .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
-    .split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
 }
 
 const capitalize = (word) => {
@@ -261,19 +308,25 @@ const capitalize = (word) => {
 // The words in lower case joined by underscores: "Order Status", "orderStatus" and "order-status" are all
 // "order_status"; "HTTPServer" is "http_server". Letters keep their accents. "" when there are no words.
 export function toSnakeCase(text) {
-  return nameWords(text).map((word) => word.toLowerCase()).join("_");
+  return nameWords(text)
+    .map((word) => word.toLowerCase())
+    .join("_");
 }
 
 // The words joined with no separator, the first in lower case and the rest capitalized: "order status" and
 // "Order_Status" are "orderStatus"; "HTTP server" is "httpServer". "" when there are no words.
 export function toCamelCase(text) {
-  return nameWords(text).map((word, index) => (index ? capitalize(word) : word.toLowerCase())).join("");
+  return nameWords(text)
+    .map((word, index) => (index ? capitalize(word) : word.toLowerCase()))
+    .join("");
 }
 
 // The words in lower case joined by hyphens: "Order Status" and "orderStatus" are "order-status". Unlike slugify,
 // letters keep their accents. "" when there are no words.
 export function toKebabCase(text) {
-  return nameWords(text).map((word) => word.toLowerCase()).join("-");
+  return nameWords(text)
+    .map((word) => word.toLowerCase())
+    .join("-");
 }
 
 // The words capitalized and joined by spaces, for turning a name into a label: "order_status", "orderStatus" and
@@ -293,7 +346,8 @@ export function uniqueName(base, taken) {
   const name = str(base);
   let used;
   if (taken instanceof Set || taken instanceof Map) used = taken;
-  else if (taken && typeof taken === "object" && typeof taken[Symbol.iterator] === "function") used = new Set(Array.from(taken, str));
+  else if (taken && typeof taken === "object" && typeof taken[Symbol.iterator] === "function")
+    used = new Set(Array.from(taken, str));
   else if (taken && typeof taken === "object") used = new Set(Object.keys(taken));
   else used = new Set();
   if (!used.has(name)) return name;
@@ -315,7 +369,9 @@ export function levenshtein(a, b) {
   for (let i = 1; i <= left.length; i += 1) {
     const current = [i];
     for (let j = 1; j <= right.length; j += 1) {
-      current.push(Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1)));
+      current.push(
+        Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1)),
+      );
     }
     previous = current;
   }
@@ -433,13 +489,16 @@ export function findUrls(text) {
     if (match.index > 0 && /[A-Za-z0-9@]/.test(value[match.index - 1])) continue;
     const found = match[0];
     const surplus = {};
-    for (const closer of Object.keys(CLOSERS)) surplus[closer] = found.split(closer).length - found.split(CLOSERS[closer]).length;
+    for (const closer of Object.keys(CLOSERS))
+      surplus[closer] = found.split(closer).length - found.split(CLOSERS[closer]).length;
     let end = found.length;
     while (end > 0) {
       const last = found[end - 1];
       if (".,;:!?*".includes(last)) end -= 1;
-      else if (surplus[last] > 0) { surplus[last] -= 1; end -= 1; }
-      else break;
+      else if (surplus[last] > 0) {
+        surplus[last] -= 1;
+        end -= 1;
+      } else break;
     }
     const prefix = /^www\./i.test(found) ? 4 : found.indexOf("//") + 2;
     if (end > prefix) out.push(found.slice(0, end));
@@ -462,7 +521,10 @@ export function findNumbers(text) {
     if (raw[0] === "." && at > 0 && /\d/.test(value[at - 1])) raw = raw.slice(1);
     const number = Number(raw.replace(/,/g, ""));
     if (!Number.isFinite(number)) continue;
-    const signed = at > 0 && (value[at - 1] === "-" || value[at - 1] === "\u2212") && (at === 1 || !/[\p{L}\p{N}_)\]]/u.test(value[at - 2]));
+    const signed =
+      at > 0 &&
+      (value[at - 1] === "-" || value[at - 1] === "\u2212") &&
+      (at === 1 || !/[\p{L}\p{N}_)\]]/u.test(value[at - 2]));
     out.push(signed && number !== 0 ? -number : number);
   }
   return out;
@@ -512,7 +574,8 @@ export function findIsoDates(text) {
   return out;
 }
 
-const PLACEHOLDER = /\{\{\s*[A-Za-z_][\w.-]*\s*\}\}|\{[A-Za-z_][\w.-]*\}|<[A-Za-z_][\w.-]*>|\[[A-Z][A-Z0-9_]*(?:[ -][A-Z0-9_]+)*\]/g;
+const PLACEHOLDER =
+  /\{\{\s*[A-Za-z_][\w.-]*\s*\}\}|\{[A-Za-z_][\w.-]*\}|<[A-Za-z_][\w.-]*>|\[[A-Z][A-Z0-9_]*(?:[ -][A-Z0-9_]+)*\]/g;
 
 // The template placeholders in the text as written, in order, repeats included: {name}, {{name}} (spaces inside
 // allowed), <name> and [NAME] (capitals, digits, underscores, and single spaces or hyphens between words). A name
@@ -526,7 +589,12 @@ export function findPlaceholders(text) {
 // "ORDER ID". Text that is not wrapped in placeholder marks comes back trimmed.
 export function placeholderName(token) {
   const value = str(token).trim();
-  for (const [open, close] of [["{{", "}}"], ["{", "}"], ["<", ">"], ["[", "]"]]) {
+  for (const [open, close] of [
+    ["{{", "}}"],
+    ["{", "}"],
+    ["<", ">"],
+    ["[", "]"],
+  ]) {
     if (value.length >= open.length + close.length && value.startsWith(open) && value.endsWith(close)) {
       return value.slice(open.length, value.length - close.length).trim();
     }
@@ -541,14 +609,18 @@ export function placeholderName(token) {
 export function findBackticked(text) {
   const out = [];
   for (const line of str(text).split(/\r\n|\r|\n/)) {
-    const runs = Array.from(line.matchAll(/`+/g), (match) => ({ start: match.index, end: match.index + match[0].length }));
+    const runs = Array.from(line.matchAll(/`+/g), (match) => ({
+      start: match.index,
+      end: match.index + match[0].length,
+    }));
     for (let open = 0; open < runs.length; open += 1) {
       const size = runs[open].end - runs[open].start;
       let close = open + 1;
       while (close < runs.length && runs[close].end - runs[close].start !== size) close += 1;
       if (close === runs.length) continue;
       let inner = line.slice(runs[open].end, runs[close].start);
-      if (inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") && inner.trim() !== "") inner = inner.slice(1, -1);
+      if (inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") && inner.trim() !== "")
+        inner = inner.slice(1, -1);
       out.push(inner);
       open = close;
     }
@@ -592,8 +664,10 @@ export function truncate(text, max, ellipsis = "…") {
 // The FNV-1a 32-bit hash of the text's UTF-8 bytes as 8 lower-case hex digits ("811c9dc5" for ""). It is a quick
 // change detector for equal-or-not checks, not a cryptographic hash.
 export function fingerprint(text) {
-  let hash = 0x811C9DC5;
-  eachUtf8Byte(text, (byte) => { hash = Math.imul(hash ^ byte, 0x01000193) >>> 0; });
+  let hash = 0x811c9dc5;
+  eachUtf8Byte(text, (byte) => {
+    hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  });
   return hash.toString(16).padStart(8, "0");
 }
 

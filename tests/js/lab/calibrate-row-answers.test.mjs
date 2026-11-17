@@ -17,25 +17,63 @@ const rows = base.items();
 const [r0, r1, r2, , r4, r5] = rows;
 const empty = () => sampleCalibrateCtx({ report: null });
 // A wrong row whose label (c) is third, not second.
-const third = { type: "choice", label: "c", predicted: "a", correct: false, top: 0.5, answer: { type: "choice", probabilities: { a: 0.5, b: 0.3, c: 0.2 } } };
+const third = {
+  type: "choice",
+  label: "c",
+  predicted: "a",
+  correct: false,
+  top: 0.5,
+  answer: { type: "choice", probabilities: { a: 0.5, b: 0.3, c: 0.2 } },
+};
 
-checkPack(pack, {
-  answer: { items: [r0, r1, r2], values: ["billing", "wholesale", "other"], ctx: base },
-  // Row 3's runner-up ties shipping and wholesale at .02: shipping comes first in the answer.
-  runner_up: { items: rows, values: ["shipping", "shipping", "wholesale", "shipping", "shipping", "shipping", "other"], ctx: base },
-  set_route: { items: rows, ctx: base, values: ["one option", "two or more options", "one option", "one option", "one option", "two or more options", "one option"] },
-  set_options: { items: [r0, r1, r5], values: ["billing", "wholesale, shipping", "billing, shipping"], ctx: base },
-  input_length: { items: [{ text: "Hello" }, { text: "Where is my order?" }, { text: "" }], values: [5, 18, null] },
-  input_kind: { items: [r0, r1, r4], values: ["plain text", "picture", "fields"], ctx: base },
-  // Row 1: .45 − .40; row 5: .40 − .30.
-  label_gap: { items: rows, values: [0, 0.05, 0, 0, 0, 0.1, 0], ctx: base, tolerance: 1e-9 },
+checkPack(
+  pack,
+  {
+    answer: { items: [r0, r1, r2], values: ["billing", "wholesale", "other"], ctx: base },
+    // Row 3's runner-up ties shipping and wholesale at .02: shipping comes first in the answer.
+    runner_up: {
+      items: rows,
+      values: ["shipping", "shipping", "wholesale", "shipping", "shipping", "shipping", "other"],
+      ctx: base,
+    },
+    set_route: {
+      items: rows,
+      ctx: base,
+      values: [
+        "one option",
+        "two or more options",
+        "one option",
+        "one option",
+        "one option",
+        "two or more options",
+        "one option",
+      ],
+    },
+    set_options: { items: [r0, r1, r5], values: ["billing", "wholesale, shipping", "billing, shipping"], ctx: base },
+    input_length: { items: [{ text: "Hello" }, { text: "Where is my order?" }, { text: "" }], values: [5, 18, null] },
+    input_kind: { items: [r0, r1, r4], values: ["plain text", "picture", "fields"], ctx: base },
+    // Row 1: .45 − .40; row 5: .40 − .30.
+    label_gap: { items: rows, values: [0, 0.05, 0, 0, 0, 0.1, 0], ctx: base, tolerance: 1e-9 },
 
-  answer_never_labeled: { hitList: [r0, r1], missList: rows, ctx: base, message: /^“wholesale” is the answer of 1 shown row but no shown row's label/ },
+    answer_never_labeled: {
+      hitList: [r0, r1],
+      missList: rows,
+      ctx: base,
+      message: /^“wholesale” is the answer of 1 shown row but no shown row's label/,
+    },
 
-  // Both wrong rows put shipping (their label) second.
-  runner_up_recovery: [{ ctx: base, expect: 1, empty: empty() }, { ctx: fakeCtx({ items: [third] }), expect: 0 }],
-  mean_set_size: [{ ctx: base, expect: 9 / 7, tolerance: 1e-12, empty: empty() }, { ctx: sampleCalibrateCtx({ hide: [1, 5] }), expect: 1 }],
-}, { ctx: () => sampleCalibrateCtx() });
+    // Both wrong rows put shipping (their label) second.
+    runner_up_recovery: [
+      { ctx: base, expect: 1, empty: empty() },
+      { ctx: fakeCtx({ items: [third] }), expect: 0 },
+    ],
+    mean_set_size: [
+      { ctx: base, expect: 9 / 7, tolerance: 1e-12, empty: empty() },
+      { ctx: sampleCalibrateCtx({ hide: [1, 5] }), expect: 1 },
+    ],
+  },
+  { ctx: () => sampleCalibrateCtx() },
+);
 
 test("calibrate-row-answers: Noul labels read from P(yes), and a Box has no answer category", () => {
   const urgent = sampleCalibrateCtx({ qid: "urgent" });

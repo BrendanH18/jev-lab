@@ -4,20 +4,48 @@ import * as catalog from "../../static/js/dataset-catalog.js";
 import { workbenchSource } from "./workbench-source.mjs";
 
 const items = [
-  { id: "harbor-support", name: "Harbor inbox", notes: "Customer tickets", rows: 10, labeled: 7, questions: 4, guidelines: 2,
-    test: { rows: 4, labeled: 3, looks: 2 }, check: { answers: "private configuration" } },
+  {
+    id: "harbor-support",
+    name: "Harbor inbox",
+    notes: "Customer tickets",
+    rows: 10,
+    labeled: 7,
+    questions: 4,
+    guidelines: 2,
+    test: { rows: 4, labeled: 3, looks: 2 },
+    check: { answers: "private configuration" },
+  },
   { id: "harbor-orders", name: "Orders", notes: "Harbor routing", rows: 8, labeled: 8, questions: 2, guidelines: 2 },
-  { id: "reviews", name: "Reviews", rows: 6, labeled: 2, questions: 3, guidelines: 0,
-    test: { rows: 2, labeled: 0, looks: 5 } },
+  {
+    id: "reviews",
+    name: "Reviews",
+    rows: 6,
+    labeled: 2,
+    questions: 3,
+    guidelines: 0,
+    test: { rows: 2, labeled: 0, looks: 5 },
+  },
   { id: "empty", name: "Empty", rows: 0, labeled: 0, questions: 0, guidelines: 0 },
 ];
 const ids = (filters) => items.filter((item) => catalog.matchesCatalog(item, filters)).map((item) => item.id);
 
 test("split and guideline metrics use counts only, including unlabeled held-out rows", () => {
-  assert.deepEqual(catalog.catalogMetrics(items[0]), { tuning: 6, tuningLabeled: 4, heldOutLabeled: 3,
-    heldOutShare: 40, guidelineShare: 50, unguided: 2 });
-  assert.deepEqual(catalog.catalogMetrics(items[3]), { tuning: 0, tuningLabeled: 0, heldOutLabeled: 0,
-    heldOutShare: null, guidelineShare: null, unguided: 0 });
+  assert.deepEqual(catalog.catalogMetrics(items[0]), {
+    tuning: 6,
+    tuningLabeled: 4,
+    heldOutLabeled: 3,
+    heldOutShare: 40,
+    guidelineShare: 50,
+    unguided: 2,
+  });
+  assert.deepEqual(catalog.catalogMetrics(items[3]), {
+    tuning: 0,
+    tuningLabeled: 0,
+    heldOutLabeled: 0,
+    heldOutShare: null,
+    guidelineShare: null,
+    unguided: 0,
+  });
 });
 
 test("held-out and guideline share bounds are inclusive, fractional and undefined for zero denominators", () => {
@@ -38,7 +66,14 @@ test("split label count and uncovered-question bounds combine without reading la
   assert.deepEqual(ids({ maxHeldOutLabeled: "0", minTuningLabeled: "1" }), ["harbor-orders", "reviews"]);
   assert.deepEqual(ids({ minUnguided: "2", maxUnguided: "3" }), ["harbor-support", "reviews"]);
   assert.deepEqual(ids({ maxUnguided: "0", minQuestions: "1" }), ["harbor-orders"]);
-  for (const key of ["minTuningLabeled", "maxTuningLabeled", "minHeldOutLabeled", "maxHeldOutLabeled", "minUnguided", "maxUnguided"]) {
+  for (const key of [
+    "minTuningLabeled",
+    "maxTuningLabeled",
+    "minHeldOutLabeled",
+    "maxHeldOutLabeled",
+    "minUnguided",
+    "maxUnguided",
+  ]) {
     for (const value of ["-1", "0.5", "NaN", "Infinity"]) assert.deepEqual(ids({ [key]: value }), []);
   }
 });
@@ -50,8 +85,13 @@ test("tuning and held-out label progress exclude nonexistent groups", () => {
   assert.deepEqual(ids({ heldOutLabels: "none" }), ["reviews"]);
   assert.deepEqual(ids({ heldOutLabels: "some" }), ["harbor-support"]);
   assert.deepEqual(ids({ heldOutLabels: "every" }), []);
-  assert.equal(catalog.matchesCatalog({ rows: 4, labeled: 4, test: { rows: 2, labeled: 2 } },
-    { tuningLabels: "every", heldOutLabels: "every" }), true);
+  assert.equal(
+    catalog.matchesCatalog(
+      { rows: 4, labeled: 4, test: { rows: 2, labeled: 2 } },
+      { tuningLabels: "every", heldOutLabels: "every" },
+    ),
+    true,
+  );
 });
 
 test("ID prefixes and word searches respect selected metadata fields and phrase exclusions", () => {
@@ -61,7 +101,11 @@ test("ID prefixes and word searches respect selected metadata fields and phrase 
   assert.deepEqual(ids({ query: "tickets reviews", searchMode: "any-word" }), ["harbor-support", "reviews"]);
   assert.deepEqual(ids({ query: "harbor orders", searchMode: "all-words", searchField: "notes" }), []);
   assert.deepEqual(ids({ query: "harbor orders", searchMode: "all-words", exclude: "routing" }), []);
-  for (const searchMode of ["all-words", "any-word"]) assert.deepEqual(ids({ query: "  ", searchMode }), items.map((item) => item.id));
+  for (const searchMode of ["all-words", "any-word"])
+    assert.deepEqual(
+      ids({ query: "  ", searchMode }),
+      items.map((item) => item.id),
+    );
 });
 
 test("all eight added sorts keep stable ties, source order and unknown shares last", () => {
@@ -75,7 +119,12 @@ test("all eight added sorts keep stable ties, source order and unknown shares la
     ["held-out-share-asc", ["harbor-orders", "reviews", "harbor-support", "empty"]],
     ["guideline-share", ["harbor-orders", "harbor-support", "reviews", "empty"]],
     ["guideline-share-asc", ["reviews", "harbor-support", "harbor-orders", "empty"]],
-  ]) assert.deepEqual(catalog.sortedCatalog(items, sort).map((item) => item.id), expected, sort);
+  ])
+    assert.deepEqual(
+      catalog.sortedCatalog(items, sort).map((item) => item.id),
+      expected,
+      sort,
+    );
   assert.deepEqual(items, before);
 });
 
@@ -89,9 +138,17 @@ test("bulk pins preserve hidden pins, deduplicate and ignore unavailable IDs", (
 });
 
 test("pinned handoffs include hidden pins with the existing metadata export boundary", () => {
-  const source = items.map((item) => ({ ...item, state: "private input", labels: { q: "private label" }, answers: "private answer" }));
+  const source = items.map((item) => ({
+    ...item,
+    state: "private input",
+    labels: { q: "private label" },
+    answers: "private answer",
+  }));
   const pinned = catalog.pinnedCatalog(source, "name", ["reviews", "harbor-support"]);
-  assert.deepEqual(pinned.map((item) => item.id), ["harbor-support", "reviews"]);
+  assert.deepEqual(
+    pinned.map((item) => item.id),
+    ["harbor-support", "reviews"],
+  );
   assert.equal(catalog.catalogIds(pinned), "harbor-support\nreviews");
   for (const output of [catalog.catalogJson(pinned), catalog.catalogCsv(pinned)]) {
     assert.doesNotMatch(output, /private input|private label|private answer|private configuration|Customer tickets/);
@@ -100,29 +157,66 @@ test("pinned handoffs include hidden pins with the existing metadata export boun
 });
 
 test("expanded current-view summaries contain counts without inputs, label values or performance claims", () => {
-  assert.equal(catalog.catalogDetailsSummary(items), "18 tuning rows (14 with labels) · 3 held-out rows with labels · 9 questions (4 with guidelines, 5 without) · 7 recorded test evaluations");
-  assert.equal(catalog.catalogDetailsSummary([]), "0 tuning rows (0 with labels) · 0 held-out rows with labels · 0 questions (0 with guidelines, 0 without) · 0 recorded test evaluations");
+  assert.equal(
+    catalog.catalogDetailsSummary(items),
+    "18 tuning rows (14 with labels) · 3 held-out rows with labels · 9 questions (4 with guidelines, 5 without) · 7 recorded test evaluations",
+  );
+  assert.equal(
+    catalog.catalogDetailsSummary([]),
+    "0 tuning rows (0 with labels) · 0 held-out rows with labels · 0 questions (0 with guidelines, 0 without) · 0 recorded test evaluations",
+  );
   assert.doesNotMatch(catalog.catalogDetailsSummary(items), /accuracy|coverage|pass|Harbor|tickets/);
 });
 
 test("new controls update mounted dataset cards and preserve hidden human queue edits", () => {
   const W = { bulk: { datasets: items } };
   const rows = items.map((item) => {
-    const pin = { setAttribute(key, value) { this[key] = value; } };
+    const pin = {
+      setAttribute(key, value) {
+        this[key] = value;
+      },
+    };
     return { dataset: { datasetId: item.id }, style: {}, draft: "human edit", pin, querySelector: () => pin };
   });
-  const list = { querySelectorAll: () => rows, append: (row) => { rows.splice(rows.indexOf(row), 1); rows.push(row); } };
-  const dom = Object.fromEntries(["dataset-search-count", "dataset-search-summary", "dataset-search-details-summary", "dataset-catalog-pinned-count",
-    "dataset-catalog-copy-pinned", "dataset-catalog-pinned-csv", "dataset-catalog-pinned-json", "dataset-catalog-pin-shown", "dataset-catalog-unpin-shown", "dataset-catalog-copy-summary"]
-    .map((id) => [`#${id}`, {}]));
+  const list = {
+    querySelectorAll: () => rows,
+    append: (row) => {
+      rows.splice(rows.indexOf(row), 1);
+      rows.push(row);
+    },
+  };
+  const dom = Object.fromEntries(
+    [
+      "dataset-search-count",
+      "dataset-search-summary",
+      "dataset-search-details-summary",
+      "dataset-catalog-pinned-count",
+      "dataset-catalog-copy-pinned",
+      "dataset-catalog-pinned-csv",
+      "dataset-catalog-pinned-json",
+      "dataset-catalog-pin-shown",
+      "dataset-catalog-unpin-shown",
+      "dataset-catalog-copy-summary",
+    ].map((id) => [`#${id}`, {}]),
+  );
   dom["#dataset-search-results"] = list;
-  const h = (tag, attrs, ...children) => ({ tag, attrs, value: attrs.value, children: children.flat(Infinity).filter(Boolean), focus() {} });
-  const nodes = (node) => typeof node !== "object" ? [] : [node, ...node.children.flatMap(nodes)];
+  const h = (tag, attrs, ...children) => ({
+    tag,
+    attrs,
+    value: attrs.value,
+    children: children.flat(Infinity).filter(Boolean),
+    focus() {},
+  });
+  const nodes = (node) => (typeof node !== "object" ? [] : [node, ...node.children.flatMap(nodes)]);
   const source = workbenchSource.match(/function datasetSearchControls\([^\n]*\) \{[\s\S]*?\n\}/)[0];
-  const copied = [], dependencies = { ...catalog, W, $: (id) => dom[id], h, copyText: (text) => copied.push(text) };
-  const make = new Function(...Object.keys(dependencies), `${source}; return datasetSearchControls;`)(...Object.values(dependencies));
+  const copied = [],
+    dependencies = { ...catalog, W, $: (id) => dom[id], h, copyText: (text) => copied.push(text) };
+  const make = new Function(...Object.keys(dependencies), `${source}; return datasetSearchControls;`)(
+    ...Object.values(dependencies),
+  );
   const filters = { ...catalog.catalogDefaults(), pinnedIds: ["reviews"] };
-  const tree = make(filters), all = nodes(tree);
+  const tree = make(filters),
+    all = nodes(tree);
   const control = (label) => all.find((node) => node.attrs["aria-label"] === label);
   const action = (id) => all.find((node) => node.attrs.id === id).attrs.onclick();
   const shown = () => rows.filter((row) => row.style.display !== "none").map((row) => row.dataset.datasetId);

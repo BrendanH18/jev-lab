@@ -1,5 +1,18 @@
 import {
-  $, answerCard, api, barRow, callStats, choiceBars, debounce, h, handleError, icon, initChrome, inspect, mount, statusBadge,
+  $,
+  answerCard,
+  api,
+  barRow,
+  callStats,
+  choiceBars,
+  debounce,
+  h,
+  handleError,
+  icon,
+  initChrome,
+  inspect,
+  mount,
+  statusBadge,
   toast,
 } from "./common.js";
 import { installLab, labEnv } from "./lab/env.js";
@@ -7,15 +20,34 @@ import { LAB } from "./lab/pages/reviews.js";
 import { reviewsExamplesCtx, reviewsResultCtx } from "./lab/surfaces/reviews.js";
 
 // calls/history: this page load's answered checks, in memory only, for the Lab surfaces. Nothing here is stored.
-const S = { setup: null, review: null, result: null, policy: {}, policyRev: 0, running: false, note2: "", calls: 0, history: [] };
+const S = {
+  setup: null,
+  review: null,
+  result: null,
+  policy: {},
+  policyRev: 0,
+  running: false,
+  note2: "",
+  calls: 0,
+  history: [],
+};
 const HISTORY_LIMIT = 50;
 
 const TOPIC_LABELS = {
-  roast_flavor: "Roast and flavor", freshness: "Freshness", packaging_shipping: "Packaging and shipping",
-  delivery_timing: "Delivery timing", cafe_service: "Café service", subscription_billing: "Subscription and billing",
-  equipment: "Equipment", other: "Other",
+  roast_flavor: "Roast and flavor",
+  freshness: "Freshness",
+  packaging_shipping: "Packaging and shipping",
+  delivery_timing: "Delivery timing",
+  cafe_service: "Café service",
+  subscription_billing: "Subscription and billing",
+  equipment: "Equipment",
+  other: "Other",
 };
-const FLAG_LABELS = { safety: "Safety risk", not_about_us: "Not about us", rating_mismatch: "Stars disagree with words" };
+const FLAG_LABELS = {
+  safety: "Safety risk",
+  not_about_us: "Not about us",
+  rating_mismatch: "Stars disagree with words",
+};
 const PRIORITY_TONE = { P1: "critical", P2: "warning", P3: "" };
 const stars = (n) => "★".repeat(n) + "☆".repeat(5 - n);
 
@@ -25,20 +57,37 @@ const stars = (n) => "★".repeat(n) + "☆".repeat(5 - n);
 const EXAMPLES_ID = "reviews.examples";
 const RESULT_ID = "reviews.result";
 const EXAMPLES = reviewsExamplesCtx({
-  setup: () => S.setup, draft: () => S.review, running: () => S.running, history: () => S.history, calls: () => S.calls,
-  matches: (item, ctx) => LAB.matches(EXAMPLES_ID, item, ctx), arrange: (list, ctx) => LAB.arrange(EXAMPLES_ID, list, ctx),
+  setup: () => S.setup,
+  draft: () => S.review,
+  running: () => S.running,
+  history: () => S.history,
+  calls: () => S.calls,
+  matches: (item, ctx) => LAB.matches(EXAMPLES_ID, item, ctx),
+  arrange: (list, ctx) => LAB.arrange(EXAMPLES_ID, list, ctx),
   use: (index) => useExample(S.setup.examples[index]),
   focusText: () => $("#review-form textarea")?.focus(),
   focusRun: () => $("#run")?.focus(),
   refresh: () => renderExamples(),
 });
 const RESULT = reviewsResultCtx({
-  setup: () => S.setup, result: () => S.result, draft: () => S.review, settings: () => S.policy, running: () => S.running,
-  note: () => S.note2, history: () => S.history, calls: () => S.calls, topicLabels: TOPIC_LABELS, flagLabels: FLAG_LABELS,
-  matches: (item, ctx) => LAB.matches(RESULT_ID, item, ctx), arrange: (list, ctx) => LAB.arrange(RESULT_ID, list, ctx),
+  setup: () => S.setup,
+  result: () => S.result,
+  draft: () => S.review,
+  settings: () => S.policy,
+  running: () => S.running,
+  note: () => S.note2,
+  history: () => S.history,
+  calls: () => S.calls,
+  topicLabels: TOPIC_LABELS,
+  flagLabels: FLAG_LABELS,
+  matches: (item, ctx) => LAB.matches(RESULT_ID, item, ctx),
+  arrange: (list, ctx) => LAB.arrange(RESULT_ID, list, ctx),
   setPolicy: (next) => applyPolicy(next),
   resetPolicy: () => applyPolicy(S.setup.policy),
-  setStars: (n) => { setStars(n); renderForm(); },
+  setStars: (n) => {
+    setStars(n);
+    renderForm();
+  },
   focusPolicy: (key) => $(`#policy input[data-policy="${key}"]`)?.focus(),
   inspect: () => inspect(S.result.trace, "Reviews · one Jev request"),
   refresh: () => renderAnswerCards(),
@@ -64,12 +113,19 @@ function useExample(ex) {
 // The stars never reach Jev, so changing them re-decides from the same answers.
 function edited(key, value) {
   S.review[key] = value;
-  if (S.result) { S.result = null; renderResult(); }
+  if (S.result) {
+    S.result = null;
+    renderResult();
+  }
 }
 
 function setStars(n) {
   S.review.stars = n;
-  if (S.result) { S.result.review.stars = n; S.policyRev++; decideAgain(); }
+  if (S.result) {
+    S.result.review.stars = n;
+    S.policyRev++;
+    decideAgain();
+  }
 }
 
 // ---------- review form ----------
@@ -79,10 +135,38 @@ function exampleNodes() {
   const total = EXAMPLES.items().length;
   const active = LAB.active(EXAMPLES_ID);
   return [
-    h("div", { class: "chips" }, shown.map((item) => h("button", { class: "chip", disabled: S.running, onclick: () => useExample(S.setup.examples[item.index]) }, item.label))),
-    active ? h("div", { class: "faint", role: "status", style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", fontSize: "12px", marginTop: "6px" } },
-      total && !shown.length ? "No example matches the Lab filters." : `${shown.length} of ${total} examples shown · ${active} Lab setting${active === 1 ? "" : "s"} active`,
-      h("button", { class: "btn sm ghost", onclick: resetExamplesLab }, "Clear Lab filters and sort")) : null,
+    h(
+      "div",
+      { class: "chips" },
+      shown.map((item) =>
+        h(
+          "button",
+          { class: "chip", disabled: S.running, onclick: () => useExample(S.setup.examples[item.index]) },
+          item.label,
+        ),
+      ),
+    ),
+    active
+      ? h(
+          "div",
+          {
+            class: "faint",
+            role: "status",
+            style: {
+              display: "flex",
+              gap: "8px",
+              alignItems: "center",
+              flexWrap: "wrap",
+              fontSize: "12px",
+              marginTop: "6px",
+            },
+          },
+          total && !shown.length
+            ? "No example matches the Lab filters."
+            : `${shown.length} of ${total} examples shown · ${active} Lab setting${active === 1 ? "" : "s"} active`,
+          h("button", { class: "btn sm ghost", onclick: resetExamplesLab }, "Clear Lab filters and sort"),
+        )
+      : null,
   ];
 }
 
@@ -99,30 +183,54 @@ function resetExamplesLab() {
 
 function renderForm() {
   const r = S.review;
-  const starSelect = h("select", { class: "input", "aria-label": "Stars", disabled: S.running },
-    [5, 4, 3, 2, 1].map((n) => h("option", { value: n, selected: n === r.stars }, `${stars(n)} ${n}`)));
+  const starSelect = h(
+    "select",
+    { class: "input", "aria-label": "Stars", disabled: S.running },
+    [5, 4, 3, 2, 1].map((n) => h("option", { value: n, selected: n === r.stars }, `${stars(n)} ${n}`)),
+  );
   starSelect.addEventListener("change", () => setStars(Number(starSelect.value)));
-  const channel = h("select", { class: "input", "aria-label": "Channel", disabled: S.running },
-    Object.entries(S.setup.channels).map(([k, label]) => h("option", { value: k, selected: k === r.channel }, label)));
+  const channel = h(
+    "select",
+    { class: "input", "aria-label": "Channel", disabled: S.running },
+    Object.entries(S.setup.channels).map(([k, label]) => h("option", { value: k, selected: k === r.channel }, label)),
+  );
   channel.addEventListener("change", () => edited("channel", channel.value));
-  const about = h("input", { class: "input", value: r.about, placeholder: "A product or café (optional)", maxlength: 200, disabled: S.running });
+  const about = h("input", {
+    class: "input",
+    value: r.about,
+    placeholder: "A product or café (optional)",
+    maxlength: 200,
+    disabled: S.running,
+  });
   about.addEventListener("input", () => edited("about", about.value));
-  const text = h("textarea", { class: "input", placeholder: "What the reviewer wrote", maxlength: 2000, disabled: S.running }, r.text);
+  const text = h(
+    "textarea",
+    { class: "input", placeholder: "What the reviewer wrote", maxlength: 2000, disabled: S.running },
+    r.text,
+  );
   text.addEventListener("input", () => edited("text", text.value));
 
-  const run = h("button", { class: "btn primary", id: "run", disabled: S.running },
-    S.running ? [h("span", { class: "spin" }), " Reading…"] : [icon("eye"), "Triage review"]);
+  const run = h(
+    "button",
+    { class: "btn primary", id: "run", disabled: S.running },
+    S.running ? [h("span", { class: "spin" }), " Reading…"] : [icon("eye"), "Triage review"],
+  );
   run.addEventListener("click", check);
 
-  mount("#review-form",
+  mount(
+    "#review-form",
     h("div", { id: "review-examples" }, exampleNodes()),
     LAB.section(labEnv, EXAMPLES_ID, EXAMPLES),
-    h("div", { class: "field-row" },
+    h(
+      "div",
+      { class: "field-row" },
       h("label", { class: "field" }, h("span", {}, "Stars"), starSelect),
-      h("label", { class: "field" }, h("span", {}, "Channel"), channel)),
+      h("label", { class: "field" }, h("span", {}, "Channel"), channel),
+    ),
     h("label", { class: "field" }, h("span", {}, "About"), about),
     h("label", { class: "field" }, h("span", {}, "Review"), text),
-    run);
+    run,
+  );
 }
 
 // ---------- the call ----------
@@ -135,14 +243,22 @@ async function check() {
     S.result = await api("/api/reviews/check", { review: { ...S.review }, policy: S.policy });
     S.note2 = "";
     S.calls += 1;
-    S.history.push({ call: S.calls, at: Date.now(), review: { ...S.result.review }, answers: S.result.answers, meta: S.result.meta });
+    S.history.push({
+      call: S.calls,
+      at: Date.now(),
+      review: { ...S.result.review },
+      answers: S.result.answers,
+      meta: S.result.meta,
+    });
     if (S.history.length > HISTORY_LIMIT) S.history.shift();
     // A slider or the stars moved while the call ran: decide again with the current settings before showing anything.
     if (S.policyRev !== rev) {
       S.result.review.stars = S.review.stars;
       await decideAgain();
     } else renderResult();
-  } catch (e) { handleError(e); } finally {
+  } catch (e) {
+    handleError(e);
+  } finally {
     S.running = false;
     renderForm();
   }
@@ -150,9 +266,28 @@ async function check() {
 
 // ---------- result ----------
 function checkRow(c) {
-  const cls = c.ok ? "ok" : c.level === "escalate" ? "blk" : c.level === "moderate" || c.level === "info" ? "info" : "no";
-  const ic = c.ok ? "check" : c.level === "escalate" ? "alert" : c.level === "moderate" ? "eye" : c.level === "info" ? "minus" : "hand";
-  return h("div", { class: "check" }, h("span", { class: cls }, icon(ic)), h("div", {}, h("b", {}, c.label), " ", h("span", { class: "muted" }, c.detail)));
+  const cls = c.ok
+    ? "ok"
+    : c.level === "escalate"
+      ? "blk"
+      : c.level === "moderate" || c.level === "info"
+        ? "info"
+        : "no";
+  const ic = c.ok
+    ? "check"
+    : c.level === "escalate"
+      ? "alert"
+      : c.level === "moderate"
+        ? "eye"
+        : c.level === "info"
+          ? "minus"
+          : "hand";
+  return h(
+    "div",
+    { class: "check" },
+    h("span", { class: cls }, icon(ic)),
+    h("div", {}, h("b", {}, c.label), " ", h("span", { class: "muted" }, c.detail)),
+  );
 }
 
 // The answer cards: every answer of the check, unless Lab filters hide some or a Lab sort reorders them.
@@ -163,11 +298,17 @@ function answerNodes() {
   const active = LAB.active(RESULT_ID);
   const wide = { gridColumn: "1 / -1" };
   return [
-    total && !shown.length ? h("div", { class: "empty", style: wide }, "No answer matches the Lab filters.")
+    total && !shown.length
+      ? h("div", { class: "empty", style: wide }, "No answer matches the Lab filters.")
       : shown.map((row) => answerCard(row.id, r.answers[row.id], r.trace.request.questions[row.id])),
-    active ? h("div", { class: "faint", role: "status", style: { ...wide, fontSize: "12px" } },
-      `${shown.length} of ${total} answers shown · ${active} Lab setting${active === 1 ? "" : "s"} active `,
-      h("button", { class: "btn sm ghost", onclick: resetResultLab }, "Clear Lab filters and sort")) : null,
+    active
+      ? h(
+          "div",
+          { class: "faint", role: "status", style: { ...wide, fontSize: "12px" } },
+          `${shown.length} of ${total} answers shown · ${active} Lab setting${active === 1 ? "" : "s"} active `,
+          h("button", { class: "btn sm ghost", onclick: resetResultLab }, "Clear Lab filters and sort"),
+        )
+      : null,
   ];
 }
 
@@ -187,63 +328,134 @@ function renderResult() {
   const r = S.result;
   if (!r) {
     const lab = LAB.section(labEnv, RESULT_ID, RESULT);
-    return mount("#result", h("div", { class: "empty" }, "Pick or write a review and triage it. One call answers every question at once."),
-      lab ? h("div", { class: "panel-body" }, lab) : null);
+    return mount(
+      "#result",
+      h("div", { class: "empty" }, "Pick or write a review and triage it. One call answers every question at once."),
+      lab ? h("div", { class: "panel-body" }, lab) : null,
+    );
   }
   const t = r.triage;
   const ev = t.evidence;
   const p = r.policy;
   const legend = (qid, value) => (r.answers[qid]?.legend || {})[String(Math.round(value))] || "";
 
-  mount("#result",
-    h("div", { class: "panel-head" }, icon("eye"), h("h2", {}, "Review decision"), h("div", { class: "spacer" }),
-      callStats(r.meta, () => inspect(r.trace, "Reviews · one Jev request"))),
-    h("div", { class: "panel-body grid", style: { gap: "16px" } },
-      h("div", { class: "decision" },
+  mount(
+    "#result",
+    h(
+      "div",
+      { class: "panel-head" },
+      icon("eye"),
+      h("h2", {}, "Review decision"),
+      h("div", { class: "spacer" }),
+      callStats(r.meta, () => inspect(r.trace, "Reviews · one Jev request")),
+    ),
+    h(
+      "div",
+      { class: "panel-body grid", style: { gap: "16px" } },
+      h(
+        "div",
+        { class: "decision" },
         statusBadge(t.action, t.action_label, "lg"),
         h("span", { class: "team" }, t.team_label),
         h("span", { class: `badge ${PRIORITY_TONE[t.priority] || ""}` }, t.priority),
         t.flags.map((f) => h("span", { class: "badge accent" }, icon("alert"), FLAG_LABELS[f] || f)),
         h("div", { style: { flex: 1 } }),
-        h("span", { class: "redecide-note" }, S.note2)),
-      h("ul", { class: "reasons" }, t.reasons.map((x) => h("li", {}, x)),
-        h("li", {}, t.auto_reply_allowed ? "A public auto-reply is allowed: the thank-you template." : "No public auto-reply.")),
-      h("div", { class: "result-grid" },
-        h("div", { class: "checks" }, h("div", { class: "section-label" }, "Checks · plain code"), t.checks.map(checkRow)),
-        h("div", { class: "grid", style: { gap: "14px" } },
-          h("div", {},
+        h("span", { class: "redecide-note" }, S.note2),
+      ),
+      h(
+        "ul",
+        { class: "reasons" },
+        t.reasons.map((x) => h("li", {}, x)),
+        h(
+          "li",
+          {},
+          t.auto_reply_allowed ? "A public auto-reply is allowed: the thank-you template." : "No public auto-reply.",
+        ),
+      ),
+      h(
+        "div",
+        { class: "result-grid" },
+        h(
+          "div",
+          { class: "checks" },
+          h("div", { class: "section-label" }, "Checks · plain code"),
+          t.checks.map(checkRow),
+        ),
+        h(
+          "div",
+          { class: "grid", style: { gap: "14px" } },
+          h(
+            "div",
+            {},
             h("div", { class: "section-label" }, "Judgments · Noul"),
-            h("div", { class: "bars" },
+            h(
+              "div",
+              { class: "bars" },
               barRow("Safety or health risk", ev.safety, { top: ev.safety >= p.safety_at }),
               barRow("About Harbor Coffee Co.", ev.about_us, { top: ev.about_us >= p.about_us_min }),
-              barRow("Wants a reply", ev.wants_reply, { top: ev.wants_reply >= p.wants_reply_at }))),
-          h("div", {},
+              barRow("Wants a reply", ev.wants_reply, { top: ev.wants_reply >= p.wants_reply_at }),
+            ),
+          ),
+          h(
+            "div",
+            {},
             h("div", { class: "section-label" }, `Severity · Score ${ev.severity.toFixed(2)} / 3`),
-            h("div", { class: "scale-note" }, legend("severity", ev.severity))),
-          h("div", {},
+            h("div", { class: "scale-note" }, legend("severity", ev.severity)),
+          ),
+          h(
+            "div",
+            {},
             h("div", { class: "section-label" }, `Tone of the words · Score ${ev.tone.toFixed(2)} / 4`),
             h("div", { class: "scale-note" }, legend("tone", ev.tone)),
-            h("div", { class: "scale-note" }, `${stars(ev.stars)} is level ${ev.stars - 1} of 4 · ${ev.rating_gap.toFixed(2)} levels apart`)),
-          h("div", {},
+            h(
+              "div",
+              { class: "scale-note" },
+              `${stars(ev.stars)} is level ${ev.stars - 1} of 4 · ${ev.rating_gap.toFixed(2)} levels apart`,
+            ),
+          ),
+          h(
+            "div",
+            {},
             h("div", { class: "section-label" }, "Topic · Choice"),
-            choiceBars(r.answers.topic, TOPIC_LABELS, 3)))),
-      h("details", {},
-        h("summary", { class: "muted", style: { cursor: "pointer", fontSize: "12.5px" } }, `All ${Object.keys(r.answers).length} answers from the one call`),
-        h("div", { class: "answers", id: "review-answers", style: { marginTop: "10px" } }, answerNodes())),
-      LAB.section(labEnv, RESULT_ID, RESULT)));
+            choiceBars(r.answers.topic, TOPIC_LABELS, 3),
+          ),
+        ),
+      ),
+      h(
+        "details",
+        {},
+        h(
+          "summary",
+          { class: "muted", style: { cursor: "pointer", fontSize: "12.5px" } },
+          `All ${Object.keys(r.answers).length} answers from the one call`,
+        ),
+        h("div", { class: "answers", id: "review-answers", style: { marginTop: "10px" } }, answerNodes()),
+      ),
+      LAB.section(labEnv, RESULT_ID, RESULT),
+    ),
+  );
 }
 
 // ---------- policy: re-decide without a call ----------
 function renderPolicy() {
   const els = {};
-  const set = (key, value) => {  // in place, so a slider being dragged is not rebuilt under the pointer
+  const set = (key, value) => {
+    // in place, so a slider being dragged is not rebuilt under the pointer
     S.policy[key] = value;
     els[key].input.value = value;
     els[key].out.textContent = els[key].fmt(value);
   };
   const slider = (key, label, min, max, step, fmt = (v) => v.toFixed(2)) => {
     const out = h("output", {}, fmt(S.policy[key]));
-    const input = h("input", { type: "range", min, max, step, value: S.policy[key], "aria-label": label, "data-policy": key });
+    const input = h("input", {
+      type: "range",
+      min,
+      max,
+      step,
+      value: S.policy[key],
+      "aria-label": label,
+      "data-policy": key,
+    });
     els[key] = { input, out, fmt };
     input.addEventListener("input", () => {
       set(key, Number(input.value));
@@ -255,7 +467,8 @@ function renderPolicy() {
     });
     return h("div", { class: "slider" }, h("span", { class: "name" }, label), input, out);
   };
-  mount("#policy",
+  mount(
+    "#policy",
     h("div", { class: "section-label" }, "Judgment thresholds"),
     slider("safety_at", "Escalate a safety risk at P ≥", 0, 1, 0.05),
     slider("about_us_min", "Moderate when about us is below P", 0, 1, 0.05),
@@ -266,7 +479,13 @@ function renderPolicy() {
     slider("p2_at", "P2 and a reply at severity ≥", 0, 3, 0.1, (v) => v.toFixed(1)),
     slider("mismatch_gap", "Stars and words disagree at a gap ≥", 0.5, 4, 0.25),
     slider("thank_tone_at", "Thank-you template at tone ≥", 0, 4, 0.1, (v) => v.toFixed(1)),
-    h("button", { class: "btn sm ghost", onclick: () => applyPolicy(S.setup.policy) }, icon("reset"), "Reset to defaults"));
+    h(
+      "button",
+      { class: "btn sm ghost", onclick: () => applyPolicy(S.setup.policy) },
+      icon("reset"),
+      "Reset to defaults",
+    ),
+  );
 }
 
 // A whole new policy at once (the Reset button, or Lab moving sliders): redraw the sliders and re-decide.
@@ -289,7 +508,9 @@ async function decideAgain() {
     Object.assign(r, { triage: out.triage, policy: out.policy });
     S.note2 = `Re-decided in ${out.compute_ms} ms · no Jev call`;
     renderResult();
-  } catch (e) { handleError(e); }
+  } catch (e) {
+    handleError(e);
+  }
 }
 const redecide = debounce(decideAgain, 120);
 

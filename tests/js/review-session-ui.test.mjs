@@ -2,12 +2,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { workbenchSource } from "./workbench-source.mjs";
 
-const body = (name) => workbenchSource.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
-const make = (name, values = {}, extras = []) => new Function(...Object.keys(values),
-  [...extras, name].map(body).join("\n") + `; return ${name};`)(...Object.values(values));
+const body = (name) =>
+  workbenchSource.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
+const make = (name, values = {}, extras = []) =>
+  new Function(...Object.keys(values), [...extras, name].map(body).join("\n") + `; return ${name};`)(
+    ...Object.values(values),
+  );
 const nothing = () => {};
-const raise = (e) => { throw e; };
-function state(queue) { return { bulk: { checkRuns: { coffee: { queue } } } }; }
+const raise = (e) => {
+  throw e;
+};
+function state(queue) {
+  return { bulk: { checkRuns: { coffee: { queue } } } };
+}
 
 test("unsaved warning counts only human edits, including a cleared label", () => {
   const queue = { report: { items: [{ labels: { topic: "seeded suggestion" } }] }, edits: {} };
@@ -21,7 +28,14 @@ test("unsaved warning counts only human edits, including a cleared label", () =>
 
 test("replacement cancellation preserves edits and never asks about suggested labels", () => {
   const messages = [];
-  const replace = make("replaceQueue", { window: { confirm: (message) => { messages.push(message); return false; } } });
+  const replace = make("replaceQueue", {
+    window: {
+      confirm: (message) => {
+        messages.push(message);
+        return false;
+      },
+    },
+  });
   const q = { edits: {}, report: { items: [{ labels: { topic: "suggestion" } }] } };
   assert.equal(replace(q), true);
   q.edits[1] = { topic: "delivery" };
@@ -31,18 +45,41 @@ test("replacement cancellation preserves edits and never asks about suggested la
 });
 
 test("session download sends human edits only and original read snapshot", async () => {
-  const q = { text: "original decisions", readText: "original decisions", edits: { 4: { topic: null, urgent: false } },
-    report: { seed: 7, audit_requested: 2, session_context: "snapshot", items: [{ answers: { topic: "secret" }, labels: { topic: "seeded" } }] } };
+  const q = {
+    text: "original decisions",
+    readText: "original decisions",
+    edits: { 4: { topic: null, urgent: false } },
+    report: {
+      seed: 7,
+      audit_requested: 2,
+      session_context: "snapshot",
+      items: [{ answers: { topic: "secret" }, labels: { topic: "seeded" } }],
+    },
+  };
   const W = state(q);
   let payload;
-  const download = make("downloadQueueSession", { W, render: nothing, toast: nothing, handleError: raise,
-    api: async (_url, data) => { payload = data; return {}; },
-    URL: { createObjectURL: () => "blob:session", revokeObjectURL: nothing }, Blob,
+  const download = make("downloadQueueSession", {
+    W,
+    render: nothing,
+    toast: nothing,
+    handleError: raise,
+    api: async (_url, data) => {
+      payload = data;
+      return {};
+    },
+    URL: { createObjectURL: () => "blob:session", revokeObjectURL: nothing },
+    Blob,
     h: () => ({ click: nothing }),
   });
   await download("coffee");
-  assert.deepEqual(payload, { id: "coffee", text: "original decisions", seed: 7, audit: 2, context: "snapshot",
-    items: [{ line: 4, labels: { topic: null, urgent: false } }] });
+  assert.deepEqual(payload, {
+    id: "coffee",
+    text: "original decisions",
+    seed: 7,
+    audit: 2,
+    context: "snapshot",
+    items: [{ line: 4, labels: { topic: null, urgent: false } }],
+  });
   assert.equal(q.busy, false);
   q.text = "changed decisions";
   payload = null;
@@ -57,8 +94,18 @@ test("restore preview does not replace labels or membership, accept revalidates 
   const q = { text: "decisions", report: old, edits: {} };
   const W = state(q);
   const calls = [];
-  const deps = { W, render: nothing, toast: nothing, handleError: raise, replaceQueue: () => true,
-    loadPictureUrls: async () => {}, api: async (url, data) => { calls.push([url, data]); return { report: restored, edits, counts: {} }; } };
+  const deps = {
+    W,
+    render: nothing,
+    toast: nothing,
+    handleError: raise,
+    replaceQueue: () => true,
+    loadPictureUrls: async () => {},
+    api: async (url, data) => {
+      calls.push([url, data]);
+      return { report: restored, edits, counts: {} };
+    },
+  };
   const preview = make("previewQueueSession", deps);
   const accept = make("acceptQueueSession", deps);
   const session = { version: 1 };
@@ -79,8 +126,15 @@ test("late restore previews cannot apply to a changed decisions file or replaced
     const q = { text: "decisions", report: null };
     const W = state(q);
     let finish;
-    const preview = make("previewQueueSession", { W, render: nothing, handleError: raise,
-      api: () => new Promise((resolve) => { finish = resolve; }) });
+    const preview = make("previewQueueSession", {
+      W,
+      render: nothing,
+      handleError: raise,
+      api: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    });
     const pending = preview("coffee", {});
     if (replace) W.bulk.checkRuns.coffee.queue = { text: "decisions" };
     else q.text = "different decisions";
@@ -93,10 +147,24 @@ test("late restore previews cannot apply to a changed decisions file or replaced
 
 test("failed restore accept leaves the existing queue and human edits intact", async () => {
   const report = { items: [{ line: 1, kind: "review", labels: { topic: "billing" } }] };
-  const q = { text: "decisions", report, edits: { 1: { topic: "billing" } }, sessionPreview: { text: "decisions", session: {} } };
+  const q = {
+    text: "decisions",
+    report,
+    edits: { 1: { topic: "billing" } },
+    sessionPreview: { text: "decisions", session: {} },
+  };
   let error;
-  const accept = make("acceptQueueSession", { W: state(q), render: nothing, replaceQueue: () => true,
-    api: async () => { throw new Error("dataset changed"); }, handleError: (e) => { error = e; } });
+  const accept = make("acceptQueueSession", {
+    W: state(q),
+    render: nothing,
+    replaceQueue: () => true,
+    api: async () => {
+      throw new Error("dataset changed");
+    },
+    handleError: (e) => {
+      error = e;
+    },
+  });
   await accept("coffee");
   assert.equal(q.report, report);
   assert.equal(q.edits[1].topic, "billing");
@@ -110,10 +178,22 @@ test("canceling a partial append preserves remaining human labels and makes no r
   ];
   const q = { report: { items, gates: { topic: 0.9 }, room: 10 }, edits: { 2: { topic: null } } };
   let asked = false;
-  const add = make("addQueued", { W: state(q), toast: nothing,
-    window: { confirm: (text) => { asked = true; assert.match(text, /prevents session downloads/); return false; } },
-    api: () => assert.fail("cancel must not write the dataset"),
-  }, ["queueReady"]);
+  const add = make(
+    "addQueued",
+    {
+      W: state(q),
+      toast: nothing,
+      window: {
+        confirm: (text) => {
+          asked = true;
+          assert.match(text, /prevents session downloads/);
+          return false;
+        },
+      },
+      api: () => assert.fail("cancel must not write the dataset"),
+    },
+    ["queueReady"],
+  );
   await add("coffee");
   assert.equal(asked, true);
   assert.equal(q.report.items, items);
@@ -123,14 +203,28 @@ test("canceling a partial append preserves remaining human labels and makes no r
 test("pasting decisions enables Restore immediately without replacing the textarea", () => {
   const made = [];
   const h = (tag, attrs, ...children) => {
-    const node = { tag, attrs, children, listeners: {}, addEventListener(name, fn) { this.listeners[name] = fn; } };
+    const node = {
+      tag,
+      attrs,
+      children,
+      listeners: {},
+      addEventListener(name, fn) {
+        this.listeners[name] = fn;
+      },
+    };
     made.push(node);
     return node;
   };
   const q = { text: "", audit: "2", sessionPreview: null };
   const controls = () => ({ restoreDisabled: !q.text.trim() });
-  const form = make("queueForm", { h, queueSession: controls, icon: nothing,
-    mount: (target, child) => { target.children = [child]; } });
+  const form = make("queueForm", {
+    h,
+    queueSession: controls,
+    icon: nothing,
+    mount: (target, child) => {
+      target.children = [child];
+    },
+  });
   form({ id: "coffee" }, q);
   const textarea = made.find((node) => node.tag === "textarea");
   const session = made.find((node) => node.children[0]?.restoreDisabled === true);
@@ -150,8 +244,15 @@ test("all check and dataset queue-discarding actions honor cancellation before r
     const W = state(q);
     Object.assign(W.bulk, { dataset: { id: "coffee" }, policy: {}, datasets: [], bundle: { name: "coffee" } });
     let guarded = false;
-    const action = make(name, { W, checkBlocker: () => null, slugOf: (name) => name,
-      confirmReviewDiscard: (id) => { assert.equal(id, "coffee"); guarded = true; return false; },
+    const action = make(name, {
+      W,
+      checkBlocker: () => null,
+      slugOf: (name) => name,
+      confirmReviewDiscard: (id) => {
+        assert.equal(id, "coffee");
+        guarded = true;
+        return false;
+      },
       api: () => assert.fail(`${name} must not mutate saved configuration when canceled`),
       confirm: () => assert.fail("Review warning should happen before normal confirmation"),
     });
@@ -165,7 +266,17 @@ test("all check and dataset queue-discarding actions honor cancellation before r
 test("discard guard preserves unsaved and busy Review queues", () => {
   const q = { edits: { 1: { topic: "delivery" } } };
   const W = state(q);
-  const guard = make("confirmReviewDiscard", { W, confirmDriftDiscard: () => true, confirmAgreementDiscard: () => true, toast: nothing, window: { confirm: () => false } }, ["replaceQueue"]);
+  const guard = make(
+    "confirmReviewDiscard",
+    {
+      W,
+      confirmDriftDiscard: () => true,
+      confirmAgreementDiscard: () => true,
+      toast: nothing,
+      window: { confirm: () => false },
+    },
+    ["replaceQueue"],
+  );
   assert.equal(guard("coffee"), false);
   q.busy = true;
   assert.equal(guard("coffee"), false);
@@ -174,9 +285,17 @@ test("discard guard preserves unsaved and busy Review queues", () => {
 
 test("traffic draft cancellation stops the shared configuration guard", () => {
   let agreementAsked = false;
-  const guard = make("confirmReviewDiscard", { W: state({ edits: {} }), confirmDriftDiscard: (id) => {
-    assert.equal(id, "coffee"); return false;
-  }, confirmAgreementDiscard: () => { agreementAsked = true; return true; } });
+  const guard = make("confirmReviewDiscard", {
+    W: state({ edits: {} }),
+    confirmDriftDiscard: (id) => {
+      assert.equal(id, "coffee");
+      return false;
+    },
+    confirmAgreementDiscard: () => {
+      agreementAsked = true;
+      return true;
+    },
+  });
   assert.equal(guard("coffee"), false);
   assert.equal(agreementAsked, false);
 });

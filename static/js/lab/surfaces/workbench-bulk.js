@@ -205,7 +205,7 @@ const RESERVED = ["_expect", "_test", "_image"];
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const has = (object, key) => Object.hasOwn(object, key);
 const plain = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 
 function deepFreeze(value) {
@@ -219,14 +219,22 @@ function deepFreeze(value) {
 // Stable JSON with sorted keys, for comparing inputs regardless of how their fields were written.
 function canon(value) {
   if (Array.isArray(value)) return `[${value.map(canon).join(",")}]`;
-  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canon(value[key])}`).join(",")}}`;
+  if (isObject(value))
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canon(value[key])}`)
+      .join(",")}}`;
   return JSON.stringify(value) ?? "null";
 }
 
 // A source field: a value, or a function that returns the value now. Errors read as the fallback.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -246,9 +254,16 @@ function parseBox(text) {
     try {
       const value = JSON.parse(box);
       if (Array.isArray(value)) {
-        return { format: "array", entries: value.filter((raw) => raw !== null && raw !== "").map((raw) => ({ raw, line: null, source: null, malformed: false })) };
+        return {
+          format: "array",
+          entries: value
+            .filter((raw) => raw !== null && raw !== "")
+            .map((raw) => ({ raw, line: null, source: null, malformed: false })),
+        };
       }
-    } catch { /* read as lines */ }
+    } catch {
+      /* read as lines */
+    }
   }
   const entries = [];
   box.split("\n").forEach((rawLine, index) => {
@@ -256,7 +271,11 @@ function parseBox(text) {
     if (!line) return;
     if (line.startsWith("{")) {
       let value;
-      try { value = JSON.parse(line); } catch { value = undefined; }
+      try {
+        value = JSON.parse(line);
+      } catch {
+        value = undefined;
+      }
       if (isObject(value)) return entries.push({ raw: value, line: index + 1, source: line, malformed: false });
       return entries.push({ raw: line, line: index + 1, source: line, malformed: true });
     }
@@ -274,15 +293,26 @@ const STORED = ["ref", "input", "image", "labels", "test"];
 // One row item: the stored fields, plus read-only facts about the row that copies leave out.
 function rowView(entry, position, ref) {
   const { raw } = entry;
-  let kind = "value", input = raw, image = null, test = false, labels = {}, labeled = [], problem = null;
+  let kind = "value",
+    input = raw,
+    image = null,
+    test = false,
+    labels = {},
+    labeled = [],
+    problem = null;
   if (typeof raw === "string") kind = "text";
   else if (Array.isArray(raw)) kind = "array";
   else if (isObject(raw)) {
     const fields = Object.fromEntries(Object.entries(raw).filter(([key]) => !RESERVED.includes(key)));
     const keys = Object.keys(fields);
     // An object whose only input field is a string "text" is what the model reads for a text line.
-    if (keys.length === 1 && keys[0] === "text" && typeof fields.text === "string") { kind = "text"; input = fields.text; }
-    else { kind = "object"; input = fields; }
+    if (keys.length === 1 && keys[0] === "text" && typeof fields.text === "string") {
+      kind = "text";
+      input = fields.text;
+    } else {
+      kind = "object";
+      input = fields;
+    }
     const problems = [];
     if (has(raw, "_test")) {
       test = true;
@@ -291,23 +321,35 @@ function rowView(entry, position, ref) {
     if (has(raw, "_image")) {
       if (typeof raw._image === "string" && raw._image.trim()) image = raw._image;
       else problems.push("_image must name a picture");
-      if (has(raw, "photo")) problems.push("a row with _image cannot also have its own photo field: the picture is sent under it");
+      if (has(raw, "photo"))
+        problems.push("a row with _image cannot also have its own photo field: the picture is sent under it");
     }
     if (has(raw, "_expect")) {
       if (isObject(raw._expect)) {
         labeled = Object.keys(raw._expect);
         labels = plain(raw._expect);
-        if (!keys.length && !has(raw, "_test") && !has(raw, "_image")) problems.push("this row has labels but no input");
+        if (!keys.length && !has(raw, "_test") && !has(raw, "_image"))
+          problems.push("this row has labels but no input");
       } else problems.push("_expect must be an object keyed by question id");
     }
-    if (test) labels = null;  // a held-out row's label values stay hidden
+    if (test) labels = null; // a held-out row's label values stay hidden
     problem = problems.length ? problems.join("; ") : null;
   }
   const item = { ref: test ? ref : null, input: plain(input), image, labels, test };
   const text = kind === "text" ? input : kind === "object" && typeof input.text === "string" ? input.text : null;
-  const facts = { position, line: entry.line, kind, text, fields: kind === "text" ? ["text"] : kind === "object" ? Object.keys(input) : [],
-    labeled, inRun: position <= CAP, malformed: entry.malformed, problem };
-  for (const [name, value] of Object.entries(facts)) Object.defineProperty(item, name, { value: deepFreeze(value), enumerable: false });
+  const facts = {
+    position,
+    line: entry.line,
+    kind,
+    text,
+    fields: kind === "text" ? ["text"] : kind === "object" ? Object.keys(input) : [],
+    labeled,
+    inRun: position <= CAP,
+    malformed: entry.malformed,
+    problem,
+  };
+  for (const [name, value] of Object.entries(facts))
+    Object.defineProperty(item, name, { value: deepFreeze(value), enumerable: false });
   return deepFreeze(item);
 }
 
@@ -315,18 +357,25 @@ function rowView(entry, position, ref) {
 // picture, so it stays the same when rows move.
 function rowViews(box) {
   const seen = new Map();
-  return Object.freeze(box.entries.map((entry, index) => {
-    const draft = rowView(entry, index + 1, null);
-    if (!draft.test) return draft;
-    const key = identityOf(draft.input, draft.image);
-    seen.set(key, (seen.get(key) || 0) + 1);
-    return rowView(entry, index + 1, `held-${seen.get(key)}`);
-  }));
+  return Object.freeze(
+    box.entries.map((entry, index) => {
+      const draft = rowView(entry, index + 1, null);
+      if (!draft.test) return draft;
+      const key = identityOf(draft.input, draft.image);
+      seen.set(key, (seen.get(key) || 0) + 1);
+      return rowView(entry, index + 1, `held-${seen.get(key)}`);
+    }),
+  );
 }
 
 // What a pack may set on a row: compared as written (labels {} and null read the same).
-const authored = (item) => JSON.stringify([item.input === undefined ? null : item.input, item.image ?? null,
-  isObject(item.labels) && Object.keys(item.labels).length ? item.labels : null, item.test === true]);
+const authored = (item) =>
+  JSON.stringify([
+    item.input === undefined ? null : item.input,
+    item.image ?? null,
+    isObject(item.labels) && Object.keys(item.labels).length ? item.labels : null,
+    item.test === true,
+  ]);
 
 // One row as written in the box (the page's rowLineFor without labels): plain text stays a line unless it would
 // split, lose whitespace or read as JSON.
@@ -342,28 +391,47 @@ function lineFor(raw) {
 function rawFromItem(item, where) {
   const { input } = item;
   const image = item.image === undefined || item.image === null ? null : item.image;
-  if (image !== null && !(typeof image === "string" && image.trim())) throw new Error(`${where}: image must be a picture name or null.`);
+  if (image !== null && !(typeof image === "string" && image.trim()))
+    throw new Error(`${where}: image must be a picture name or null.`);
   const labels = item.labels === undefined || item.labels === null ? null : item.labels;
-  if (labels !== null && !isObject(labels)) throw new Error(`${where}: labels must be an object keyed by question id, or null.`);
+  if (labels !== null && !isObject(labels))
+    throw new Error(`${where}: labels must be an object keyed by question id, or null.`);
   let copy;
-  try { copy = labels === null ? null : plain(labels); } catch { throw new Error(`${where}: labels must be plain JSON values.`); }
+  try {
+    copy = labels === null ? null : plain(labels);
+  } catch {
+    throw new Error(`${where}: labels must be plain JSON values.`);
+  }
   const withLabels = copy && Object.keys(copy).length ? copy : null;
   const extra = { ...(image !== null ? { _image: image } : {}), ...(withLabels ? { _expect: withLabels } : {}) };
   if (typeof input === "string") {
-    if (!input.trim()) throw new Error(`${where}: the input is blank, so the row would disappear. Remove the row instead.`);
+    if (!input.trim())
+      throw new Error(`${where}: the input is blank, so the row would disappear. Remove the row instead.`);
     return image === null && !withLabels ? input : { text: input, ...extra };
   }
   if (Array.isArray(input)) {
-    if (image !== null || withLabels) throw new Error(`${where}: a row that is a JSON array cannot carry a picture or labels. Wrap it in an object first.`);
+    if (image !== null || withLabels)
+      throw new Error(
+        `${where}: a row that is a JSON array cannot carry a picture or labels. Wrap it in an object first.`,
+      );
     return plain(input);
   }
   if (!isObject(input)) throw new Error(`${where}: the input must be text, a JSON object or a JSON array.`);
   const reserved = RESERVED.filter((key) => has(input, key));
-  if (reserved.length) throw new Error(`${where}: the input may not hold ${reserved.join(", ")}. Use labels and image; held-out markers come only from a test split.`);
-  if (image !== null && has(input, "photo")) throw new Error(`${where}: a row with a picture cannot also have its own photo field.`);
-  if (!Object.keys(input).length && image === null) throw new Error(`${where}: the input is an empty object, so the model would read nothing.`);
+  if (reserved.length)
+    throw new Error(
+      `${where}: the input may not hold ${reserved.join(", ")}. Use labels and image; held-out markers come only from a test split.`,
+    );
+  if (image !== null && has(input, "photo"))
+    throw new Error(`${where}: a row with a picture cannot also have its own photo field.`);
+  if (!Object.keys(input).length && image === null)
+    throw new Error(`${where}: the input is an empty object, so the model would read nothing.`);
   let fields;
-  try { fields = plain(input); } catch { throw new Error(`${where}: the input must be plain JSON.`); }
+  try {
+    fields = plain(input);
+  } catch {
+    throw new Error(`${where}: the input must be plain JSON.`);
+  }
   return { ...fields, ...extra };
 }
 
@@ -379,13 +447,18 @@ function composeBox(box, views, next) {
     const where = `Row ${index + 1}`;
     if (!isObject(item)) throw new Error(`${where} is not a row object.`);
     const extra = Object.keys(item).filter((key) => !STORED.includes(key));
-    if (extra.length) throw new Error(`${where}: ${extra.join(", ")} cannot be set. Edit input, image or labels; everything else follows from them.`);
+    if (extra.length)
+      throw new Error(
+        `${where}: ${extra.join(", ")} cannot be set. Edit input, image or labels; everything else follows from them.`,
+      );
     const key = authored(item);
     if (item.test === true) {
       const match = held.find((entry) => !entry.used && entry.view.ref === item.ref && entry.key === key);
       if (!match) {
-        if (held.some((entry) => entry.view.ref === item.ref && entry.key === key)) throw new Error(`${where} repeats a held-out row. Held-out rows cannot be copied.`);
-        if (held.some((entry) => entry.view.ref === item.ref)) throw new Error(`${where} is a held-out row, which must stay exactly as it is.`);
+        if (held.some((entry) => entry.view.ref === item.ref && entry.key === key))
+          throw new Error(`${where} repeats a held-out row. Held-out rows cannot be copied.`);
+        if (held.some((entry) => entry.view.ref === item.ref))
+          throw new Error(`${where} is a held-out row, which must stay exactly as it is.`);
         throw new Error(`${where} is marked held out. Only Datasets' test split can hold rows out.`);
       }
       match.used = true;
@@ -394,7 +467,9 @@ function composeBox(box, views, next) {
       return;
     }
     if (item.ref !== undefined && item.ref !== null) {
-      throw new Error(`${where} carries a held-out row's ref but is not marked held out. Held-out rows cannot become tuning rows here.`);
+      throw new Error(
+        `${where} carries a held-out row's ref but is not marked held out. Held-out rows cannot become tuning rows here.`,
+      );
     }
     const match = origin.find((entry) => !entry.used && !entry.view.test && entry.key === key);
     if (match) {
@@ -407,15 +482,19 @@ function composeBox(box, views, next) {
     const raw = rawFromItem(item, where);
     const view = rowView({ raw, line: null, malformed: false }, index + 1, null);
     if (heldIdentities.has(identityOf(view.input, view.image))) {
-      throw new Error(`${where} would repeat the input of a held-out test row. Held-out inputs stay on the test side only.`);
+      throw new Error(
+        `${where} would repeat the input of a held-out test row. Held-out inputs stay on the test side only.`,
+      );
     }
     rows.push({ raw, source: null });
   });
   const missing = held.filter((entry) => !entry.used);
   if (missing.length) {
-    throw new Error(`This edit would remove held-out test row${missing.length === 1 ? "" : "s"} ${missing.map((entry) => entry.view.position).join(", ")}. Held-out rows stay untouched.`);
+    throw new Error(
+      `This edit would remove held-out test row${missing.length === 1 ? "" : "s"} ${missing.map((entry) => entry.view.position).join(", ")}. Held-out rows stay untouched.`,
+    );
   }
-  if (same) return null;  // every row unchanged and in place: the box stays exactly as it is
+  if (same) return null; // every row unchanged and in place: the box stays exactly as it is
   if (box.format === "array" || rows.some((row) => Array.isArray(row.raw))) {
     return rows.length ? `[\n${rows.map((row) => JSON.stringify(row.raw)).join(",\n")}\n]` : "";
   }
@@ -446,7 +525,9 @@ export function bulkRowsCtx(source = {}) {
   const replace = (next, options = {}) => {
     if (!Array.isArray(next)) throw new Error("A Lab edit must give the whole list of rows.");
     if (read(source, "labelsDirty", false) === true) {
-      throw new Error("Labels chosen in the results table are not in the rows box yet. Use Keep labels in rows first, then preview this edit again.");
+      throw new Error(
+        "Labels chosen in the results table are not in the rows box yet. Use Keep labels in rows first, then preview this edit again.",
+      );
     }
     const { text, box, items } = parsed();
     const nextText = composeBox(box, items, next);
@@ -465,10 +546,18 @@ export function bulkRowsCtx(source = {}) {
       return Array.isArray(arranged) ? arranged : list;
     },
     data: {
-      get format() { return parsed().box.format; },
-      get cap() { return CAP; },
-      get heldOut() { return parsed().items.filter((item) => item.test).length; },
-      get questions() { return questionsOf(read(source, "questions", null)); },
+      get format() {
+        return parsed().box.format;
+      },
+      get cap() {
+        return CAP;
+      },
+      get heldOut() {
+        return parsed().items.filter((item) => item.test).length;
+      },
+      get questions() {
+        return questionsOf(read(source, "questions", null));
+      },
       get questionError() {
         const message = read(source, "questionError", null);
         return typeof message === "string" && message ? message : null;
@@ -479,11 +568,19 @@ export function bulkRowsCtx(source = {}) {
       },
       get dataset() {
         const value = read(source, "dataset", null);
-        return isObject(value) && typeof value.id === "string" && value.id ? Object.freeze({ id: value.id, name: typeof value.name === "string" ? value.name : "" }) : null;
+        return isObject(value) && typeof value.id === "string" && value.id
+          ? Object.freeze({ id: value.id, name: typeof value.name === "string" ? value.name : "" })
+          : null;
       },
-      get unsaved() { return read(source, "unsaved", false) === true; },
-      get labelsDirty() { return read(source, "labelsDirty", false) === true; },
-      get running() { return read(source, "running", false) === true; },
+      get unsaved() {
+        return read(source, "unsaved", false) === true;
+      },
+      get labelsDirty() {
+        return read(source, "labelsDirty", false) === true;
+      },
+      get running() {
+        return read(source, "running", false) === true;
+      },
       get health() {
         const report = read(source, "health", null);
         return isObject(report) ? deepFreeze(plain(report)) : null;
@@ -499,22 +596,33 @@ export function bulkRowsCtx(source = {}) {
         if (!Array.isArray(items) || !items.length) throw new Error("There is nothing to import.");
         items.forEach((item, index) => {
           if (!isObject(item)) throw new Error(`Imported row ${index + 1} is not a row object.`);
-          if (item.test === true) throw new Error(`Imported row ${index + 1} is marked held out. Only Datasets' test split can hold rows out.`);
+          if (item.test === true)
+            throw new Error(
+              `Imported row ${index + 1} is marked held out. Only Datasets' test split can hold rows out.`,
+            );
         });
-        const fresh = items.map((item) => ({ input: item.input, image: item.image ?? null, labels: item.labels ?? {} }));
+        const fresh = items.map((item) => ({
+          input: item.input,
+          image: item.image ?? null,
+          labels: item.labels ?? {},
+        }));
         return replace([...parsed().items, ...fresh], { label: options?.label || "Import" });
       },
       checkHealth: () => call(source, "checkHealth"),
       checkPreflight: () => call(source, "checkPreflight"),
       openCsvImport: () => call(source, "openCsvImport"),
       focusRow(position) {
-        const item = Number.isInteger(position) ? parsed().items.find((entry) => entry.position === position) : undefined;
+        const item = Number.isInteger(position)
+          ? parsed().items.find((entry) => entry.position === position)
+          : undefined;
         if (!item) throw new Error(`There is no row ${String(position)} in the rows box.`);
         if (item.line === null) throw new Error("The rows box is a JSON array, so its rows have no line to go to.");
         return call(source, "focusLine", item.line);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && Number.isInteger(item.position) ? String(item.position) : String(index + 1)),
   };
   return ctx;
@@ -536,7 +644,9 @@ function tableText(row) {
 }
 
 function probabilityList(answer) {
-  return Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) => (finite(p) === null ? [] : [{ key, p }]));
+  return Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) =>
+    finite(p) === null ? [] : [{ key, p }],
+  );
 }
 
 function boxOf(value) {
@@ -559,11 +669,16 @@ function labelClass(type, raw, answer, levels) {
     const box = boxOf(raw);
     return box && box.left < box.right && box.top < box.bottom ? box : undefined;
   }
-  if (type === "choice") return typeof raw === "string" && probabilityList(answer).some((entry) => entry.key === raw) ? raw : undefined;
+  if (type === "choice")
+    return typeof raw === "string" && probabilityList(answer).some((entry) => entry.key === raw) ? raw : undefined;
   if (type === "noul") {
     if (raw === true || raw === false) return raw ? "yes" : "no";
     const text = String(raw).trim().toLowerCase();
-    return ["yes", "true", "1", "y"].includes(text) ? "yes" : ["no", "false", "0", "n"].includes(text) ? "no" : undefined;
+    return ["yes", "true", "1", "y"].includes(text)
+      ? "yes"
+      : ["no", "false", "0", "n"].includes(text)
+        ? "no"
+        : undefined;
   }
   if (!(typeof raw === "number" || (typeof raw === "string" && raw.trim()))) return undefined;
   const level = Number(raw);
@@ -573,14 +688,21 @@ function labelClass(type, raw, answer, levels) {
 function answerView(answer, label) {
   const type = typeof answer.type === "string" ? answer.type : "";
   const probabilities = type === "noul" ? [] : type === "box" ? [] : probabilityList(answer);
-  let value = null, predicted = null, p = null, scale = null, box = null;
+  let value = null,
+    predicted = null,
+    p = null,
+    scale = null,
+    box = null;
   if (type === "choice") {
     value = typeof answer.choice === "string" ? answer.choice : null;
     predicted = value;
     p = probabilities.find((entry) => entry.key === value)?.p ?? null;
   } else if (type === "score") {
     value = finite(answer.score);
-    const levels = isObject(answer.legend) && Object.keys(answer.legend).length ? Object.keys(answer.legend).length : probabilities.length;
+    const levels =
+      isObject(answer.legend) && Object.keys(answer.legend).length
+        ? Object.keys(answer.legend).length
+        : probabilities.length;
     scale = levels ? levels - 1 : null;
     let best = null;
     for (const entry of probabilities) if (!best || entry.p > best.p) best = entry;
@@ -595,32 +717,81 @@ function answerView(answer, label) {
     }
   } else if (type === "box") box = boxOf(answer.box);
   const hasLabel = label !== undefined && label !== null && label !== "";
-  const fitted = hasLabel ? labelClass(type, label, answer, probabilities.map((entry) => entry.key)) : undefined;
+  const fitted = hasLabel
+    ? labelClass(
+        type,
+        label,
+        answer,
+        probabilities.map((entry) => entry.key),
+      )
+    : undefined;
   const labelValid = hasLabel ? fitted !== undefined : null;
   let agrees = null;
-  if (fitted !== undefined) agrees = type === "box" ? (box ? overlap(fitted, box) + 1e-9 >= 0.5 : null) : predicted === null ? null : predicted === fitted;
-  return { type, value, predicted, p, confidence: type === "noul" ? null : finite(answer.confidence), probabilities, scale, box,
-    label: fitted === undefined ? null : fitted, labelValid, agrees };
+  if (fitted !== undefined)
+    agrees =
+      type === "box"
+        ? box
+          ? overlap(fitted, box) + 1e-9 >= 0.5
+          : null
+        : predicted === null
+          ? null
+          : predicted === fitted;
+  return {
+    type,
+    value,
+    predicted,
+    p,
+    confidence: type === "noul" ? null : finite(answer.confidence),
+    probabilities,
+    scale,
+    box,
+    label: fitted === undefined ? null : fitted,
+    labelValid,
+    agrees,
+  };
 }
 
-const metaOf = (meta) => (isObject(meta) ? {
-  model: typeof meta.model === "string" && meta.model ? meta.model : null, latency_ms: finite(meta.latency_ms),
-  input_tokens: finite(meta.input_tokens), output_tokens: finite(meta.output_tokens), cost_usd: finite(meta.cost_usd),
-} : null);
+const metaOf = (meta) =>
+  isObject(meta)
+    ? {
+        model: typeof meta.model === "string" && meta.model ? meta.model : null,
+        latency_ms: finite(meta.latency_ms),
+        input_tokens: finite(meta.input_tokens),
+        output_tokens: finite(meta.output_tokens),
+        cost_usd: finite(meta.cost_usd),
+      }
+    : null;
 
 function resultItem(raw, labels, verdict) {
   const row = raw.row;
   const test = isObject(row) && row._test === true;
   const status = isObject(raw.answers) ? "answered" : typeof raw.error === "string" && raw.error ? "failed" : "skipped";
-  const input = isObject(row) ? Object.fromEntries(Object.entries(row).filter(([key]) => key !== "_test" && key !== "_image")) : row;
+  const input = isObject(row)
+    ? Object.fromEntries(Object.entries(row).filter(([key]) => key !== "_test" && key !== "_image"))
+    : row;
   const own = isObject(labels) ? labels : {};
-  const answers = status === "answered" && !test
-    ? Object.fromEntries(Object.entries(raw.answers).filter(([, answer]) => isObject(answer)).map(([qid, answer]) => [qid, answerView(answer, own[qid])]))
-    : null;
-  return deepFreeze({ index: raw.index, position: raw.index + 1, status, error: status === "failed" ? raw.error : null, test,
-    text: tableText(row), input: plain(input) ?? null, image: isObject(row) && typeof row._image === "string" && row._image ? row._image : null,
-    answers, labels: test ? null : plain(own), meta: status === "answered" ? metaOf(raw.meta) : null,
-    calCorrect: test || typeof verdict !== "boolean" ? null : verdict });
+  const answers =
+    status === "answered" && !test
+      ? Object.fromEntries(
+          Object.entries(raw.answers)
+            .filter(([, answer]) => isObject(answer))
+            .map(([qid, answer]) => [qid, answerView(answer, own[qid])]),
+        )
+      : null;
+  return deepFreeze({
+    index: raw.index,
+    position: raw.index + 1,
+    status,
+    error: status === "failed" ? raw.error : null,
+    test,
+    text: tableText(row),
+    input: plain(input) ?? null,
+    image: isObject(row) && typeof row._image === "string" && row._image ? row._image : null,
+    answers,
+    labels: test ? null : plain(own),
+    meta: status === "answered" ? metaOf(raw.meta) : null,
+    calCorrect: test || typeof verdict !== "boolean" ? null : verdict,
+  });
 }
 
 // source: {
@@ -641,7 +812,9 @@ export function bulkResultsCtx(source = {}) {
   const verdicts = () => {
     const report = read(source, "calReport", null);
     const rows = isObject(report) && Array.isArray(report.rows) ? report.rows : [];
-    return new Map(rows.filter((row) => isObject(row) && Number.isInteger(row.index)).map((row) => [row.index, row.correct]));
+    return new Map(
+      rows.filter((row) => isObject(row) && Number.isInteger(row.index)).map((row) => [row.index, row.correct]),
+    );
   };
   const itemFor = (raw, labels, verdict) => {
     const key = JSON.stringify([labels ?? null, verdict ?? null]);
@@ -659,7 +832,9 @@ export function bulkResultsCtx(source = {}) {
     const current = result();
     if (!current) return EMPTY;
     const ordered = read(source, "order", null);
-    const list = (Array.isArray(ordered) ? ordered : current.results).filter((raw) => isObject(raw) && Number.isInteger(raw.index));
+    const list = (Array.isArray(ordered) ? ordered : current.results).filter(
+      (raw) => isObject(raw) && Number.isInteger(raw.index),
+    );
     const labels = read(source, "labels", {});
     const marks = verdicts();
     return list.map((raw) => itemFor(raw, isObject(labels) ? labels[raw.index] : undefined, marks.get(raw.index)));
@@ -676,32 +851,59 @@ export function bulkResultsCtx(source = {}) {
         const current = result();
         if (!current) return null;
         const rows = current.results.filter(isObject);
-        const count = (status) => rows.filter((raw) => (isObject(raw.answers) ? "answered" : typeof raw.error === "string" && raw.error ? "failed" : "skipped") === status).length;
+        const count = (status) =>
+          rows.filter(
+            (raw) =>
+              (isObject(raw.answers)
+                ? "answered"
+                : typeof raw.error === "string" && raw.error
+                  ? "failed"
+                  : "skipped") === status,
+          ).length;
         const requested = read(source, "requestedModel", null);
-        return Object.freeze({ rows: finite(current.rows) ?? rows.length, completed: count("answered"), failed: count("failed"), skipped: count("skipped"),
+        return Object.freeze({
+          rows: finite(current.rows) ?? rows.length,
+          completed: count("answered"),
+          failed: count("failed"),
+          skipped: count("skipped"),
           held_out: rows.filter((raw) => isObject(raw.row) && raw.row._test === true).length,
-          wall_ms: finite(current.wall_ms), input_tokens: finite(current.input_tokens), cost_usd: finite(current.cost_usd),
-          model: typeof current.model === "string" ? current.model : null, requested_model: typeof requested === "string" && requested ? requested : null,
+          wall_ms: finite(current.wall_ms),
+          input_tokens: finite(current.input_tokens),
+          cost_usd: finite(current.cost_usd),
+          model: typeof current.model === "string" ? current.model : null,
+          requested_model: typeof requested === "string" && requested ? requested : null,
           stopped: typeof current.stopped === "string" && current.stopped ? current.stopped : null,
-          retry_error: typeof current.retry_error === "string" && current.retry_error ? current.retry_error : null });
+          retry_error: typeof current.retry_error === "string" && current.retry_error ? current.retry_error : null,
+        });
       },
-      get questions() { return result() ? questionsOf(read(source, "questions", null)) : Object.freeze({}); },
-      get questionIds() { return Object.freeze(questionIds()); },
+      get questions() {
+        return result() ? questionsOf(read(source, "questions", null)) : Object.freeze({});
+      },
+      get questionIds() {
+        return Object.freeze(questionIds());
+      },
       get calQuestion() {
         const qid = read(source, "calQuestion", null);
         return result() && typeof qid === "string" && qid ? qid : null;
       },
       get sort() {
         const sort = read(source, "sort", null);
-        return result() && isObject(sort) && typeof sort.key === "string" && sort.key ? Object.freeze({ key: sort.key, dir: sort.dir === 1 ? "asc" : "desc" }) : null;
+        return result() && isObject(sort) && typeof sort.key === "string" && sort.key
+          ? Object.freeze({ key: sort.key, dir: sort.dir === 1 ? "asc" : "desc" })
+          : null;
       },
-      get labelsDirty() { return read(source, "labelsDirty", false) === true; },
-      get running() { return read(source, "running", false) === true; },
+      get labelsDirty() {
+        return read(source, "labelsDirty", false) === true;
+      },
+      get running() {
+        return read(source, "running", false) === true;
+      },
     },
     actions: {
       sortBy(key, dir = "desc") {
         if (!result()) throw new Error("Run Bulk first: there is no table to sort.");
-        if (key !== "__row" && !questionIds().includes(key)) throw new Error(`There is no column ${String(key)} in the results table.`);
+        if (key !== "__row" && !questionIds().includes(key))
+          throw new Error(`There is no column ${String(key)} in the results table.`);
         if (dir !== "asc" && dir !== "desc") throw new Error("Sort direction must be asc or desc.");
         return call(source, "sortBy", key, dir === "asc" ? 1 : -1);
       },
@@ -715,11 +917,16 @@ export function bulkResultsCtx(source = {}) {
       },
       focusRow(index) {
         const item = Number.isInteger(index) ? ctx.shown().find((entry) => entry.index === index) : undefined;
-        if (!item) throw new Error(`Row ${Number.isInteger(index) ? index + 1 : String(index)} is not shown in the results table.`);
+        if (!item)
+          throw new Error(
+            `Row ${Number.isInteger(index) ? index + 1 : String(index)} is not shown in the results table.`,
+          );
         return call(source, "focusRow", index);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && Number.isInteger(item.position) ? String(item.position) : String(index + 1)),
   };
   return ctx;

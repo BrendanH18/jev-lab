@@ -17,28 +17,40 @@ from .world import TEMPLATES, WEEKDAYS, World, REFUND_WINDOW_DAYS
 
 TOOLS = {
     "refund_order": {
-        "label": "Refund an order", "risk": "medium", "threshold": 0.80,
+        "label": "Refund an order",
+        "risk": "medium",
+        "threshold": 0.80,
         "about": "Give a customer money back for an order: refund, reimburse, or credit back",
     },
     "reschedule_meeting": {
-        "label": "Reschedule a meeting", "risk": "medium", "threshold": 0.75,
+        "label": "Reschedule a meeting",
+        "risk": "medium",
+        "threshold": 0.75,
         "about": "Move an existing calendar meeting to a different day or time",
     },
     "pay_vendor": {
-        "label": "Pay a vendor", "risk": "high", "threshold": 0.90,
+        "label": "Pay a vendor",
+        "risk": "high",
+        "threshold": 0.90,
         "about": "Send money to a supplier or service provider, such as paying an invoice or bill",
     },
     "create_task": {
-        "label": "Create a task", "risk": "low", "threshold": 0.50,
+        "label": "Create a task",
+        "risk": "low",
+        "threshold": 0.50,
         "about": "Add a to-do for the team: fix, book, order, clean, follow up on, or look into something",
     },
     "send_info": {
-        "label": "Send standard info", "risk": "low", "threshold": 0.50,
+        "label": "Send standard info",
+        "risk": "low",
+        "threshold": 0.50,
         "about": "Answer a customer's question with standard information: shipping times, returns and "
         "refund policy, wholesale pricing, subscription help, or a brewing guide",
     },
     "none": {
-        "label": "No action", "risk": "none", "threshold": 0.0,
+        "label": "No action",
+        "risk": "none",
+        "threshold": 0.0,
         "about": "None of these: a thank-you, feedback with no request, a newsletter or promotion, "
         "or something the shop assistant cannot do",
     },
@@ -71,8 +83,9 @@ AMOUNT_RE = re.compile(
     r"\$\s?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?|\b(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?\s?(?:dollars|usd)\b",
     re.IGNORECASE,
 )
-TIME_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b([01]?\d|2[0-3]):([0-5]\d)\b|\b(noon|midday)\b",
-                     re.IGNORECASE)
+TIME_RE = re.compile(
+    r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b([01]?\d|2[0-3]):([0-5]\d)\b|\b(noon|midday)\b", re.IGNORECASE
+)
 
 
 # --- deterministic candidate finding ------------------------------------------------------
@@ -151,17 +164,21 @@ def questions(world: dict, cands: dict, source: str = "command") -> Dict[str, di
     days["not_stated"] = "No new day is given; only the time changes or nothing is said"
 
     times = {t["key"]: "The time written as “%s”" % t["text"] for t in cands["times"]}
-    times.update({
-        "morning": "Some time in the morning, without an exact time",
-        "afternoon": "Some time in the afternoon, without an exact time",
-        "not_stated": "No new time is given; the meeting keeps its current time",
-    })
+    times.update(
+        {
+            "morning": "Some time in the morning, without an exact time",
+            "afternoon": "Some time in the afternoon, without an exact time",
+            "not_stated": "No new time is given; the meeting keeps its current time",
+        }
+    )
 
     amounts = {a["key"]: "The amount written as “%s”" % a["text"] for a in cands["amounts"]}
-    amounts.update({
-        "open_invoice": "No amount is written; pay the vendor's outstanding invoice on file",
-        "not_stated": "Neither an amount nor an invoice to pay is indicated",
-    })
+    amounts.update(
+        {
+            "open_invoice": "No amount is written; pay the vendor's outstanding invoice on file",
+            "not_stated": "Neither an amount nor an invoice to pay is indicated",
+        }
+    )
 
     qs = {
         "tool": choice(
@@ -176,8 +193,7 @@ def questions(world: dict, cands: dict, source: str = "command") -> Dict[str, di
         "refund.reason": choice("Why does %s say the order should be refunded?" % ref, REFUND_REASONS),
         "reschedule.meeting": choice("Which existing meeting does %s want to move?" % ref, meetings),
         "reschedule.day": choice(
-            "If %s moves a meeting, which weekday should it move to? Answer the new day, not the "
-            "current one." % ref,
+            "If %s moves a meeting, which weekday should it move to? Answer the new day, not the current one." % ref,
             days,
         ),
         "reschedule.time": choice(
@@ -212,8 +228,15 @@ def _arg(answers: dict, qid: str, override: Optional[dict], name: str) -> dict:
     return {"value": value, "prob": prob, "options": ranked(answers[qid], 4)}
 
 
-def resolve(answers: dict, cands: dict, world: dict, source: str, text: str,
-            override: Optional[dict] = None, sender_email: Optional[str] = None) -> dict:
+def resolve(
+    answers: dict,
+    cands: dict,
+    world: dict,
+    source: str,
+    text: str,
+    override: Optional[dict] = None,
+    sender_email: Optional[str] = None,
+) -> dict:
     if override and override.get("tool"):
         tool, tool_prob = override["tool"], 1.0
     else:
@@ -228,8 +251,10 @@ def resolve(answers: dict, cands: dict, world: dict, source: str, text: str,
         args["reason"] = _arg(answers, "refund.reason", override, "reason")
         if args["order"]["value"] == "not_identified":
             missing.append("order")
-        exec_args = {"order": args["order"]["value"],
-                     "reason": None if args["reason"]["value"] == "not_stated" else args["reason"]["value"]}
+        exec_args = {
+            "order": args["order"]["value"],
+            "reason": None if args["reason"]["value"] == "not_stated" else args["reason"]["value"],
+        }
     elif tool == "reschedule_meeting":
         args["meeting"] = _arg(answers, "reschedule.meeting", override, "meeting")
         args["day"] = _arg(answers, "reschedule.day", override, "day")
@@ -238,7 +263,8 @@ def resolve(answers: dict, cands: dict, world: dict, source: str, text: str,
             missing.append("meeting")
         day = None if args["day"]["value"] == "not_stated" else args["day"]["value"]
         time_value = {"morning": "10:00", "afternoon": "14:00", "not_stated": None}.get(
-            args["time"]["value"], args["time"]["value"])
+            args["time"]["value"], args["time"]["value"]
+        )
         if day is None and time_value is None:
             missing.append("day")
         exec_args = {"meeting": args["meeting"]["value"], "day": day, "time": time_value}
@@ -264,8 +290,12 @@ def resolve(answers: dict, cands: dict, world: dict, source: str, text: str,
         args["area"] = _arg(answers, "task.area", override, "area")
         priority_score = float(answers["task.priority"]["score"])
         priority = "low" if priority_score < 0.67 else "normal" if priority_score < 1.34 else "urgent"
-        args["priority"] = {"value": priority, "prob": float(answers["task.priority"]["confidence"]),
-                            "score": priority_score, "ungated": True}
+        args["priority"] = {
+            "value": priority,
+            "prob": float(answers["task.priority"]["confidence"]),
+            "score": priority_score,
+            "ungated": True,
+        }
         exec_args = {"area": args["area"]["value"], "priority": priority, "text": text}
     elif tool == "send_info":
         args["template"] = _arg(answers, "info.template", override, "template")
@@ -313,18 +343,32 @@ def _check(cid: str, ok: bool, level_if_fail: str, label: str, detail: str) -> d
 def photo_check(evidence: Optional[dict]) -> dict:
     """An emailed damage claim needs a photo that shows the damage described (see jev/claims.py)."""
     if evidence is None:
-        return _check("photo_evidence", False, "approval", "Photo shows the damage",
-                      "No photo attached; damage refunds by email need one")
+        return _check(
+            "photo_evidence",
+            False,
+            "approval",
+            "Photo shows the damage",
+            "No photo attached; damage refunds by email need one",
+        )
     policy = claims.DEFAULT_POLICY
-    ok = (evidence["shows_item"] >= policy["shows_order"] and evidence["damage"] >= policy["damage_yes"]
-          and evidence["matches_note"] >= policy["matches_note"])
-    return _check("photo_evidence", ok, "approval", "Photo shows the damage",
-                  "Photo: %.0f%% shows the product, %.0f%% damage visible, %.0f%% matches the email"
-                  % (evidence["shows_item"] * 100, evidence["damage"] * 100, evidence["matches_note"] * 100))
+    ok = (
+        evidence["shows_item"] >= policy["shows_order"]
+        and evidence["damage"] >= policy["damage_yes"]
+        and evidence["matches_note"] >= policy["matches_note"]
+    )
+    return _check(
+        "photo_evidence",
+        ok,
+        "approval",
+        "Photo shows the damage",
+        "Photo: %.0f%% shows the product, %.0f%% damage visible, %.0f%% matches the email"
+        % (evidence["shows_item"] * 100, evidence["damage"] * 100, evidence["matches_note"] * 100),
+    )
 
 
-def checks(call: dict, world_obj: World, sender_email: Optional[str] = None,
-           evidence: Optional[dict] = None) -> List[dict]:
+def checks(
+    call: dict, world_obj: World, sender_email: Optional[str] = None, evidence: Optional[dict] = None
+) -> List[dict]:
     """Deterministic rules. `sender_email` enables the checks that only make sense for email,
     including the photo check for damage claims; `evidence` holds that email's photo judgments."""
     w = world_obj.state
@@ -335,59 +379,136 @@ def checks(call: dict, world_obj: World, sender_email: Optional[str] = None,
 
     if tool == "refund_order":
         order = w["orders"][a["order"]]
-        out.append(_check("not_refunded", not order["refunded"], "block", "Not already refunded",
-                          "Already refunded" if order["refunded"] else "No previous refund"))
+        out.append(
+            _check(
+                "not_refunded",
+                not order["refunded"],
+                "block",
+                "Not already refunded",
+                "Already refunded" if order["refunded"] else "No previous refund",
+            )
+        )
         days = world_obj.days_since_delivery(a["order"])
         reason = a["reason"]
         if order["status"] == "delivered":
             if reason in ("damaged", "wrong_item"):
                 ok = days <= REFUND_WINDOW_DAYS
-                out.append(_check("refund_window", ok, "approval", "Within %d-day window" % REFUND_WINDOW_DAYS,
-                                  "Delivered %d days ago" % days))
+                out.append(
+                    _check(
+                        "refund_window",
+                        ok,
+                        "approval",
+                        "Within %d-day window" % REFUND_WINDOW_DAYS,
+                        "Delivered %d days ago" % days,
+                    )
+                )
             elif reason == "not_delivered":
-                out.append(_check("delivery_claim", False, "approval", "Delivery status agrees",
-                                  "Carrier shows delivered %d days ago" % days))
+                out.append(
+                    _check(
+                        "delivery_claim",
+                        False,
+                        "approval",
+                        "Delivery status agrees",
+                        "Carrier shows delivered %d days ago" % days,
+                    )
+                )
             else:
-                out.append(_check("refund_reason", False, "approval", "Refundable reason",
-                                  "Reason is %s; policy needs a damaged or wrong item" % (reason or "not given")))
+                out.append(
+                    _check(
+                        "refund_reason",
+                        False,
+                        "approval",
+                        "Refundable reason",
+                        "Reason is %s; policy needs a damaged or wrong item" % (reason or "not given"),
+                    )
+                )
         elif order["status"] == "in transit":
-            out.append(_check("refund_reason", reason == "not_delivered", "approval", "Refundable reason",
-                              "Order is still in transit"))
+            out.append(
+                _check(
+                    "refund_reason",
+                    reason == "not_delivered",
+                    "approval",
+                    "Refundable reason",
+                    "Order is still in transit",
+                )
+            )
         else:
-            out.append(_check("refund_status", False, "approval", "Order has shipped",
-                              "Order is still %s; cancel instead of refunding" % order["status"]))
+            out.append(
+                _check(
+                    "refund_status",
+                    False,
+                    "approval",
+                    "Order has shipped",
+                    "Order is still %s; cancel instead of refunding" % order["status"],
+                )
+            )
         if sender_email is not None and reason == "damaged":
             out.append(photo_check(evidence))
         if sender_email is not None:
             owner_email = w["customers"][order["customer"]]["email"]
             ok = sender_email.lower() == owner_email.lower()
-            out.append(_check("requester_owns_order", ok, "approval", "Sender is the customer on the order",
-                              "Order belongs to %s" % owner_email if not ok else "Sender matches %s" % owner_email))
+            out.append(
+                _check(
+                    "requester_owns_order",
+                    ok,
+                    "approval",
+                    "Sender is the customer on the order",
+                    "Order belongs to %s" % owner_email if not ok else "Sender matches %s" % owner_email,
+                )
+            )
 
     elif tool == "reschedule_meeting":
         meeting = w["meetings"][a["meeting"]]
         if sender_email is not None:
             domain = sender_email.rsplit("@", 1)[-1].lower()
             ok = domain == meeting["with_domain"]
-            out.append(_check("sender_attends", ok, "approval", "Sender is part of this meeting",
-                              "Meeting is with %s; sender is %s" % (meeting["with_domain"], domain)))
+            out.append(
+                _check(
+                    "sender_attends",
+                    ok,
+                    "approval",
+                    "Sender is part of this meeting",
+                    "Meeting is with %s; sender is %s" % (meeting["with_domain"], domain),
+                )
+            )
 
     elif tool == "pay_vendor":
         amount, vendor_id = a["amount"], a["vendor"]
-        out.append(_check("funds", amount <= w["balance"], "block", "Sufficient balance",
-                          "Balance $%s" % format(w["balance"], ",.2f")))
+        out.append(
+            _check(
+                "funds",
+                amount <= w["balance"],
+                "block",
+                "Sufficient balance",
+                "Balance $%s" % format(w["balance"], ",.2f"),
+            )
+        )
         paid = world_obj.paid_invoice_for(vendor_id, amount)
         open_inv = None if paid else world_obj.open_invoice_for(vendor_id, amount)
         if paid:
             out.append(_check("invoice", False, "block", "Matches an unpaid invoice", "%s is already paid" % paid))
         else:
-            out.append(_check("invoice", bool(open_inv), "approval", "Matches an unpaid invoice",
-                              ("Matches %s" % open_inv) if open_inv else "No open invoice for $%s" % format(amount, ",.2f")))
+            out.append(
+                _check(
+                    "invoice",
+                    bool(open_inv),
+                    "approval",
+                    "Matches an unpaid invoice",
+                    ("Matches %s" % open_inv) if open_inv else "No open invoice for $%s" % format(amount, ",.2f"),
+                )
+            )
         if sender_email is not None:
             domain = sender_email.rsplit("@", 1)[-1].lower()
             expected = w["vendors"][vendor_id]["domain"]
-            out.append(_check("vendor_domain", domain == expected, "approval", "Sent from the vendor's domain",
-                              "Expected %s, got %s" % (expected, domain)))
+            out.append(
+                _check(
+                    "vendor_domain",
+                    domain == expected,
+                    "approval",
+                    "Sent from the vendor's domain",
+                    "Expected %s, got %s" % (expected, domain),
+                )
+            )
     return out
 
 
@@ -396,7 +517,10 @@ def decide(call: dict, check_list: List[dict]) -> dict:
     meta = TOOLS.get(tool, TOOLS["none"])
     reasons: List[str] = []
     if call["tool_prob"] < 0.5:
-        return {"decision": "clarify", "reasons": ["Not sure which action is meant (%.0f%%)" % (call["tool_prob"] * 100)]}
+        return {
+            "decision": "clarify",
+            "reasons": ["Not sure which action is meant (%.0f%%)" % (call["tool_prob"] * 100)],
+        }
     if tool == "none":
         return {"decision": "none", "reasons": ["No supported action requested"]}
     if call["missing"]:
@@ -408,12 +532,18 @@ def decide(call: dict, check_list: List[dict]) -> dict:
     if approvals:
         reasons = [c["detail"] for c in approvals]
     if call["confidence"] < meta["threshold"]:
-        reasons.append("Confidence %.0f%% is below the %.0f%% a %s-risk action needs"
-                       % (call["confidence"] * 100, meta["threshold"] * 100, meta["risk"]))
+        reasons.append(
+            "Confidence %.0f%% is below the %.0f%% a %s-risk action needs"
+            % (call["confidence"] * 100, meta["threshold"] * 100, meta["risk"])
+        )
     if reasons:
         return {"decision": "confirm", "reasons": reasons}
-    return {"decision": "execute", "reasons": ["Confidence %.0f%% clears %.0f%%; all checks pass"
-                                               % (call["confidence"] * 100, meta["threshold"] * 100)]}
+    return {
+        "decision": "execute",
+        "reasons": [
+            "Confidence %.0f%% clears %.0f%%; all checks pass" % (call["confidence"] * 100, meta["threshold"] * 100)
+        ],
+    }
 
 
 def recheck(plan: dict, world_obj: World) -> Optional[str]:
@@ -438,14 +568,23 @@ def recheck(plan: dict, world_obj: World) -> Optional[str]:
     return None
 
 
-def plan(answers: dict, cands: dict, world_obj: World, source: str, text: str,
-         override: Optional[dict] = None, sender_email: Optional[str] = None,
-         sender_checks: bool = True, evidence: Optional[dict] = None) -> dict:
+def plan(
+    answers: dict,
+    cands: dict,
+    world_obj: World,
+    source: str,
+    text: str,
+    override: Optional[dict] = None,
+    sender_email: Optional[str] = None,
+    sender_checks: bool = True,
+    evidence: Optional[dict] = None,
+) -> dict:
     snapshot = world_obj.state
     call = resolve(answers, cands, snapshot, source, text, override, sender_email)
     check_list = checks(call, world_obj, sender_email if sender_checks else None, evidence)
     call.update(decide(call, check_list))
     call["checks"] = check_list
-    call["tool_meta"] = {k: {"label": v["label"], "risk": v["risk"], "threshold": v["threshold"]}
-                         for k, v in TOOLS.items()}
+    call["tool_meta"] = {
+        k: {"label": v["label"], "risk": v["risk"], "threshold": v["threshold"]} for k, v in TOOLS.items()
+    }
     return call

@@ -11,8 +11,11 @@ from helpers import FakeClient  # noqa: E402
 from jev import calibrate, compare, orders, workbench  # noqa: E402
 from jev.client import JevError  # noqa: E402
 
-DEPT = {"type": "choice", "instructions": "Which team?",
-        "criteria": {"billing": "Money", "shipping": "Parcels", "other": "Anything else"}}
+DEPT = {
+    "type": "choice",
+    "instructions": "Which team?",
+    "criteria": {"billing": "Money", "shipping": "Parcels", "other": "Anything else"},
+}
 REVERSED = dict(DEPT, criteria=dict(reversed(list(DEPT["criteria"].items()))))
 URGENT = {"type": "noul", "instructions": "Urgent?"}
 SIZE = {"type": "score", "instructions": "How big?", "criteria": ["small", "medium", "large"]}
@@ -36,7 +39,9 @@ class ReverseTests(unittest.TestCase):
         self.assertEqual(list(out), ["dept", "urgent", "size", "lang"])
         self.assertEqual(list(out["dept"]["criteria"]), ["other", "shipping", "billing"])
         self.assertEqual(out["dept"]["instructions"], DEPT["instructions"])
-        self.assertEqual((out["urgent"], out["size"], out["lang"]), (URGENT, SIZE, ONE))  # a Score scale keeps its order
+        self.assertEqual(
+            (out["urgent"], out["size"], out["lang"]), (URGENT, SIZE, ONE)
+        )  # a Score scale keeps its order
         self.assertEqual(list(DEPT["criteria"]), ["billing", "shipping", "other"])  # the input is untouched
         self.assertEqual(orders.averaged_ids(questions), ["dept"])
         self.assertIsNone(orders.reverse_options({"urgent": URGENT, "size": SIZE, "lang": ONE}))
@@ -47,8 +52,14 @@ class ReverseTests(unittest.TestCase):
 
 class AverageTests(unittest.TestCase):
     def test_averages_each_option_and_recomputes_the_pick_and_confidence(self):
-        first = {"dept": choice({"billing": 0.6, "shipping": 0.3, "other": 0.1}), "urgent": {"type": "noul", "noul": 0.8}}
-        second = {"dept": choice({"other": 0.1, "shipping": 0.7, "billing": 0.2}), "urgent": {"type": "noul", "noul": 0.1}}
+        first = {
+            "dept": choice({"billing": 0.6, "shipping": 0.3, "other": 0.1}),
+            "urgent": {"type": "noul", "noul": 0.8},
+        }
+        second = {
+            "dept": choice({"other": 0.1, "shipping": 0.7, "billing": 0.2}),
+            "urgent": {"type": "noul", "noul": 0.1},
+        }
         answers, picks = orders.average(first, second, Q)
         dept = answers["dept"]
         self.assertEqual(dept["choice"], "shipping")
@@ -68,18 +79,31 @@ class AverageTests(unittest.TestCase):
 
     def test_an_unreadable_answer_in_either_order_leaves_the_question_out(self):
         good = choice({"billing": 0.6, "shipping": 0.3, "other": 0.1})
-        for bad in (None, {"type": "noul", "noul": 0.5}, choice({"billing": 0.6, "shipping": 0.4}),
-                    dict(good, probabilities={"billing": 2, "shipping": 0, "other": 0}), dict(good, choice="refund")):
+        for bad in (
+            None,
+            {"type": "noul", "noul": 0.5},
+            choice({"billing": 0.6, "shipping": 0.4}),
+            dict(good, probabilities={"billing": 2, "shipping": 0, "other": 0}),
+            dict(good, choice="refund"),
+        ):
             with self.subTest(bad=bad):
-                answers, picks = orders.average({"dept": good, "urgent": {"type": "noul", "noul": 0.2}}, {"dept": bad}, Q)
+                answers, picks = orders.average(
+                    {"dept": good, "urgent": {"type": "noul", "noul": 0.2}}, {"dept": bad}, Q
+                )
                 self.assertNotIn("dept", answers)
                 self.assertEqual((picks, answers["urgent"]["noul"]), ({}, 0.2))
 
     def test_meta_adds_cost_and_tokens_and_keeps_the_slower_latency(self):
-        meta = orders.combine_meta([{"model": "m", "latency_ms": 30.0, "input_tokens": 100, "output_tokens": 2, "cost_usd": 0.01},
-                                    {"model": "m", "latency_ms": 50.0, "input_tokens": 120, "output_tokens": 3, "cost_usd": 0.02}])
-        self.assertEqual((meta["model"], meta["latency_ms"], meta["input_tokens"], meta["output_tokens"], meta["calls"]),
-                         ("m", 50.0, 220, 5, 2))
+        meta = orders.combine_meta(
+            [
+                {"model": "m", "latency_ms": 30.0, "input_tokens": 100, "output_tokens": 2, "cost_usd": 0.01},
+                {"model": "m", "latency_ms": 50.0, "input_tokens": 120, "output_tokens": 3, "cost_usd": 0.02},
+            ]
+        )
+        self.assertEqual(
+            (meta["model"], meta["latency_ms"], meta["input_tokens"], meta["output_tokens"], meta["calls"]),
+            ("m", 50.0, 220, 5, 2),
+        )
         self.assertAlmostEqual(meta["cost_usd"], 0.03)
 
 
@@ -89,12 +113,16 @@ class RunCompareTests(unittest.TestCase):
         rows = [{"text": "refund my card", "_expect": {"dept": "billing"}}, "where is my parcel"]
         report = workbench.run_compare(client, rows, [{"questions": Q}, {"questions": Q, "average_orders": True}])
         self.assertEqual(len(client.calls), 6)  # one call per row for A, two for B
-        self.assertEqual(sorted(list(q["dept"]["criteria"])[0] for _, q in client.calls), ["billing"] * 4 + ["other"] * 2)
+        self.assertEqual(
+            sorted(list(q["dept"]["criteria"])[0] for _, q in client.calls), ["billing"] * 4 + ["other"] * 2
+        )
         a, b = report["variants"]
         self.assertEqual((a["average_orders"], b["average_orders"]), (False, True))
         self.assertIsNone(a["orders"])
-        self.assertEqual(b["orders"], [{"qid": "dept", "answered": 2, "changed": 2, "rate": 1.0,
-                                        "low": calibrate.wilson(2, 2)[0], "high": 1.0}])
+        self.assertEqual(
+            b["orders"],
+            [{"qid": "dept", "answered": 2, "changed": 2, "rate": 1.0, "low": calibrate.wilson(2, 2)[0], "high": 1.0}],
+        )
         self.assertEqual((a["completed"], b["completed"]), (2, 2))
         self.assertAlmostEqual(b["cost_usd"], 2 * a["cost_usd"])
         self.assertEqual(b["input_tokens"], 2 * a["input_tokens"])
@@ -108,20 +136,42 @@ class RunCompareTests(unittest.TestCase):
         self.assertAlmostEqual(run_b["answers"]["dept"]["probabilities"]["other"], 0.4875)
         self.assertLess(run_b["answers"]["dept"]["confidence"], 0.3)
         # Compare scores the averaged answers like any other.
-        scored = compare.evaluate([{"index": r["index"], "label": (r.get("expect") or {}).get("dept"),
-                                    "answers": [x["answers"]["dept"] for x in r["runs"]]} for r in report["results"]])
+        scored = compare.evaluate(
+            [
+                {
+                    "index": r["index"],
+                    "label": (r.get("expect") or {}).get("dept"),
+                    "answers": [x["answers"]["dept"] for x in r["runs"]],
+                }
+                for r in report["results"]
+            ]
+        )
         self.assertEqual([v["labeled"] for v in scored["variants"]], [1, 1])
 
     def test_agreement_is_never_an_order_or_input_check_when_only_one_variant_averages(self):
-        reversed_a = workbench.run_compare(FakeClient(first_listed), ["a"],
-                                           [{"questions": {"dept": REVERSED}}, {"questions": {"dept": DEPT}, "average_orders": True}])
+        reversed_a = workbench.run_compare(
+            FakeClient(first_listed),
+            ["a"],
+            [{"questions": {"dept": REVERSED}}, {"questions": {"dept": DEPT}, "average_orders": True}],
+        )
         self.assertFalse(reversed_a["agreement"][0]["reordered"])
-        rows = workbench.run_compare(FakeClient(first_listed), ["Ship it"],
-                                     [{"questions": Q}, {"questions": Q, "perturb": "lowercase", "average_orders": True}])
+        rows = workbench.run_compare(
+            FakeClient(first_listed),
+            ["Ship it"],
+            [{"questions": Q}, {"questions": Q, "perturb": "lowercase", "average_orders": True}],
+        )
         self.assertEqual({a["perturbed"] for a in rows["agreement"]}, {False})
-        self.assertEqual(rows["results"][0]["runs"][1]["input"], {"text": "ship it"})  # both calls were sent the rewrite
-        both = workbench.run_compare(FakeClient(first_listed), ["a"],
-                                     [{"questions": {"dept": DEPT}, "average_orders": True}, {"questions": {"dept": REVERSED}, "average_orders": True}])
+        self.assertEqual(
+            rows["results"][0]["runs"][1]["input"], {"text": "ship it"}
+        )  # both calls were sent the rewrite
+        both = workbench.run_compare(
+            FakeClient(first_listed),
+            ["a"],
+            [
+                {"questions": {"dept": DEPT}, "average_orders": True},
+                {"questions": {"dept": REVERSED}, "average_orders": True},
+            ],
+        )
         self.assertTrue(both["agreement"][0]["reordered"])
 
     def test_a_stop_between_the_two_calls_leaves_the_row_unanswered_but_counts_its_spend(self):
@@ -132,7 +182,9 @@ class RunCompareTests(unittest.TestCase):
                 return super().system_one(state, questions, model=model)
 
         with patch.object(workbench, "BULK_CONCURRENCY", 1):
-            report = workbench.run_compare(Budget(), ["a", "b"], [{"questions": Q}, {"questions": Q, "average_orders": True}])
+            report = workbench.run_compare(
+                Budget(), ["a", "b"], [{"questions": Q}, {"questions": Q, "average_orders": True}]
+            )
         self.assertEqual(report["stopped"], "budget")
         first, second = report["results"]
         self.assertEqual(first["runs"][1]["error"], "budget")
@@ -144,9 +196,14 @@ class RunCompareTests(unittest.TestCase):
         self.assertAlmostEqual(b["cost_usd"], a["cost_usd"])  # B's one answered call still cost money
 
     def test_validation(self):
-        for variant, message in (({"questions": Q, "average_orders": "yes"}, "true or false"),
-                                 ({"questions": {"urgent": URGENT, "lang": ONE}, "average_orders": True}, "Choice question")):
-            with self.subTest(variant=variant), self.assertRaisesRegex(workbench.WorkbenchError, "Variant B: .*" + message):
+        for variant, message in (
+            ({"questions": Q, "average_orders": "yes"}, "true or false"),
+            ({"questions": {"urgent": URGENT, "lang": ONE}, "average_orders": True}, "Choice question"),
+        ):
+            with (
+                self.subTest(variant=variant),
+                self.assertRaisesRegex(workbench.WorkbenchError, "Variant B: .*" + message),
+            ):
                 workbench.validate_variants([{"questions": Q}, variant])
         self.assertFalse(workbench.validate_variants([{"questions": Q}, {"questions": Q}])[1]["average_orders"])
 

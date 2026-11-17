@@ -69,8 +69,19 @@
 // labels, the allow-listed status (model names, backend, spend counts and dollars as the server measured them for
 // this server run), the theme and the shortcut list. Spend is measured spend, never an estimate presented as spend.
 // Nothing here may hold or ask for the API key, read storage, call the server, or show an answer.
-import { NAV_LINKS, THEMES, effectiveTheme, externalUrl, keyboardHelp, localPath, nextTheme, normalizeTheme, pageLinks, pageUrl,
-  statusSnapshot } from "../../chrome.js";
+import {
+  NAV_LINKS,
+  THEMES,
+  effectiveTheme,
+  externalUrl,
+  keyboardHelp,
+  localPath,
+  nextTheme,
+  normalizeTheme,
+  pageLinks,
+  pageUrl,
+  statusSnapshot,
+} from "../../chrome.js";
 
 const EMPTY = Object.freeze([]);
 
@@ -85,7 +96,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -101,10 +116,15 @@ const pathOf = (value) => {
 
 function commandList(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((row) => row && typeof row === "object" && typeof row.title === "string" && row.title).map((row) => ({
-    key: typeof row.key === "string" ? row.key : null, title: row.title,
-    keys: typeof row.keys === "string" && row.keys ? row.keys : null, group: typeof row.group === "string" && row.group ? row.group : null,
-    surface: typeof row.surface === "string" && row.surface ? row.surface : null }));
+  return raw
+    .filter((row) => row && typeof row === "object" && typeof row.title === "string" && row.title)
+    .map((row) => ({
+      key: typeof row.key === "string" ? row.key : null,
+      title: row.title,
+      keys: typeof row.keys === "string" && row.keys ? row.keys : null,
+      group: typeof row.group === "string" && row.group ? row.group : null,
+      surface: typeof row.surface === "string" && row.surface ? row.surface : null,
+    }));
 }
 
 // source: {
@@ -129,24 +149,44 @@ export function chromeCtx(source = {}) {
     items: () => EMPTY,
     shown: () => EMPTY,
     data: {
-      get path() { return path(); },
-      get url() { return url(); },
-      get links() { return deepFreeze(links()); },
+      get path() {
+        return path();
+      },
+      get url() {
+        return url();
+      },
+      get links() {
+        return deepFreeze(links());
+      },
       get page() {
         const link = links().find((entry) => entry.current);
         return link ? Object.freeze({ path: link.path, label: link.label }) : null;
       },
-      get status() { return deepFreeze(statusSnapshot(read(source, "status", null))); },
-      get theme() { return theme(); },
-      get effectiveTheme() { return effectiveTheme(theme(), read(source, "systemLight", false) === true); },
-      get themes() { return THEMES; },
+      get status() {
+        return deepFreeze(statusSnapshot(read(source, "status", null)));
+      },
+      get theme() {
+        return theme();
+      },
+      get effectiveTheme() {
+        return effectiveTheme(theme(), read(source, "systemLight", false) === true);
+      },
+      get themes() {
+        return THEMES;
+      },
       get layers() {
         const list = read(source, "layers", EMPTY);
         return Object.freeze(Array.isArray(list) ? list.filter((name) => typeof name === "string") : []);
       },
-      get commands() { return deepFreeze(commands()); },
-      get shortcuts() { return deepFreeze(keyboardHelp(commands())); },
-      get mac() { return read(source, "mac", false) === true; },
+      get commands() {
+        return deepFreeze(commands());
+      },
+      get shortcuts() {
+        return deepFreeze(keyboardHelp(commands()));
+      },
+      get mac() {
+        return read(source, "mac", false) === true;
+      },
     },
     actions: {
       go: (target) => call(source, "go", localPath(target)),

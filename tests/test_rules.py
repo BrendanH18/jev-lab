@@ -14,7 +14,11 @@ from jev import checks, cost, drift, holdout, policy, rules, workbench  # noqa: 
 from jev.calibrate import CalibrationError  # noqa: E402
 
 Q = {
-    "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "a", "shipping": "b", "none": "c"}},
+    "dept": {
+        "type": "choice",
+        "instructions": "Which team?",
+        "criteria": {"billing": "a", "shipping": "b", "none": "c"},
+    },
     "refund": {"type": "noul", "instructions": "Refund?"},
     "anger": {"type": "score", "instructions": "How angry?", "criteria": ["calm", "annoyed", "furious"]},
 }
@@ -34,34 +38,55 @@ def row(index, labels=None, **kw):
 
 class ParseTests(unittest.TestCase):
     def test_parses_conditions_comments_and_case(self):
-        parsed = rules.parse("# refunds go to money teams\n\n" + RULE + "\nIF anger >= 2 AND dept != none THEN refund = Yes")
+        parsed = rules.parse(
+            "# refunds go to money teams\n\n" + RULE + "\nIF anger >= 2 AND dept != none THEN refund = Yes"
+        )
         self.assertEqual([r["line"] for r in parsed], [3, 4])
         self.assertEqual(parsed[0]["if"], [("refund", "=", ["yes"])])
         self.assertEqual(parsed[0]["then"], [("dept", "in", ["billing", "shipping"])])
         self.assertEqual(parsed[1]["if"], [("anger", ">=", ["2"]), ("dept", "!=", ["none"])])
-        self.assertEqual(rules.parse("if dept not in none, shipping then refund = no")[0]["if"],
-                         [("dept", "not in", ["none", "shipping"])])
+        self.assertEqual(
+            rules.parse("if dept not in none, shipping then refund = no")[0]["if"],
+            [("dept", "not in", ["none", "shipping"])],
+        )
         self.assertEqual(rules.parse(""), [])
 
     def test_refuses_what_it_cannot_read(self):
-        for text in ("dept = billing", "if dept billing then refund = no", "if dept in billing, then refund = no",
-                     "x" * (rules.MAX_CHARS + 1), "\n".join([RULE] * (rules.MAX_RULES + 1)), 42):
+        for text in (
+            "dept = billing",
+            "if dept billing then refund = no",
+            "if dept in billing, then refund = no",
+            "x" * (rules.MAX_CHARS + 1),
+            "\n".join([RULE] * (rules.MAX_RULES + 1)),
+            42,
+        ):
             with self.subTest(text=str(text)[:40]), self.assertRaises(CalibrationError):
                 rules.parse(text)
 
     def test_check_names_unknown_questions_and_answers(self):
         kinds = rules.kinds_from_questions(Q)
         rules.check(rules.parse(RULE + "\nif anger > 1 then refund = TRUE"), kinds)
-        for text in ("if team = billing then refund = no", "if dept = refunds then refund = no",
-                     "if refund = maybe then dept = none", "if dept >= 1 then refund = no", "if anger = 3 then refund = no"):
+        for text in (
+            "if team = billing then refund = no",
+            "if dept = refunds then refund = no",
+            "if refund = maybe then dept = none",
+            "if dept >= 1 then refund = no",
+            "if anger = 3 then refund = no",
+        ):
             with self.subTest(text=text), self.assertRaises(CalibrationError):
                 rules.check(rules.parse(text), kinds)
 
     def test_yes_no_aliases_apply_to_noul_questions_only(self):
-        kinds = {"flag": ("choice", ["yes", "true", "no"]), "refund": ("noul", ["yes", "no"]), "dept": ("choice", ["billing", "none"])}
+        kinds = {
+            "flag": ("choice", ["yes", "true", "no"]),
+            "refund": ("noul", ["yes", "no"]),
+            "dept": ("choice", ["billing", "none"]),
+        }
         choice_rule = rules.parse("if flag != true then dept = billing")
         rules.check(choice_rule, kinds)
-        self.assertTrue(rules.broken(choice_rule[0], {"flag": "yes", "dept": "none"}), "a Choice option `true` is not `yes`")
+        self.assertTrue(
+            rules.broken(choice_rule[0], {"flag": "yes", "dept": "none"}), "a Choice option `true` is not `yes`"
+        )
         noul_rule = rules.parse("if refund = TRUE then dept = billing")
         rules.check(noul_rule, kinds)
         self.assertEqual(noul_rule[0]["if"], [("refund", "=", ["yes"])])
@@ -114,9 +139,10 @@ class PolicyTests(unittest.TestCase):
     """Two rows break the rule: confident and labeled, they would otherwise be automated."""
 
     def setUp(self):
-        self.rows = ([row(i, {"dept": "billing", "refund": False}) for i in range(8)]
-                     + [row(8, {"dept": "billing", "refund": True}, dept="none", refund=0.9),
-                        row(9, {"dept": "none", "refund": True}, dept="none", refund=0.9)])
+        self.rows = [row(i, {"dept": "billing", "refund": False}) for i in range(8)] + [
+            row(8, {"dept": "billing", "refund": True}, dept="none", refund=0.9),
+            row(9, {"dept": "none", "refund": True}, dept="none", refund=0.9),
+        ]
 
     def test_evaluate_holds_rows_that_break_a_rule(self):
         gates = {"dept": 0.5}
@@ -133,12 +159,16 @@ class PolicyTests(unittest.TestCase):
 
     def test_tune_cost_and_holdout_count_held_rows_as_reviewed(self):
         tuned = {t["target"]: t for t in policy.tune(self.rows, ["dept"], rules=RULE)["targets"]}
-        self.assertEqual((tuned[0.99]["automated"], tuned[0.99]["coverage"], tuned[0.99]["gates"]), (8, 0.8, {"dept": 0.0}))
+        self.assertEqual(
+            (tuned[0.99]["automated"], tuned[0.99]["coverage"], tuned[0.99]["gates"]), (8, 0.8, {"dept": 0.0})
+        )
         costs = {"review": 1.0, "error": 10.0}
         rep = cost.evaluate(self.rows, ["dept"], costs=costs, gates={"dept": 0.0}, rules=RULE)
         self.assertEqual(rep["labeled"], 10)
         self.assertEqual((rep["current"]["automated"], rep["current"]["review"], rep["current"]["cost"]), (8, 2, 2.0))
-        self.assertEqual(rep["automate_all"]["cost"], 2.0, "rows a rule holds are reviewed even when automating the rest")
+        self.assertEqual(
+            rep["automate_all"]["cost"], 2.0, "rows a rule holds are reviewed even when automating the rest"
+        )
         cv = holdout.evaluate(self.rows, ["dept"], folds=2, costs=costs, rules=RULE)
         self.assertEqual(cv["labeled"], 10)
         self.assertEqual(sum(p["rows"] for p in cv["targets"][0]["parts"]), 10)
@@ -147,8 +177,10 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(cv["cost"]["unseen"]["review"], 2)
 
     def test_drift_routes_with_the_rules(self):
-        read = [{"index": 0, "row": None, "read": {"dept": ("none", 0.9), "refund": ("yes", 0.8)}},
-                {"index": 1, "row": None, "read": {"dept": ("billing", 0.9), "refund": ("yes", 0.8)}}]
+        read = [
+            {"index": 0, "row": None, "read": {"dept": ("none", 0.9), "refund": ("yes", 0.8)}},
+            {"index": 1, "row": None, "read": {"dept": ("billing", 0.9), "refund": ("yes", 0.8)}},
+        ]
         routed, auto = drift._route(read, {"dept": 0.5}, rules.parse(RULE))
         self.assertEqual((len(routed), [r["index"] for r in auto]), (2, [1]))
 
@@ -162,15 +194,22 @@ class CheckTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_a_check_keeps_its_rules_and_applies_them(self):
-        spec = {"gates": {"dept": 0.5}, "model": "jev-1.14.0", "min_accuracy": 0.9, "min_coverage": 0.5,
-                "rules": "# money\n" + RULE + "\n"}
+        spec = {
+            "gates": {"dept": 0.5},
+            "model": "jev-1.14.0",
+            "min_accuracy": 0.9,
+            "min_coverage": 0.5,
+            "rules": "# money\n" + RULE + "\n",
+        }
         saved = checks.validate_check(spec, Q)
         self.assertEqual(saved["rules"], RULE)
         self.assertNotIn("rules", checks.validate_check(dict(spec, rules=""), Q))
         with self.assertRaises(workbench.WorkbenchError):
             checks.validate_check(dict(spec, rules="if dept = refunds then refund = no"), Q)
-        results = [{"index": 0, "answers": answers(), "expect": {"dept": "billing"}},
-                   {"index": 1, "answers": answers(dept="none", refund=0.9), "expect": {"dept": "billing"}}]
+        results = [
+            {"index": 0, "answers": answers(), "expect": {"dept": "billing"}},
+            {"index": 1, "answers": answers(dept="none", refund=0.9), "expect": {"dept": "billing"}},
+        ]
         rep = checks.evaluate(results, saved)
         self.assertEqual((rep["automated"], rep["correct"], rep["labeled"]), (1, 1, 2))
         self.assertEqual(rep["status"], "pass")

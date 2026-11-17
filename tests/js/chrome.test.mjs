@@ -4,35 +4,104 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import * as chrome from "../../static/js/chrome.js";
-import { BUILT_IN_SHORTCUTS, EXTERNAL_HOSTS, FOCUSABLE, LAYER_NAMES, MAIN_ID, NAV_LINKS, THEMES, THEME_KEY, THEME_LABELS, applyTheme, commandRows,
-  createLayers, effectiveTheme, externalUrl, keyboardHelp, keysLabel, localPath, nextTheme, normalizeTheme, pageLinks, pageUrl, readTheme,
-  statusSnapshot, trapFocus, writeTheme } from "../../static/js/chrome.js";
+import {
+  BUILT_IN_SHORTCUTS,
+  EXTERNAL_HOSTS,
+  FOCUSABLE,
+  LAYER_NAMES,
+  MAIN_ID,
+  NAV_LINKS,
+  THEMES,
+  THEME_KEY,
+  THEME_LABELS,
+  applyTheme,
+  commandRows,
+  createLayers,
+  effectiveTheme,
+  externalUrl,
+  keyboardHelp,
+  keysLabel,
+  localPath,
+  nextTheme,
+  normalizeTheme,
+  pageLinks,
+  pageUrl,
+  readTheme,
+  statusSnapshot,
+  trapFocus,
+  writeTheme,
+} from "../../static/js/chrome.js";
 import { definePack } from "../../static/js/lab/kit.js";
 import { createLab } from "../../static/js/lab/host.js";
 
 class Storage {
-  constructor() { this.map = new Map(); this.blocked = false; }
-  getItem(key) { if (this.blocked) throw new Error("SecurityError"); return this.map.has(key) ? this.map.get(key) : null; }
-  setItem(key, value) { if (this.blocked) throw new Error("QuotaExceededError"); this.map.set(key, String(value)); }
-  removeItem(key) { if (this.blocked) throw new Error("SecurityError"); this.map.delete(key); }
+  constructor() {
+    this.map = new Map();
+    this.blocked = false;
+  }
+  getItem(key) {
+    if (this.blocked) throw new Error("SecurityError");
+    return this.map.has(key) ? this.map.get(key) : null;
+  }
+  setItem(key, value) {
+    if (this.blocked) throw new Error("QuotaExceededError");
+    this.map.set(key, String(value));
+  }
+  removeItem(key) {
+    if (this.blocked) throw new Error("SecurityError");
+    this.map.delete(key);
+  }
 }
 
 class Root {
-  constructor() { this.attrs = {}; }
-  setAttribute(name, value) { this.attrs[name] = value; }
-  removeAttribute(name) { delete this.attrs[name]; }
+  constructor() {
+    this.attrs = {};
+  }
+  setAttribute(name, value) {
+    this.attrs[name] = value;
+  }
+  removeAttribute(name) {
+    delete this.attrs[name];
+  }
 }
 
-const COVERED = ["BUILT_IN_SHORTCUTS", "EXTERNAL_HOSTS", "FOCUSABLE", "LAYER_NAMES", "MAIN_ID", "NAV_LINKS", "THEMES", "THEME_KEY", "THEME_LABELS",
-  "applyTheme", "commandRows", "createLayers", "effectiveTheme", "externalUrl", "keyboardHelp", "keysLabel", "localPath", "nextTheme",
-  "normalizeTheme", "pageLinks", "pageUrl", "readTheme", "statusSnapshot", "trapFocus", "writeTheme"];
+const COVERED = [
+  "BUILT_IN_SHORTCUTS",
+  "EXTERNAL_HOSTS",
+  "FOCUSABLE",
+  "LAYER_NAMES",
+  "MAIN_ID",
+  "NAV_LINKS",
+  "THEMES",
+  "THEME_KEY",
+  "THEME_LABELS",
+  "applyTheme",
+  "commandRows",
+  "createLayers",
+  "effectiveTheme",
+  "externalUrl",
+  "keyboardHelp",
+  "keysLabel",
+  "localPath",
+  "nextTheme",
+  "normalizeTheme",
+  "pageLinks",
+  "pageUrl",
+  "readTheme",
+  "statusSnapshot",
+  "trapFocus",
+  "writeTheme",
+];
 
 test("every export of chrome.js has a test in this file", () => {
   assert.deepEqual(Object.keys(chrome).sort(), [...COVERED].sort());
 });
 
 test("NAV_LINKS lists the ten pages in bar order, frozen, each a local path", () => {
-  assert.deepEqual(NAV_LINKS.map(([path]) => path), ["/", "/shield", "/dispatch", "/autopilot", "/claims", "/reviews", "/find", "/play", "/counter", "/workbench"]);
+  assert.deepEqual(
+    NAV_LINKS.map(([path]) => path),
+    ["/", "/shield", "/dispatch", "/autopilot", "/claims", "/reviews", "/find", "/play", "/counter", "/workbench"],
+  );
   assert.equal(NAV_LINKS[0][1], "Overview");
   assert.equal(NAV_LINKS[9][1], "Workbench");
   assert.ok(Object.isFrozen(NAV_LINKS) && NAV_LINKS.every((link) => Object.isFrozen(link)));
@@ -87,7 +156,19 @@ test("applyTheme sets or removes data-theme; effectiveTheme and nextTheme follow
 
 test("localPath accepts this app's paths and refuses every other target", () => {
   for (const ok of ["/", "/shield", "/workbench#build", "/find?x=1"]) assert.equal(localPath(ok), ok);
-  for (const bad of ["//evil.example/x", "https://evil.example/", "javascript:alert(1)", "shield", "", "/a b", "/a\\b", "/a\nb", "/\u0000", null, 7]) {
+  for (const bad of [
+    "//evil.example/x",
+    "https://evil.example/",
+    "javascript:alert(1)",
+    "shield",
+    "",
+    "/a b",
+    "/a\\b",
+    "/a\nb",
+    "/\u0000",
+    null,
+    7,
+  ]) {
     assert.throws(() => localPath(bad), /starts with \//, `should refuse ${JSON.stringify(bad)}`);
   }
 });
@@ -95,10 +176,21 @@ test("localPath accepts this app's paths and refuses every other target", () => 
 test("pageLinks marks only the link of the current path, ignoring query, hash and a trailing slash", () => {
   const links = pageLinks(NAV_LINKS, "/claims/?x=1#top");
   assert.equal(links.length, 10);
-  assert.deepEqual(links.filter((link) => link.current).map((link) => link.path), ["/claims"]);
+  assert.deepEqual(
+    links.filter((link) => link.current).map((link) => link.path),
+    ["/claims"],
+  );
   assert.deepEqual(links[4], { path: "/claims", label: "Claims", current: true });
-  assert.deepEqual(pageLinks(NAV_LINKS, "/").filter((link) => link.current).map((link) => link.label), ["Overview"]);
-  assert.equal(pageLinks(NAV_LINKS, "/nowhere").some((link) => link.current), false);
+  assert.deepEqual(
+    pageLinks(NAV_LINKS, "/")
+      .filter((link) => link.current)
+      .map((link) => link.label),
+    ["Overview"],
+  );
+  assert.equal(
+    pageLinks(NAV_LINKS, "/nowhere").some((link) => link.current),
+    false,
+  );
   assert.deepEqual(pageLinks(null, "/"), []);
 });
 
@@ -106,8 +198,16 @@ test("externalUrl opens only official TypeSafe pages over https", () => {
   assert.deepEqual(EXTERNAL_HOSTS, ["console.typesafe.ai", "docs.typesafe.ai"]);
   assert.equal(externalUrl("https://console.typesafe.ai/settings/keys"), "https://console.typesafe.ai/settings/keys");
   assert.equal(externalUrl("https://docs.typesafe.ai/images"), "https://docs.typesafe.ai/images");
-  for (const bad of ["http://docs.typesafe.ai/", "https://typesafe.ai.evil.example/", "https://user:pw@docs.typesafe.ai/", "https://docs.typesafe.ai:8443/",
-    "javascript:alert(1)", "/workbench", "", null]) {
+  for (const bad of [
+    "http://docs.typesafe.ai/",
+    "https://typesafe.ai.evil.example/",
+    "https://user:pw@docs.typesafe.ai/",
+    "https://docs.typesafe.ai:8443/",
+    "javascript:alert(1)",
+    "/workbench",
+    "",
+    null,
+  ]) {
     assert.throws(() => externalUrl(bad), /official TypeSafe pages/, `should refuse ${JSON.stringify(bad)}`);
   }
 });
@@ -115,7 +215,8 @@ test("externalUrl opens only official TypeSafe pages over https", () => {
 test("pageUrl keeps an http(s) address with its hash and drops credentials", () => {
   assert.equal(pageUrl("http://127.0.0.1:8321/workbench#build"), "http://127.0.0.1:8321/workbench#build");
   assert.equal(pageUrl("http://me:secret@localhost:8321/shield"), "http://localhost:8321/shield");
-  for (const bad of ["file:///etc/passwd", "javascript:alert(1)", "not a url", "", null, undefined]) assert.equal(pageUrl(bad), null);
+  for (const bad of ["file:///etc/passwd", "javascript:alert(1)", "not a url", "", null, undefined])
+    assert.equal(pageUrl(bad), null);
 });
 
 const pack = (id, surface, features) => definePack({ id, surface, title: id, features });
@@ -123,8 +224,13 @@ const pack = (id, surface, features) => definePack({ id, surface, title: id, fea
 test("commandRows lists the mounted surfaces' commands once each, in palette order", () => {
   const run = () => {};
   const lab = createLab([
-    pack("page-one", "shield.inbox", [{ id: "next", kind: "command", title: "Next message", keys: "j", group: "Inbox", run }]),
-    pack("chrome-one", "chrome", [{ id: "help", kind: "command", title: "Keyboard help", keys: "?", run }, { id: "top", kind: "command", title: "Top", run }]),
+    pack("page-one", "shield.inbox", [
+      { id: "next", kind: "command", title: "Next message", keys: "j", group: "Inbox", run },
+    ]),
+    pack("chrome-one", "chrome", [
+      { id: "help", kind: "command", title: "Keyboard help", keys: "?", run },
+      { id: "top", kind: "command", title: "Top", run },
+    ]),
     pack("unmounted", "shield.other", [{ id: "x", kind: "command", title: "Never listed", run }]),
   ]);
   assert.deepEqual(commandRows(lab), []);
@@ -141,7 +247,10 @@ test("commandRows lists the mounted surfaces' commands once each, in palette ord
 
 test("keyboardHelp lists built-ins, then commands with shortcuts, then palette-only commands", () => {
   assert.equal(BUILT_IN_SHORTCUTS.length, 4);
-  assert.deepEqual(BUILT_IN_SHORTCUTS.map((row) => row.keys), ["Mod+K", "Escape", "Tab", "Tab"]);
+  assert.deepEqual(
+    BUILT_IN_SHORTCUTS.map((row) => row.keys),
+    ["Mod+K", "Escape", "Tab", "Tab"],
+  );
   assert.ok(Object.isFrozen(BUILT_IN_SHORTCUTS) && Object.isFrozen(BUILT_IN_SHORTCUTS[0]));
   const rows = keyboardHelp([
     { key: "a/plain", title: "Plain", keys: null, group: "G" },
@@ -149,8 +258,14 @@ test("keyboardHelp lists built-ins, then commands with shortcuts, then palette-o
     { key: "a/bad", title: "" },
     null,
   ]);
-  assert.deepEqual(rows.slice(4), [{ keys: "?", title: "Keyed", group: null, key: "a/keyed" }, { keys: null, title: "Plain", group: "G", key: "a/plain" }]);
-  assert.deepEqual(rows.slice(0, 4).map((row) => row.key), [null, null, null, null]);
+  assert.deepEqual(rows.slice(4), [
+    { keys: "?", title: "Keyed", group: null, key: "a/keyed" },
+    { keys: null, title: "Plain", group: "G", key: "a/plain" },
+  ]);
+  assert.deepEqual(
+    rows.slice(0, 4).map((row) => row.key),
+    [null, null, null, null],
+  );
   assert.equal(keyboardHelp("nope").length, 4);
 });
 
@@ -163,15 +278,44 @@ test("keysLabel spells Mod as Cmd on a Mac and Ctrl elsewhere", () => {
 });
 
 test("statusSnapshot passes only allow-listed status fields and computes the budget left", () => {
-  const raw = { version: "0.9.0", configured: true, key_source: "file", model: "jev-1.14.0", model_source: "selected", default_model: "jev-1.13.0",
-    supports_box: true, backend: "typesafe-sdk", price_per_mtok_input: 0.4, api_key: "ts-live-secret", key: "ts-live-secret",
+  const raw = {
+    version: "0.9.0",
+    configured: true,
+    key_source: "file",
+    model: "jev-1.14.0",
+    model_source: "selected",
+    default_model: "jev-1.13.0",
+    supports_box: true,
+    backend: "typesafe-sdk",
+    price_per_mtok_input: 0.4,
+    api_key: "ts-live-secret",
+    key: "ts-live-secret",
     spend: { budget_usd: 2, spent_usd: 0.5, reserved_usd: 0.25, live_calls: 9, input_tokens: 1200, rpm: 120, extra: 1 },
-    env: { path: ".env", can_save: false, perms_ok: true, problems: ["/home/someone/.env is tracked by git"] } };
+    env: { path: ".env", can_save: false, perms_ok: true, problems: ["/home/someone/.env is tracked by git"] },
+  };
   const snap = statusSnapshot(raw);
-  assert.deepEqual(snap, { loaded: true, configured: true, key_source: "file", model: "jev-1.14.0", model_source: "selected", default_model: "jev-1.13.0",
-    supports_box: true, backend: "typesafe-sdk", version: "0.9.0", price_per_mtok_input: 0.4,
-    spend: { budget_usd: 2, spent_usd: 0.5, reserved_usd: 0.25, live_calls: 9, input_tokens: 1200, rpm: 120, remaining_usd: 1.25 },
-    env: { can_save: false, perms_ok: true, problem_count: 1 } });
+  assert.deepEqual(snap, {
+    loaded: true,
+    configured: true,
+    key_source: "file",
+    model: "jev-1.14.0",
+    model_source: "selected",
+    default_model: "jev-1.13.0",
+    supports_box: true,
+    backend: "typesafe-sdk",
+    version: "0.9.0",
+    price_per_mtok_input: 0.4,
+    spend: {
+      budget_usd: 2,
+      spent_usd: 0.5,
+      reserved_usd: 0.25,
+      live_calls: 9,
+      input_tokens: 1200,
+      rpm: 120,
+      remaining_usd: 1.25,
+    },
+    env: { can_save: false, perms_ok: true, problem_count: 1 },
+  });
   assert.ok(!JSON.stringify(snap).includes("secret") && !JSON.stringify(snap).includes("/home/"));
 
   const before = statusSnapshot({ configured: false });
@@ -182,8 +326,16 @@ test("statusSnapshot passes only allow-listed status fields and computes the bud
   assert.equal(statusSnapshot(null).loaded, false);
   assert.equal(statusSnapshot({ model: "m", configured: "yes", key_source: "elsewhere" }).configured, false);
   assert.equal(statusSnapshot({ model: "m", key_source: "elsewhere" }).key_source, null);
-  assert.equal(statusSnapshot({ model: "m", spend: { budget_usd: 0, spent_usd: 1 } }).spend.remaining_usd, null, "no budget, no remaining");
-  assert.equal(statusSnapshot({ model: "m", spend: { budget_usd: 1, spent_usd: 3 } }).spend.remaining_usd, 0, "floored at zero");
+  assert.equal(
+    statusSnapshot({ model: "m", spend: { budget_usd: 0, spent_usd: 1 } }).spend.remaining_usd,
+    null,
+    "no budget, no remaining",
+  );
+  assert.equal(
+    statusSnapshot({ model: "m", spend: { budget_usd: 1, spent_usd: 3 } }).spend.remaining_usd,
+    0,
+    "floored at zero",
+  );
   assert.equal(statusSnapshot({ model: "m", spend: { budget_usd: 1, spent_usd: "0.2" } }).spend.spent_usd, null);
 });
 
@@ -194,7 +346,10 @@ test("createLayers closes the newest layer first and releases report whether the
   assert.equal(layers.top(), null);
   assert.equal(layers.closeTop(), null);
   const releaseSettings = layers.open("settings", () => closed.push("settings"));
-  const releasePalette = layers.open("palette", () => { closed.push("palette"); releasePalette(); });
+  const releasePalette = layers.open("palette", () => {
+    closed.push("palette");
+    releasePalette();
+  });
   assert.deepEqual(layers.names(), ["settings", "palette"]);
   assert.equal(layers.top(), "palette");
   assert.equal(layers.closeTop(), "palette");
@@ -216,6 +371,14 @@ test("trapFocus wraps Tab at the edges and leaves moves inside the dialog to the
   assert.equal(trapFocus(list, { name: "outside" }, true), c);
   assert.equal(trapFocus([], a), null);
   assert.equal(trapFocus([a], a), a, "a single control keeps the focus");
-  for (const part of ["a[href]", "button:not([disabled])", 'input:not([disabled]):not([type="hidden"])', "select:not([disabled])", "textarea:not([disabled])",
-    "summary", '[tabindex]:not([tabindex="-1"])']) assert.ok(FOCUSABLE.includes(part), part);
+  for (const part of [
+    "a[href]",
+    "button:not([disabled])",
+    'input:not([disabled]):not([type="hidden"])',
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "summary",
+    '[tabindex]:not([tabindex="-1"])',
+  ])
+    assert.ok(FOCUSABLE.includes(part), part);
 });

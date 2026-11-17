@@ -67,7 +67,9 @@ def _entry(qid: str, question: dict, raw: Any) -> dict:
         raise WorkbenchError("Guideline for %s must be an object with a note and examples" % qid)
     unknown = sorted(set(raw) - set(FIELDS), key=str)
     if unknown:
-        raise WorkbenchError("Guideline for %s: unknown field %r; a guideline has a note and examples" % (qid, unknown[0]))
+        raise WorkbenchError(
+            "Guideline for %s: unknown field %r; a guideline has a note and examples" % (qid, unknown[0])
+        )
     out: dict = {}
     note = _text(raw.get("note"), "Guideline for %s: note" % qid, MAX_NOTE_CHARS)
     if note:
@@ -139,9 +141,16 @@ def reconcile(raw: Any, questions: Any) -> Tuple[Dict[str, dict], List[str]]:
         if raw_examples not in (None, []) and not isinstance(raw_examples, list):
             dropped += 1
         if dropped:
-            warnings.append("Dropped %d labeling example%s for %s: %s no longer fit%s the question"
-                            % (dropped, "" if dropped == 1 else "s", qid, "its label" if dropped == 1 else "their labels",
-                               "s" if dropped == 1 else ""))
+            warnings.append(
+                "Dropped %d labeling example%s for %s: %s no longer fit%s the question"
+                % (
+                    dropped,
+                    "" if dropped == 1 else "s",
+                    qid,
+                    "its label" if dropped == 1 else "their labels",
+                    "s" if dropped == 1 else "",
+                )
+            )
         clean = dict(note, **({"examples": examples} if examples else {}))
         if clean:
             out[qid] = clean
@@ -156,10 +165,13 @@ def changes(before: Any, after: Any) -> dict:
     def same(qid: str) -> bool:
         return json.dumps(before[qid], sort_keys=True) == json.dumps(after[qid], sort_keys=True)
 
-    return {"before": len(before), "after": len(after),
-            "added": [q for q in after if q not in before],
-            "removed": [q for q in before if q not in after],
-            "changed": [q for q in after if q in before and not same(q)]}
+    return {
+        "before": len(before),
+        "after": len(after),
+        "added": [q for q in after if q not in before],
+        "removed": [q for q in before if q not in after],
+        "changed": [q for q in after if q in before and not same(q)],
+    }
 
 
 def count(dataset: dict) -> int:
@@ -172,8 +184,14 @@ def load(dataset_id: str) -> dict:
     dataset = workbench.load_dataset(dataset_id)
     questions = dataset.get("questions") if isinstance(dataset.get("questions"), dict) else {}
     clean, warnings = reconcile(dataset.get(KEY), questions)
-    return {"id": dataset_id, "name": dataset.get("name") or dataset_id, "saved_at": dataset.get("saved_at"),
-            "questions": questions, KEY: clean, "warnings": warnings}
+    return {
+        "id": dataset_id,
+        "name": dataset.get("name") or dataset_id,
+        "saved_at": dataset.get("saved_at"),
+        "questions": questions,
+        KEY: clean,
+        "warnings": warnings,
+    }
 
 
 @workbench.dataset_update()

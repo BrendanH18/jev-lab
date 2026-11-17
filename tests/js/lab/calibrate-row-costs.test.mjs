@@ -19,35 +19,67 @@ const cost = { ...CAL_COST, mistakes: [{ question: "department", label: "shippin
 const priced = (threshold = 0.5) => sampleCalibrateCtx({ cost, threshold });
 const at = (threshold) => sampleCalibrateCtx({ threshold });
 
-checkPack(pack, {
-  automate_cost: { items: rows, values: [0, 20, 0, 0, 0, 50, 0], ctx: priced() },
-  routing_cost: { items: rows, values: [0, 2, 0, 0, 0, 2, 0], ctx: priced() },
-  // At 0.10 both wrong rows automate: $20 and $50 where a $2 review would do.
-  hindsight_regret: { items: rows, values: [0, 18, 0, 0, 0, 48, 0], ctx: priced(0.1) },
-  costly_mistake: { items: rows, values: [false, false, false, false, false, true, false], ctx: priced() },
-  cheaper_route: { items: rows, values: ["automate", "review", "automate", "automate", "automate", "review", "automate"], ctx: base },
+checkPack(
+  pack,
+  {
+    automate_cost: { items: rows, values: [0, 20, 0, 0, 0, 50, 0], ctx: priced() },
+    routing_cost: { items: rows, values: [0, 2, 0, 0, 0, 2, 0], ctx: priced() },
+    // At 0.10 both wrong rows automate: $20 and $50 where a $2 review would do.
+    hindsight_regret: { items: rows, values: [0, 18, 0, 0, 0, 48, 0], ctx: priced(0.1) },
+    costly_mistake: { items: rows, values: [false, false, false, false, false, true, false], ctx: priced() },
+    cheaper_route: {
+      items: rows,
+      values: ["automate", "review", "automate", "automate", "automate", "review", "automate"],
+      ctx: base,
+    },
 
-  dear_automated_mistake: { hit: priced(0.1).items()[5], miss: [r0, r4], ctx: priced(0.1), message: /costs \$50\.00, as much as 25 reviews/ },
+    dear_automated_mistake: {
+      hit: priced(0.1).items()[5],
+      miss: [r0, r4],
+      ctx: priced(0.1),
+      message: /costs \$50\.00, as much as 25 reviews/,
+    },
 
-  // Two $2 reviews over 7 rows (the cost sweep's own $4 at 0.50); without row 1, one over 6.
-  shown_cost_per_1000: [{ ctx: base, expect: 4000 / 7, tolerance: 1e-12, empty: empty() }, { ctx: sampleCalibrateCtx({ hide: [1] }), expect: 2000 / 6, tolerance: 1e-12 }],
-  hindsight_cost_per_1000: [{ ctx: at(0.1), expect: 4000 / 7, tolerance: 1e-12, empty: empty() }, { ctx: sampleCalibrateCtx({ hide: [1] }), expect: 2000 / 6, tolerance: 1e-12 }],
-  automated_mistake_cost: [{ ctx: base, expect: 0, empty: empty() }, { ctx: at(0.1), expect: 40 }],
-  // At 0.80 the right rows .76 and .60 go to review.
-  needless_review_cost: [{ ctx: base, expect: 0, empty: empty() }, { ctx: at(0.8), expect: 4 }],
-  loss_per_automated_row: [{ ctx: base, expect: 0, empty: empty() }, { ctx: at(0.1), expect: 40 / 7, tolerance: 1e-12 }],
+    // Two $2 reviews over 7 rows (the cost sweep's own $4 at 0.50); without row 1, one over 6.
+    shown_cost_per_1000: [
+      { ctx: base, expect: 4000 / 7, tolerance: 1e-12, empty: empty() },
+      { ctx: sampleCalibrateCtx({ hide: [1] }), expect: 2000 / 6, tolerance: 1e-12 },
+    ],
+    hindsight_cost_per_1000: [
+      { ctx: at(0.1), expect: 4000 / 7, tolerance: 1e-12, empty: empty() },
+      { ctx: sampleCalibrateCtx({ hide: [1] }), expect: 2000 / 6, tolerance: 1e-12 },
+    ],
+    automated_mistake_cost: [
+      { ctx: base, expect: 0, empty: empty() },
+      { ctx: at(0.1), expect: 40 },
+    ],
+    // At 0.80 the right rows .76 and .60 go to review.
+    needless_review_cost: [
+      { ctx: base, expect: 0, empty: empty() },
+      { ctx: at(0.8), expect: 4 },
+    ],
+    loss_per_automated_row: [
+      { ctx: base, expect: 0, empty: empty() },
+      { ctx: at(0.1), expect: 40 / 7, tolerance: 1e-12 },
+    ],
 
-  row_costs_csv: { ctx: base, filename: "calibrate-department-row-costs.csv",
-    text: "\"Bulk #\",\"label\",\"answer\",\"right\",\"signal\",\"route\",\"cost at the slider\",\"cost if automated\",\"cost if reviewed\"\r\n"
-      + "\"1\",\"billing\",\"billing\",\"yes\",\"0.76\",\"automated\",\"0.00\",\"0.00\",\"2.00\"\r\n"
-      + "\"2\",\"shipping\",\"wholesale\",\"no\",\"0.12\",\"review\",\"2.00\",\"20.00\",\"2.00\"\r\n"
-      + "\"3\",\"other\",\"other\",\"yes\",\"0.87\",\"automated\",\"0.00\",\"0.00\",\"2.00\"\r\n"
-      + "\"4\",\"billing\",\"billing\",\"yes\",\"0.93\",\"automated\",\"0.00\",\"0.00\",\"2.00\"\r\n"
-      + "\"5\",\"wholesale\",\"wholesale\",\"yes\",\"0.60\",\"automated\",\"0.00\",\"0.00\",\"2.00\"\r\n"
-      + "\"6\",\"shipping\",\"billing\",\"no\",\"0.20\",\"review\",\"2.00\",\"20.00\",\"2.00\"\r\n"
-      + "\"7\",\"shipping\",\"shipping\",\"yes\",\"0.84\",\"automated\",\"0.00\",\"0.00\",\"2.00\"\r\n",
-    excludes: ["espresso"] },
-}, { ctx: () => sampleCalibrateCtx() });
+    row_costs_csv: {
+      ctx: base,
+      filename: "calibrate-department-row-costs.csv",
+      text:
+        '"Bulk #","label","answer","right","signal","route","cost at the slider","cost if automated","cost if reviewed"\r\n' +
+        '"1","billing","billing","yes","0.76","automated","0.00","0.00","2.00"\r\n' +
+        '"2","shipping","wholesale","no","0.12","review","2.00","20.00","2.00"\r\n' +
+        '"3","other","other","yes","0.87","automated","0.00","0.00","2.00"\r\n' +
+        '"4","billing","billing","yes","0.93","automated","0.00","0.00","2.00"\r\n' +
+        '"5","wholesale","wholesale","yes","0.60","automated","0.00","0.00","2.00"\r\n' +
+        '"6","shipping","billing","no","0.20","review","2.00","20.00","2.00"\r\n' +
+        '"7","shipping","shipping","yes","0.84","automated","0.00","0.00","2.00"\r\n',
+      excludes: ["espresso"],
+    },
+  },
+  { ctx: () => sampleCalibrateCtx() },
+);
 
 test("calibrate-row-costs: without a cost report (a Box, or invalid prices) nothing is priced", () => {
   const box = sampleCalibrateCtx({ qid: "spot" });

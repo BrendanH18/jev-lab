@@ -90,8 +90,12 @@ def _table_or(args: Any, columns: List[str], rows: List[list], empty: str) -> No
 def _configure_list(parser: Any) -> None:
     parser.add_argument("--type", choices=TYPES, help="only examples with a question of this type")
     parser.add_argument("--pictures", action="store_true", help="only examples that send a picture")
-    parser.add_argument("--sort", choices=("gallery", "id", "title", "questions"), default="gallery",
-                        help="gallery order (default), id, title, or most questions first")
+    parser.add_argument(
+        "--sort",
+        choices=("gallery", "id", "title", "questions"),
+        default="gallery",
+        help="gallery order (default), id, title, or most questions first",
+    )
     kit.add_format(parser)
 
 
@@ -104,7 +108,9 @@ def run_list(args: Any) -> int:
         if args.pictures and not _pictures(example):
             continue
         state = "text" if isinstance(example["state"], str) else "object"
-        rows.append([example["id"], example["title"], len(questions), _type_summary(questions), state, len(_pictures(example))])
+        rows.append(
+            [example["id"], example["title"], len(questions), _type_summary(questions), state, len(_pictures(example))]
+        )
     if args.sort == "id":
         rows.sort(key=lambda row: row[0])
     elif args.sort == "title":
@@ -198,8 +204,12 @@ def run_export(args: Any) -> int:
 
 def _configure_search(parser: Any) -> None:
     parser.add_argument("text", help="text to look for (any case)")
-    parser.add_argument("--in", dest="where", choices=("title", "description", "questions"),
-                        help="look only in the title, the description (pattern, blurb, code) or the questions")
+    parser.add_argument(
+        "--in",
+        dest="where",
+        choices=("title", "description", "questions"),
+        help="look only in the title, the description (pattern, blurb, code) or the questions",
+    )
     parser.add_argument("--regex", action="store_true", help="TEXT is a regular expression")
     kit.add_format(parser)
 
@@ -212,7 +222,11 @@ def _searchable(example: dict) -> Dict[str, List[str]]:
         questions += list(_strings(q["instructions"]))
         criteria = q.get("criteria")
         questions += (list(criteria) if isinstance(criteria, dict) else []) + list(_strings(criteria))
-    return {"title": [example["title"]], "description": [str(example.get(field) or "") for field in DESCRIPTION_FIELDS], "questions": questions}
+    return {
+        "title": [example["title"]],
+        "description": [str(example.get(field) or "") for field in DESCRIPTION_FIELDS],
+        "questions": questions,
+    }
 
 
 def run_search(args: Any) -> int:
@@ -223,8 +237,11 @@ def run_search(args: Any) -> int:
     rows = []
     for example in examples.EXAMPLES:
         parts = _searchable(example)
-        matched = [part for part in ("title", "description", "questions")
-                   if (not args.where or part == args.where) and any(pattern.search(text) for text in parts[part])]
+        matched = [
+            part
+            for part in ("title", "description", "questions")
+            if (not args.where or part == args.where) and any(pattern.search(text) for text in parts[part])
+        ]
         if matched:
             rows.append([example["id"], example["title"], ", ".join(matched)])
     _table_or(args, ["example", "title", "matched"], rows, "no example matches")
@@ -249,42 +266,93 @@ def run_pictures(args: Any) -> int:
     return 0
 
 
-PACK = kit.define_pack({
-    "id": "cli-examples",
-    "surface": "python.cli",
-    "title": "Built-in example commands",
-    "about": "Offline commands for the built-in examples: list them, show and outline the authored request (state, "
-             "questions and picture names; expectations only with --expectations), export one as a request JSON file, "
-             "search their descriptions and questions, and list the sample pictures they use.",
-    "features": [
-        {"id": "list", "kind": "cli", "command": ["examples", "list"], "configure": _configure_list, "run": run_list,
-         "title": "List the built-in examples with their question counts, question types, state kind and pictures",
-         "options": [{"id": "type", "title": "--type keeps examples that ask a question of one type"},
-                     {"id": "pictures", "title": "--pictures keeps examples that send a picture"},
-                     {"id": "sort", "title": "--sort orders examples by id, title or most questions"},
-                     dict(FORMAT)]},
-        {"id": "show", "kind": "cli", "command": ["examples", "show"], "configure": _configure_show, "run": run_show,
-         "title": "Print an example's authored request as JSON: state, questions and picture names, without expectations",
-         "options": [{"id": "expectations", "title": "--expectations adds the example's authored expectations"},
-                     {"id": "part", "title": "--part state|questions|images prints one part of the request"}]},
-        {"id": "outline", "kind": "cli", "command": ["examples", "outline"], "configure": _configure_outline, "run": run_outline,
-         "title": "Outline an example's questions: position, id, type, criteria count and instruction words",
-         "options": [{"id": "all", "title": "--all outlines every example's questions in one table"},
-                     {"id": "type", "title": "--type keeps only questions of one type"},
-                     {"id": "criteria", "title": "--criteria lists every criterion key with its word count"},
-                     dict(FORMAT)]},
-        {"id": "export", "kind": "cli", "command": ["examples", "export"], "configure": _configure_export, "run": run_export,
-         "title": "Export an example as a request JSON file named with --out (state, questions, picture references)",
-         "options": [{"id": "expectations", "title": "--expectations adds the example's authored expectations to the file"},
-                     {"id": "questions_only", "title": "--questions-only writes only the questions object"},
-                     {"id": "force", "title": "--force replaces an existing file"}]},
-        {"id": "search", "kind": "cli", "command": ["examples", "search"], "configure": _configure_search, "run": run_search,
-         "title": "Search the examples' titles, descriptions and questions, never their state or expectations",
-         "options": [{"id": "where", "title": "--in title|description|questions looks in one part"},
-                     {"id": "regex", "title": "--regex treats the text as a regular expression"},
-                     dict(FORMAT)]},
-        {"id": "pictures", "kind": "cli", "command": ["examples", "pictures"], "configure": _configure_pictures, "run": run_pictures,
-         "title": "List the sample pictures examples send, with each sample's description and whether its file is present",
-         "options": [dict(FORMAT)]},
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "cli-examples",
+        "surface": "python.cli",
+        "title": "Built-in example commands",
+        "about": "Offline commands for the built-in examples: list them, show and outline the authored request (state, "
+        "questions and picture names; expectations only with --expectations), export one as a request JSON file, "
+        "search their descriptions and questions, and list the sample pictures they use.",
+        "features": [
+            {
+                "id": "list",
+                "kind": "cli",
+                "command": ["examples", "list"],
+                "configure": _configure_list,
+                "run": run_list,
+                "title": "List the built-in examples with their question counts, question types, state kind and pictures",
+                "options": [
+                    {"id": "type", "title": "--type keeps examples that ask a question of one type"},
+                    {"id": "pictures", "title": "--pictures keeps examples that send a picture"},
+                    {"id": "sort", "title": "--sort orders examples by id, title or most questions"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "show",
+                "kind": "cli",
+                "command": ["examples", "show"],
+                "configure": _configure_show,
+                "run": run_show,
+                "title": "Print an example's authored request as JSON: state, questions and picture names, without expectations",
+                "options": [
+                    {"id": "expectations", "title": "--expectations adds the example's authored expectations"},
+                    {"id": "part", "title": "--part state|questions|images prints one part of the request"},
+                ],
+            },
+            {
+                "id": "outline",
+                "kind": "cli",
+                "command": ["examples", "outline"],
+                "configure": _configure_outline,
+                "run": run_outline,
+                "title": "Outline an example's questions: position, id, type, criteria count and instruction words",
+                "options": [
+                    {"id": "all", "title": "--all outlines every example's questions in one table"},
+                    {"id": "type", "title": "--type keeps only questions of one type"},
+                    {"id": "criteria", "title": "--criteria lists every criterion key with its word count"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "export",
+                "kind": "cli",
+                "command": ["examples", "export"],
+                "configure": _configure_export,
+                "run": run_export,
+                "title": "Export an example as a request JSON file named with --out (state, questions, picture references)",
+                "options": [
+                    {
+                        "id": "expectations",
+                        "title": "--expectations adds the example's authored expectations to the file",
+                    },
+                    {"id": "questions_only", "title": "--questions-only writes only the questions object"},
+                    {"id": "force", "title": "--force replaces an existing file"},
+                ],
+            },
+            {
+                "id": "search",
+                "kind": "cli",
+                "command": ["examples", "search"],
+                "configure": _configure_search,
+                "run": run_search,
+                "title": "Search the examples' titles, descriptions and questions, never their state or expectations",
+                "options": [
+                    {"id": "where", "title": "--in title|description|questions looks in one part"},
+                    {"id": "regex", "title": "--regex treats the text as a regular expression"},
+                    dict(FORMAT),
+                ],
+            },
+            {
+                "id": "pictures",
+                "kind": "cli",
+                "command": ["examples", "pictures"],
+                "configure": _configure_pictures,
+                "run": run_pictures,
+                "title": "List the sample pictures examples send, with each sample's description and whether its file is present",
+                "options": [dict(FORMAT)],
+            },
+        ],
+    }
+)

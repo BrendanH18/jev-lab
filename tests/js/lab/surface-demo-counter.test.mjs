@@ -10,8 +10,17 @@ import { counterExamplesCtx, counterTurnsCtx } from "../../../static/js/lab/surf
 import turnPack from "../../../static/js/lab/packs/counter/counter-turn-insights.js";
 import examplePack from "../../../static/js/lab/packs/counter/counter-example-guide.js";
 import { fakeEnv, find, fire, textOf } from "./harness.mjs";
-import { COUNTER_POLICY, INTENT_KEYS, REPLY_TEXT, examplesByIndex, sampleCounterChats, sampleCounterExamplesCtx, sampleCounterSetup, sampleCounterTurnsCtx,
-  turnsByN } from "./fixtures/counter.mjs";
+import {
+  COUNTER_POLICY,
+  INTENT_KEYS,
+  REPLY_TEXT,
+  examplesByIndex,
+  sampleCounterChats,
+  sampleCounterExamplesCtx,
+  sampleCounterSetup,
+  sampleCounterTurnsCtx,
+  turnsByN,
+} from "./fixtures/counter.mjs";
 
 const PAGE = readFileSync(new URL("../../../static/js/counter.js", import.meta.url), "utf8");
 const HTML = readFileSync(new URL("../../../static/counter.html", import.meta.url), "utf8");
@@ -30,22 +39,62 @@ const examples = (overrides) => sampleCounterExamplesCtx(overrides);
 test("turn items: one frozen plain object per customer turn, oldest first, with the contract's fields", () => {
   const c = turns();
   const items = c.items();
-  assert.deepEqual(items.map((item) => item.n), [1, 2, 3]);
+  assert.deepEqual(
+    items.map((item) => item.n),
+    [1, 2, 3],
+  );
   assert.deepEqual(items[1], {
-    n: 2, customer: "This is ridiculous. I've waited weeks and your tracking is useless!", bot: REPLY_TEXT.clarify,
+    n: 2,
+    customer: "This is ridiculous. I've waited weeks and your tracking is useless!",
+    bot: REPLY_TEXT.clarify,
     sent: { action: "clarify", reply: "clarify", reason: "The intent is uncertain or has no reply template." },
     sent_policy: { ...COUNTER_POLICY },
-    decision: { action: "clarify", reply: "clarify", reason: "The intent is uncertain or has no reply template.", streak: 1, misses: 0 },
+    decision: {
+      action: "clarify",
+      reply: "clarify",
+      reason: "The intent is uncertain or has no reply template.",
+      streak: 1,
+      misses: 0,
+    },
     changed: false,
-    evidence: { intent: "order_status", intent_prob: 0.48, frustration: 3.2, asks_for_person: 0.18, missed: 0.35, resolved: 0.01 },
+    evidence: {
+      intent: "order_status",
+      intent_prob: 0.48,
+      frustration: 3.2,
+      asks_for_person: 0.18,
+      missed: 0.35,
+      resolved: 0.01,
+    },
     intent_choice: "return_policy",
-    intents: { shipping_times: 0.024, return_policy: 0.4, wholesale_pricing: 0.024, subscription_help: 0.024, brewing_guide: 0.024, order_status: 0.48, other: 0.024 },
-    meta: { model: "jev-1.14.0", latency_ms: 388, question_count: 5, input_tokens: 1236, output_tokens: 0, cost_usd: 0.000074, backend: "sdk" },
+    intents: {
+      shipping_times: 0.024,
+      return_policy: 0.4,
+      wholesale_pricing: 0.024,
+      subscription_help: 0.024,
+      brewing_guide: 0.024,
+      order_status: 0.48,
+      other: 0.024,
+    },
+    meta: {
+      model: "jev-1.14.0",
+      latency_ms: 388,
+      question_count: 5,
+      input_tokens: 1236,
+      output_tokens: 0,
+      cost_usd: 0.000074,
+      backend: "sdk",
+    },
   });
   for (const item of items) assert.deepEqual(JSON.parse(JSON.stringify(item)), item);
-  assert.throws(() => { items[0].customer = "changed"; }, TypeError);
-  assert.throws(() => { items[0].evidence.frustration = 0; }, TypeError);
-  assert.throws(() => { items[0].intents.other = 1; }, TypeError);
+  assert.throws(() => {
+    items[0].customer = "changed";
+  }, TypeError);
+  assert.throws(() => {
+    items[0].evidence.frustration = 0;
+  }, TypeError);
+  assert.throws(() => {
+    items[0].intents.other = 1;
+  }, TypeError);
   assert.equal(c.items()[0], items[0], "the same objects while the chat is unchanged");
   assert.equal(c.shown()[2], items[2]);
   assert.deepEqual([c.itemName(items[2], 2), c.itemName({}, 4)], ["Turn 3", "Turn 5"]);
@@ -53,7 +102,10 @@ test("turn items: one frozen plain object per customer turn, oldest first, with 
 
 test("turn items: the sent decision stays while the current decision follows the policy", () => {
   const relaxed = turnsByN(turns({ chat: "relaxed" }));
-  assert.deepEqual([relaxed[3].sent.action, relaxed[3].decision.action, relaxed[3].changed, relaxed[3].bot], ["handoff", "reply", true, REPLY_TEXT.handoff]);
+  assert.deepEqual(
+    [relaxed[3].sent.action, relaxed[3].decision.action, relaxed[3].changed, relaxed[3].bot],
+    ["handoff", "reply", true, REPLY_TEXT.handoff],
+  );
   assert.deepEqual([relaxed[1].changed, relaxed[2].changed], [false, false]);
   // A re-decide gives new items; a pushed turn too.
   const c = turns();
@@ -67,19 +119,40 @@ test("turn items: the sent decision stays while the current decision follows the
   live.state.transcript = chats.shipping.transcript.slice(0, 2);
   live.state.decisions = chats.shipping.decisions.slice(0, 1);
   assert.equal(live.items().length, 1);
-  live.state.turns.push(chats.shipping.turns[1]);  // the page pushes into the same array
+  live.state.turns.push(chats.shipping.turns[1]); // the page pushes into the same array
   live.state.transcript = chats.shipping.transcript;
   live.state.decisions = chats.shipping.decisions;
-  assert.deepEqual(live.items().map((item) => item.sent.action), ["reply", "close"]);
+  assert.deepEqual(
+    live.items().map((item) => item.sent.action),
+    ["reply", "close"],
+  );
 });
 
 test("turn items: odd shapes read without throwing", () => {
   const [first, second] = turns({ chat: "odd" }).items();
   // An exact tie goes to the first intent in order, as Python's max() does; the model's choice is kept apart.
-  assert.deepEqual(first.evidence, { intent: "brewing_guide", intent_prob: 0.4, frustration: null, asks_for_person: null, missed: 0.5, resolved: 0.5 });
+  assert.deepEqual(first.evidence, {
+    intent: "brewing_guide",
+    intent_prob: 0.4,
+    frustration: null,
+    asks_for_person: null,
+    missed: 0.5,
+    resolved: 0.5,
+  });
   assert.equal(first.intent_choice, "order_status");
-  assert.deepEqual(first.meta, { model: null, latency_ms: null, question_count: null, input_tokens: null, output_tokens: null, cost_usd: null, backend: null });
-  assert.deepEqual([second.customer, second.bot, second.decision, second.changed, second.intent_choice, second.intents], ["Hello?", "", null, false, null, {}]);
+  assert.deepEqual(first.meta, {
+    model: null,
+    latency_ms: null,
+    question_count: null,
+    input_tokens: null,
+    output_tokens: null,
+    cost_usd: null,
+    backend: null,
+  });
+  assert.deepEqual(
+    [second.customer, second.bot, second.decision, second.changed, second.intent_choice, second.intents],
+    ["Hello?", "", null, false, null, {}],
+  );
   assert.deepEqual(second.sent, { action: null, reply: null, reason: null });
   assert.deepEqual(Object.values(second.evidence), [null, null, null, null, null, null]);
   for (const raw of [null, "nope", 3, [null, 4]]) assert.deepEqual(turns({ turns: raw }).items(), []);
@@ -94,27 +167,74 @@ test("turn data: policy, decided policy, defaults, limits, rules, intents and th
   assert.deepEqual(data.decided_with, COUNTER_POLICY);
   assert.deepEqual(data.defaults, COUNTER_POLICY);
   assert.deepEqual(data.changed, []);
-  assert.deepEqual(Object.keys(data.limits), ["person_at", "frustration_at", "streak_turns", "missed_at", "missed_turns", "intent_min", "resolved_at"]);
+  assert.deepEqual(Object.keys(data.limits), [
+    "person_at",
+    "frustration_at",
+    "streak_turns",
+    "missed_at",
+    "missed_turns",
+    "intent_min",
+    "resolved_at",
+  ]);
   assert.deepEqual(data.limits.frustration_at, { min: 0, max: 4, step: 0.1, label: "Frustration at score ≥" });
-  assert.deepEqual(data.rules.map((rule) => rule.id), ["handed_off", "asks_for_person", "frustration_streak", "missed_turns", "resolved", "intent_confidence"]);
+  assert.deepEqual(
+    data.rules.map((rule) => rule.id),
+    ["handed_off", "asks_for_person", "frustration_streak", "missed_turns", "resolved", "intent_confidence"],
+  );
   assert.deepEqual(data.intents, INTENT_KEYS);
-  assert.deepEqual(data.chat, { turns: 3, max_turns: 20, max_chars: 2000, stopped: "handoff", sample: { index: 1, label: "Frustration builds", turns: 3 }, following: true, next: null });
+  assert.deepEqual(data.chat, {
+    turns: 3,
+    max_turns: 20,
+    max_chars: 2000,
+    stopped: "handoff",
+    sample: { index: 1, label: "Frustration builds", turns: 3 },
+    following: true,
+    next: null,
+  });
   assert.deepEqual([data.draft, data.note, data.running], ["", "Re-decided in 0.4 ms · no Jev call", false]);
-  assert.throws(() => { data.policy.person_at = 1; }, TypeError);
-  assert.throws(() => { data.chat.turns = 0; }, TypeError);
-  assert.throws(() => { data.limits.person_at.max = 2; }, TypeError);
+  assert.throws(() => {
+    data.policy.person_at = 1;
+  }, TypeError);
+  assert.throws(() => {
+    data.chat.turns = 0;
+  }, TypeError);
+  assert.throws(() => {
+    data.limits.person_at.max = 2;
+  }, TypeError);
 
   const relaxed = turns({ chat: "relaxed" }).data;
-  assert.deepEqual([relaxed.changed, relaxed.decided_with.streak_turns, relaxed.chat.stopped], [["streak_turns"], 3, null]);
+  assert.deepEqual(
+    [relaxed.changed, relaxed.decided_with.streak_turns, relaxed.chat.stopped],
+    [["streak_turns"], 3, null],
+  );
   // While a re-decide is on its way the sliders and the decided policy differ.
-  assert.deepEqual([turns({ policy: { ...COUNTER_POLICY, person_at: 0.3 } }).data.policy.person_at, turns({ policy: { ...COUNTER_POLICY, person_at: 0.3 } }).data.decided_with.person_at], [0.3, 0.5]);
+  assert.deepEqual(
+    [
+      turns({ policy: { ...COUNTER_POLICY, person_at: 0.3 } }).data.policy.person_at,
+      turns({ policy: { ...COUNTER_POLICY, person_at: 0.3 } }).data.decided_with.person_at,
+    ],
+    [0.3, 0.5],
+  );
   assert.deepEqual(turns({ chat: "long" }).data.chat.stopped, "turn_limit");
-  assert.deepEqual(turns({ chat: "odd" }).data.chat, { turns: 2, max_turns: 20, max_chars: 2000, stopped: null, sample: { index: 3, label: "Missing the point", turns: 3 },
-    following: false, next: "You missed my point again. I already did that and still need my refund." });
+  assert.deepEqual(turns({ chat: "odd" }).data.chat, {
+    turns: 2,
+    max_turns: 20,
+    max_chars: 2000,
+    stopped: null,
+    sample: { index: 3, label: "Missing the point", turns: 3 },
+    following: false,
+    next: "You missed my point again. I already did that and still need my refund.",
+  });
   const typed = turns({ chat: "typed" }).data;
-  assert.deepEqual([typed.chat.sample, typed.chat.following, typed.chat.next, typed.draft], [null, false, null, "Also, can a café order wholesale?"]);
+  assert.deepEqual(
+    [typed.chat.sample, typed.chat.following, typed.chat.next, typed.draft],
+    [null, false, null, "Also, can a café order wholesale?"],
+  );
   const empty = turns({ chat: "empty" }).data;
-  assert.deepEqual([empty.decided_with, empty.chat.next, empty.chat.following], [null, "How long does shipping to Canada take?", true]);
+  assert.deepEqual(
+    [empty.decided_with, empty.chat.next, empty.chat.following],
+    [null, "How long does shipping to Canada take?", true],
+  );
   // A sample that is an equal copy rather than the setup's own object is still recognized.
   assert.equal(turns({ sample: { ...sampleCounterSetup().examples[1] } }).data.chat.sample.index, 1);
   const none = turns({ setup: null }).data;
@@ -131,39 +251,89 @@ test("the contract's constants mirror jev/counter.py, jev/world.py and the page'
   assert.match(COUNTER_PY, new RegExp(`MAX_TURNS = ${data.chat.max_turns}\\b`));
   assert.ok(COUNTER_PY.includes('top = MAX_TURNS if key.endswith("turns") else 4 if key == "frustration_at" else 1'));
   // The page's slider table: [key, label, max, step]; the minimum is 1 for *_turns and 0 otherwise.
-  const fields = [...body("renderPolicy").matchAll(/\["(\w+)", "([^"]+)", (\d+), ([\d.]+)\]/g)].map(([, key, label, max, step]) => [key, { min: key.endsWith("turns") ? 1 : 0, max: Number(max), step: Number(step), label }]);
+  const fields = [...body("renderPolicy").matchAll(/\["(\w+)", "([^"]+)", (\d+), ([\d.]+)\]/g)].map(
+    ([, key, label, max, step]) => [
+      key,
+      { min: key.endsWith("turns") ? 1 : 0, max: Number(max), step: Number(step), label },
+    ],
+  );
   assert.deepEqual(Object.fromEntries(fields), data.limits);
   // Intents: the templates of jev/world.py in order, then order_status and other.
-  const templates = [...WORLD_PY.slice(WORLD_PY.indexOf("TEMPLATES = {")).matchAll(/^ {4}"(\w+)": \{/gm)].map(([, key]) => key);
+  const templates = [...WORLD_PY.slice(WORLD_PY.indexOf("TEMPLATES = {")).matchAll(/^ {4}"(\w+)": \{/gm)].map(
+    ([, key]) => key,
+  );
   assert.deepEqual([...templates, "order_status", "other"], data.intents);
   // decide()'s rules in order.
   const decide = COUNTER_PY.slice(COUNTER_PY.indexOf("def decide("));
-  const order = ["if handed_off:", 'ev["asks_for_person"] >= p["person_at"]', 'streak >= p["streak_turns"]', 'misses >= p["missed_turns"]', 'ev["resolved"] >= p["resolved_at"]', 'ev["intent_prob"] < p["intent_min"]'];
+  const order = [
+    "if handed_off:",
+    'ev["asks_for_person"] >= p["person_at"]',
+    'streak >= p["streak_turns"]',
+    'misses >= p["missed_turns"]',
+    'ev["resolved"] >= p["resolved_at"]',
+    'ev["intent_prob"] < p["intent_min"]',
+  ];
   const at = order.map((text) => decide.indexOf(text));
-  assert.ok(at.every((index) => index > 0), "every rule is in decide()");
-  assert.deepEqual(at, [...at].sort((a, b) => a - b), "in the contract's order");
+  assert.ok(
+    at.every((index) => index > 0),
+    "every rule is in decide()",
+  );
+  assert.deepEqual(
+    at,
+    [...at].sort((a, b) => a - b),
+    "in the contract's order",
+  );
 });
 
 test("turns shown(): Lab filters, then Lab sort, at call time; items() is never filtered", () => {
   const hidden = new Set();
   let reversed = false;
-  const c = turns({ matches: (item) => !hidden.has(item.n), arrange: (list) => (reversed ? list.slice().reverse() : list) });
+  const c = turns({
+    matches: (item) => !hidden.has(item.n),
+    arrange: (list) => (reversed ? list.slice().reverse() : list),
+  });
   assert.deepEqual(c.shown(), c.items());
   hidden.add(2);
-  assert.deepEqual(c.shown().map((item) => item.n), [1, 3]);
+  assert.deepEqual(
+    c.shown().map((item) => item.n),
+    [1, 3],
+  );
   reversed = true;
-  assert.deepEqual(c.shown().map((item) => item.n), [3, 1]);
+  assert.deepEqual(
+    c.shown().map((item) => item.n),
+    [3, 1],
+  );
   assert.equal(c.items().length, 3);
-  assert.deepEqual(turns({ hide: [1], order: [3] }).shown().map((item) => item.n), [3, 2]);
-  assert.deepEqual(turns({ arrange: () => "nope", hide: [3] }).shown().map((item) => item.n), [1, 2]);
+  assert.deepEqual(
+    turns({ hide: [1], order: [3] })
+      .shown()
+      .map((item) => item.n),
+    [3, 2],
+  );
+  assert.deepEqual(
+    turns({ arrange: () => "nope", hide: [3] })
+      .shown()
+      .map((item) => item.n),
+    [1, 2],
+  );
 });
 
 test("setPolicy and resetPolicy: slider ranges and steps, no-op changes, and the setup guard", () => {
   const c = turns();
-  assert.deepEqual(Object.keys(c.actions).sort(), ["draftMessage", "focusMessage", "inspectTurn", "resetPolicy", "setPolicy"]);
+  assert.deepEqual(Object.keys(c.actions).sort(), [
+    "draftMessage",
+    "focusMessage",
+    "inspectTurn",
+    "resetPolicy",
+    "setPolicy",
+  ]);
   assert.equal(c.actions.replaceItems, undefined, "turns are records of calls: read-only");
   assert.equal(c.actions.importItems, undefined);
-  assert.deepEqual(c.actions.setPolicy({ streak_turns: 3, person_at: "0.35" }), { ...COUNTER_POLICY, streak_turns: 3, person_at: 0.35 });
+  assert.deepEqual(c.actions.setPolicy({ streak_turns: 3, person_at: "0.35" }), {
+    ...COUNTER_POLICY,
+    streak_turns: 3,
+    person_at: 0.35,
+  });
   assert.deepEqual(c.log, [["setPolicy", { ...COUNTER_POLICY, streak_turns: 3, person_at: 0.35 }]]);
   assert.equal(c.state.policy.streak_turns, 3);
   assert.deepEqual(c.actions.setPolicy({ frustration_at: 4, intent_min: 0 }).frustration_at, 4);
@@ -217,8 +387,14 @@ test("draftMessage fills the box without sending, and only when the page's box i
 test("focusMessage and inspectTurn guards", () => {
   const c = turns({ chat: "odd" });
   assert.equal(c.actions.focusMessage(), true);
-  for (const blocked of [turns(), turns({ chat: "long" }), turns({ chat: "odd", running: true }), turns({ chat: "odd", boxDisabled: true }),
-    turns({ chat: "odd", missing: ["focusMessage"] }), turns({ chat: "odd", setup: null })]) {
+  for (const blocked of [
+    turns(),
+    turns({ chat: "long" }),
+    turns({ chat: "odd", running: true }),
+    turns({ chat: "odd", boxDisabled: true }),
+    turns({ chat: "odd", missing: ["focusMessage"] }),
+    turns({ chat: "odd", setup: null }),
+  ]) {
     assert.equal(blocked.actions.focusMessage(), false);
     assert.deepEqual(blocked.log, []);
   }
@@ -240,12 +416,37 @@ test("focusMessage and inspectTurn guards", () => {
 test("example items: inputs and hand-written expectations, with the current chat's progress", () => {
   const c = examples();
   const items = c.items();
-  assert.deepEqual(items.map((item) => item.index), [0, 1, 2, 3, 5], "a non-object example is skipped and indexes stay the setup's");
-  assert.deepEqual(items[1], { index: 1, position: 2, label: "Frustration builds", turns: sampleCounterSetup().examples[1].turns, expect: ["reply", "reply", "handoff"],
-    active: true, sent: 3, following: true });
-  assert.deepEqual(items[4], { index: 5, position: 6, label: "Example 6", turns: ["Do you sell decaf beans?"], expect: ["reply", "close"], active: false, sent: 0, following: false });
-  assert.ok(items.filter((item) => item.index !== 1).every((item) => !item.active && item.sent === 0 && !item.following));
-  assert.throws(() => { items[0].turns.push("x"); }, TypeError);
+  assert.deepEqual(
+    items.map((item) => item.index),
+    [0, 1, 2, 3, 5],
+    "a non-object example is skipped and indexes stay the setup's",
+  );
+  assert.deepEqual(items[1], {
+    index: 1,
+    position: 2,
+    label: "Frustration builds",
+    turns: sampleCounterSetup().examples[1].turns,
+    expect: ["reply", "reply", "handoff"],
+    active: true,
+    sent: 3,
+    following: true,
+  });
+  assert.deepEqual(items[4], {
+    index: 5,
+    position: 6,
+    label: "Example 6",
+    turns: ["Do you sell decaf beans?"],
+    expect: ["reply", "close"],
+    active: false,
+    sent: 0,
+    following: false,
+  });
+  assert.ok(
+    items.filter((item) => item.index !== 1).every((item) => !item.active && item.sent === 0 && !item.following),
+  );
+  assert.throws(() => {
+    items[0].turns.push("x");
+  }, TypeError);
   assert.equal(c.items()[0], items[0]);
   assert.deepEqual([c.itemName(items[1], 1), c.itemName({}, 2)], ["Frustration builds", "3"]);
   const odd = examplesByIndex(examples({ chat: "odd" }));
@@ -258,21 +459,39 @@ test("example items: inputs and hand-written expectations, with the current chat
   const live = examples({ chat: "empty" });
   assert.deepEqual([live.items()[0].active, live.items()[0].sent], [true, 0]);
   const chats = sampleCounterChats();
-  Object.assign(live.state, { turns: chats.shipping.turns, transcript: chats.shipping.transcript, decisions: chats.shipping.decisions });
+  Object.assign(live.state, {
+    turns: chats.shipping.turns,
+    transcript: chats.shipping.transcript,
+    decisions: chats.shipping.decisions,
+  });
   assert.deepEqual([live.items()[0].sent, live.items()[0].following], [2, true]);
 });
 
 test("example data and shown()", () => {
   const data = examples().data;
-  assert.deepEqual(data.chat, { index: 1, turns: 3, actions: ["reply", "clarify", "handoff"], sent_actions: ["reply", "clarify", "handoff"], stopped: "handoff" });
-  assert.deepEqual([data.defaults_in_force, data.running, data.max_turns, data.max_chars, data.actions], [true, false, 20, 2000, ["reply", "clarify", "close", "handoff"]]);
+  assert.deepEqual(data.chat, {
+    index: 1,
+    turns: 3,
+    actions: ["reply", "clarify", "handoff"],
+    sent_actions: ["reply", "clarify", "handoff"],
+    stopped: "handoff",
+  });
+  assert.deepEqual(
+    [data.defaults_in_force, data.running, data.max_turns, data.max_chars, data.actions],
+    [true, false, 20, 2000, ["reply", "clarify", "close", "handoff"]],
+  );
   assert.deepEqual(examples({ chat: "relaxed" }).data.chat.actions, ["reply", "clarify", "reply"]);
   assert.deepEqual(examples({ chat: "relaxed" }).data.chat.sent_actions, ["reply", "clarify", "handoff"]);
   assert.equal(examples({ chat: "relaxed" }).data.defaults_in_force, false);
   assert.deepEqual(examples({ chat: "odd" }).data.chat.actions, ["clarify", null]);
   assert.deepEqual(examples({ chat: "typed" }).data.chat.index, null);
   assert.equal(examples({ setup: null }).data.defaults_in_force, false);
-  assert.deepEqual(examples({ hide: [0, 2], order: [5] }).shown().map((item) => item.index), [5, 1, 3]);
+  assert.deepEqual(
+    examples({ hide: [0, 2], order: [5] })
+      .shown()
+      .map((item) => item.index),
+    [5, 1, 3],
+  );
   assert.deepEqual(examples({ arrange: () => null }).shown().length, 5);
 });
 
@@ -304,44 +523,139 @@ test("start and newChat: the chip handlers, refused while running and before dis
 
 // ---------- the page hooks (static/js/counter.js) ----------
 
-const h = (tag, attrs = {}, ...children) => ({ tag, attrs: attrs || {}, children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false) });
+const h = (tag, attrs = {}, ...children) => ({
+  tag,
+  attrs: attrs || {},
+  children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false),
+});
 const callStats = (meta) => ({ stats: meta });
 const plain = (node) => JSON.parse(JSON.stringify(node, (key, value) => (typeof value === "function" ? "fn" : value)));
 
 function page({ packs = [turnPack, examplePack], chat = "frustration" } = {}) {
   const LAB = createLab(packs);
   const setup = sampleCounterSetup();
-  setup.examples = setup.examples.filter((example) => example && example.label);  // the real setup: four examples
+  setup.examples = setup.examples.filter((example) => example && example.label); // the real setup: four examples
   const picked = sampleCounterChats()[chat];
-  const S = { setup, policy: { ...setup.policy }, transcript: picked.transcript, turns: picked.turns, decisions: picked.decisions, decidedWith: picked.decidedWith,
-    sample: picked.sample ? setup.examples.find((example) => example.label === picked.sample.label) : null, running: false, rev: 0, note: "", draft: "" };
+  const S = {
+    setup,
+    policy: { ...setup.policy },
+    transcript: picked.transcript,
+    turns: picked.turns,
+    decisions: picked.decisions,
+    decidedWith: picked.decidedWith,
+    sample: picked.sample ? setup.examples.find((example) => example.label === picked.sample.label) : null,
+    running: false,
+    rev: 0,
+    note: "",
+    draft: "",
+  };
   const held = new Map();
   const classes = new Map();
-  const $ = (selector) => ({ classList: { toggle: (name, on) => { if (name === "hidden") classes.set(selector, on); } } });
-  const mount = (target, ...nodes) => { held.set(target, nodes.flat(Infinity).filter(Boolean)); return target; };
+  const $ = (selector) => ({
+    classList: {
+      toggle: (name, on) => {
+        if (name === "hidden") classes.set(selector, on);
+      },
+    },
+  });
+  const mount = (target, ...nodes) => {
+    held.set(target, nodes.flat(Infinity).filter(Boolean));
+    return target;
+  };
   const resets = [];
   const reset = (sample) => resets.push(sample);
-  const chatSource = { setup: () => S.setup, turns: () => S.turns, transcript: () => S.transcript, decisions: () => S.decisions, sample: () => S.sample,
-    running: () => S.running, policy: () => S.policy };
+  const chatSource = {
+    setup: () => S.setup,
+    turns: () => S.turns,
+    transcript: () => S.transcript,
+    decisions: () => S.decisions,
+    sample: () => S.sample,
+    running: () => S.running,
+    policy: () => S.policy,
+  };
   const lists = {};
-  const TURNS = counterTurnsCtx({ ...chatSource, matches: (item, c) => LAB.matches("counter.turns", item, c), arrange: (list, c) => LAB.arrange("counter.turns", list, c),
-    refresh: () => lists.renderChat() });
-  const EXAMPLES = counterExamplesCtx({ ...chatSource, matches: (item, c) => LAB.matches("counter.examples", item, c),
-    arrange: (list, c) => LAB.arrange("counter.examples", list, c), refresh: () => lists.renderSamples() });
-  const make = new Function("S", "TURNS", "EXAMPLES", "LAB", "TURNS_ID", "EXAMPLES_ID", "$", "mount", "h", "labEnv", "reset", "callStats", "inspect",
-    `${body("labNote")}\n${body("renderSamples")}\n${body("turnNode")}\n${body("renderChat")}\n${body("resetLab")}\n${body("renderLab")}\nreturn { renderSamples, renderChat, renderLab };`);
-  Object.assign(lists, make(S, TURNS, EXAMPLES, LAB, "counter.turns", "counter.examples", $, mount, h, fakeEnv(), reset, callStats, () => {}));
-  return { LAB, S, ...lists, held, classes, resets, chat: () => held.get("#chat"), samples: () => held.get("#samples"), note: () => held.get("#samples-note") };
+  const TURNS = counterTurnsCtx({
+    ...chatSource,
+    matches: (item, c) => LAB.matches("counter.turns", item, c),
+    arrange: (list, c) => LAB.arrange("counter.turns", list, c),
+    refresh: () => lists.renderChat(),
+  });
+  const EXAMPLES = counterExamplesCtx({
+    ...chatSource,
+    matches: (item, c) => LAB.matches("counter.examples", item, c),
+    arrange: (list, c) => LAB.arrange("counter.examples", list, c),
+    refresh: () => lists.renderSamples(),
+  });
+  const make = new Function(
+    "S",
+    "TURNS",
+    "EXAMPLES",
+    "LAB",
+    "TURNS_ID",
+    "EXAMPLES_ID",
+    "$",
+    "mount",
+    "h",
+    "labEnv",
+    "reset",
+    "callStats",
+    "inspect",
+    `${body("labNote")}\n${body("renderSamples")}\n${body("turnNode")}\n${body("renderChat")}\n${body("resetLab")}\n${body("renderLab")}\nreturn { renderSamples, renderChat, renderLab };`,
+  );
+  Object.assign(
+    lists,
+    make(
+      S,
+      TURNS,
+      EXAMPLES,
+      LAB,
+      "counter.turns",
+      "counter.examples",
+      $,
+      mount,
+      h,
+      fakeEnv(),
+      reset,
+      callStats,
+      () => {},
+    ),
+  );
+  return {
+    LAB,
+    S,
+    ...lists,
+    held,
+    classes,
+    resets,
+    chat: () => held.get("#chat"),
+    samples: () => held.get("#samples"),
+    note: () => held.get("#samples-note"),
+  };
 }
 
 // The page's chat and chips before Lab, verbatim from the previous render().
-const oldChat = (S) => [S.turns.length ? S.turns.map((t, i) => h("div", { class: "chat-turn" },
-  h("b", {}, `Customer · turn ${i + 1}`), h("p", {}, S.transcript[i * 2].text),
-  h("b", {}, "Bot · fixed template"), h("p", {}, S.transcript[i * 2 + 1].text),
-  h("p", { class: "muted" }, `Current policy: ${S.decisions[i].action} · ${S.decisions[i].reason}`),
-  callStats(t.meta, () => {}))) : h("p", { class: "empty" }, "Pick a sample and step through it, or write a customer message.")].flat();
-const oldSamples = (S) => [S.setup.examples.map((ex) => h("button", { class: "chip", disabled: S.running, onclick: () => {} }, ex.label)),
-  h("button", { class: "chip", disabled: S.running, onclick: () => {} }, "New chat")].flat();
+const oldChat = (S) =>
+  [
+    S.turns.length
+      ? S.turns.map((t, i) =>
+          h(
+            "div",
+            { class: "chat-turn" },
+            h("b", {}, `Customer · turn ${i + 1}`),
+            h("p", {}, S.transcript[i * 2].text),
+            h("b", {}, "Bot · fixed template"),
+            h("p", {}, S.transcript[i * 2 + 1].text),
+            h("p", { class: "muted" }, `Current policy: ${S.decisions[i].action} · ${S.decisions[i].reason}`),
+            callStats(t.meta, () => {}),
+          ),
+        )
+      : h("p", { class: "empty" }, "Pick a sample and step through it, or write a customer message."),
+  ].flat();
+const oldSamples = (S) =>
+  [
+    S.setup.examples.map((ex) => h("button", { class: "chip", disabled: S.running, onclick: () => {} }, ex.label)),
+    h("button", { class: "chip", disabled: S.running, onclick: () => {} }, "New chat"),
+  ].flat();
 
 test("with no Lab setting active the chat and the chips render exactly as before", () => {
   for (const chat of ["frustration", "shipping", "typed", "long", "empty"]) {
@@ -373,21 +687,34 @@ test("Lab filters hide chat turns, a Lab sort reorders them, and the note's rese
   let shown = p.chat();
   assert.equal(shown[0].attrs.role, "status");
   assert.match(textOf(shown[0]), /^1 of 3 turns shown · 1 Lab setting active/);
-  assert.deepEqual(shown.slice(1).map((node) => textOf(node.children[0])), ["Customer · turn 3"]);
+  assert.deepEqual(
+    shown.slice(1).map((node) => textOf(node.children[0])),
+    ["Customer · turn 3"],
+  );
   view.filters = [];
   view.sort = { key: "counter-turn-insights/frustration", dir: "desc" };
   p.renderChat();
   shown = p.chat();
-  assert.deepEqual(shown.slice(1).map((node) => textOf(node.children[0])), ["Customer · turn 3", "Customer · turn 2", "Customer · turn 1"]);
+  assert.deepEqual(
+    shown.slice(1).map((node) => textOf(node.children[0])),
+    ["Customer · turn 3", "Customer · turn 2", "Customer · turn 1"],
+  );
   view.filters = [{ key: "counter-turn-insights/intent", op: "is", value: "brewing guide" }];
   p.renderChat();
   shown = p.chat();
   assert.equal(shown.length, 1);
   assert.match(textOf(shown[0]), /^No turn matches the Lab filters\./);
-  fire(find(shown[0], (node) => node.tag === "button"), "click");
+  fire(
+    find(shown[0], (node) => node.tag === "button"),
+    "click",
+  );
   assert.equal(p.LAB.active("counter.turns"), 0);
   assert.deepEqual(plain(p.chat()), plain(oldChat(p.S)));
-  assert.deepEqual(p.held.get("#turns-lab")[0].attrs["data-lab-surface"], "counter.turns", "the Lab sections are drawn again");
+  assert.deepEqual(
+    p.held.get("#turns-lab")[0].attrs["data-lab-surface"],
+    "counter.turns",
+    "the Lab sections are drawn again",
+  );
   assert.equal(p.classes.get("#turns-lab"), false);
 });
 
@@ -396,7 +723,12 @@ test("Lab filters hide example chips but never the New chat chip", () => {
   const view = p.LAB.view("counter.examples");
   view.filters = [{ key: "counter-example-guide/expects_close", op: "without" }];
   p.renderSamples();
-  assert.deepEqual(p.samples().map(textOf), ["Frustration builds", "A person, please", "Missing the point", "New chat"]);
+  assert.deepEqual(p.samples().map(textOf), [
+    "Frustration builds",
+    "A person, please",
+    "Missing the point",
+    "New chat",
+  ]);
   assert.equal(p.classes.get("#samples-note"), false);
   assert.match(textOf(p.note()[0]), /^3 of 4 examples shown · 1 Lab setting active/);
   fire(p.samples()[1], "click");
@@ -405,8 +737,17 @@ test("Lab filters hide example chips but never the New chat chip", () => {
   p.renderSamples();
   assert.deepEqual(p.samples().map(textOf), ["New chat"]);
   assert.match(textOf(p.note()[0]), /^No example matches the Lab filters\./);
-  fire(find(p.note()[0], (node) => node.tag === "button"), "click");
-  assert.deepEqual(p.samples().map(textOf), ["Shipping, then sorted", "Frustration builds", "A person, please", "Missing the point", "New chat"]);
+  fire(
+    find(p.note()[0], (node) => node.tag === "button"),
+    "click",
+  );
+  assert.deepEqual(p.samples().map(textOf), [
+    "Shipping, then sorted",
+    "Frustration builds",
+    "A person, please",
+    "Missing the point",
+    "New chat",
+  ]);
   assert.equal(p.classes.get("#samples-note"), true);
   assert.equal(p.held.get("#samples-lab")[0].attrs["data-lab-surface"], "counter.examples");
 });
@@ -417,28 +758,52 @@ test("the page installs Lab once after the top bar, hooks both surfaces and adds
   assert.match(PAGE, /import \{ LAB \} from "\.\/lab\/pages\/counter\.js";/);
   assert.match(PAGE, /import \{ installLab, labEnv \} from "\.\/lab\/env\.js";/);
   assert.match(PAGE, /import \{ counterExamplesCtx, counterTurnsCtx \} from "\.\/lab\/surfaces\/counter\.js";/);
-  assert.match(PAGE, /matches: \(item, ctx\) => LAB\.matches\(TURNS_ID, item, ctx\), arrange: \(list, ctx\) => LAB\.arrange\(TURNS_ID, list, ctx\)/);
-  assert.match(PAGE, /matches: \(item, ctx\) => LAB\.matches\(EXAMPLES_ID, item, ctx\), arrange: \(list, ctx\) => LAB\.arrange\(EXAMPLES_ID, list, ctx\)/);
-  assert.match(body("render"), /renderSamples\(\);\n\s*renderChat\(\);\n\s*renderCompose\(\);\n\s*renderResult\(\);\n\s*renderLab\(\);/);
+  assert.match(
+    PAGE,
+    /matches: \(item, ctx\) => LAB\.matches\(TURNS_ID, item, ctx\),\s*arrange: \(list, ctx\) => LAB\.arrange\(TURNS_ID, list, ctx\)/,
+  );
+  assert.match(
+    PAGE,
+    /matches: \(item, ctx\) => LAB\.matches\(EXAMPLES_ID, item, ctx\),\s*arrange: \(list, ctx\) => LAB\.arrange\(EXAMPLES_ID, list, ctx\)/,
+  );
+  assert.match(
+    body("render"),
+    /renderSamples\(\);\n\s*renderChat\(\);\n\s*renderCompose\(\);\n\s*renderResult\(\);\n\s*renderLab\(\);/,
+  );
   // No Lab callback sends a turn or calls the server.
   const source = PAGE.slice(PAGE.indexOf("const chatSource"), PAGE.indexOf("function reset("));
   assert.doesNotMatch(source, /\brun\(|api\(/);
-  for (const id of ["samples-note", "samples-lab", "turns-lab"]) assert.match(HTML, new RegExp(`<div id="${id}" class="hidden"></div>`));
+  for (const id of ["samples-note", "samples-lab", "turns-lab"])
+    assert.match(HTML, new RegExp(`<div id="${id}" class="hidden"></div>`));
 });
 
 test("Reset policy and Lab's policy actions share one path, and every decision records its policy", async () => {
   assert.match(body("renderPolicy"), /onclick: \(\) => applyPolicy\(S\.setup\.policy\)/);
   const S = { setup: sampleCounterSetup(), policy: { ...COUNTER_POLICY, person_at: 0.2 }, rev: 4 };
   const calls = [];
-  const applyPolicy = new Function("S", "renderPolicy", "redecide", `${body("applyPolicy")}\nreturn applyPolicy;`)(S, () => calls.push("renderPolicy"), () => calls.push("redecide"));
+  const applyPolicy = new Function("S", "renderPolicy", "redecide", `${body("applyPolicy")}\nreturn applyPolicy;`)(
+    S,
+    () => calls.push("renderPolicy"),
+    () => calls.push("redecide"),
+  );
   applyPolicy(S.setup.policy);
   assert.deepEqual([S.policy, S.rev, calls], [COUNTER_POLICY, 5, ["renderPolicy", "redecide"]]);
   assert.notEqual(S.policy, S.setup.policy, "a copy: moving a slider never changes the defaults");
 
   const relaxed = { ...COUNTER_POLICY, streak_turns: 3 };
   const T = { turns: [{ answers: {} }], policy: relaxed, rev: 1, decisions: [], decidedWith: null, note: "" };
-  const api = async (path, payload) => { assert.equal(path, "/api/counter/decide"); return { decisions: ["d"], policy: payload.policy, compute_ms: 0.2 }; };
-  const decideAgain = new Function("S", "api", "render", "handleError", `${body("decideAgain")}\nreturn decideAgain;`)(T, api, () => {}, (error) => { throw error; });
+  const api = async (path, payload) => {
+    assert.equal(path, "/api/counter/decide");
+    return { decisions: ["d"], policy: payload.policy, compute_ms: 0.2 };
+  };
+  const decideAgain = new Function("S", "api", "render", "handleError", `${body("decideAgain")}\nreturn decideAgain;`)(
+    T,
+    api,
+    () => {},
+    (error) => {
+      throw error;
+    },
+  );
   await decideAgain();
   assert.deepEqual([T.decisions, T.decidedWith, T.note], [["d"], relaxed, "Re-decided in 0.2 ms · no Jev call"]);
   assert.match(body("run"), /S\.decisions = r\.decisions;\n\s*S\.decidedWith = r\.policy;/);
@@ -446,7 +811,12 @@ test("Reset policy and Lab's policy actions share one path, and every decision r
 });
 
 test("both sections render with the starter packs", () => {
-  for (const [id, ctx] of [["counter.turns", turns()], ["counter.examples", examples()], ["counter.turns", turns({ chat: "empty" })], ["counter.examples", examples({ setup: null })]]) {
+  for (const [id, ctx] of [
+    ["counter.turns", turns()],
+    ["counter.examples", examples()],
+    ["counter.turns", turns({ chat: "empty" })],
+    ["counter.examples", examples({ setup: null })],
+  ]) {
     const LAB = createLab([turnPack, examplePack]);
     const view = LAB.view(id);
     for (const name of ["section", "refine", "checks", "metrics", "exports", "commands"]) view.open[name] = true;
@@ -455,7 +825,13 @@ test("both sections render with the starter packs", () => {
     assert.ok(!textOf(tree).includes("could not be shown"));
   }
   const LAB = createLab([turnPack, examplePack]);
-  const improvements = (id) => [turnPack, examplePack].filter((pack) => pack.surface === id).reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
+  const improvements = (id) =>
+    [turnPack, examplePack]
+      .filter((pack) => pack.surface === id)
+      .reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
   assert.ok(improvements("counter.turns") > 0 && improvements("counter.examples") > 0);
-  assert.deepEqual([LAB.count("counter.turns"), LAB.count("counter.examples")], [improvements("counter.turns"), improvements("counter.examples")]);
+  assert.deepEqual(
+    [LAB.count("counter.turns"), LAB.count("counter.examples")],
+    [improvements("counter.turns"), improvements("counter.examples")],
+  );
 });

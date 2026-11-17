@@ -3,6 +3,7 @@
 No model calls or persistence. The selected Calibrate signal estimates prediction correctness;
 this does not change routing thresholds. Confidence can be a margin rather than a probability.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,8 +42,10 @@ def platt(pairs: List[Tuple[float, bool]]) -> dict:
     a, b = 1.0, 0.0
 
     def loss(a: float, b: float) -> float:
-        return sum(max(z, 0) - y * z + math.log1p(math.exp(-abs(z)))
-                   for x, y in data for z in [a * x + b]) + RIDGE * (a * a + b * b) / 2
+        return (
+            sum(max(z, 0) - y * z + math.log1p(math.exp(-abs(z))) for x, y in data for z in [a * x + b])
+            + RIDGE * (a * a + b * b) / 2
+        )
 
     for _ in range(100):
         ga, gb, aa, ab, bb = RIDGE * a, RIDGE * b, RIDGE, 0.0, RIDGE
@@ -88,7 +91,7 @@ def isotonic(pairs: List[Tuple[float, bool]]) -> dict:
             blocks.append([left[0], right[1], left[2] + right[2], left[3] + right[3]])
     ys = [0.0] * len(xs)
     for start, end, total, n in blocks:
-        ys[start:end + 1] = [clip(total / n)] * (end - start + 1)
+        ys[start : end + 1] = [clip(total / n)] * (end - start + 1)
     return {"method": "isotonic", "knots": list(zip(xs, ys))}
 
 
@@ -110,9 +113,12 @@ def apply(mapping: dict, p: float) -> float:
 
 def measure(pairs: List[Tuple[float, bool]]) -> dict:
     bins, ece = calibrate.reliability(pairs)
-    return {"ece": ece, "reliability": bins,
-            "brier": sum((p - y) ** 2 for p, y in pairs) / len(pairs),
-            "log_loss": -sum(math.log(clip(p) if y else 1 - clip(p)) for p, y in pairs) / len(pairs)}
+    return {
+        "ece": ece,
+        "reliability": bins,
+        "brier": sum((p - y) ** 2 for p, y in pairs) / len(pairs),
+        "log_loss": -sum(math.log(clip(p) if y else 1 - clip(p)) for p, y in pairs) / len(pairs),
+    }
 
 
 def source(mapping: dict) -> dict:
@@ -124,23 +130,31 @@ def source(mapping: dict) -> dict:
         return {"python": py + "    return p\n", "javascript": js + "  return p;\n}\n"}
     if method == "platt":
         a, b = mapping["a"], mapping["b"]
-        py += ("    import math\n    p = min(1 - 1e-6, max(1e-6, p))\n"
-               f"    z = {a!r} * math.log(p / (1 - p)) + {b!r}\n"
-               "    return min(1 - 1e-6, max(1e-6, 1 / (1 + math.exp(-max(-35, min(35, z))))))\n")
-        js += ("  p = Math.min(1 - 1e-6, Math.max(1e-6, p));\n"
-               f"  const z = {a!r} * Math.log(p / (1 - p)) + {b!r};\n"
-               "  return Math.min(1 - 1e-6, Math.max(1e-6, 1 / (1 + Math.exp(-Math.max(-35, Math.min(35, z))))));\n}\n")
+        py += (
+            "    import math\n    p = min(1 - 1e-6, max(1e-6, p))\n"
+            f"    z = {a!r} * math.log(p / (1 - p)) + {b!r}\n"
+            "    return min(1 - 1e-6, max(1e-6, 1 / (1 + math.exp(-max(-35, min(35, z))))))\n"
+        )
+        js += (
+            "  p = Math.min(1 - 1e-6, Math.max(1e-6, p));\n"
+            f"  const z = {a!r} * Math.log(p / (1 - p)) + {b!r};\n"
+            "  return Math.min(1 - 1e-6, Math.max(1e-6, 1 / (1 + Math.exp(-Math.max(-35, Math.min(35, z))))));\n}\n"
+        )
     else:
         knots = json.dumps(mapping["knots"])
-        py += (f"    knots = {knots}\n    if p <= knots[0][0]:\n        return knots[0][1]\n"
-               "    for (x0, y0), (x1, y1) in zip(knots, knots[1:]):\n"
-               "        if p <= x1:\n            return y0 + (y1 - y0) * (p - x0) / (x1 - x0)\n"
-               "    return knots[-1][1]\n")
-        js += (f"  const knots = {knots};\n  if (p <= knots[0][0]) return knots[0][1];\n"
-               "  for (let i = 1; i < knots.length; i++) {\n"
-               "    const [x0, y0] = knots[i - 1], [x1, y1] = knots[i];\n"
-               "    if (p <= x1) return y0 + (y1 - y0) * (p - x0) / (x1 - x0);\n"
-               "  }\n  return knots[knots.length - 1][1];\n}\n")
+        py += (
+            f"    knots = {knots}\n    if p <= knots[0][0]:\n        return knots[0][1]\n"
+            "    for (x0, y0), (x1, y1) in zip(knots, knots[1:]):\n"
+            "        if p <= x1:\n            return y0 + (y1 - y0) * (p - x0) / (x1 - x0)\n"
+            "    return knots[-1][1]\n"
+        )
+        js += (
+            f"  const knots = {knots};\n  if (p <= knots[0][0]) return knots[0][1];\n"
+            "  for (let i = 1; i < knots.length; i++) {\n"
+            "    const [x0, y0] = knots[i - 1], [x1, y1] = knots[i];\n"
+            "    if (p <= x1) return y0 + (y1 - y0) * (p - x0) / (x1 - x0);\n"
+            "  }\n  return knots[knots.length - 1][1];\n}\n"
+        )
     return {"python": py, "javascript": js}
 
 
@@ -160,12 +174,18 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
     if len(scored) < MIN_ROWS:
         raise WorkbenchError("Recalibrate needs at least %d valid labeled rows (got %d)." % (MIN_ROWS, len(scored)))
     if len({r["correct"] for r in scored}) < 2:
-        raise WorkbenchError("Recalibrate needs both right and wrong answers; all labeled answers are right or all are wrong.")
+        raise WorkbenchError(
+            "Recalibrate needs both right and wrong answers; all labeled answers are right or all are wrong."
+        )
     pairs = [(r["signal"], r["correct"]) for r in scored]
     indexes = [rows[r["index"]].get("index", r["index"]) for r in scored]
     keys = [holdout._key(dict(rows[r["index"]], index=indexes[i])) for i, r in enumerate(scored)]
-    if any(rows[r["index"]].get("row") is None and rows[r["index"]].get("key")
-           and not isinstance(rows[r["index"]]["key"], str) for r in scored):
+    if any(
+        rows[r["index"]].get("row") is None
+        and rows[r["index"]].get("key")
+        and not isinstance(rows[r["index"]]["key"], str)
+        for r in scored
+    ):
         raise WorkbenchError("Each row key must be a string")
     issue = holdout.problem(keys, holdout.FOLDS)
     if issue:
@@ -180,12 +200,23 @@ def evaluate(rows: Any, signal: str = "confidence") -> dict:
             for i, (p, _) in enumerate(pairs):
                 if folds[i] == f:
                     unseen[i] = apply(trained, p)
-        methods[name] = {"map": mapping, "fit": measure([(apply(mapping, p), y) for p, y in pairs]),
-                         "cv": measure([(unseen[i], y) for i, (_, y) in enumerate(pairs)]),
-                         "source": source(mapping)}
+        methods[name] = {
+            "map": mapping,
+            "fit": measure([(apply(mapping, p), y) for p, y in pairs]),
+            "cv": measure([(unseen[i], y) for i, (_, y) in enumerate(pairs)]),
+            "source": source(mapping),
+        }
     best = min(methods, key=lambda m: methods[m]["cv"]["log_loss"])
     raw_loss = methods["raw"]["cv"]["log_loss"]
     margin = max(0.01, raw_loss * 0.01)
     chosen = best if raw_loss - methods[best]["cv"]["log_loss"] >= margin else "raw"
-    return {"labeled": len(pairs), "signal": signal, "folds": holdout.FOLDS, "fold_of": folds,
-            "invalid": report["invalid"], "methods": methods, "recommendation": chosen, "margin": margin}
+    return {
+        "labeled": len(pairs),
+        "signal": signal,
+        "folds": holdout.FOLDS,
+        "fold_of": folds,
+        "invalid": report["invalid"],
+        "methods": methods,
+        "recommendation": chosen,
+        "margin": margin,
+    }

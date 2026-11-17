@@ -10,11 +10,20 @@ from unittest.mock import patch
 from helpers import FakeClient
 from jev import bundles, checks, images, workbench
 
-Q = {"damaged": {"type": "noul", "instructions": "Is the bag in `photo` damaged?"},
-     "where": {"type": "box", "instructions": "The bag in `photo`"}}
-CHECK = {"gates": {"damaged": 0.8}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-         "tuned_on": "jev-1.14.0", "min_accuracy": 0.95, "min_coverage": 0.5,
-         "slice_targets": [{"field": "text", "value": "broken", "min_accuracy": 0.95, "min_coverage": 0.5}]}
+Q = {
+    "damaged": {"type": "noul", "instructions": "Is the bag in `photo` damaged?"},
+    "where": {"type": "box", "instructions": "The bag in `photo`"},
+}
+CHECK = {
+    "gates": {"damaged": 0.8},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.14.0",
+    "tuned_on": "jev-1.14.0",
+    "min_accuracy": 0.95,
+    "min_coverage": 0.5,
+    "slice_targets": [{"field": "text", "value": "broken", "min_accuracy": 0.95, "min_coverage": 0.5}],
+}
 
 
 def encoded(files):
@@ -40,14 +49,24 @@ class BundleTests(unittest.TestCase):
         self.addCleanup(self.patch.stop)
 
     def saved(self):
-        dataset = workbench.save_dataset({"name": "Photo check", "notes": "Human labels",
-            "questions": Q, "rows": [
-                {"text": "broken", "_image": "torn-bag", "_expect": {"damaged": True}},
-                {"text": "fine", "_image": "intact-bag", "_expect": {"damaged": False}, "_test": True}]})
+        dataset = workbench.save_dataset(
+            {
+                "name": "Photo check",
+                "notes": "Human labels",
+                "questions": Q,
+                "rows": [
+                    {"text": "broken", "_image": "torn-bag", "_expect": {"damaged": True}},
+                    {"text": "fine", "_image": "intact-bag", "_expect": {"damaged": False}, "_test": True},
+                ],
+            }
+        )
         dataset = checks.save_check(dataset["id"], CHECK)
-        dataset["test"] = {"locked_at": "2026-11-05T01:00:00Z", "looks": [
-            {"at": "2026-11-05T02:00:00Z", "gates": {"damaged": 0.8}, "signal": "confidence",
-             "model": "jev-1.14.0"}]}
+        dataset["test"] = {
+            "locked_at": "2026-11-05T01:00:00Z",
+            "looks": [
+                {"at": "2026-11-05T02:00:00Z", "gates": {"damaged": 0.8}, "signal": "confidence", "model": "jev-1.14.0"}
+            ],
+        }
         workbench.write_dataset(dataset)
         return dataset
 
@@ -125,9 +144,11 @@ class BundleTests(unittest.TestCase):
     def test_rejects_invalid_archive_missing_picture_and_path_traversal(self):
         dataset = self.saved()
         files = contents(bundles.export_bundle(dataset["id"])["data"])
-        for modified in [dict(files, **{"../evil": b"bad"}),
-                         {key: value for key, value in files.items() if key != "images/torn-bag"},
-                         dict(files, **{"images/torn-bag": b"not a photo"})]:
+        for modified in [
+            dict(files, **{"../evil": b"bad"}),
+            {key: value for key, value in files.items() if key != "images/torn-bag"},
+            dict(files, **{"images/torn-bag": b"not a photo"}),
+        ]:
             with self.subTest(files=list(modified)):
                 with self.assertRaises(workbench.WorkbenchError):
                     bundles.import_bundle(encoded(modified), name="Rejected")
@@ -150,10 +171,12 @@ class BundleTests(unittest.TestCase):
     def test_rejects_invalid_version_check_history_and_hash(self):
         dataset = self.saved()
         original = contents(bundles.export_bundle(dataset["id"])["data"])
-        for mutation in [lambda m: m.update(version=2),
-                         lambda m: m["dataset"]["check"].update(gates={"where": 0.8}),
-                         lambda m: m["dataset"]["test"].update(looks=["invalid"]),
-                         lambda m: m["dataset"].pop("test")]:
+        for mutation in [
+            lambda m: m.update(version=2),
+            lambda m: m["dataset"]["check"].update(gates={"where": 0.8}),
+            lambda m: m["dataset"]["test"].update(looks=["invalid"]),
+            lambda m: m["dataset"].pop("test"),
+        ]:
             manifest = json.loads(original["dataset.json"])
             mutation(manifest)
             modified = dict(original, **{"dataset.json": json.dumps(manifest)})

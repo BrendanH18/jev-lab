@@ -1,14 +1,62 @@
 // Build tab: the state, questions and pictures of one request, running it, question checks (jev/lint.py),
 // code export and saving it as a test. Also the helpers that convert questions between the editor and the API.
 import {
-  $, answerCard, api, callStats, copyText, currentStatus, h, handleError, icon, inspect, mount, pct, photoView, prepareImage,
-  statusBadge, toast,
+  $,
+  answerCard,
+  api,
+  callStats,
+  copyText,
+  currentStatus,
+  h,
+  handleError,
+  icon,
+  inspect,
+  mount,
+  pct,
+  photoView,
+  prepareImage,
+  statusBadge,
+  toast,
 } from "./common.js";
-import { editorQuestionError, parseUniqueJson, requestDraft, parseRequestDraft, buildEditorContext, buildContextChanged, parseBuildState, formatBuildState } from "./build-request.js";
-import { uniqueQuestionId, duplicateQuestionRow, moveEditorEntry, removeEditorQuestion, restoreEditorQuestion, buildRequestSummary, matchesEditorQuestion, moveEditorEntryTo, renameEditorQuestion, duplicateChoiceOption, insertEditorCriterion, duplicateShownQuestions, editorQuestionOutline, reorderEditorCriteria, moveShownQuestionsToEdge, removeBlankEditorCriteria, shownEditorInstructions, editorQuestionsMarkdown } from "./build-editing.js";
+import {
+  editorQuestionError,
+  parseUniqueJson,
+  requestDraft,
+  parseRequestDraft,
+  buildEditorContext,
+  buildContextChanged,
+  parseBuildState,
+  formatBuildState,
+} from "./build-request.js";
+import {
+  uniqueQuestionId,
+  duplicateQuestionRow,
+  moveEditorEntry,
+  removeEditorQuestion,
+  restoreEditorQuestion,
+  buildRequestSummary,
+  matchesEditorQuestion,
+  moveEditorEntryTo,
+  renameEditorQuestion,
+  duplicateChoiceOption,
+  insertEditorCriterion,
+  duplicateShownQuestions,
+  editorQuestionOutline,
+  reorderEditorCriteria,
+  moveShownQuestionsToEdge,
+  removeBlankEditorCriteria,
+  shownEditorInstructions,
+  editorQuestionsMarkdown,
+} from "./build-editing.js";
 import { W } from "./workbench-state.js";
 import { editorAuthoringSummary, editorOutlineCsv, shownQuestionIndex } from "./build-authoring.js";
-import { prepareBuildCleanup, applyBuildCleanup, undoBuildCleanup, buildDiagnosticsMetadata, renderBuildRefinements } from "./build-refinements.js";
+import {
+  prepareBuildCleanup,
+  applyBuildCleanup,
+  undoBuildCleanup,
+  buildDiagnosticsMetadata,
+  renderBuildRefinements,
+} from "./build-refinements.js";
 import { render } from "./workbench.js";
 
 const TYPES = ["noul", "choice", "score", "box"];
@@ -31,7 +79,13 @@ const BUILD_LAB_RESULT = "workbench.build.result";
 const parseMaybeJson = (s) => {
   if (typeof s !== "string") return s;
   const t = s.trim();
-  if (/^[\[{]/.test(t)) { try { return JSON.parse(t); } catch { /* keep as text */ } }
+  if (/^[[{]/.test(t)) {
+    try {
+      return JSON.parse(t);
+    } catch {
+      /* keep as text */
+    }
+  }
   return s;
 };
 export const stringify = (v) => (typeof v === "string" ? v : v === null || v === undefined ? "" : JSON.stringify(v));
@@ -49,11 +103,16 @@ export function toQuestions(rows) {
     if (r.type === "box") {
       // A Box takes no criteria: its answer is always four edges.
     } else if (r.type === "choice") {
-      q.criteria = Object.fromEntries(r.choice.filter(([k]) => k.trim()).map(([k, d]) => [k.trim(), d.trim() ? parseMaybeJson(d) : null]));
+      q.criteria = Object.fromEntries(
+        r.choice.filter(([k]) => k.trim()).map(([k, d]) => [k.trim(), d.trim() ? parseMaybeJson(d) : null]),
+      );
     } else if (r.type === "score") {
       q.criteria = r.score.filter((s) => s.trim()).map(parseMaybeJson);
     } else if ((r.noulYes || "").trim() || (r.noulNo || "").trim()) {
-      q.criteria = { true: (r.noulYes || "").trim() ? parseMaybeJson(r.noulYes) : null, false: (r.noulNo || "").trim() ? parseMaybeJson(r.noulNo) : null };
+      q.criteria = {
+        true: (r.noulYes || "").trim() ? parseMaybeJson(r.noulYes) : null,
+        false: (r.noulNo || "").trim() ? parseMaybeJson(r.noulNo) : null,
+      };
     }
     out[id] = q;
   }
@@ -74,7 +133,10 @@ function markBuildEdited() {
   const stale = $("#build-stale");
   if (stale) stale.style.display = buildResultStale() ? "" : "none";
   const error = $("#build-validation");
-  if (error) { error.textContent = questionEditorError() || ""; error.hidden = !error.textContent; }
+  if (error) {
+    error.textContent = questionEditorError() || "";
+    error.hidden = !error.textContent;
+  }
   const save = $("#build-save-test");
   if (save) save.disabled = !W.result || buildResultStale();
   const summary = $("#build-request-summary");
@@ -82,44 +144,86 @@ function markBuildEdited() {
   if ($(".qlist")) refreshQuestionVisibility();
   W.questions.forEach((row, index) => {
     const characters = $(`#build-instruction-count-${index}`);
-    if (characters) characters.textContent = `${Array.from(String(row.instructions || "")).length} instruction characters`;
+    if (characters)
+      characters.textContent = `${Array.from(String(row.instructions || "")).length} instruction characters`;
     const count = $(`#build-criteria-count-${index}`);
-    if (count) count.textContent = row.type === "choice" ? `${row.choice.filter(([key]) => key.trim()).length} named options`
-      : row.type === "score" ? `${row.score.filter((level) => level.trim()).length} defined levels`
-      : row.type === "noul" ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes` : "Coordinates only · no criteria";
+    if (count)
+      count.textContent =
+        row.type === "choice"
+          ? `${row.choice.filter(([key]) => key.trim()).length} named options`
+          : row.type === "score"
+            ? `${row.score.filter((level) => level.trim()).length} defined levels`
+            : row.type === "noul"
+              ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes`
+              : "Coordinates only · no criteria";
   });
 }
 
 function validBuildQuestions() {
-  if (buildRawText !== null) { toast("Apply the Raw JSON edits before using this request.", "error"); return null; }
-  try { parseState(W.stateText); } catch (e) { toast(`State: ${e.message}`, "error"); return null; }
+  if (buildRawText !== null) {
+    toast("Apply the Raw JSON edits before using this request.", "error");
+    return null;
+  }
+  try {
+    parseState(W.stateText);
+  } catch (e) {
+    toast(`State: ${e.message}`, "error");
+    return null;
+  }
   const error = questionEditorError();
-  if (error) { toast(error, "error"); return null; }
+  if (error) {
+    toast(error, "error");
+    return null;
+  }
   const questions = toQuestions(W.questions);
-  if (!Object.keys(questions).length) { toast("Add at least one question with an id.", "error"); return null; }
+  if (!Object.keys(questions).length) {
+    toast("Add at least one question with an id.", "error");
+    return null;
+  }
   return questions;
 }
 
 export function fromQuestions(obj) {
   return Object.entries(obj || {}).map(([id, q]) => ({
-    id, type: q.type, instructions: stringify(q.instructions),
-    choice: q.type === "choice" ? Object.entries(q.criteria || {}).map(([k, d]) => [k, stringify(d)]) : [["", ""], ["", ""]],
+    id,
+    type: q.type,
+    instructions: stringify(q.instructions),
+    choice:
+      q.type === "choice"
+        ? Object.entries(q.criteria || {}).map(([k, d]) => [k, stringify(d)])
+        : [
+            ["", ""],
+            ["", ""],
+          ],
     score: q.type === "score" ? (q.criteria || []).map(stringify) : ["", "", ""],
-    noulYes: q.type === "noul" ? stringify(q.criteria?.true) : "", noulNo: q.type === "noul" ? stringify(q.criteria?.false) : "",
+    noulYes: q.type === "noul" ? stringify(q.criteria?.true) : "",
+    noulNo: q.type === "noul" ? stringify(q.criteria?.false) : "",
   }));
 }
 
 const blankRow = (type) => ({
-  id: uniqueQuestionId(W.questions, `${type}_${W.questions.length + 1}`), type, instructions: "",
-  choice: [["", ""], ["", ""]], score: ["", "", ""], noulYes: "", noulNo: "",
+  id: uniqueQuestionId(W.questions, `${type}_${W.questions.length + 1}`),
+  type,
+  instructions: "",
+  choice: [
+    ["", ""],
+    ["", ""],
+  ],
+  score: ["", "", ""],
+  noulYes: "",
+  noulNo: "",
 });
 
 function defaultExpect(answer) {
   if (answer.type === "choice") return { choice: answer.choice };
   if (answer.type === "box") {
-    return { box: Object.fromEntries(["left", "top", "right", "bottom"].map((k) => [k, +answer.box[k].toFixed(3)])), iou_min: 0.5 };
+    return {
+      box: Object.fromEntries(["left", "top", "right", "bottom"].map((k) => [k, +answer.box[k].toFixed(3)])),
+      iou_min: 0.5,
+    };
   }
-  if (answer.type === "score") return { min: Math.max(0, +(answer.score - 0.5).toFixed(2)), max: +(answer.score + 0.5).toFixed(2) };
+  if (answer.type === "score")
+    return { min: Math.max(0, +(answer.score - 0.5).toFixed(2)), max: +(answer.score + 0.5).toFixed(2) };
   return answer.noul >= 0.5 ? { min: 0.5 } : { max: 0.5 };
 }
 
@@ -132,29 +236,51 @@ function newRef() {
 export const sampleUrl = (name) => `/img/samples/${name}.png`;
 
 function imagesFromSpecs(specs) {
-  return Object.entries(specs || {}).map(([ref, spec]) => spec.sample
-    ? { ref, sample: spec.sample, url: sampleUrl(spec.sample), about: W.samples.find((x) => x.name === spec.sample)?.about }
-    : { ref, format: spec.format, data_base64: spec.data_base64, url: `data:image/${spec.format === "png" ? "png" : "jpeg"};base64,${spec.data_base64}` });
+  return Object.entries(specs || {}).map(([ref, spec]) =>
+    spec.sample
+      ? {
+          ref,
+          sample: spec.sample,
+          url: sampleUrl(spec.sample),
+          about: W.samples.find((x) => x.name === spec.sample)?.about,
+        }
+      : {
+          ref,
+          format: spec.format,
+          data_base64: spec.data_base64,
+          url: `data:image/${spec.format === "png" ? "png" : "jpeg"};base64,${spec.data_base64}`,
+        },
+  );
 }
-const imagesPayload = () => Object.fromEntries(W.images.map((i) => [i.ref, i.sample ? { sample: i.sample } : { format: i.format, data_base64: i.data_base64 }]));
-const imageNames = () => Object.fromEntries(W.images.map((i) => [i.ref, i.sample ? { sample: i.sample } : { format: i.format }]));
+const imagesPayload = () =>
+  Object.fromEntries(
+    W.images.map((i) => [i.ref, i.sample ? { sample: i.sample } : { format: i.format, data_base64: i.data_base64 }]),
+  );
+const imageNames = () =>
+  Object.fromEntries(W.images.map((i) => [i.ref, i.sample ? { sample: i.sample } : { format: i.format }]));
 
 // Put a new picture somewhere a question can point at it: a `photo` field in an object state.
 function placeInState(ref) {
   const state = parseState(W.stateText);
   const isObject = state && typeof state === "object" && !Array.isArray(state);
   if (Array.isArray(state)) return "Put its reference in the state or a question.";
-  const obj = isObject ? state : (String(state || "").trim() ? { text: state } : {});
+  const obj = isObject ? state : String(state || "").trim() ? { text: state } : {};
   let key = "photo";
   for (let n = 2; key in obj; n++) key = `photo_${n}`;
   obj[key] = ref;
   W.stateText = JSON.stringify(obj, null, 2);
-  return isObject || !String(state || "").trim() ? `Added \`${key}\` to the state.` : `Moved the text into \`text\` and added \`${key}\`.`;
+  return isObject || !String(state || "").trim()
+    ? `Added \`${key}\` to the state.`
+    : `Moved the text into \`text\` and added \`${key}\`.`;
 }
 
 function addImage(img) {
   if (W.images.length >= W.maxImages) return toast(`At most ${W.maxImages} images per request.`, "error");
-  try { parseState(W.stateText); } catch (e) { return toast(`State: ${e.message}`, "error"); }
+  try {
+    parseState(W.stateText);
+  } catch (e) {
+    return toast(`State: ${e.message}`, "error");
+  }
   const ref = newRef();
   W.images.push({ ...img, ref });
   toast(placeInState(ref));
@@ -165,7 +291,11 @@ function addImage(img) {
 
 function removeImage(ref) {
   let state;
-  try { state = parseState(W.stateText); } catch (e) { return toast(`State: ${e.message}`, "error"); }
+  try {
+    state = parseState(W.stateText);
+  } catch (e) {
+    return toast(`State: ${e.message}`, "error");
+  }
   W.images = W.images.filter((i) => i.ref !== ref);
   if (state && typeof state === "object" && !Array.isArray(state)) {
     for (const [k, v] of Object.entries(state)) if (v === ref) delete state[k];
@@ -180,7 +310,10 @@ function removeImage(ref) {
 function lookup(state, path) {
   if (state && typeof state === "object" && Object.hasOwn(state, path)) return state[path]; // a key with dots
   let node = state;
-  for (const part of path.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean)) {
+  for (const part of path
+    .replace(/\[(\d+)\]/g, ".$1")
+    .split(".")
+    .filter(Boolean)) {
     if (node === null || typeof node !== "object" || !(part in node)) return undefined;
     node = node[part];
   }
@@ -190,7 +323,8 @@ function lookup(state, path) {
 // Which picture a Box question points at: one named by reference or by a backticked state path.
 // With several pictures and no match, return null rather than draw the box on a guessed picture.
 function imageFor(question, state, images) {
-  const text = typeof question.instructions === "string" ? question.instructions : JSON.stringify(question.instructions);
+  const text =
+    typeof question.instructions === "string" ? question.instructions : JSON.stringify(question.instructions);
   const byRef = images.find((i) => text.includes(i.ref));
   if (byRef) return byRef;
   for (const [, path] of text.matchAll(/`([^`]+)`/g)) {
@@ -201,8 +335,13 @@ function imageFor(question, state, images) {
   return images.length === 1 ? images[0] : null;
 }
 
-export function loadInto(state, questions, { expect = {}, name = "", notes = "", id = null, example = null, images = {}, handoff = null } = {}) {
-  if (buildUnsaved() && !window.confirm("Replace the unsaved Build request? Download a Build draft first to keep it.")) return false;
+export function loadInto(
+  state,
+  questions,
+  { expect = {}, name = "", notes = "", id = null, example = null, images = {}, handoff = null } = {},
+) {
+  if (buildUnsaved() && !window.confirm("Replace the unsaved Build request? Download a Build draft first to keep it."))
+    return false;
   buildRunSequence += 1;
   buildRunning = false;
   W.stateText = typeof state === "string" ? state : JSON.stringify(state, null, 2);
@@ -233,8 +372,12 @@ export function loadInto(state, questions, { expect = {}, name = "", notes = "",
 }
 
 export function applyBuildQuestions(questions) {
-  try { return loadInto(parseState(W.stateText), questions, { images: imagesPayload() }); }
-  catch (e) { toast(`State: ${e.message}`, "error"); return false; }
+  try {
+    return loadInto(parseState(W.stateText), questions, { images: imagesPayload() });
+  } catch (e) {
+    toast(`State: ${e.message}`, "error");
+    return false;
+  }
 }
 
 const buildEditState = () => W.buildEditing || (W.buildEditing = { collapsed: new WeakSet(), deleted: null });
@@ -258,7 +401,9 @@ function undoBuildQuestion() {
     buildEditState().deleted = null;
     markBuildEdited();
     render();
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) {
+    toast(e.message, "error");
+  }
 }
 
 function duplicateBuildQuestion(index) {
@@ -276,7 +421,8 @@ function moveBuildQuestionToPosition(index) {
     return toast("Choose a whole-number position within the current question list.", "error");
   }
   W.questions = moveEditorEntryTo(W.questions, index, target);
-  markBuildEdited(); render();
+  markBuildEdited();
+  render();
 }
 
 function renameBuildQuestion(index) {
@@ -288,7 +434,9 @@ function renameBuildQuestion(index) {
     W.expect = renamed.expect;
     markBuildEdited();
     render();
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) {
+    toast(e.message, "error");
+  }
 }
 
 function insertBuildQuestion(index, after) {
@@ -307,29 +455,38 @@ function formatBuildStateText() {
     markBuildEdited();
     render();
     toast(formatted.message);
-  } catch (e) { toast(`Could not format JSON: ${e.message}`, "error"); }
+  } catch (e) {
+    toast(`Could not format JSON: ${e.message}`, "error");
+  }
 }
 
 function compactBuildStateText() {
   try {
     const state = parseState(W.stateText);
-    if (!state || typeof state !== "object") return toast("Compact JSON needs an object or array; plain text stays unchanged.");
+    if (!state || typeof state !== "object")
+      return toast("Compact JSON needs an object or array; plain text stays unchanged.");
     // Validate above, then remove only whitespace outside strings. Re-serializing would
     // round large numeric literals or turn overflowing numbers into null.
-    let compact = "", quoted = false, escaped = false;
+    let compact = "",
+      quoted = false,
+      escaped = false;
     for (const char of W.stateText) {
       if (quoted) {
         compact += char;
         if (escaped) escaped = false;
         else if (char === "\\") escaped = true;
         else if (char === '"') quoted = false;
-      } else if (char === '"') { quoted = true; compact += char; }
-      else if (!/[ \t\r\n]/.test(char)) compact += char;
+      } else if (char === '"') {
+        quoted = true;
+        compact += char;
+      } else if (!/[ \t\r\n]/.test(char)) compact += char;
     }
     W.stateText = compact;
     markBuildEdited();
     render();
-  } catch (e) { toast(`Could not compact JSON: ${e.message}`, "error"); }
+  } catch (e) {
+    toast(`Could not compact JSON: ${e.message}`, "error");
+  }
 }
 
 function visibleBuildQuestions() {
@@ -345,19 +502,36 @@ function visibleBuildQuestions() {
   // Lab filters count like the page's own (reached through W; absent in tests and before the Lab index exists).
   const labCtx = W.lab?.active?.("workbench.build.questions") ? W.buildLabCtx?.questions : null;
   const labItems = labCtx ? labCtx.items() : null;
-  return W.questions.filter((row, index) => index === focusedIndex || (matchesEditorQuestion(row, { ...buildQuestionView, idCounts }, W.expect)
-    && (!labItems || W.lab.matches("workbench.build.questions", labItems[index], labCtx))));
+  return W.questions.filter(
+    (row, index) =>
+      index === focusedIndex ||
+      (matchesEditorQuestion(row, { ...buildQuestionView, idCounts }, W.expect) &&
+        (!labItems || W.lab.matches("workbench.build.questions", labItems[index], labCtx))),
+  );
 }
 
 function refreshQuestionVisibility() {
   const shown = new Set(visibleBuildQuestions());
-  $(".qlist")?.querySelectorAll(".build-question-card").forEach((card) => {
-    card.hidden = !shown.has(W.questions[Number(card.dataset.questionIndex)]);
-  });
+  $(".qlist")
+    ?.querySelectorAll(".build-question-card")
+    .forEach((card) => {
+      card.hidden = !shown.has(W.questions[Number(card.dataset.questionIndex)]);
+    });
   const count = $("#build-question-count");
   const labActive = W.lab?.active?.("workbench.build.questions") || 0;
-  if (count) count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.${labActive ? ` ${labActive} Lab setting${labActive === 1 ? "" : "s"} active.` : ""}`;
-  for (const id of ["build-copy-shown", "build-duplicate-shown", "build-copy-shown-json", "build-download-shown-json", "build-download-outline", "build-copy-shown-instructions", "build-download-shown-markdown", "build-move-shown-first", "build-move-shown-last"]) {
+  if (count)
+    count.textContent = `${shown.size} of ${W.questions.length} questions shown. Run and export include every question.${labActive ? ` ${labActive} Lab setting${labActive === 1 ? "" : "s"} active.` : ""}`;
+  for (const id of [
+    "build-copy-shown",
+    "build-duplicate-shown",
+    "build-copy-shown-json",
+    "build-download-shown-json",
+    "build-download-outline",
+    "build-copy-shown-instructions",
+    "build-download-shown-markdown",
+    "build-move-shown-first",
+    "build-move-shown-last",
+  ]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !shown.size;
   }
@@ -375,53 +549,270 @@ function questionFocusOut(event) {
 function renderQuestionTools() {
   const shown = visibleBuildQuestions().length;
   const labActive = W.lab?.active?.("workbench.build.questions") || 0;
-  return h("div", { class: "grid", style: { gap: "8px" } },
-    h("input", { class: "input", type: "search", "aria-label": "Search Build questions", value: buildQuestionView.query,
-      placeholder: "Search ids, instructions or criteria", oninput: (event) => {
-        buildQuestionView.query = event.target.value; refreshQuestionVisibility();
-      } }),
-    h("div", { class: "chips" },
-      h("select", { class: "input sm", "aria-label": "Search Build question field", onchange: (event) => {
-        buildQuestionView.searchField = event.target.value; refreshQuestionVisibility();
-      } }, [["all", "All question fields"], ["id", "Ids only"], ["instructions", "Instructions only"], ["criteria", "Criteria only"], ["choiceKeys", "Choice keys only"], ["descriptions", "Criterion descriptions only"]].map(([value, label]) =>
-        h("option", { value, selected: (buildQuestionView.searchField || "all") === value }, label))),
-      h("input", { class: "input sm", type: "search", "aria-label": "Exclude Build question text", placeholder: "Exclude text in search field",
-        value: buildQuestionView.exclude || "", oninput: (event) => { buildQuestionView.exclude = event.target.value; refreshQuestionVisibility(); } }),
-      h("input", { class: "input sm", type: "search", "aria-label": "Build question id prefix", placeholder: "Id starts with",
-        value: buildQuestionView.idPrefix || "", oninput: (event) => { buildQuestionView.idPrefix = event.target.value; refreshQuestionVisibility(); } }),
-      [["minCriteria", "Minimum defined criteria"], ["maxCriteria", "Maximum defined criteria"], ["minInstructions", "Minimum instruction characters"], ["maxInstructions", "Maximum instruction characters"]].map(([key, label]) =>
-        h("input", { class: "input sm", type: "number", min: "0", step: "1", "aria-label": label, placeholder: label,
-          value: buildQuestionView[key] || "", oninput: (event) => { buildQuestionView[key] = event.target.value; refreshQuestionVisibility(); } })),
-      h("select", { class: "input sm", "aria-label": "Filter Build question type", onchange: (event) => {
-        buildQuestionView.type = event.target.value; refreshQuestionVisibility();
-      } }, ["all", ...TYPES].map((type) => h("option", { value: type, selected: buildQuestionView.type === type }, type === "all" ? "All question types" : type))),
-      [["instructions", "Instructions"], ["criteria", "Defined criteria"], ["expectations", "Human expectations"]].map(([field, label]) =>
-        h("label", { class: "faint" }, label, " ", h("select", { class: "input sm", "aria-label": `Filter Build ${label.toLowerCase()}`,
-          onchange: (event) => { buildQuestionView[field] = event.target.value; refreshQuestionVisibility(); } },
-        [["all", "Any"], ["with", "With"], ["without", "Without"]].map(([value, text]) =>
-          h("option", { value, selected: (buildQuestionView[field] || "all") === value }, text))))),
-      h("button", { class: "btn sm ghost", id: "build-copy-shown", disabled: !shown, onclick: () => copyText(visibleBuildQuestions().map((row) => row.id).join("\n")) }, "Copy shown ids"),
-      h("button", { class: "btn sm ghost", id: "build-copy-shown-json", disabled: !shown, onclick: () => shareShownQuestions("copy") }, "Copy shown questions JSON"),
-      h("button", { class: "btn sm ghost", id: "build-download-shown-json", disabled: !shown, onclick: () => shareShownQuestions("json") }, "Download shown questions JSON"),
-      h("button", { class: "btn sm ghost", id: "build-download-outline", disabled: !shown, onclick: () => shareShownQuestions("outline") }, "Download shown outline"),
-      h("button", { class: "btn sm ghost", id: "build-copy-shown-instructions", disabled: !shown, onclick: () => shareShownQuestions("instructions") }, "Copy shown instructions"),
-      h("button", { class: "btn sm ghost", id: "build-download-shown-markdown", disabled: !shown, onclick: () => shareShownQuestions("markdown") }, "Download shown Markdown"),
-      [false, true].map((last) => h("button", { class: "btn sm ghost", id: `build-move-shown-${last ? "last" : "first"}`, disabled: !shown,
-        onclick: () => { W.questions = moveShownQuestionsToEdge(W.questions, visibleBuildQuestions(), last); markBuildEdited(); render(); },
-      }, last ? "Move shown last" : "Move shown first")),
-      h("button", { class: "btn sm ghost", id: "build-duplicate-shown", disabled: !shown, onclick: () => {
-        W.questions = duplicateShownQuestions(W.questions, visibleBuildQuestions());
-        markBuildEdited(); render();
-      } }, "Duplicate shown"),
-      h("button", { class: "btn sm ghost", onclick: () => { for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key]; Object.assign(buildQuestionView, { query: "", type: "all" }); W.lab?.reset?.("workbench.build.questions"); render(); } }, "Clear question filters"),
-      [true, false].map((collapse) => h("button", { class: "btn sm ghost", onclick: () => {
-        for (const row of visibleBuildQuestions()) {
-          if (collapse) buildEditState().collapsed.add(row); else buildEditState().collapsed.delete(row);
-        }
-        render();
-      } }, collapse ? "Collapse shown" : "Expand shown"))),
-    h("span", { class: "faint", id: "build-question-count", "aria-live": "polite" }, `${shown} of ${W.questions.length} questions shown. Run and export include every question.${labActive ? ` ${labActive} Lab setting${labActive === 1 ? "" : "s"} active.` : ""}`),
-    h("p", { class: "faint", id: "build-question-no-match", hidden: shown > 0 }, "No questions match. Clear filters to show every question."));
+  return h(
+    "div",
+    { class: "grid", style: { gap: "8px" } },
+    h("input", {
+      class: "input",
+      type: "search",
+      "aria-label": "Search Build questions",
+      value: buildQuestionView.query,
+      placeholder: "Search ids, instructions or criteria",
+      oninput: (event) => {
+        buildQuestionView.query = event.target.value;
+        refreshQuestionVisibility();
+      },
+    }),
+    h(
+      "div",
+      { class: "chips" },
+      h(
+        "select",
+        {
+          class: "input sm",
+          "aria-label": "Search Build question field",
+          onchange: (event) => {
+            buildQuestionView.searchField = event.target.value;
+            refreshQuestionVisibility();
+          },
+        },
+        [
+          ["all", "All question fields"],
+          ["id", "Ids only"],
+          ["instructions", "Instructions only"],
+          ["criteria", "Criteria only"],
+          ["choiceKeys", "Choice keys only"],
+          ["descriptions", "Criterion descriptions only"],
+        ].map(([value, label]) =>
+          h("option", { value, selected: (buildQuestionView.searchField || "all") === value }, label),
+        ),
+      ),
+      h("input", {
+        class: "input sm",
+        type: "search",
+        "aria-label": "Exclude Build question text",
+        placeholder: "Exclude text in search field",
+        value: buildQuestionView.exclude || "",
+        oninput: (event) => {
+          buildQuestionView.exclude = event.target.value;
+          refreshQuestionVisibility();
+        },
+      }),
+      h("input", {
+        class: "input sm",
+        type: "search",
+        "aria-label": "Build question id prefix",
+        placeholder: "Id starts with",
+        value: buildQuestionView.idPrefix || "",
+        oninput: (event) => {
+          buildQuestionView.idPrefix = event.target.value;
+          refreshQuestionVisibility();
+        },
+      }),
+      [
+        ["minCriteria", "Minimum defined criteria"],
+        ["maxCriteria", "Maximum defined criteria"],
+        ["minInstructions", "Minimum instruction characters"],
+        ["maxInstructions", "Maximum instruction characters"],
+      ].map(([key, label]) =>
+        h("input", {
+          class: "input sm",
+          type: "number",
+          min: "0",
+          step: "1",
+          "aria-label": label,
+          placeholder: label,
+          value: buildQuestionView[key] || "",
+          oninput: (event) => {
+            buildQuestionView[key] = event.target.value;
+            refreshQuestionVisibility();
+          },
+        }),
+      ),
+      h(
+        "select",
+        {
+          class: "input sm",
+          "aria-label": "Filter Build question type",
+          onchange: (event) => {
+            buildQuestionView.type = event.target.value;
+            refreshQuestionVisibility();
+          },
+        },
+        ["all", ...TYPES].map((type) =>
+          h(
+            "option",
+            { value: type, selected: buildQuestionView.type === type },
+            type === "all" ? "All question types" : type,
+          ),
+        ),
+      ),
+      [
+        ["instructions", "Instructions"],
+        ["criteria", "Defined criteria"],
+        ["expectations", "Human expectations"],
+      ].map(([field, label]) =>
+        h(
+          "label",
+          { class: "faint" },
+          label,
+          " ",
+          h(
+            "select",
+            {
+              class: "input sm",
+              "aria-label": `Filter Build ${label.toLowerCase()}`,
+              onchange: (event) => {
+                buildQuestionView[field] = event.target.value;
+                refreshQuestionVisibility();
+              },
+            },
+            [
+              ["all", "Any"],
+              ["with", "With"],
+              ["without", "Without"],
+            ].map(([value, text]) =>
+              h("option", { value, selected: (buildQuestionView[field] || "all") === value }, text),
+            ),
+          ),
+        ),
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          id: "build-copy-shown",
+          disabled: !shown,
+          onclick: () =>
+            copyText(
+              visibleBuildQuestions()
+                .map((row) => row.id)
+                .join("\n"),
+            ),
+        },
+        "Copy shown ids",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          id: "build-copy-shown-json",
+          disabled: !shown,
+          onclick: () => shareShownQuestions("copy"),
+        },
+        "Copy shown questions JSON",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          id: "build-download-shown-json",
+          disabled: !shown,
+          onclick: () => shareShownQuestions("json"),
+        },
+        "Download shown questions JSON",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          id: "build-download-outline",
+          disabled: !shown,
+          onclick: () => shareShownQuestions("outline"),
+        },
+        "Download shown outline",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          id: "build-copy-shown-instructions",
+          disabled: !shown,
+          onclick: () => shareShownQuestions("instructions"),
+        },
+        "Copy shown instructions",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          id: "build-download-shown-markdown",
+          disabled: !shown,
+          onclick: () => shareShownQuestions("markdown"),
+        },
+        "Download shown Markdown",
+      ),
+      [false, true].map((last) =>
+        h(
+          "button",
+          {
+            class: "btn sm ghost",
+            id: `build-move-shown-${last ? "last" : "first"}`,
+            disabled: !shown,
+            onclick: () => {
+              W.questions = moveShownQuestionsToEdge(W.questions, visibleBuildQuestions(), last);
+              markBuildEdited();
+              render();
+            },
+          },
+          last ? "Move shown last" : "Move shown first",
+        ),
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          id: "build-duplicate-shown",
+          disabled: !shown,
+          onclick: () => {
+            W.questions = duplicateShownQuestions(W.questions, visibleBuildQuestions());
+            markBuildEdited();
+            render();
+          },
+        },
+        "Duplicate shown",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          onclick: () => {
+            for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key];
+            Object.assign(buildQuestionView, { query: "", type: "all" });
+            W.lab?.reset?.("workbench.build.questions");
+            render();
+          },
+        },
+        "Clear question filters",
+      ),
+      [true, false].map((collapse) =>
+        h(
+          "button",
+          {
+            class: "btn sm ghost",
+            onclick: () => {
+              for (const row of visibleBuildQuestions()) {
+                if (collapse) buildEditState().collapsed.add(row);
+                else buildEditState().collapsed.delete(row);
+              }
+              render();
+            },
+          },
+          collapse ? "Collapse shown" : "Expand shown",
+        ),
+      ),
+    ),
+    h(
+      "span",
+      { class: "faint", id: "build-question-count", "aria-live": "polite" },
+      `${shown} of ${W.questions.length} questions shown. Run and export include every question.${labActive ? ` ${labActive} Lab setting${labActive === 1 ? "" : "s"} active.` : ""}`,
+    ),
+    h(
+      "p",
+      { class: "faint", id: "build-question-no-match", hidden: shown > 0 },
+      "No questions match. Clear filters to show every question.",
+    ),
+  );
 }
 
 function shareShownQuestions(format) {
@@ -433,27 +824,56 @@ function shareShownQuestions(format) {
   if (format === "markdown") text = editorQuestionsMarkdown(rows);
   else if (format === "outline") text = editorQuestionOutline(rows);
   else {
-    if (rows.some((row) => !String(row.id || "").trim())) return toast("Give every shown question an id before sharing JSON.", "error");
+    if (rows.some((row) => !String(row.id || "").trim()))
+      return toast("Give every shown question an id before sharing JSON.", "error");
     const error = questionEditorError(rows);
     if (error) return toast(error, "error");
     text = JSON.stringify(toQuestions(rows), null, 2) + "\n";
   }
   if (format === "copy") return copyText(text);
-  const url = URL.createObjectURL(new Blob([text], { type: format === "markdown" ? "text/markdown;charset=utf-8" : format === "outline" ? "text/plain;charset=utf-8" : "application/json" }));
-  h("a", { href: url, download: format === "markdown" ? "jev-questions.md" : format === "outline" ? "jev-question-outline.txt" : "jev-questions.json" }).click();
+  const url = URL.createObjectURL(
+    new Blob([text], {
+      type:
+        format === "markdown"
+          ? "text/markdown;charset=utf-8"
+          : format === "outline"
+            ? "text/plain;charset=utf-8"
+            : "application/json",
+    }),
+  );
+  h("a", {
+    href: url,
+    download:
+      format === "markdown"
+        ? "jev-questions.md"
+        : format === "outline"
+          ? "jev-question-outline.txt"
+          : "jev-questions.json",
+  }).click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function authoringSummaryText() {
   const summary = editorAuthoringSummary(visibleBuildQuestions());
-  return `Shown types: ${Object.entries(summary.counts).map(([type, count]) => `${count} ${type}`).join(" · ")} · ${summary.bytes} authored UTF-8 bytes (ids, instructions and active criteria; excludes state and pictures). Counts are not spend estimates.`;
+  return `Shown types: ${Object.entries(summary.counts)
+    .map(([type, count]) => `${count} ${type}`)
+    .join(
+      " · ",
+    )} · ${summary.bytes} authored UTF-8 bytes (ids, instructions and active criteria; excludes state and pictures). Counts are not spend estimates.`;
 }
 
 function refreshAuthoringSummary() {
   const summary = $("#build-authoring-summary");
   if (summary) summary.textContent = authoringSummaryText();
   const shown = visibleBuildQuestions();
-  for (const id of ["build-first-shown", "build-last-shown", "build-copy-outline", "build-outline-csv", "build-instructions-text", "build-copy-markdown"]) {
+  for (const id of [
+    "build-first-shown",
+    "build-last-shown",
+    "build-copy-outline",
+    "build-outline-csv",
+    "build-instructions-text",
+    "build-copy-markdown",
+  ]) {
     const button = $(`#${id}`);
     if (button) button.disabled = !shown.length;
   }
@@ -471,18 +891,27 @@ function navigateBuildQuestion(index, instructions = false) {
 
 function shareAuthoringQuestions(format, singleIndex = null) {
   if (buildRawText !== null) return toast("Apply the Raw JSON edits before sharing editor questions.", "error");
-  const rows = singleIndex === null ? visibleBuildQuestions() : W.questions[singleIndex] ? [W.questions[singleIndex]] : [];
+  const rows =
+    singleIndex === null ? visibleBuildQuestions() : W.questions[singleIndex] ? [W.questions[singleIndex]] : [];
   if (!rows.length) return toast("No questions are shown.", "error");
   if (format === "outline-copy") return copyText(editorQuestionOutline(rows));
   if (format === "markdown-copy") return copyText(editorQuestionsMarkdown(rows));
   let text, filename, mime;
-  if (format === "outline-csv") { text = editorOutlineCsv(rows); filename = "jev-question-outline.csv"; mime = "text/csv;charset=utf-8"; }
-  else if (format === "instructions-text") { text = shownEditorInstructions(rows); filename = "jev-instructions.txt"; mime = "text/plain;charset=utf-8"; }
-  else {
+  if (format === "outline-csv") {
+    text = editorOutlineCsv(rows);
+    filename = "jev-question-outline.csv";
+    mime = "text/csv;charset=utf-8";
+  } else if (format === "instructions-text") {
+    text = shownEditorInstructions(rows);
+    filename = "jev-instructions.txt";
+    mime = "text/plain;charset=utf-8";
+  } else {
     if (rows.some((row) => !String(row.id || "").trim())) return toast("Give every shared question an id.", "error");
     const error = questionEditorError(rows);
     if (error) return toast(error, "error");
-    text = JSON.stringify(toQuestions(rows), null, 2) + "\n"; filename = "jev-question.json"; mime = "application/json";
+    text = JSON.stringify(toQuestions(rows), null, 2) + "\n";
+    filename = "jev-question.json";
+    mime = "application/json";
   }
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   h("a", { href: url, download: filename }).click();
@@ -491,49 +920,171 @@ function shareAuthoringQuestions(format, singleIndex = null) {
 
 function renderBuildAuthoringTools() {
   const shown = visibleBuildQuestions();
-  const selector = (field, label, options) => h("label", { class: "faint" }, label, " ",
-    h("select", { class: "input sm", "aria-label": label, onchange: (event) => {
-      buildQuestionView[field] = event.target.value; refreshQuestionVisibility();
-    } }, options.map(([value, text]) => h("option", { value, selected: (buildQuestionView[field] || "all") === value }, text))));
-  return h("details", { ontoggle: (event) => { buildQuestionView.toolsOpen = event.target.open; }, open: !!buildQuestionView.toolsOpen },
+  const selector = (field, label, options) =>
+    h(
+      "label",
+      { class: "faint" },
+      label,
+      " ",
+      h(
+        "select",
+        {
+          class: "input sm",
+          "aria-label": label,
+          onchange: (event) => {
+            buildQuestionView[field] = event.target.value;
+            refreshQuestionVisibility();
+          },
+        },
+        options.map(([value, text]) =>
+          h("option", { value, selected: (buildQuestionView[field] || "all") === value }, text),
+        ),
+      ),
+    );
+  return h(
+    "details",
+    {
+      ontoggle: (event) => {
+        buildQuestionView.toolsOpen = event.target.open;
+      },
+      open: !!buildQuestionView.toolsOpen,
+    },
     h("summary", {}, "Advanced authoring tools"),
-    h("div", { class: "grid", style: { gap: "8px", marginTop: "8px" } },
-      h("div", { class: "chips" }, [["idSuffix", "Build question id suffix", "Id ends with"], ["idExact", "Exact Build question id", "Exact id"]].map(([field, label, placeholder]) =>
-        h("input", { class: "input sm", type: "search", value: buildQuestionView[field] || "", "aria-label": label, placeholder,
-          oninput: (event) => { buildQuestionView[field] = event.target.value; refreshQuestionVisibility(); } })),
-      [["minIdCharacters", "Minimum id characters"], ["maxIdCharacters", "Maximum id characters"], ["minInstructionLines", "Minimum instruction lines"], ["maxInstructionLines", "Maximum instruction lines"]].map(([field, label]) =>
-        h("input", { class: "input sm", type: "number", min: 0, step: 1, value: buildQuestionView[field] ?? "", "aria-label": label, placeholder: label,
-          oninput: (event) => { buildQuestionView[field] = event.target.value; refreshQuestionVisibility(); } })),
-      selector("instructionFormat", "Instruction format", [["all", "Any format"], ["structured", "JSON object or array"], ["text", "Text and other literals"]]),
-      [["placeholders", "Blank criterion placeholders"], ["unnamedChoice", "Unnamed Choice descriptions"], ["duplicateKeys", "Repeated Choice keys"], ["duplicateIds", "Repeated question ids"], ["references", "Backticked references"]].map(([field, label]) =>
-        selector(field, label, [["all", "Any"], ["with", "With"], ["without", "Without"]]))),
-      h("div", { class: "chips" }, [["first", "First shown question"], ["last", "Last shown question"]].map(([direction, label]) =>
-        h("button", { class: "btn sm", id: `build-${direction}-shown`, disabled: !shown.length, onclick: () =>
-          navigateBuildQuestion(shownQuestionIndex(W.questions, visibleBuildQuestions(), -1, direction)) }, label)),
-      [["outline-copy", "build-copy-outline", "Copy shown outline"], ["outline-csv", "build-outline-csv", "Download shown outline CSV"],
-        ["instructions-text", "build-instructions-text", "Download shown instructions"], ["markdown-copy", "build-copy-markdown", "Copy shown Markdown"]].map(([format, id, label]) =>
-        h("button", { class: "btn sm ghost", id, disabled: !shown.length, onclick: () => shareAuthoringQuestions(format) }, label))),
+    h(
+      "div",
+      { class: "grid", style: { gap: "8px", marginTop: "8px" } },
+      h(
+        "div",
+        { class: "chips" },
+        [
+          ["idSuffix", "Build question id suffix", "Id ends with"],
+          ["idExact", "Exact Build question id", "Exact id"],
+        ].map(([field, label, placeholder]) =>
+          h("input", {
+            class: "input sm",
+            type: "search",
+            value: buildQuestionView[field] || "",
+            "aria-label": label,
+            placeholder,
+            oninput: (event) => {
+              buildQuestionView[field] = event.target.value;
+              refreshQuestionVisibility();
+            },
+          }),
+        ),
+        [
+          ["minIdCharacters", "Minimum id characters"],
+          ["maxIdCharacters", "Maximum id characters"],
+          ["minInstructionLines", "Minimum instruction lines"],
+          ["maxInstructionLines", "Maximum instruction lines"],
+        ].map(([field, label]) =>
+          h("input", {
+            class: "input sm",
+            type: "number",
+            min: 0,
+            step: 1,
+            value: buildQuestionView[field] ?? "",
+            "aria-label": label,
+            placeholder: label,
+            oninput: (event) => {
+              buildQuestionView[field] = event.target.value;
+              refreshQuestionVisibility();
+            },
+          }),
+        ),
+        selector("instructionFormat", "Instruction format", [
+          ["all", "Any format"],
+          ["structured", "JSON object or array"],
+          ["text", "Text and other literals"],
+        ]),
+        [
+          ["placeholders", "Blank criterion placeholders"],
+          ["unnamedChoice", "Unnamed Choice descriptions"],
+          ["duplicateKeys", "Repeated Choice keys"],
+          ["duplicateIds", "Repeated question ids"],
+          ["references", "Backticked references"],
+        ].map(([field, label]) =>
+          selector(field, label, [
+            ["all", "Any"],
+            ["with", "With"],
+            ["without", "Without"],
+          ]),
+        ),
+      ),
+      h(
+        "div",
+        { class: "chips" },
+        [
+          ["first", "First shown question"],
+          ["last", "Last shown question"],
+        ].map(([direction, label]) =>
+          h(
+            "button",
+            {
+              class: "btn sm",
+              id: `build-${direction}-shown`,
+              disabled: !shown.length,
+              onclick: () =>
+                navigateBuildQuestion(shownQuestionIndex(W.questions, visibleBuildQuestions(), -1, direction)),
+            },
+            label,
+          ),
+        ),
+        [
+          ["outline-copy", "build-copy-outline", "Copy shown outline"],
+          ["outline-csv", "build-outline-csv", "Download shown outline CSV"],
+          ["instructions-text", "build-instructions-text", "Download shown instructions"],
+          ["markdown-copy", "build-copy-markdown", "Copy shown Markdown"],
+        ].map(([format, id, label]) =>
+          h(
+            "button",
+            { class: "btn sm ghost", id, disabled: !shown.length, onclick: () => shareAuthoringQuestions(format) },
+            label,
+          ),
+        ),
+      ),
       h("p", { class: "faint", id: "build-authoring-summary", "aria-live": "polite" }, authoringSummaryText()),
-      h("p", { class: "faint" }, "Filters inspect authored content only. Repeated ids and Choice keys use trimmed, case-sensitive identities. Instruction lines include empty lines; an empty instruction has zero lines. No model calls or saved changes.")));
+      h(
+        "p",
+        { class: "faint" },
+        "Filters inspect authored content only. Repeated ids and Choice keys use trimmed, case-sensitive identities. Instruction lines include empty lines; an empty instruction has zero lines. No model calls or saved changes.",
+      ),
+    ),
+  );
 }
 
 function reorderBuildCriteria(index, action) {
   const row = W.questions[index];
-  if (row.type === "score" && !window.confirm("Reverse Score levels? This changes the numeric meaning of every level. Existing human expectations stay unchanged; review them before running.")) return;
+  if (
+    row.type === "score" &&
+    !window.confirm(
+      "Reverse Score levels? This changes the numeric meaning of every level. Existing human expectations stay unchanged; review them before running.",
+    )
+  )
+    return;
   W.questions[index] = reorderEditorCriteria(row, action);
-  markBuildEdited(); render();
+  markBuildEdited();
+  render();
 }
 
 function cleanupBuildQuestions(action) {
-  if (buildRawText !== null) return toast("Apply the Raw JSON edits before using content cleanup or diagnostics.", "error");
+  if (buildRawText !== null)
+    return toast("Apply the Raw JSON edits before using content cleanup or diagnostics.", "error");
   const replaceRows = (rows) => {
     const collapsed = buildEditState().collapsed;
-    rows.forEach((row, index) => { if (collapsed.has(W.questions[index])) collapsed.add(row); });
+    rows.forEach((row, index) => {
+      if (collapsed.has(W.questions[index])) collapsed.add(row);
+    });
     W.questions = rows;
   };
   try {
     if (action === "preview") {
-      buildCleanupPreview = prepareBuildCleanup(W.questions, W.expect, visibleBuildQuestions(), buildQuestionView.cleanupAction || "ids");
+      buildCleanupPreview = prepareBuildCleanup(
+        W.questions,
+        W.expect,
+        visibleBuildQuestions(),
+        buildQuestionView.cleanupAction || "ids",
+      );
     } else if (action === "apply") {
       const result = applyBuildCleanup(W.questions, W.expect, buildCleanupPreview);
       replaceRows(result.rows);
@@ -548,25 +1099,42 @@ function cleanupBuildQuestions(action) {
     } else if (action === "download") {
       const shown = visibleBuildQuestions();
       if (!shown.length) return toast("No questions are shown.", "error");
-      const url = URL.createObjectURL(new Blob([JSON.stringify(buildDiagnosticsMetadata(shown), null, 2) + "\n"], { type: "application/json" }));
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(buildDiagnosticsMetadata(shown), null, 2) + "\n"], { type: "application/json" }),
+      );
       h("a", { href: url, download: "jev-question-diagnostics.json" }).click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       return;
     }
     render();
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) {
+    toast(e.message, "error");
+  }
 }
 
 function renderBuildContentTools() {
-  return renderBuildRefinements(h, { view: buildQuestionView, refresh: refreshQuestionVisibility,
-    preview: buildCleanupPreview, undo: buildCleanupUndo,
-    onPreview: () => cleanupBuildQuestions("preview"), onApply: () => cleanupBuildQuestions("apply"),
-    onUndo: () => cleanupBuildQuestions("undo"), onDownload: () => cleanupBuildQuestions("download"),
-    onCancel: () => { buildCleanupPreview = null; render(); } });
+  return renderBuildRefinements(h, {
+    view: buildQuestionView,
+    refresh: refreshQuestionVisibility,
+    preview: buildCleanupPreview,
+    undo: buildCleanupUndo,
+    onPreview: () => cleanupBuildQuestions("preview"),
+    onApply: () => cleanupBuildQuestions("apply"),
+    onUndo: () => cleanupBuildQuestions("undo"),
+    onDownload: () => cleanupBuildQuestions("download"),
+    onCancel: () => {
+      buildCleanupPreview = null;
+      render();
+    },
+  });
 }
 
 function discardBuildRaw() {
-  if (buildRawText === null || !window.confirm("Discard the unapplied Raw JSON edits? The question editor will keep its current questions.")) return;
+  if (
+    buildRawText === null ||
+    !window.confirm("Discard the unapplied Raw JSON edits? The question editor will keep its current questions.")
+  )
+    return;
   buildRawText = null;
   W.raw = false;
   markBuildEdited();
@@ -576,9 +1144,21 @@ function discardBuildRaw() {
 function editorMoveButtons(entries, index, label, apply) {
   return [-1, 1].map((direction) => {
     const title = `Move ${label} ${direction < 0 ? "up" : "down"}`;
-    return h("button", { class: "btn sm ghost", title, "aria-label": title,
-      disabled: index + direction < 0 || index + direction >= entries.length,
-      onclick: () => { apply(moveEditorEntry(entries, index, direction)); markBuildEdited(); render(); } }, direction < 0 ? "↑" : "↓");
+    return h(
+      "button",
+      {
+        class: "btn sm ghost",
+        title,
+        "aria-label": title,
+        disabled: index + direction < 0 || index + direction >= entries.length,
+        onclick: () => {
+          apply(moveEditorEntry(entries, index, direction));
+          markBuildEdited();
+          render();
+        },
+      },
+      direction < 0 ? "↑" : "↓",
+    );
   });
 }
 
@@ -593,37 +1173,61 @@ function buildLabContexts() {
   const currentIds = () => W.questions.map((row) => String(row.id || "").trim()).filter(Boolean);
   W.buildLabCtx = {
     questions: builders.wbBuildQuestionsCtx({
-      rows: () => W.questions, expect: () => W.expect, stateText: () => W.stateText, images: () => W.images,
-      result: () => W.result, stale: () => buildResultStale(), running: () => buildRunning, rawMode: () => W.raw,
-      rawPending: () => buildRawText !== null, lint: () => W.lint, maxImages: () => W.maxImages,
+      rows: () => W.questions,
+      expect: () => W.expect,
+      stateText: () => W.stateText,
+      images: () => W.images,
+      result: () => W.result,
+      stale: () => buildResultStale(),
+      running: () => buildRunning,
+      rawMode: () => W.raw,
+      rawPending: () => buildRawText !== null,
+      lint: () => W.lint,
+      maxImages: () => W.maxImages,
       origin: () => ({ example: W.loadedExample, test: W.editingId, handoff: W.handoff?.source }),
       shownRows: () => visibleBuildQuestions(),
       arrange: (items, ctx) => W.lab.arrange(BUILD_LAB_QUESTIONS, items, ctx),
       commit: ({ rows, expect, origins }) => {
         const collapsed = buildEditState().collapsed;
-        rows.forEach((row, index) => { if (origins[index] && collapsed.has(origins[index])) collapsed.add(row); });
+        rows.forEach((row, index) => {
+          if (origins[index] && collapsed.has(origins[index])) collapsed.add(row);
+        });
         W.questions = rows;
         W.expect = expect;
         markBuildEdited();
         // Rendered once Lab has recorded the edit's Undo step, so the new Lab section shows it.
         queueMicrotask(render);
       },
-      addQuestion: (type) => { W.questions.push(blankRow(type)); markBuildEdited(); render(); },
+      addQuestion: (type) => {
+        W.questions.push(blankRow(type));
+        markBuildEdited();
+        render();
+      },
       focus: (index) => navigateBuildQuestion(index),
-      checkQuestions: () => checkQuestions(), exportCode: () => exportCode(),
-      formatState: () => formatBuildStateText(), compactState: () => compactBuildStateText(),
-      canUndoRemove: () => !!W.buildEditing?.deleted, undoRemove: () => undoBuildQuestion(),
+      checkQuestions: () => checkQuestions(),
+      exportCode: () => exportCode(),
+      formatState: () => formatBuildStateText(),
+      compactState: () => compactBuildStateText(),
+      canUndoRemove: () => !!W.buildEditing?.deleted,
+      undoRemove: () => undoBuildQuestion(),
       clearFilters: () => {
         for (const key of Object.keys(buildQuestionView)) delete buildQuestionView[key];
         Object.assign(buildQuestionView, { query: "", type: "all" });
         W.lab.reset(BUILD_LAB_QUESTIONS);
         render();
       },
-      refresh: () => { refreshQuestionVisibility(); arrangeBuildQuestionCards(); },
+      refresh: () => {
+        refreshQuestionVisibility();
+        arrangeBuildQuestionCards();
+      },
     }),
     result: builders.wbBuildResultCtx({
-      result: () => W.result, expect: () => W.expect, stale: () => buildResultStale(), running: () => buildRunning,
-      currentIds, saveOpen: () => W.saveOpen,
+      result: () => W.result,
+      expect: () => W.expect,
+      stale: () => buildResultStale(),
+      running: () => buildRunning,
+      currentIds,
+      saveOpen: () => W.saveOpen,
       arrange: (items, ctx) => W.lab.arrange(BUILD_LAB_RESULT, items, ctx),
       matches: (item, ctx) => W.lab.matches(BUILD_LAB_RESULT, item, ctx),
       inspect: () => inspect(W.result.trace, "Workbench · one Jev request"),
@@ -634,7 +1238,9 @@ function buildLabContexts() {
         navigateBuildQuestion(index);
         return true;
       },
-      refresh: () => { if ($("#build-answers")) mount("#build-answers", renderBuildAnswerCards()); },
+      refresh: () => {
+        if ($("#build-answers")) mount("#build-answers", renderBuildAnswerCards());
+      },
     }),
   };
   return W.buildLabCtx;
@@ -656,7 +1262,9 @@ function buildLabQuestionOrder(shown) {
 function arrangeBuildQuestionCards() {
   const list = $(".qlist");
   if (!list) return;
-  const cards = new Map([...list.querySelectorAll(".build-question-card")].map((card) => [Number(card.dataset.questionIndex), card]));
+  const cards = new Map(
+    [...list.querySelectorAll(".build-question-card")].map((card) => [Number(card.dataset.questionIndex), card]),
+  );
   for (const index of buildLabQuestionOrder(new Set(visibleBuildQuestions()))) {
     const card = cards.get(index);
     if (card) list.append(card);
@@ -675,17 +1283,36 @@ function renderBuildAnswerCards() {
   const shown = ctx.shown();
   const active = W.lab?.active?.(BUILD_LAB_RESULT) || 0;
   const wide = { gridColumn: "1 / -1" };
-  return [total && !shown.length ? h("div", { class: "empty", style: wide }, "No answer matches the Lab filters.")
-    : shown.map((item) => answerCard(item.id, r.answers[item.id], questions[item.id])),
-  active ? h("div", { class: "faint", style: { ...wide, fontSize: "12px" }, role: "status" },
-    `${shown.length} of ${total} answers shown · ${active} Lab setting${active === 1 ? "" : "s"} active `,
-    h("button", { class: "btn sm ghost", onclick: () => { W.lab.reset(BUILD_LAB_RESULT); render(); } }, "Clear Lab filters and sort")) : null];
+  return [
+    total && !shown.length
+      ? h("div", { class: "empty", style: wide }, "No answer matches the Lab filters.")
+      : shown.map((item) => answerCard(item.id, r.answers[item.id], questions[item.id])),
+    active
+      ? h(
+          "div",
+          { class: "faint", style: { ...wide, fontSize: "12px" }, role: "status" },
+          `${shown.length} of ${total} answers shown · ${active} Lab setting${active === 1 ? "" : "s"} active `,
+          h(
+            "button",
+            {
+              class: "btn sm ghost",
+              onclick: () => {
+                W.lab.reset(BUILD_LAB_RESULT);
+                render();
+              },
+            },
+            "Clear Lab filters and sort",
+          ),
+        )
+      : null,
+  ];
 }
 
 // The Save as test button's toggle, or open only (Lab's openSave). Expectations default from the answers.
 function openBuildSaveForm(open = !W.saveOpen) {
   W.saveOpen = open;
-  if (W.saveOpen && !Object.keys(W.expect).length) W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)]));
+  if (W.saveOpen && !Object.keys(W.expect).length)
+    W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)]));
   render();
 }
 
@@ -695,98 +1322,387 @@ function handoffNote() {
   const ho = W.handoff;
   if (!ho) return null;
   const model = currentStatus().model;
-  return h("div", { class: "callout" }, icon("arrow"), h("div", {},
-    h("b", {}, `Opened from ${ho.source}`),
-    h("div", { class: "muted" }, `This started as the exact request ${ho.source} sent. Its answers stayed in that tab: press Run to ask the model again,`
-      + " then reword a question, save it as a test, or use the questions in Bulk."
-      + (ho.model && model && ho.model !== model ? ` ${ho.source} asked ${ho.model}; Run asks ${model}.` : ""))));
+  return h(
+    "div",
+    { class: "callout" },
+    icon("arrow"),
+    h(
+      "div",
+      {},
+      h("b", {}, `Opened from ${ho.source}`),
+      h(
+        "div",
+        { class: "muted" },
+        `This started as the exact request ${ho.source} sent. Its answers stayed in that tab: press Run to ask the model again,` +
+          " then reword a question, save it as a test, or use the questions in Bulk." +
+          (ho.model && model && ho.model !== model ? ` ${ho.source} asked ${ho.model}; Run asks ${model}.` : ""),
+      ),
+    ),
+  );
 }
 
 export function renderBuild() {
   const labCtx = W.labEnv ? buildLabContexts() : null;
   const buildShown = new Set(visibleBuildQuestions());
-  const stateArea = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Request state", placeholder: "Plain text, or a JSON object/array. Point questions at fields with `backticks`." }, W.stateText);
-  stateArea.addEventListener("input", () => { W.stateText = stateArea.value; markBuildEdited(); });
-  const left = h("div", { class: "grid", style: { gap: "16px" } },
+  const stateArea = h(
+    "textarea",
+    {
+      class: "input",
+      spellcheck: "false",
+      "aria-label": "Request state",
+      placeholder: "Plain text, or a JSON object/array. Point questions at fields with `backticks`.",
+    },
+    W.stateText,
+  );
+  stateArea.addEventListener("input", () => {
+    W.stateText = stateArea.value;
+    markBuildEdited();
+  });
+  const left = h(
+    "div",
+    { class: "grid", style: { gap: "16px" } },
     handoffNote(),
-    h("div", { class: "panel" },
-      h("div", { class: "panel-head" }, h("h2", {}, "State"), h("div", { class: "spacer" }),
-        h("button", { class: "btn sm", onclick: formatBuildStateText, title: "Format a JSON object or array without changing plain text" }, "Format JSON"),
-        h("button", { class: "btn sm ghost", onclick: compactBuildStateText, title: "Remove JSON whitespace while preserving every value" }, "Compact JSON"),
-        h("span", { class: "faint", style: { fontSize: "12px" } }, W.loadedExample ? `from example: ${W.loadedExample}` : W.editingId ? `editing test: ${W.editingId}`
-          : W.handoff ? `from ${W.handoff.source}` : "")),
-      h("div", { class: "panel-body state-box" }, stateArea,
-        h("p", { id: "build-request-summary", class: "faint", style: { fontSize: "12px" } }, buildRequestSummary(W.stateText, W.questions, W.images.length)), renderBuildDraft())),
+    h(
+      "div",
+      { class: "panel" },
+      h(
+        "div",
+        { class: "panel-head" },
+        h("h2", {}, "State"),
+        h("div", { class: "spacer" }),
+        h(
+          "button",
+          {
+            class: "btn sm",
+            onclick: formatBuildStateText,
+            title: "Format a JSON object or array without changing plain text",
+          },
+          "Format JSON",
+        ),
+        h(
+          "button",
+          {
+            class: "btn sm ghost",
+            onclick: compactBuildStateText,
+            title: "Remove JSON whitespace while preserving every value",
+          },
+          "Compact JSON",
+        ),
+        h(
+          "span",
+          { class: "faint", style: { fontSize: "12px" } },
+          W.loadedExample
+            ? `from example: ${W.loadedExample}`
+            : W.editingId
+              ? `editing test: ${W.editingId}`
+              : W.handoff
+                ? `from ${W.handoff.source}`
+                : "",
+        ),
+      ),
+      h(
+        "div",
+        { class: "panel-body state-box" },
+        stateArea,
+        h(
+          "p",
+          { id: "build-request-summary", class: "faint", style: { fontSize: "12px" } },
+          buildRequestSummary(W.stateText, W.questions, W.images.length),
+        ),
+        renderBuildDraft(),
+      ),
+    ),
     renderImages(),
-    h("div", { class: "panel" },
-      h("div", { class: "panel-head" }, h("h2", {}, `Questions · ${W.questions.length}`), h("div", { class: "spacer" }),
-        h("button", { class: `btn sm ${W.raw ? "" : "ghost"}`, onclick: () => { W.raw = !W.raw; render(); } }, icon("code"), W.raw ? "Editor" : "Raw JSON")),
-      h("div", { class: "panel-body grid", style: { gap: "10px" } },
-        h("p", { id: "build-validation", class: "critical-text", role: "alert", hidden: !questionEditorError() }, questionEditorError()),
-        !W.raw && buildRawText !== null ? h("div", { class: "callout", role: "status" },
-          h("span", {}, "Raw JSON has unapplied edits. Apply or discard them before using the request."),
-          h("button", { class: "btn sm", onclick: () => { W.raw = true; render(); } }, "Review Raw JSON"),
-          h("button", { class: "btn sm ghost", onclick: discardBuildRaw }, "Discard Raw edits")) : null,
+    h(
+      "div",
+      { class: "panel" },
+      h(
+        "div",
+        { class: "panel-head" },
+        h("h2", {}, `Questions · ${W.questions.length}`),
+        h("div", { class: "spacer" }),
+        h(
+          "button",
+          {
+            class: `btn sm ${W.raw ? "" : "ghost"}`,
+            onclick: () => {
+              W.raw = !W.raw;
+              render();
+            },
+          },
+          icon("code"),
+          W.raw ? "Editor" : "Raw JSON",
+        ),
+      ),
+      h(
+        "div",
+        { class: "panel-body grid", style: { gap: "10px" } },
+        h(
+          "p",
+          { id: "build-validation", class: "critical-text", role: "alert", hidden: !questionEditorError() },
+          questionEditorError(),
+        ),
+        !W.raw && buildRawText !== null
+          ? h(
+              "div",
+              { class: "callout", role: "status" },
+              h("span", {}, "Raw JSON has unapplied edits. Apply or discard them before using the request."),
+              h(
+                "button",
+                {
+                  class: "btn sm",
+                  onclick: () => {
+                    W.raw = true;
+                    render();
+                  },
+                },
+                "Review Raw JSON",
+              ),
+              h("button", { class: "btn sm ghost", onclick: discardBuildRaw }, "Discard Raw edits"),
+            )
+          : null,
         !W.raw ? renderQuestionTools() : null,
         !W.raw ? renderBuildAuthoringTools() : null,
         !W.raw ? renderBuildContentTools() : null,
-        !W.raw && labCtx ? W.lab.section(W.labEnv, BUILD_LAB_QUESTIONS, labCtx.questions, { title: "Lab tools for questions" }) : null,
-        W.raw ? renderRaw() : h("div", { class: "qlist" }, buildLabQuestionOrder(buildShown).map((i) =>
-          h("div", { class: "build-question-card", "data-question-index": String(i), hidden: !buildShown.has(W.questions[i]),
-            onfocusout: questionFocusOut }, renderQuestionCard(W.questions[i], i)))),
-        !W.raw ? h("div", { class: "chips" }, TYPES.map((t) =>
-          h("button", { class: "chip", onclick: () => { W.questions.push(blankRow(t)); markBuildEdited(); render(); } }, icon("plus"), `Add ${t}`)),
-        buildEditState().deleted ? h("button", { class: "btn sm", onclick: undoBuildQuestion }, `Undo remove ${buildEditState().deleted.id || "question"}`) : null) : null)));
+        !W.raw && labCtx
+          ? W.lab.section(W.labEnv, BUILD_LAB_QUESTIONS, labCtx.questions, { title: "Lab tools for questions" })
+          : null,
+        W.raw
+          ? renderRaw()
+          : h(
+              "div",
+              { class: "qlist" },
+              buildLabQuestionOrder(buildShown).map((i) =>
+                h(
+                  "div",
+                  {
+                    class: "build-question-card",
+                    "data-question-index": String(i),
+                    hidden: !buildShown.has(W.questions[i]),
+                    onfocusout: questionFocusOut,
+                  },
+                  renderQuestionCard(W.questions[i], i),
+                ),
+              ),
+            ),
+        !W.raw
+          ? h(
+              "div",
+              { class: "chips" },
+              TYPES.map((t) =>
+                h(
+                  "button",
+                  {
+                    class: "chip",
+                    onclick: () => {
+                      W.questions.push(blankRow(t));
+                      markBuildEdited();
+                      render();
+                    },
+                  },
+                  icon("plus"),
+                  `Add ${t}`,
+                ),
+              ),
+              buildEditState().deleted
+                ? h(
+                    "button",
+                    { class: "btn sm", onclick: undoBuildQuestion },
+                    `Undo remove ${buildEditState().deleted.id || "question"}`,
+                  )
+                : null,
+            )
+          : null,
+      ),
+    ),
+  );
 
-  const runBtn = h("button", { class: "btn primary", id: "build-run", disabled: buildRunning, onclick: run }, icon("bolt"), buildRunning ? "Running…" : "Run");
-  const right = h("div", { class: "grid", style: { gap: "16px" } },
-    h("div", { class: "panel" },
-      h("div", { class: "panel-head" }, h("h2", {}, "Answers"), h("div", { class: "spacer" }),
-        h("button", { class: "btn sm", onclick: checkQuestions, title: "Read the questions for common mistakes. Plain code: no model call, no cost." }, icon("search"), "Check questions"),
+  const runBtn = h(
+    "button",
+    { class: "btn primary", id: "build-run", disabled: buildRunning, onclick: run },
+    icon("bolt"),
+    buildRunning ? "Running…" : "Run",
+  );
+  const right = h(
+    "div",
+    { class: "grid", style: { gap: "16px" } },
+    h(
+      "div",
+      { class: "panel" },
+      h(
+        "div",
+        { class: "panel-head" },
+        h("h2", {}, "Answers"),
+        h("div", { class: "spacer" }),
+        h(
+          "button",
+          {
+            class: "btn sm",
+            onclick: checkQuestions,
+            title: "Read the questions for common mistakes. Plain code: no model call, no cost.",
+          },
+          icon("search"),
+          "Check questions",
+        ),
         h("button", { class: "btn sm", onclick: exportCode }, icon("code"), "Export code"),
-        h("button", { class: "btn sm", id: "build-save-test", disabled: !W.result || buildResultStale(), onclick: () => openBuildSaveForm() }, icon("save"), "Save as test"),
-        runBtn),
-      h("p", { id: "build-stale", class: "callout", role: "status", style: { display: buildResultStale() ? "" : "none" } }, "These answers are from the previous request. Inputs or questions have changed; run again to answer the current request."),
+        h(
+          "button",
+          {
+            class: "btn sm",
+            id: "build-save-test",
+            disabled: !W.result || buildResultStale(),
+            onclick: () => openBuildSaveForm(),
+          },
+          icon("save"),
+          "Save as test",
+        ),
+        runBtn,
+      ),
+      h(
+        "p",
+        { id: "build-stale", class: "callout", role: "status", style: { display: buildResultStale() ? "" : "none" } },
+        "These answers are from the previous request. Inputs or questions have changed; run again to answer the current request.",
+      ),
       boxWarning(),
       W.result
-        ? h("div", { class: "panel-body grid", style: { gap: "12px" } },
-          callStats(W.result.meta, () => inspect(W.result.trace, "Workbench · one Jev request")),
-          renderBoxes(),
-          h("div", { class: "answers", id: "build-answers" }, renderBuildAnswerCards()))
-        : h("div", { class: "empty" }, "Press Run. Every question is evaluated in parallel against the state, in one request."),
-      labCtx ? (() => {
-        const section = W.lab.section(W.labEnv, BUILD_LAB_RESULT, labCtx.result, { title: "Lab tools for answers" });
-        return section ? h("div", { class: "panel-body", style: { paddingTop: 0 } }, section) : null;
-      })() : null),
+        ? h(
+            "div",
+            { class: "panel-body grid", style: { gap: "12px" } },
+            callStats(W.result.meta, () => inspect(W.result.trace, "Workbench · one Jev request")),
+            renderBoxes(),
+            h("div", { class: "answers", id: "build-answers" }, renderBuildAnswerCards()),
+          )
+        : h(
+            "div",
+            { class: "empty" },
+            "Press Run. Every question is evaluated in parallel against the state, in one request.",
+          ),
+      labCtx
+        ? (() => {
+            const section = W.lab.section(W.labEnv, BUILD_LAB_RESULT, labCtx.result, {
+              title: "Lab tools for answers",
+            });
+            return section ? h("div", { class: "panel-body", style: { paddingTop: 0 } }, section) : null;
+          })()
+        : null,
+    ),
     W.lint ? renderLint() : null,
     W.saveOpen && W.result && !buildResultStale() ? renderSaveForm() : null,
     W.exported ? renderExport() : null,
-    h("div", { class: "panel" },
+    h(
+      "div",
+      { class: "panel" },
       h("div", { class: "panel-head" }, h("h2", {}, "Writing good questions")),
-      h("div", { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
-        h("p", { class: "muted" }, "One judgment per question. If you would need a paragraph to explain the answer, split it."),
-        h("p", { class: "muted" }, "Say exactly what a yes means and what it does not mean; Jev reads instructions literally."),
-        h("p", { class: "muted" }, "Keep math, dates, counting, and exact lookups in code. Ask Jev to pick from options, not to generate values."),
-        h("p", { class: "muted" }, "Include a “none of these” option when nothing may fit, and read confidence before acting."),
-        h("p", { class: "muted" }, "A Box always returns four edges, even when the target is missing. Ask a Noul whether it is there, and ignore the box when that is low."),
-        h("p", { class: "faint" }, "Docs: ", h("a", { href: "https://docs.typesafe.ai/concepts/how-to-build-with-system-one", target: "_blank", rel: "noopener" }, "How to build with TypeSafe"), " · ", h("a", { href: "https://docs.typesafe.ai/model-jaggedness/jev-1.13", target: "_blank", rel: "noopener" }, "Known jagged edges")))));
+      h(
+        "div",
+        { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
+        h(
+          "p",
+          { class: "muted" },
+          "One judgment per question. If you would need a paragraph to explain the answer, split it.",
+        ),
+        h(
+          "p",
+          { class: "muted" },
+          "Say exactly what a yes means and what it does not mean; Jev reads instructions literally.",
+        ),
+        h(
+          "p",
+          { class: "muted" },
+          "Keep math, dates, counting, and exact lookups in code. Ask Jev to pick from options, not to generate values.",
+        ),
+        h(
+          "p",
+          { class: "muted" },
+          "Include a “none of these” option when nothing may fit, and read confidence before acting.",
+        ),
+        h(
+          "p",
+          { class: "muted" },
+          "A Box always returns four edges, even when the target is missing. Ask a Noul whether it is there, and ignore the box when that is low.",
+        ),
+        h(
+          "p",
+          { class: "faint" },
+          "Docs: ",
+          h(
+            "a",
+            {
+              href: "https://docs.typesafe.ai/concepts/how-to-build-with-system-one",
+              target: "_blank",
+              rel: "noopener",
+            },
+            "How to build with TypeSafe",
+          ),
+          " · ",
+          h(
+            "a",
+            { href: "https://docs.typesafe.ai/model-jaggedness/jev-1.13", target: "_blank", rel: "noopener" },
+            "Known jagged edges",
+          ),
+        ),
+      ),
+    ),
+  );
   return h("div", { class: "grid wb-grid" }, left, right);
 }
 
 function renderBuildDraft() {
-  const file = h("input", { type: "file", accept: ".json,application/json", hidden: true,
-    onchange: () => previewBuildDraft(file.files[0]) });
+  const file = h("input", {
+    type: "file",
+    accept: ".json,application/json",
+    hidden: true,
+    onchange: () => previewBuildDraft(file.files[0]),
+  });
   const preview = buildDraftPreview;
-  return h("div", { class: "grid", style: { gap: "8px", marginTop: "10px" } },
-    h("div", { class: "chips" },
+  return h(
+    "div",
+    { class: "grid", style: { gap: "8px", marginTop: "10px" } },
+    h(
+      "div",
+      { class: "chips" },
       h("button", { class: "btn sm", disabled: buildDraftBusy, onclick: downloadBuildDraft }, "Download Build draft"),
-      h("button", { class: "btn sm", disabled: buildDraftBusy, onclick: () => file.click() }, "Restore Build draft"), file),
-    h("p", { class: "faint" }, "Keep an unrun request with its questions and pictures. Drafts contain no model answers or API settings. Review your input data before sharing."),
-    preview ? h("div", { class: "callout" }, h("div", {},
-      h("b", {}, "Build draft preview"),
-      h("p", {}, `${Object.keys(preview.draft.questions).length} questions · ${Object.keys(preview.draft.images).length} pictures. Accepting replaces the Build request; it makes no model call or saved change.`),
-      h("button", { class: "btn sm primary", disabled: buildDraftBusy, onclick: acceptBuildDraft }, "Accept Build draft"),
-      h("button", { class: "btn sm ghost", onclick: () => { buildDraftPreview = null; render(); } }, "Cancel restore"))) : null);
+      h("button", { class: "btn sm", disabled: buildDraftBusy, onclick: () => file.click() }, "Restore Build draft"),
+      file,
+    ),
+    h(
+      "p",
+      { class: "faint" },
+      "Keep an unrun request with its questions and pictures. Drafts contain no model answers or API settings. Review your input data before sharing.",
+    ),
+    preview
+      ? h(
+          "div",
+          { class: "callout" },
+          h(
+            "div",
+            {},
+            h("b", {}, "Build draft preview"),
+            h(
+              "p",
+              {},
+              `${Object.keys(preview.draft.questions).length} questions · ${Object.keys(preview.draft.images).length} pictures. Accepting replaces the Build request; it makes no model call or saved change.`,
+            ),
+            h(
+              "button",
+              { class: "btn sm primary", disabled: buildDraftBusy, onclick: acceptBuildDraft },
+              "Accept Build draft",
+            ),
+            h(
+              "button",
+              {
+                class: "btn sm ghost",
+                onclick: () => {
+                  buildDraftPreview = null;
+                  render();
+                },
+              },
+              "Cancel restore",
+            ),
+          ),
+        )
+      : null,
+  );
 }
 
 async function downloadBuildDraft() {
@@ -799,14 +1715,19 @@ async function downloadBuildDraft() {
   render();
   try {
     await api("/api/workbench/draft/validate", draft);
-    if (context !== buildContext()) return toast("The Build request changed. Download its current draft again.", "error");
+    if (context !== buildContext())
+      return toast("The Build request changed. Download its current draft again.", "error");
     const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" }));
     h("a", { href: url, download: "jev-build-draft.json" }).click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     buildBaseline = context;
     toast("Downloaded the Build draft, including its pictures.");
-  } catch (e) { handleError(e); }
-  finally { buildDraftBusy = false; render(); }
+  } catch (e) {
+    handleError(e);
+  } finally {
+    buildDraftBusy = false;
+    render();
+  }
 }
 
 async function previewBuildDraft(file) {
@@ -821,16 +1742,22 @@ async function previewBuildDraft(file) {
     const error = questionEditorError(fromQuestions(draft.questions));
     if (error) throw new Error(error);
     await api("/api/workbench/draft/validate", draft);
-    if (context !== buildContext()) return toast("The Build request changed. Preview the draft again before replacing it.", "error");
+    if (context !== buildContext())
+      return toast("The Build request changed. Preview the draft again before replacing it.", "error");
     buildDraftPreview = { draft, context };
-  } catch (e) { handleError(e); }
-  finally { buildDraftBusy = false; render(); }
+  } catch (e) {
+    handleError(e);
+  } finally {
+    buildDraftBusy = false;
+    render();
+  }
 }
 
 function acceptBuildDraft() {
   const preview = buildDraftPreview;
   if (!preview) return;
-  if (preview.context !== buildContext()) return toast("The Build request changed. Preview the draft again before replacing it.", "error");
+  if (preview.context !== buildContext())
+    return toast("The Build request changed. Preview the draft again before replacing it.", "error");
   const { state, questions, images } = preview.draft;
   if (loadInto(state, questions, { images })) toast("Restored the Build draft. Run it when ready to get answers.");
 }
@@ -843,35 +1770,118 @@ function renderImages() {
     try {
       const img = await prepareImage(f);
       addImage({ format: img.format, data_base64: img.data_base64, url: img.url, name: img.name });
-    } catch (e) { toast(e.message || "Could not read that image.", "error"); }
+    } catch (e) {
+      toast(e.message || "Could not read that image.", "error");
+    }
   });
   const full = W.images.length >= W.maxImages;
-  return h("div", { class: "panel" },
-    h("div", { class: "panel-head" }, h("h2", {}, `Images · ${W.images.length}`),
-      h("span", { class: "dreamer", title: "TypeSafe marks images and Box as dreamer-ready: for prototypes, and subject to change" }, "Dreamer-ready"),
+  return h(
+    "div",
+    { class: "panel" },
+    h(
+      "div",
+      { class: "panel-head" },
+      h("h2", {}, `Images · ${W.images.length}`),
+      h(
+        "span",
+        {
+          class: "dreamer",
+          title: "TypeSafe marks images and Box as dreamer-ready: for prototypes, and subject to change",
+        },
+        "Dreamer-ready",
+      ),
       h("div", { class: "spacer" }),
-      h("button", { class: "btn sm", disabled: full, onclick: () => file.click() }, icon("upload"), "Upload"), file),
-    h("div", { class: "panel-body grid", style: { gap: "10px" } },
-      W.images.length ? h("div", { class: "img-list" }, W.images.map((img) => h("div", { class: "img-row" },
-        photoView(img.url, [], { alt: img.about || img.name || "Image" }),
-        h("div", { class: "grid", style: { gap: "4px", minWidth: 0 } },
-          h("button", { class: "ref mono", title: "Copy the reference", onclick: () => copyText(img.ref) }, img.ref, icon("copy")),
-          h("span", { class: "faint", style: { fontSize: "11.5px" } }, img.sample ? `Sample drawing: ${img.about || img.sample}` : `${img.name || "Upload"} · JPEG`)),
-        h("button", { class: "btn sm ghost", title: "Remove image", "aria-label": "Remove image", onclick: () => removeImage(img.ref) }, icon("trash"))))) : null,
-      h("div", { class: "thumbs" }, W.samples.map((sm) => h("button", {
-        class: "thumb", title: `Add sample: ${sm.about}`, "aria-label": `Add sample: ${sm.about}`, disabled: full,
-        onclick: () => addImage({ sample: sm.name, url: sm.url, about: sm.about }),
-      }, h("img", { src: sm.url, alt: "" })))),
-      h("p", { class: "faint", style: { fontSize: "12px" } },
-        "Each picture gets a reference. Wherever the reference appears in the state or a question, the model sees the picture. Point questions at it by field, such as ", h("code", {}, "`photo`"), ". Uploads are resized in your browser to 280–1568 px.")));
+      h("button", { class: "btn sm", disabled: full, onclick: () => file.click() }, icon("upload"), "Upload"),
+      file,
+    ),
+    h(
+      "div",
+      { class: "panel-body grid", style: { gap: "10px" } },
+      W.images.length
+        ? h(
+            "div",
+            { class: "img-list" },
+            W.images.map((img) =>
+              h(
+                "div",
+                { class: "img-row" },
+                photoView(img.url, [], { alt: img.about || img.name || "Image" }),
+                h(
+                  "div",
+                  { class: "grid", style: { gap: "4px", minWidth: 0 } },
+                  h(
+                    "button",
+                    { class: "ref mono", title: "Copy the reference", onclick: () => copyText(img.ref) },
+                    img.ref,
+                    icon("copy"),
+                  ),
+                  h(
+                    "span",
+                    { class: "faint", style: { fontSize: "11.5px" } },
+                    img.sample ? `Sample drawing: ${img.about || img.sample}` : `${img.name || "Upload"} · JPEG`,
+                  ),
+                ),
+                h(
+                  "button",
+                  {
+                    class: "btn sm ghost",
+                    title: "Remove image",
+                    "aria-label": "Remove image",
+                    onclick: () => removeImage(img.ref),
+                  },
+                  icon("trash"),
+                ),
+              ),
+            ),
+          )
+        : null,
+      h(
+        "div",
+        { class: "thumbs" },
+        W.samples.map((sm) =>
+          h(
+            "button",
+            {
+              class: "thumb",
+              title: `Add sample: ${sm.about}`,
+              "aria-label": `Add sample: ${sm.about}`,
+              disabled: full,
+              onclick: () => addImage({ sample: sm.name, url: sm.url, about: sm.about }),
+            },
+            h("img", { src: sm.url, alt: "" }),
+          ),
+        ),
+      ),
+      h(
+        "p",
+        { class: "faint", style: { fontSize: "12px" } },
+        "Each picture gets a reference. Wherever the reference appears in the state or a question, the model sees the picture. Point questions at it by field, such as ",
+        h("code", {}, "`photo`"),
+        ". Uploads are resized in your browser to 280–1568 px.",
+      ),
+    ),
+  );
 }
 
 function boxWarning() {
   const st = currentStatus();
   const hasBox = W.questions.some((q) => q.type === "box");
   if (!hasBox || !st.configured || st.supports_box) return null;
-  return h("div", { class: "panel-body", style: { paddingBottom: 0 } }, h("div", { class: "callout" }, icon("alert"),
-    h("div", {}, h("b", {}, `${st.model} cannot answer Box questions.`), h("div", { class: "muted" }, "Box needs Jev 1.14 or later. Change the model from the key menu in the top bar."))));
+  return h(
+    "div",
+    { class: "panel-body", style: { paddingBottom: 0 } },
+    h(
+      "div",
+      { class: "callout" },
+      icon("alert"),
+      h(
+        "div",
+        {},
+        h("b", {}, `${st.model} cannot answer Box questions.`),
+        h("div", { class: "muted" }, "Box needs Jev 1.14 or later. Change the model from the key menu in the top bar."),
+      ),
+    ),
+  );
 }
 
 // Draw every Box answer on the picture its question points at.
@@ -883,162 +1893,605 @@ function renderBoxes() {
   const unplaced = [];
   for (const [qid, a] of boxes) {
     const img = imageFor(r.trace.request.questions[qid] || {}, r.trace.request.state, r.images);
-    if (!img) { unplaced.push(qid); continue; }
+    if (!img) {
+      unplaced.push(qid);
+      continue;
+    }
     if (!byImage.has(img)) byImage.set(img, []);
     byImage.get(img).push({ box: a.box, label: `${qid} · ${pct(a.confidence)}` });
   }
-  return h("div", { class: "box-views" }, [...byImage].map(([img, list]) =>
-    photoView(img.url, list, { alt: "Image with Box answers", caption: `${list.length} Box answer${list.length > 1 ? "s" : ""} on ${img.ref}. A Box always returns edges, so check a presence Noul before trusting one.` })),
-  unplaced.length ? h("p", { class: "faint", style: { fontSize: "12px" } },
-    `Not drawn: ${unplaced.join(", ")}. Name the picture in the instructions by reference or by its backticked state field to see the box.`) : null);
+  return h(
+    "div",
+    { class: "box-views" },
+    [...byImage].map(([img, list]) =>
+      photoView(img.url, list, {
+        alt: "Image with Box answers",
+        caption: `${list.length} Box answer${list.length > 1 ? "s" : ""} on ${img.ref}. A Box always returns edges, so check a presence Noul before trusting one.`,
+      }),
+    ),
+    unplaced.length
+      ? h(
+          "p",
+          { class: "faint", style: { fontSize: "12px" } },
+          `Not drawn: ${unplaced.join(", ")}. Name the picture in the instructions by reference or by its backticked state field to see the box.`,
+        )
+      : null,
+  );
 }
 
 function renderRaw() {
   const error = buildRawText === null ? questionEditorError() : null;
-  if (error) return h("div", { class: "raw grid", style: { gap: "8px" } },
-    h("p", { role: "alert" }, `Fix the editor errors before opening Raw JSON: ${error}`),
-    h("button", { class: "btn sm", onclick: () => { W.raw = false; render(); } }, "Back to editor"));
-  const discard = h("button", { class: "btn sm ghost", disabled: buildRawText === null, onclick: discardBuildRaw }, "Discard Raw edits");
-  const area = h("textarea", { class: "input", spellcheck: "false", "aria-label": "Questions as JSON" }, buildRawText ?? JSON.stringify(toQuestions(W.questions), null, 2));
-  area.addEventListener("input", () => { buildRawText = area.value; discard.disabled = false; markBuildEdited(); });
-  return h("div", { class: "raw grid", style: { gap: "8px" } }, area,
-    h("div", { style: { display: "flex", gap: "8px" } },
-      h("button", { class: "btn sm primary", onclick: () => {
-        try {
-          const rows = fromQuestions(parseUniqueJson(area.value));
-          const error = questionEditorError(rows);
-          if (error) throw new Error(error);
-          W.questions = rows; W.buildEditing = null; buildRawText = null; W.raw = false; markBuildEdited(); render();
-        }
-        catch (e) { toast(`Invalid JSON: ${e.message}`, "error"); }
-      } }, "Apply"),
+  if (error)
+    return h(
+      "div",
+      { class: "raw grid", style: { gap: "8px" } },
+      h("p", { role: "alert" }, `Fix the editor errors before opening Raw JSON: ${error}`),
+      h(
+        "button",
+        {
+          class: "btn sm",
+          onclick: () => {
+            W.raw = false;
+            render();
+          },
+        },
+        "Back to editor",
+      ),
+    );
+  const discard = h(
+    "button",
+    { class: "btn sm ghost", disabled: buildRawText === null, onclick: discardBuildRaw },
+    "Discard Raw edits",
+  );
+  const area = h(
+    "textarea",
+    { class: "input", spellcheck: "false", "aria-label": "Questions as JSON" },
+    buildRawText ?? JSON.stringify(toQuestions(W.questions), null, 2),
+  );
+  area.addEventListener("input", () => {
+    buildRawText = area.value;
+    discard.disabled = false;
+    markBuildEdited();
+  });
+  return h(
+    "div",
+    { class: "raw grid", style: { gap: "8px" } },
+    area,
+    h(
+      "div",
+      { style: { display: "flex", gap: "8px" } },
+      h(
+        "button",
+        {
+          class: "btn sm primary",
+          onclick: () => {
+            try {
+              const rows = fromQuestions(parseUniqueJson(area.value));
+              const error = questionEditorError(rows);
+              if (error) throw new Error(error);
+              W.questions = rows;
+              W.buildEditing = null;
+              buildRawText = null;
+              W.raw = false;
+              markBuildEdited();
+              render();
+            } catch (e) {
+              toast(`Invalid JSON: ${e.message}`, "error");
+            }
+          },
+        },
+        "Apply",
+      ),
       discard,
-      h("span", { class: "faint", style: { fontSize: "12px", alignSelf: "center" } }, "Same shape as the API's questions map. Structured instructions and criteria (objects, arrays) are allowed.")));
+      h(
+        "span",
+        { class: "faint", style: { fontSize: "12px", alignSelf: "center" } },
+        "Same shape as the API's questions map. Structured instructions and criteria (objects, arrays) are allowed.",
+      ),
+    ),
+  );
 }
 
 function renderQuestionCard(row, i) {
   const collapsed = buildEditState().collapsed.has(row);
-  const copyButton = h("button", { class: "btn sm ghost", disabled: !String(row.id || "").trim(), "aria-label": `Copy question ${row.id || i + 1} JSON`, onclick: () => {
-    if (!String(row.id || "").trim()) return toast("Give this question an id before copying it.", "error");
-    const error = questionEditorError([row]);
-    if (error) return toast(error, "error");
-    copyText(JSON.stringify(toQuestions([row]), null, 2));
-  } }, "Copy JSON");
-  const idInput = h("input", { class: "input mono", value: row.id, placeholder: "question_id", "aria-label": `Question ${i + 1} id` });
-  idInput.addEventListener("input", () => { row.id = idInput.value; copyButton.disabled = !String(row.id || "").trim(); markBuildEdited(); });
-  const typeSel = h("select", { class: "input", "aria-label": `Question ${i + 1} type` }, TYPES.map((t) => h("option", { value: t, selected: row.type === t }, t)));
-  typeSel.addEventListener("change", () => { row.type = typeSel.value; markBuildEdited(); render(); });
-  const instr = h("textarea", { class: "input", "aria-label": `Instructions for ${row.id || `question ${i + 1}`}`, placeholder: row.type === "box"
-    ? "What to find and in which picture, e.g. the coffee mug in `photo`."
-    : "Instructions: the question, as a person would ask it. Refer to state fields with `backticks`." }, row.instructions);
-  instr.addEventListener("input", () => { row.instructions = instr.value; markBuildEdited(); });
+  const copyButton = h(
+    "button",
+    {
+      class: "btn sm ghost",
+      disabled: !String(row.id || "").trim(),
+      "aria-label": `Copy question ${row.id || i + 1} JSON`,
+      onclick: () => {
+        if (!String(row.id || "").trim()) return toast("Give this question an id before copying it.", "error");
+        const error = questionEditorError([row]);
+        if (error) return toast(error, "error");
+        copyText(JSON.stringify(toQuestions([row]), null, 2));
+      },
+    },
+    "Copy JSON",
+  );
+  const idInput = h("input", {
+    class: "input mono",
+    value: row.id,
+    placeholder: "question_id",
+    "aria-label": `Question ${i + 1} id`,
+  });
+  idInput.addEventListener("input", () => {
+    row.id = idInput.value;
+    copyButton.disabled = !String(row.id || "").trim();
+    markBuildEdited();
+  });
+  const typeSel = h(
+    "select",
+    { class: "input", "aria-label": `Question ${i + 1} type` },
+    TYPES.map((t) => h("option", { value: t, selected: row.type === t }, t)),
+  );
+  typeSel.addEventListener("change", () => {
+    row.type = typeSel.value;
+    markBuildEdited();
+    render();
+  });
+  const instr = h(
+    "textarea",
+    {
+      class: "input",
+      "aria-label": `Instructions for ${row.id || `question ${i + 1}`}`,
+      placeholder:
+        row.type === "box"
+          ? "What to find and in which picture, e.g. the coffee mug in `photo`."
+          : "Instructions: the question, as a person would ask it. Refer to state fields with `backticks`.",
+    },
+    row.instructions,
+  );
+  instr.addEventListener("input", () => {
+    row.instructions = instr.value;
+    markBuildEdited();
+  });
 
   let crit;
   if (row.type === "box") {
-    crit = h("div", { class: "faint", style: { fontSize: "12px" } },
-      "A Box takes no criteria. The answer is the four edges of the target as fractions of the picture's width and height. Needs an image and Jev 1.14+.");
+    crit = h(
+      "div",
+      { class: "faint", style: { fontSize: "12px" } },
+      "A Box takes no criteria. The answer is the four edges of the target as fractions of the picture's width and height. Needs an image and Jev 1.14+.",
+    );
   } else if (row.type === "choice") {
-    crit = h("div", { class: "crit" },
+    crit = h(
+      "div",
+      { class: "crit" },
       h("div", { class: "section-label", style: { margin: 0 } }, "Options (key → description, description optional)"),
       h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "sort") }, "Sort options by key"),
-      h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "sort-desc") }, "Sort options descending"),
-      h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "description") }, "Sort descriptions A–Z"),
-      h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "description-desc") }, "Sort descriptions Z–A"),
+      h(
+        "button",
+        { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "sort-desc") },
+        "Sort options descending",
+      ),
+      h(
+        "button",
+        { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "description") },
+        "Sort descriptions A–Z",
+      ),
+      h(
+        "button",
+        { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "description-desc") },
+        "Sort descriptions Z–A",
+      ),
       h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "reverse") }, "Reverse options"),
       row.choice.map((pair, j) => {
         const k = h("input", { class: "input mono", value: pair[0], placeholder: "option_key" });
         const d = h("input", { class: "input", value: pair[1], placeholder: "what this option means" });
-        k.addEventListener("input", () => { pair[0] = k.value; markBuildEdited(); });
-        d.addEventListener("input", () => { pair[1] = d.value; markBuildEdited(); });
-        return h("div", { class: "cr" }, k, d, h("div", { style: { display: "flex", flexWrap: "wrap", gridColumn: "1 / -1" } },
-          editorMoveButtons(row.choice, j, `option ${pair[0] || j + 1}`, (entries) => { row.choice = entries; }),
-          [[0, "first"], [row.choice.length - 1, "last"]].map(([target, label]) => h("button", {
-            class: "btn sm ghost", disabled: j === target, "aria-label": `Move option ${pair[0] || j + 1} ${label}`,
-            onclick: () => { row.choice = moveEditorEntryTo(row.choice, j, target); markBuildEdited(); render(); },
-          }, label)),
-          [false, true].map((after) => h("button", { class: "btn sm ghost", "aria-label": `Insert option ${after ? "after" : "before"} ${pair[0] || j + 1}`,
-            onclick: () => { row.choice = insertEditorCriterion(row.choice, j, after, "choice"); markBuildEdited(); render(); } }, after ? "Insert after" : "Insert before")),
-          h("button", { class: "btn sm ghost", "aria-label": `Duplicate option ${pair[0] || j + 1}`,
-            onclick: () => { row.choice = duplicateChoiceOption(row.choice, j); markBuildEdited(); render(); } }, "Duplicate"),
-          h("button", { class: "btn sm ghost", title: "Remove option", "aria-label": `Remove option ${pair[0] || j + 1}`, onclick: () => { row.choice.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
+        k.addEventListener("input", () => {
+          pair[0] = k.value;
+          markBuildEdited();
+        });
+        d.addEventListener("input", () => {
+          pair[1] = d.value;
+          markBuildEdited();
+        });
+        return h(
+          "div",
+          { class: "cr" },
+          k,
+          d,
+          h(
+            "div",
+            { style: { display: "flex", flexWrap: "wrap", gridColumn: "1 / -1" } },
+            editorMoveButtons(row.choice, j, `option ${pair[0] || j + 1}`, (entries) => {
+              row.choice = entries;
+            }),
+            [
+              [0, "first"],
+              [row.choice.length - 1, "last"],
+            ].map(([target, label]) =>
+              h(
+                "button",
+                {
+                  class: "btn sm ghost",
+                  disabled: j === target,
+                  "aria-label": `Move option ${pair[0] || j + 1} ${label}`,
+                  onclick: () => {
+                    row.choice = moveEditorEntryTo(row.choice, j, target);
+                    markBuildEdited();
+                    render();
+                  },
+                },
+                label,
+              ),
+            ),
+            [false, true].map((after) =>
+              h(
+                "button",
+                {
+                  class: "btn sm ghost",
+                  "aria-label": `Insert option ${after ? "after" : "before"} ${pair[0] || j + 1}`,
+                  onclick: () => {
+                    row.choice = insertEditorCriterion(row.choice, j, after, "choice");
+                    markBuildEdited();
+                    render();
+                  },
+                },
+                after ? "Insert after" : "Insert before",
+              ),
+            ),
+            h(
+              "button",
+              {
+                class: "btn sm ghost",
+                "aria-label": `Duplicate option ${pair[0] || j + 1}`,
+                onclick: () => {
+                  row.choice = duplicateChoiceOption(row.choice, j);
+                  markBuildEdited();
+                  render();
+                },
+              },
+              "Duplicate",
+            ),
+            h(
+              "button",
+              {
+                class: "btn sm ghost",
+                title: "Remove option",
+                "aria-label": `Remove option ${pair[0] || j + 1}`,
+                onclick: () => {
+                  row.choice.splice(j, 1);
+                  markBuildEdited();
+                  render();
+                },
+              },
+              icon("x"),
+            ),
+          ),
+        );
       }),
-      h("div", {}, h("button", { class: "chip", onclick: () => { row.choice.push(["", ""]); markBuildEdited(); render(); } }, icon("plus"), "Add option")));
+      h(
+        "div",
+        {},
+        h(
+          "button",
+          {
+            class: "chip",
+            onclick: () => {
+              row.choice.push(["", ""]);
+              markBuildEdited();
+              render();
+            },
+          },
+          icon("plus"),
+          "Add option",
+        ),
+      ),
+    );
   } else if (row.type === "score") {
-    crit = h("div", { class: "crit" },
-      h("div", { class: "section-label", style: { margin: 0 } }, "Levels, in order from 0 (moving a level changes its numeric score)"),
+    crit = h(
+      "div",
+      { class: "crit" },
+      h(
+        "div",
+        { class: "section-label", style: { margin: 0 } },
+        "Levels, in order from 0 (moving a level changes its numeric score)",
+      ),
       h("button", { class: "btn sm ghost", onclick: () => reorderBuildCriteria(i, "reverse") }, "Reverse levels…"),
       row.score.map((lvl, j) => {
         const d = h("input", { class: "input", value: lvl, placeholder: `level ${j}` });
-        d.addEventListener("input", () => { row.score[j] = d.value; markBuildEdited(); });
-        return h("div", { class: "cr score" }, h("span", { class: "lv" }, String(j)), d, h("div", { style: { display: "flex", flexWrap: "wrap", gridColumn: "1 / -1" } },
-          editorMoveButtons(row.score, j, `level ${j}`, (entries) => { row.score = entries; }),
-          [[0, "first"], [row.score.length - 1, "last"]].map(([target, label]) => h("button", {
-            class: "btn sm ghost", disabled: j === target, "aria-label": `Move level ${j} ${label}`,
-            title: "Moving levels changes their numeric scores",
-            onclick: () => { row.score = moveEditorEntryTo(row.score, j, target); markBuildEdited(); render(); },
-          }, label)),
-          [false, true].map((after) => h("button", { class: "btn sm ghost", "aria-label": `Insert level ${after ? "after" : "before"} ${j}`,
-            title: "Inserting levels changes later numeric scores",
-            onclick: () => { row.score = insertEditorCriterion(row.score, j, after, "score"); markBuildEdited(); render(); } }, after ? "Insert after" : "Insert before")),
-          h("button", { class: "btn sm ghost", "aria-label": `Duplicate level ${j}`, title: "Insert a copy after this level; later numeric scores move up",
-            onclick: () => { row.score.splice(j + 1, 0, row.score[j]); markBuildEdited(); render(); } }, "Duplicate"),
-          h("button", { class: "btn sm ghost", title: "Remove level", "aria-label": `Remove level ${j}`, onclick: () => { row.score.splice(j, 1); markBuildEdited(); render(); } }, icon("x"))));
+        d.addEventListener("input", () => {
+          row.score[j] = d.value;
+          markBuildEdited();
+        });
+        return h(
+          "div",
+          { class: "cr score" },
+          h("span", { class: "lv" }, String(j)),
+          d,
+          h(
+            "div",
+            { style: { display: "flex", flexWrap: "wrap", gridColumn: "1 / -1" } },
+            editorMoveButtons(row.score, j, `level ${j}`, (entries) => {
+              row.score = entries;
+            }),
+            [
+              [0, "first"],
+              [row.score.length - 1, "last"],
+            ].map(([target, label]) =>
+              h(
+                "button",
+                {
+                  class: "btn sm ghost",
+                  disabled: j === target,
+                  "aria-label": `Move level ${j} ${label}`,
+                  title: "Moving levels changes their numeric scores",
+                  onclick: () => {
+                    row.score = moveEditorEntryTo(row.score, j, target);
+                    markBuildEdited();
+                    render();
+                  },
+                },
+                label,
+              ),
+            ),
+            [false, true].map((after) =>
+              h(
+                "button",
+                {
+                  class: "btn sm ghost",
+                  "aria-label": `Insert level ${after ? "after" : "before"} ${j}`,
+                  title: "Inserting levels changes later numeric scores",
+                  onclick: () => {
+                    row.score = insertEditorCriterion(row.score, j, after, "score");
+                    markBuildEdited();
+                    render();
+                  },
+                },
+                after ? "Insert after" : "Insert before",
+              ),
+            ),
+            h(
+              "button",
+              {
+                class: "btn sm ghost",
+                "aria-label": `Duplicate level ${j}`,
+                title: "Insert a copy after this level; later numeric scores move up",
+                onclick: () => {
+                  row.score.splice(j + 1, 0, row.score[j]);
+                  markBuildEdited();
+                  render();
+                },
+              },
+              "Duplicate",
+            ),
+            h(
+              "button",
+              {
+                class: "btn sm ghost",
+                title: "Remove level",
+                "aria-label": `Remove level ${j}`,
+                onclick: () => {
+                  row.score.splice(j, 1);
+                  markBuildEdited();
+                  render();
+                },
+              },
+              icon("x"),
+            ),
+          ),
+        );
       }),
-      h("div", {}, h("button", { class: "chip", onclick: () => { row.score.push(""); markBuildEdited(); render(); } }, icon("plus"), "Add level")));
+      h(
+        "div",
+        {},
+        h(
+          "button",
+          {
+            class: "chip",
+            onclick: () => {
+              row.score.push("");
+              markBuildEdited();
+              render();
+            },
+          },
+          icon("plus"),
+          "Add level",
+        ),
+      ),
+    );
   } else {
     const yes = h("input", { class: "input", value: row.noulYes, placeholder: "optional: what a yes means" });
     const no = h("input", { class: "input", value: row.noulNo, placeholder: "optional: what a no means" });
-    yes.addEventListener("input", () => { row.noulYes = yes.value; markBuildEdited(); });
-    no.addEventListener("input", () => { row.noulNo = no.value; markBuildEdited(); });
-    crit = h("div", { class: "crit" }, h("div", { class: "cr noul" }, h("span", { class: "k" }, "yes"), yes), h("div", { class: "cr noul" }, h("span", { class: "k" }, "no"), no));
+    yes.addEventListener("input", () => {
+      row.noulYes = yes.value;
+      markBuildEdited();
+    });
+    no.addEventListener("input", () => {
+      row.noulNo = no.value;
+      markBuildEdited();
+    });
+    crit = h(
+      "div",
+      { class: "crit" },
+      h("div", { class: "cr noul" }, h("span", { class: "k" }, "yes"), yes),
+      h("div", { class: "cr noul" }, h("span", { class: "k" }, "no"), no),
+    );
   }
-  return h("div", { class: "qcard" },
-    h("div", { class: "row" }, idInput, typeSel, h("button", { class: "btn sm ghost", "aria-expanded": String(!collapsed),
-      "aria-label": `${collapsed ? "Expand" : "Collapse"} question ${row.id || i + 1}`,
-      onclick: () => { const state = buildEditState(); if (collapsed) state.collapsed.delete(row); else state.collapsed.add(row); render(); } }, collapsed ? "Expand" : "Collapse")),
-    h("div", { class: "chips" },
-      editorMoveButtons(W.questions, i, `question ${row.id || i + 1}`, (entries) => { W.questions = entries; }),
-      [[0, "first"], [W.questions.length - 1, "last"]].map(([target, label]) => h("button", {
-        class: "btn sm ghost", disabled: i === target, "aria-label": `Move question ${row.id || i + 1} ${label}`,
-        onclick: () => { W.questions = moveEditorEntryTo(W.questions, i, target); markBuildEdited(); render(); },
-      }, `Move ${label}`)),
+  return h(
+    "div",
+    { class: "qcard" },
+    h(
+      "div",
+      { class: "row" },
+      idInput,
+      typeSel,
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          "aria-expanded": String(!collapsed),
+          "aria-label": `${collapsed ? "Expand" : "Collapse"} question ${row.id || i + 1}`,
+          onclick: () => {
+            const state = buildEditState();
+            if (collapsed) state.collapsed.delete(row);
+            else state.collapsed.add(row);
+            render();
+          },
+        },
+        collapsed ? "Expand" : "Collapse",
+      ),
+    ),
+    h(
+      "div",
+      { class: "chips" },
+      editorMoveButtons(W.questions, i, `question ${row.id || i + 1}`, (entries) => {
+        W.questions = entries;
+      }),
+      [
+        [0, "first"],
+        [W.questions.length - 1, "last"],
+      ].map(([target, label]) =>
+        h(
+          "button",
+          {
+            class: "btn sm ghost",
+            disabled: i === target,
+            "aria-label": `Move question ${row.id || i + 1} ${label}`,
+            onclick: () => {
+              W.questions = moveEditorEntryTo(W.questions, i, target);
+              markBuildEdited();
+              render();
+            },
+          },
+          `Move ${label}`,
+        ),
+      ),
       h("button", { class: "btn sm ghost", onclick: () => moveBuildQuestionToPosition(i) }, "Move to position"),
       copyButton,
       h("button", { class: "btn sm ghost", onclick: () => renameBuildQuestion(i) }, "Rename safely"),
-      [false, true].map((after) => h("button", { class: "btn sm ghost", onclick: () => insertBuildQuestion(i, after) }, after ? "Insert after" : "Insert before")),
+      [false, true].map((after) =>
+        h(
+          "button",
+          { class: "btn sm ghost", onclick: () => insertBuildQuestion(i, after) },
+          after ? "Insert after" : "Insert before",
+        ),
+      ),
       h("button", { class: "btn sm ghost", onclick: () => copyText(row.instructions || "") }, "Copy instructions"),
-      h("button", { class: "btn sm ghost", onclick: () => {
-        const normalized = [{ ...row, id: "question" }];
-        const error = questionEditorError(normalized);
-        if (error) return toast(error, "error");
-        const question = Object.values(toQuestions(normalized))[0];
-        copyText(JSON.stringify(question.criteria ?? {}, null, 2));
-      } }, "Copy criteria"),
-      h("button", { class: "btn sm ghost", onclick: () => duplicateBuildQuestion(i), "aria-label": `Duplicate question ${row.id || i + 1}` }, "Duplicate"),
-      h("button", { class: "btn sm ghost", title: "Remove question", "aria-label": `Remove question ${row.id || i + 1}`, onclick: () => deleteBuildQuestion(i) }, icon("trash"), "Remove")),
-    h("details", {}, h("summary", {}, "Question navigation and sharing"), h("div", { class: "chips" },
-      ["previous", "next"].map((direction) => h("button", { class: "btn sm ghost", onclick: () => {
-        const target = shownQuestionIndex(W.questions, visibleBuildQuestions(), i, direction);
-        if (target < 0) return toast(`No ${direction} shown question.`);
-        navigateBuildQuestion(target);
-      } }, `${direction === "previous" ? "Previous" : "Next"} shown question`)),
-      h("button", { class: "btn sm ghost", onclick: () => navigateBuildQuestion(i, true) }, "Focus instructions"),
-      h("button", { class: "btn sm ghost", onclick: () => {
-        if (buildRawText !== null) return toast("Apply the Raw JSON edits before sharing editor questions.", "error");
-        copyText(String(row.id || ""));
-      } }, "Copy id"),
-      h("button", { class: "btn sm ghost", onclick: () => shareAuthoringQuestions("markdown-copy", i) }, "Copy question Markdown"),
-      h("button", { class: "btn sm ghost", onclick: () => shareAuthoringQuestions("question-json", i) }, "Download question JSON"))),
-    h("span", { class: "faint", id: `build-criteria-count-${i}`, "aria-live": "polite" },
-      row.type === "choice" ? `${row.choice.filter(([key]) => key.trim()).length} named options`
-        : row.type === "score" ? `${row.score.filter((level) => level.trim()).length} defined levels`
-        : row.type === "noul" ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes` : "Coordinates only · no criteria"),
-    h("span", { class: "faint", id: `build-instruction-count-${i}`, "aria-live": "polite" }, `${Array.from(String(row.instructions || "")).length} instruction characters`),
-    ["choice", "score"].includes(row.type) ? h("button", { class: "btn sm ghost", onclick: () => {
-      W.questions[i] = removeBlankEditorCriteria(row); markBuildEdited(); render();
-    }, title: "Remove empty placeholders only; keep unnamed descriptions and every defined criterion" }, "Remove blank criterion rows") : null,
-    collapsed ? h("p", { class: "faint", style: { margin: 0, overflowWrap: "anywhere" } },
-      row.instructions ? `${row.instructions.slice(0, 160)}${row.instructions.length > 160 ? "…" : ""}` : "No instructions yet") : [instr, crit]);
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          onclick: () => {
+            const normalized = [{ ...row, id: "question" }];
+            const error = questionEditorError(normalized);
+            if (error) return toast(error, "error");
+            const question = Object.values(toQuestions(normalized))[0];
+            copyText(JSON.stringify(question.criteria ?? {}, null, 2));
+          },
+        },
+        "Copy criteria",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          onclick: () => duplicateBuildQuestion(i),
+          "aria-label": `Duplicate question ${row.id || i + 1}`,
+        },
+        "Duplicate",
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          title: "Remove question",
+          "aria-label": `Remove question ${row.id || i + 1}`,
+          onclick: () => deleteBuildQuestion(i),
+        },
+        icon("trash"),
+        "Remove",
+      ),
+    ),
+    h(
+      "details",
+      {},
+      h("summary", {}, "Question navigation and sharing"),
+      h(
+        "div",
+        { class: "chips" },
+        ["previous", "next"].map((direction) =>
+          h(
+            "button",
+            {
+              class: "btn sm ghost",
+              onclick: () => {
+                const target = shownQuestionIndex(W.questions, visibleBuildQuestions(), i, direction);
+                if (target < 0) return toast(`No ${direction} shown question.`);
+                navigateBuildQuestion(target);
+              },
+            },
+            `${direction === "previous" ? "Previous" : "Next"} shown question`,
+          ),
+        ),
+        h("button", { class: "btn sm ghost", onclick: () => navigateBuildQuestion(i, true) }, "Focus instructions"),
+        h(
+          "button",
+          {
+            class: "btn sm ghost",
+            onclick: () => {
+              if (buildRawText !== null)
+                return toast("Apply the Raw JSON edits before sharing editor questions.", "error");
+              copyText(String(row.id || ""));
+            },
+          },
+          "Copy id",
+        ),
+        h(
+          "button",
+          { class: "btn sm ghost", onclick: () => shareAuthoringQuestions("markdown-copy", i) },
+          "Copy question Markdown",
+        ),
+        h(
+          "button",
+          { class: "btn sm ghost", onclick: () => shareAuthoringQuestions("question-json", i) },
+          "Download question JSON",
+        ),
+      ),
+    ),
+    h(
+      "span",
+      { class: "faint", id: `build-criteria-count-${i}`, "aria-live": "polite" },
+      row.type === "choice"
+        ? `${row.choice.filter(([key]) => key.trim()).length} named options`
+        : row.type === "score"
+          ? `${row.score.filter((level) => level.trim()).length} defined levels`
+          : row.type === "noul"
+            ? `${[row.noulYes, row.noulNo].filter((value) => String(value || "").trim()).length} defined outcomes`
+            : "Coordinates only · no criteria",
+    ),
+    h(
+      "span",
+      { class: "faint", id: `build-instruction-count-${i}`, "aria-live": "polite" },
+      `${Array.from(String(row.instructions || "")).length} instruction characters`,
+    ),
+    ["choice", "score"].includes(row.type)
+      ? h(
+          "button",
+          {
+            class: "btn sm ghost",
+            onclick: () => {
+              W.questions[i] = removeBlankEditorCriteria(row);
+              markBuildEdited();
+              render();
+            },
+            title: "Remove empty placeholders only; keep unnamed descriptions and every defined criterion",
+          },
+          "Remove blank criterion rows",
+        )
+      : null,
+    collapsed
+      ? h(
+          "p",
+          { class: "faint", style: { margin: 0, overflowWrap: "anywhere" } },
+          row.instructions
+            ? `${row.instructions.slice(0, 160)}${row.instructions.length > 160 ? "…" : ""}`
+            : "No instructions yet",
+        )
+      : [instr, crit],
+  );
 }
 
 async function run() {
@@ -1051,14 +2504,24 @@ async function run() {
   render();
   try {
     const images = W.images.map((i) => ({ ...i }));
-    const result = await api("/api/workbench/run", { state: parseState(W.stateText), questions, images: imagesPayload() });
+    const result = await api("/api/workbench/run", {
+      state: parseState(W.stateText),
+      questions,
+      images: imagesPayload(),
+    });
     if (sequence !== buildRunSequence) return;
     result.images = images;
     W.result = result;
     buildRunContext = context;
     W.saveOpen = false;
-  } catch (e) { handleError(e); }
-  finally { if (sequence === buildRunSequence) { buildRunning = false; render(); } }
+  } catch (e) {
+    handleError(e);
+  } finally {
+    if (sequence === buildRunSequence) {
+      buildRunning = false;
+      render();
+    }
+  }
 }
 
 async function checkQuestions({ scroll = true } = {}) {
@@ -1066,12 +2529,18 @@ async function checkQuestions({ scroll = true } = {}) {
   if (!questions) return;
   const context = buildContext();
   try {
-    const report = await api("/api/workbench/lint", { state: parseState(W.stateText), questions, images: imageNames() });
+    const report = await api("/api/workbench/lint", {
+      state: parseState(W.stateText),
+      questions,
+      images: imageNames(),
+    });
     if (context !== buildContext()) return;
     W.lint = report;
     render();
     if (scroll) $("#lint")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) { handleError(e); }
+  } catch (e) {
+    handleError(e);
+  }
 }
 
 function renderLint() {
@@ -1079,30 +2548,91 @@ function renderLint() {
   // The Python Lab packs' extra advisory checks (report.lab): listed after the built-in findings, never counted above.
   const extra = Array.isArray(W.lint.lab?.findings) ? W.lint.lab.findings : [];
   const head = (level, n) => (level === "problem" ? `${n} ${n === 1 ? "problem" : "problems"}` : `${n} advice`);
-  const finding = (f) => h("li", { class: `lint ${f.level}` },
-    f.level === "problem" ? statusBadge("fail", "Problem") : h("span", { class: "badge warning" }, icon("question"), "Advice"),
-    h("div", {},
-      f.question ? h("code", { class: "mono" }, f.question) : h("span", { class: "faint" }, "State"),
-      h("div", { class: "muted" }, f.message),
-      f.guide ? h("a", { class: "faint", href: f.guide, target: "_blank", rel: "noopener" }, "Why: How to build with System One") : null));
-  return h("div", { class: "panel", id: "lint" },
-    h("div", { class: "panel-head" }, h("h2", {}, "Question checks"),
+  const finding = (f) =>
+    h(
+      "li",
+      { class: `lint ${f.level}` },
+      f.level === "problem"
+        ? statusBadge("fail", "Problem")
+        : h("span", { class: "badge warning" }, icon("question"), "Advice"),
+      h(
+        "div",
+        {},
+        f.question ? h("code", { class: "mono" }, f.question) : h("span", { class: "faint" }, "State"),
+        h("div", { class: "muted" }, f.message),
+        f.guide
+          ? h(
+              "a",
+              { class: "faint", href: f.guide, target: "_blank", rel: "noopener" },
+              "Why: How to build with System One",
+            )
+          : null,
+      ),
+    );
+  return h(
+    "div",
+    { class: "panel", id: "lint" },
+    h(
+      "div",
+      { class: "panel-head" },
+      h("h2", {}, "Question checks"),
       counts.problem ? h("span", { class: "badge critical" }, icon("alert"), head("problem", counts.problem)) : null,
       counts.advice ? h("span", { class: "badge warning" }, icon("question"), head("advice", counts.advice)) : null,
       h("div", { class: "spacer" }),
-      h("button", { class: "btn sm ghost", title: "Close", "aria-label": "Close question checks", onclick: () => { W.lint = null; render(); } }, icon("x"))),
-    h("div", { class: "panel-body grid", style: { gap: "8px" } },
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          title: "Close",
+          "aria-label": "Close question checks",
+          onclick: () => {
+            W.lint = null;
+            render();
+          },
+        },
+        icon("x"),
+      ),
+    ),
+    h(
+      "div",
+      { class: "panel-body grid", style: { gap: "8px" } },
       findings.length
         ? h("ul", { class: "lint-list" }, findings.map(finding))
-        : h("div", { class: "callout good" }, icon("check"), h("div", {}, h("b", {}, extra.length ? "No findings from the built-in checks." : "No findings."),
-          h("div", { class: "muted" }, "Checks catch common mistakes, not every one. Run the questions and read the answers."))),
-      extra.length ? [h("div", { class: "section-label", style: { margin: "6px 0 0" } }, `Additional checks · ${extra.length}`),
-        h("p", { class: "faint", style: { fontSize: "12px", margin: 0 } }, "Advisory checks from Lab packs, also plain code. They are not counted in the badges above."),
-        h("ul", { class: "lint-list", "data-lint": "lab" }, extra.map(finding))] : null,
-      h("p", { class: "faint", style: { fontSize: "12px" } },
+        : h(
+            "div",
+            { class: "callout good" },
+            icon("check"),
+            h(
+              "div",
+              {},
+              h("b", {}, extra.length ? "No findings from the built-in checks." : "No findings."),
+              h(
+                "div",
+                { class: "muted" },
+                "Checks catch common mistakes, not every one. Run the questions and read the answers.",
+              ),
+            ),
+          ),
+      extra.length
+        ? [
+            h("div", { class: "section-label", style: { margin: "6px 0 0" } }, `Additional checks · ${extra.length}`),
+            h(
+              "p",
+              { class: "faint", style: { fontSize: "12px", margin: 0 } },
+              "Advisory checks from Lab packs, also plain code. They are not counted in the badges above.",
+            ),
+            h("ul", { class: "lint-list", "data-lint": "lab" }, extra.map(finding)),
+          ]
+        : null,
+      h(
+        "p",
+        { class: "faint", style: { fontSize: "12px" } },
         "Plain code read these questions: no model call, no cost. A problem is almost certainly a mistake; advice is a pattern ",
         h("a", { href: guide, target: "_blank", rel: "noopener" }, "TypeSafe's guide"),
-        " recommends against, and may be what you meant. After an edit, press Check questions again.")));
+        " recommends against, and may be what you meant. After an edit, press Check questions again.",
+      ),
+    ),
+  );
 }
 
 async function exportCode() {
@@ -1110,64 +2640,194 @@ async function exportCode() {
     const questions = validBuildQuestions();
     if (!questions) return;
     const context = buildContext();
-    const exported = await api("/api/workbench/export", { state: parseState(W.stateText), questions, images: imageNames() });
+    const exported = await api("/api/workbench/export", {
+      state: parseState(W.stateText),
+      questions,
+      images: imageNames(),
+    });
     if (context !== buildContext()) return;
     W.exported = exported;
     render();
     $("#export")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) { handleError(e); }
+  } catch (e) {
+    handleError(e);
+  }
 }
 
 function renderExport() {
-  const tabs = [["python", "Python SDK"], ["javascript", "JavaScript SDK"], ["curl", "curl"]];
-  return h("div", { class: "panel", id: "export" },
-    h("div", { class: "panel-head" }, icon("code"), h("h2", {}, "This request as code"), h("div", { class: "spacer" }),
-      h("div", { class: "tabs" }, tabs.map(([k, l]) => h("button", { class: `tab${W.exportTab === k ? " active" : ""}`, onclick: () => { W.exportTab = k; render(); } }, l))),
-      h("button", { class: "btn sm ghost", onclick: () => { W.exported = null; render(); } }, icon("x"))),
-    h("div", { class: "panel-body" }, h("div", { class: "code" },
-      h("button", { class: "btn sm copy", onclick: () => copyText(W.exported[W.exportTab]) }, icon("copy"), "Copy"),
-      h("pre", {}, W.exported[W.exportTab])),
-      h("p", { class: "faint", style: { fontSize: "12px", marginTop: "8px" } },
-        W.exportTab === "python" ? "pip install typesafe-sdk (Python 3.10+), then set TYPESAFE_API_KEY."
-          : W.exportTab === "javascript" ? "npm install @typesafe-ai/sdk (Node 20+), then set TYPESAFE_API_KEY."
+  const tabs = [
+    ["python", "Python SDK"],
+    ["javascript", "JavaScript SDK"],
+    ["curl", "curl"],
+  ];
+  return h(
+    "div",
+    { class: "panel", id: "export" },
+    h(
+      "div",
+      { class: "panel-head" },
+      icon("code"),
+      h("h2", {}, "This request as code"),
+      h("div", { class: "spacer" }),
+      h(
+        "div",
+        { class: "tabs" },
+        tabs.map(([k, l]) =>
+          h(
+            "button",
+            {
+              class: `tab${W.exportTab === k ? " active" : ""}`,
+              onclick: () => {
+                W.exportTab = k;
+                render();
+              },
+            },
+            l,
+          ),
+        ),
+      ),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          onclick: () => {
+            W.exported = null;
+            render();
+          },
+        },
+        icon("x"),
+      ),
+    ),
+    h(
+      "div",
+      { class: "panel-body" },
+      h(
+        "div",
+        { class: "code" },
+        h("button", { class: "btn sm copy", onclick: () => copyText(W.exported[W.exportTab]) }, icon("copy"), "Copy"),
+        h("pre", {}, W.exported[W.exportTab]),
+      ),
+      h(
+        "p",
+        { class: "faint", style: { fontSize: "12px", marginTop: "8px" } },
+        W.exportTab === "python"
+          ? "pip install typesafe-sdk (Python 3.10+), then set TYPESAFE_API_KEY."
+          : W.exportTab === "javascript"
+            ? "npm install @typesafe-ai/sdk (Node 20+), then set TYPESAFE_API_KEY."
             : "Set TYPESAFE_API_KEY in your shell first.",
-        W.images.length ? " The snippet loads each picture from a file named after it; save the pictures beside it first." : "")));
+        W.images.length
+          ? " The snippet loads each picture from a file named after it; save the pictures beside it first."
+          : "",
+      ),
+    ),
+  );
 }
 
 function renderSaveForm() {
-  const name = h("input", { class: "input", value: W.saveName, placeholder: "Test name, e.g. “angry refund routes to billing”" });
-  name.addEventListener("input", () => { W.saveName = name.value; });
+  const name = h("input", {
+    class: "input",
+    value: W.saveName,
+    placeholder: "Test name, e.g. “angry refund routes to billing”",
+  });
+  name.addEventListener("input", () => {
+    W.saveName = name.value;
+  });
   const notes = h("input", { class: "input", value: W.saveNotes, placeholder: "Notes (optional)" });
-  notes.addEventListener("input", () => { W.saveNotes = notes.value; });
+  notes.addEventListener("input", () => {
+    W.saveNotes = notes.value;
+  });
   const rows = Object.entries(W.result.answers).map(([qid, a]) => {
     const e = W.expect[qid] || (W.expect[qid] = defaultExpect(a));
     const numField = (key) => {
       const inp = h("input", { class: "input mono", value: e[key] ?? "", placeholder: key });
-      inp.addEventListener("input", () => { if (inp.value === "") delete e[key]; else e[key] = Number(inp.value); });
+      inp.addEventListener("input", () => {
+        if (inp.value === "") delete e[key];
+        else e[key] = Number(inp.value);
+      });
       return inp;
     };
     if (a.type === "choice") {
-      const sel = h("select", { class: "input" }, Object.keys(a.probabilities).map((k) => h("option", { value: k, selected: e.choice === k }, k)));
-      sel.addEventListener("change", () => { e.choice = sel.value; });
-      return h("div", { class: "exp" }, h("code", {}, qid), h("span", { class: "faint" }, "choice ="), sel, h("span", {}));
+      const sel = h(
+        "select",
+        { class: "input" },
+        Object.keys(a.probabilities).map((k) => h("option", { value: k, selected: e.choice === k }, k)),
+      );
+      sel.addEventListener("change", () => {
+        e.choice = sel.value;
+      });
+      return h(
+        "div",
+        { class: "exp" },
+        h("code", {}, qid),
+        h("span", { class: "faint" }, "choice ="),
+        sel,
+        h("span", {}),
+      );
     }
     if (a.type === "box") {
-      return h("div", { class: "exp" }, h("code", {}, qid), h("span", { class: "faint", title: "Overlap with the box saved from this run: 1 is identical, 0 is no overlap" }, "IoU with this box ≥"), numField("iou_min"), h("span", {}));
+      return h(
+        "div",
+        { class: "exp" },
+        h("code", {}, qid),
+        h(
+          "span",
+          { class: "faint", title: "Overlap with the box saved from this run: 1 is identical, 0 is no overlap" },
+          "IoU with this box ≥",
+        ),
+        numField("iou_min"),
+        h("span", {}),
+      );
     }
-    return h("div", { class: "exp" }, h("code", {}, qid), h("span", { class: "faint" }, a.type === "score" ? "score in" : "P(yes) in"), numField("min"), numField("max"));
+    return h(
+      "div",
+      { class: "exp" },
+      h("code", {}, qid),
+      h("span", { class: "faint" }, a.type === "score" ? "score in" : "P(yes) in"),
+      numField("min"),
+      numField("max"),
+    );
   });
-  return h("div", { class: "panel pop" },
-    h("div", { class: "panel-head" }, icon("save"), h("h2", {}, W.editingId ? `Update test “${W.editingId}”` : "Save as a test"), h("div", { class: "spacer" }),
-      h("button", { class: "btn sm ghost", onclick: () => { W.saveOpen = false; render(); } }, icon("x"))),
-    h("div", { class: "panel-body grid", style: { gap: "10px" } },
-      h("p", { class: "muted", style: { fontSize: "12.5px" } }, "Expectations start from the answers you just got. Edit them to what you believe is correct; the Tests tab re-runs this state live and checks the answers against them."),
-      name, notes, h("div", { class: "grid", style: { gap: "6px" } }, rows),
-      h("div", {}, h("button", { class: "btn primary", onclick: saveTest }, icon("save"), "Save to data/workbench/"))));
+  return h(
+    "div",
+    { class: "panel pop" },
+    h(
+      "div",
+      { class: "panel-head" },
+      icon("save"),
+      h("h2", {}, W.editingId ? `Update test “${W.editingId}”` : "Save as a test"),
+      h("div", { class: "spacer" }),
+      h(
+        "button",
+        {
+          class: "btn sm ghost",
+          onclick: () => {
+            W.saveOpen = false;
+            render();
+          },
+        },
+        icon("x"),
+      ),
+    ),
+    h(
+      "div",
+      { class: "panel-body grid", style: { gap: "10px" } },
+      h(
+        "p",
+        { class: "muted", style: { fontSize: "12.5px" } },
+        "Expectations start from the answers you just got. Edit them to what you believe is correct; the Tests tab re-runs this state live and checks the answers against them.",
+      ),
+      name,
+      notes,
+      h("div", { class: "grid", style: { gap: "6px" } }, rows),
+      h("div", {}, h("button", { class: "btn primary", onclick: saveTest }, icon("save"), "Save to data/workbench/")),
+    ),
+  );
 }
 
 async function saveTest() {
   try {
-    if (W.result && buildResultStale()) return toast("Run the edited request before saving its expectations as a test.", "error");
+    if (W.result && buildResultStale())
+      return toast("Run the edited request before saving its expectations as a test.", "error");
     if (buildRawText !== null) return toast("Apply the Raw JSON edits before saving this request.", "error");
     const questions = toQuestions(W.questions);
     const error = questionEditorError();
@@ -1175,8 +2835,13 @@ async function saveTest() {
     const submittedContext = buildContext();
     const expect = Object.fromEntries(Object.entries(W.expect).filter(([qid]) => Object.hasOwn(questions, qid)));
     const { item } = await api("/api/workbench/items", {
-      id: W.editingId || undefined, name: W.saveName, notes: W.saveNotes, state: parseState(W.stateText),
-      questions, expect, images: imagesPayload(),
+      id: W.editingId || undefined,
+      name: W.saveName,
+      notes: W.saveNotes,
+      state: parseState(W.stateText),
+      questions,
+      expect,
+      images: imagesPayload(),
     });
     W.items = (await api("/api/workbench/items")).items;
     W.editingId = item.id;
@@ -1184,5 +2849,7 @@ async function saveTest() {
     buildBaseline = submittedContext;
     toast(`Saved data/workbench/${item.id}.json`);
     render();
-  } catch (e) { handleError(e); }
+  } catch (e) {
+    handleError(e);
+  }
 }

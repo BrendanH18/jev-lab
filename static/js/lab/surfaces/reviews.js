@@ -202,15 +202,23 @@ const LIMITS = deepFreeze({
   thank_tone_at: { min: 0, max: 4, step: 0.1, label: "Thank-you template at tone ≥" },
 });
 // Which policy settings read each answer in jev/reviews.py triage().
-const CUTS = Object.freeze({ safety: ["safety_at"], about_us: ["about_us_min"], wants_reply: ["wants_reply_at"], severity: ["p1_at", "p2_at"],
-  tone: ["thank_tone_at"], topic: [] });
+const CUTS = Object.freeze({
+  safety: ["safety_at"],
+  about_us: ["about_us_min"],
+  wants_reply: ["wants_reply_at"],
+  severity: ["p1_at", "p2_at"],
+  tone: ["thank_tone_at"],
+  topic: [],
+});
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const plain = (value) => (typeof value === "string" ? value : "");
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : JSON.stringify(value) ?? "");
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const percent = (value, digits = 0) => `${(value * 100).toFixed(digits)}%`;
-const labelMap = (value) => (isObject(value) ? Object.fromEntries(Object.entries(value).filter(([, label]) => typeof label === "string")) : {});
+const labelMap = (value) =>
+  isObject(value) ? Object.fromEntries(Object.entries(value).filter(([, label]) => typeof label === "string")) : {};
 
 function deepFreeze(value) {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -223,7 +231,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -249,11 +261,20 @@ function draftOf(raw) {
 
 function reviewOf(raw, channels) {
   const draft = draftOf(raw);
-  return draft ? { stars: draft.stars, channel: draft.channel, channel_label: plain(channels[draft.channel]), about: draft.about, text: draft.text } : null;
+  return draft
+    ? {
+        stars: draft.stars,
+        channel: draft.channel,
+        channel_label: plain(channels[draft.channel]),
+        about: draft.about,
+        text: draft.text,
+      }
+    : null;
 }
 
 // The same words as far as Jev is concerned: the stars never reach it, and the server trims text and subject.
-const sameWords = (a, b) => !!a && !!b && a.channel === b.channel && a.text.trim() === b.text.trim() && a.about.trim() === b.about.trim();
+const sameWords = (a, b) =>
+  !!a && !!b && a.channel === b.channel && a.text.trim() === b.text.trim() && a.about.trim() === b.about.trim();
 
 function setupOf(source) {
   const setup = read(source, "setup", null);
@@ -265,9 +286,13 @@ function setupOf(source) {
 const ENTRIES = new WeakMap();
 function historyEntry(raw, channels) {
   if (ENTRIES.has(raw)) return ENTRIES.get(raw);
-  const entry = deepFreeze({ call: Number.isInteger(raw.call) ? raw.call : null, at: finite(raw.at),
+  const entry = deepFreeze({
+    call: Number.isInteger(raw.call) ? raw.call : null,
+    at: finite(raw.at),
     review: reviewOf(raw.review, channels) || { stars: null, channel: "", channel_label: "", about: "", text: "" },
-    answers: isObject(raw.answers) ? clone(raw.answers) : {}, meta: isObject(raw.meta) ? clone(raw.meta) : null });
+    answers: isObject(raw.answers) ? clone(raw.answers) : {},
+    meta: isObject(raw.meta) ? clone(raw.meta) : null,
+  });
   ENTRIES.set(raw, entry);
   return entry;
 }
@@ -275,7 +300,12 @@ function historyEntry(raw, channels) {
 function historyOf(source, channels) {
   const list = read(source, "history", EMPTY);
   if (!Array.isArray(list)) return EMPTY;
-  return Object.freeze(list.filter(isObject).slice(-HISTORY_SHOWN).map((raw) => historyEntry(raw, channels)));
+  return Object.freeze(
+    list
+      .filter(isObject)
+      .slice(-HISTORY_SHOWN)
+      .map((raw) => historyEntry(raw, channels)),
+  );
 }
 
 function callsOf(source, history) {
@@ -287,15 +317,34 @@ function callsOf(source, history) {
 
 function exampleItem(raw, index, draft, history, channels) {
   const review = reviewOf(raw, channels);
-  const expect = isObject(raw.expect) ? { action: typeof raw.expect.action === "string" ? raw.expect.action : null,
-    team: typeof raw.expect.team === "string" ? raw.expect.team : null,
-    flags: Array.isArray(raw.expect.flags) ? raw.expect.flags.filter((flag) => typeof flag === "string") : [] } : null;
+  const expect = isObject(raw.expect)
+    ? {
+        action: typeof raw.expect.action === "string" ? raw.expect.action : null,
+        team: typeof raw.expect.team === "string" ? raw.expect.team : null,
+        flags: Array.isArray(raw.expect.flags) ? raw.expect.flags.filter((flag) => typeof flag === "string") : [],
+      }
+    : null;
   const trimmed = review.text.trim();
-  return { index, position: index + 1, label: plain(raw.label).trim() || `Example ${index + 1}`, stars: review.stars, channel: review.channel,
-    channel_label: review.channel_label, about: review.about, text: review.text, chars: Array.from(review.text).length,
-    words: trimmed ? trimmed.split(/\s+/).length : 0, expect,
-    loaded: !!draft && draft.stars === review.stars && draft.channel === review.channel && draft.about === review.about && draft.text === review.text,
-    triaged: history.filter((entry) => sameWords(entry.review, review)).length };
+  return {
+    index,
+    position: index + 1,
+    label: plain(raw.label).trim() || `Example ${index + 1}`,
+    stars: review.stars,
+    channel: review.channel,
+    channel_label: review.channel_label,
+    about: review.about,
+    text: review.text,
+    chars: Array.from(review.text).length,
+    words: trimmed ? trimmed.split(/\s+/).length : 0,
+    expect,
+    loaded:
+      !!draft &&
+      draft.stars === review.stars &&
+      draft.channel === review.channel &&
+      draft.about === review.about &&
+      draft.text === review.text,
+    triaged: history.filter((entry) => sameWords(entry.review, review)).length,
+  };
 }
 
 // source: {
@@ -318,7 +367,13 @@ export function reviewsExamplesCtx(source = {}) {
     if (examples !== built.examples || key !== built.key) {
       const labels = channels();
       // index stays the example's position in the setup's list, so actions.use(index) loads that very example.
-      built = { key, examples, items: deepFreeze(examples.flatMap((raw, index) => (isObject(raw) ? [exampleItem(raw, index, draft, history, labels)] : []))) };
+      built = {
+        key,
+        examples,
+        items: deepFreeze(
+          examples.flatMap((raw, index) => (isObject(raw) ? [exampleItem(raw, index, draft, history, labels)] : [])),
+        ),
+      };
     }
     return built.items;
   };
@@ -331,14 +386,30 @@ export function reviewsExamplesCtx(source = {}) {
       return Array.isArray(arranged) ? arranged : list;
     },
     data: {
-      get channels() { return deepFreeze(channels()); },
-      get actions() { return deepFreeze(labelMap(setupOf(source)?.actions)); },
-      get teams() { return deepFreeze(labelMap(setupOf(source)?.teams)); },
-      get topic_teams() { return deepFreeze(labelMap(setupOf(source)?.topic_teams)); },
-      get draft() { return deepFreeze(draftOf(read(source, "draft", null))); },
-      get loaded() { return items().find((item) => item.loaded)?.index ?? null; },
-      get running() { return running(); },
-      get calls() { return callsOf(source, historyOf(source, channels())); },
+      get channels() {
+        return deepFreeze(channels());
+      },
+      get actions() {
+        return deepFreeze(labelMap(setupOf(source)?.actions));
+      },
+      get teams() {
+        return deepFreeze(labelMap(setupOf(source)?.teams));
+      },
+      get topic_teams() {
+        return deepFreeze(labelMap(setupOf(source)?.topic_teams));
+      },
+      get draft() {
+        return deepFreeze(draftOf(read(source, "draft", null)));
+      },
+      get loaded() {
+        return items().find((item) => item.loaded)?.index ?? null;
+      },
+      get running() {
+        return running();
+      },
+      get calls() {
+        return callsOf(source, historyOf(source, channels()));
+      },
     },
     actions: {
       use(index) {
@@ -354,7 +425,9 @@ export function reviewsExamplesCtx(source = {}) {
         return call(source, "focusRun");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.label === "string" && item.label ? item.label : String(index + 1)),
   };
   return ctx;
@@ -365,13 +438,22 @@ export function reviewsExamplesCtx(source = {}) {
 function answerItem(id, answer, question, position, policy, topics) {
   const type = typeof answer.type === "string" ? answer.type : "";
   const legend = isObject(answer.legend) ? answer.legend : {};
-  let value = null, display = "", label = "", scale = null, probabilities = [];
+  let value = null,
+    display = "",
+    label = "",
+    scale = null,
+    probabilities = [];
   if (type === "choice") {
     value = answer.choice === null || answer.choice === undefined ? null : String(answer.choice);
-    if (value !== null) { display = value.replace(/_/g, " "); label = typeof topics[value] === "string" ? topics[value] : display; }
+    if (value !== null) {
+      display = value.replace(/_/g, " ");
+      label = typeof topics[value] === "string" ? topics[value] : display;
+    }
   } else if (type === "score") {
     value = finite(answer.score);
-    const levels = Object.keys(legend).length || (isObject(question) && Array.isArray(question.criteria) ? question.criteria.length : 0);
+    const levels =
+      Object.keys(legend).length ||
+      (isObject(question) && Array.isArray(question.criteria) ? question.criteria.length : 0);
     scale = levels ? levels - 1 : null;
     if (value !== null) {
       display = scale === null ? value.toFixed(2) : `${value.toFixed(2)} / ${scale}`;
@@ -382,31 +464,56 @@ function answerItem(id, answer, question, position, policy, topics) {
     value = finite(answer.noul);
     if (value !== null) display = percent(value, 1);
   }
-  if (type === "noul") probabilities = value === null ? [] : [{ key: "yes", p: value }, { key: "no", p: 1 - value }];
+  if (type === "noul")
+    probabilities =
+      value === null
+        ? []
+        : [
+            { key: "yes", p: value },
+            { key: "no", p: 1 - value },
+          ];
   else if (type === "choice" || type === "score") {
-    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) => (finite(p) === null ? [] : [{ key, p }]));
+    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) =>
+      finite(p) === null ? [] : [{ key, p }],
+    );
   }
   let top = null;
   for (const entry of probabilities) if (!top || entry.p > top.p) top = entry;
   const cuts = (CUTS[id] || []).flatMap((key) => (finite(policy?.[key]) === null ? [] : [{ key, at: policy[key] }]));
-  return { id, position, type, instructions: isObject(question) ? asText(question.instructions) : "", value, display, label, scale, probabilities,
-    top: top ? { ...top } : null, confidence: type === "noul" ? null : finite(answer.confidence), cuts, answer: clone(answer) };
+  return {
+    id,
+    position,
+    type,
+    instructions: isObject(question) ? asText(question.instructions) : "",
+    value,
+    display,
+    label,
+    scale,
+    probabilities,
+    top: top ? { ...top } : null,
+    confidence: type === "noul" ? null : finite(answer.confidence),
+    cuts,
+    answer: clone(answer),
+  };
 }
 
 function snapPolicy(settings, changes) {
-  if (!isObject(changes) || !Object.keys(changes).length) throw new Error("Name at least one policy setting to change.");
+  if (!isObject(changes) || !Object.keys(changes).length)
+    throw new Error("Name at least one policy setting to change.");
   const next = { ...settings };
   for (const [key, raw] of Object.entries(changes)) {
     const limit = LIMITS[key];
     if (!limit) throw new Error(`There is no policy setting "${key}".`);
     const value = typeof raw === "string" ? toNumber(raw) : finite(raw);
     if (value === null) throw new Error(`${limit.label} must be a number.`);
-    if (value < limit.min - 1e-9 || value > limit.max + 1e-9) throw new Error(`${limit.label} must be from ${limit.min} to ${limit.max}.`);
+    if (value < limit.min - 1e-9 || value > limit.max + 1e-9)
+      throw new Error(`${limit.label} must be from ${limit.min} to ${limit.max}.`);
     const steps = (value - limit.min) / limit.step;
     if (Math.abs(steps - Math.round(steps)) > 1e-6) throw new Error(`${limit.label} moves in steps of ${limit.step}.`);
     next[key] = Number((limit.min + Math.round(steps) * limit.step).toFixed(2));
   }
-  const p1 = finite(next.p1_at), p2 = finite(next.p2_at);
+  const p1 = finite(next.p1_at),
+    p2 = finite(next.p2_at);
   if (p1 !== null && p2 !== null && p1 < p2) {
     if ("p1_at" in changes && "p2_at" in changes) throw new Error("The P1 cut cannot sit below the P2 cut.");
     if ("p1_at" in changes) next.p2_at = p1;
@@ -441,8 +548,14 @@ export function reviewsResultCtx(source = {}) {
       const questions = isObject(r.trace?.request?.questions) ? r.trace.request.questions : {};
       const names = topics();
       const policy = isObject(r.policy) ? r.policy : null;
-      built = { key: parts, items: deepFreeze(Object.entries(r.answers).filter(([, answer]) => isObject(answer))
-        .map(([id, answer], index) => answerItem(id, answer, questions[id], index + 1, policy, names))) };
+      built = {
+        key: parts,
+        items: deepFreeze(
+          Object.entries(r.answers)
+            .filter(([, answer]) => isObject(answer))
+            .map(([id, answer], index) => answerItem(id, answer, questions[id], index + 1, policy, names)),
+        ),
+      };
     }
     return built.items;
   };
@@ -451,8 +564,19 @@ export function reviewsResultCtx(source = {}) {
     return setupOf(source) && isObject(value) ? value : null;
   };
   const running = () => read(source, "running", false) === true;
-  const needSetup = () => { if (!setupOf(source) || !settings()) throw new Error("The policy has not loaded yet."); };
-  const policyCopy = (value) => (isObject(value) ? Object.freeze(Object.fromEntries(Object.keys(LIMITS).filter((key) => key in value).map((key) => [key, value[key]]))) : null);
+  const needSetup = () => {
+    if (!setupOf(source) || !settings()) throw new Error("The policy has not loaded yet.");
+  };
+  const policyCopy = (value) =>
+    isObject(value)
+      ? Object.freeze(
+          Object.fromEntries(
+            Object.keys(LIMITS)
+              .filter((key) => key in value)
+              .map((key) => [key, value[key]]),
+          ),
+        )
+      : null;
   const ctx = {
     items,
     shown: () => {
@@ -461,31 +585,74 @@ export function reviewsResultCtx(source = {}) {
       return Array.isArray(arranged) ? arranged : list;
     },
     data: {
-      get review() { const r = result(); return r ? deepFreeze(reviewOf(r.review, channels())) : null; },
-      get draft() { return deepFreeze(draftOf(read(source, "draft", null))); },
-      get triage() { return frozenCopy(result()?.triage); },
-      get policy() { return policyCopy(result()?.policy); },
-      get settings() { return policyCopy(settings()); },
-      get defaults() { return policyCopy(setupOf(source)?.policy); },
-      get limits() { return LIMITS; },
+      get review() {
+        const r = result();
+        return r ? deepFreeze(reviewOf(r.review, channels())) : null;
+      },
+      get draft() {
+        return deepFreeze(draftOf(read(source, "draft", null)));
+      },
+      get triage() {
+        return frozenCopy(result()?.triage);
+      },
+      get policy() {
+        return policyCopy(result()?.policy);
+      },
+      get settings() {
+        return policyCopy(settings());
+      },
+      get defaults() {
+        return policyCopy(setupOf(source)?.policy);
+      },
+      get limits() {
+        return LIMITS;
+      },
       get changed() {
-        const now = settings(), defaults = setupOf(source)?.policy;
+        const now = settings(),
+          defaults = setupOf(source)?.policy;
         if (!now || !isObject(defaults)) return EMPTY;
-        return Object.freeze(Object.keys(LIMITS).filter((key) => finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) > 1e-9));
+        return Object.freeze(
+          Object.keys(LIMITS).filter(
+            (key) =>
+              finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) > 1e-9,
+          ),
+        );
       },
       get labels() {
         const setup = setupOf(source);
-        return deepFreeze({ topics: topics(), teams: labelMap(setup?.teams), actions: labelMap(setup?.actions), channels: channels(),
-          flags: labelMap(read(source, "flagLabels", NONE)) });
+        return deepFreeze({
+          topics: topics(),
+          teams: labelMap(setup?.teams),
+          actions: labelMap(setup?.actions),
+          channels: channels(),
+          flags: labelMap(read(source, "flagLabels", NONE)),
+        });
       },
-      get topic_teams() { return deepFreeze(labelMap(setupOf(source)?.topic_teams)); },
-      get questions() { const q = result()?.trace?.request?.questions; return isObject(q) ? frozenCopy(q) : null; },
-      get meta() { return frozenCopy(isObject(result()?.meta) ? result().meta : null); },
-      get trace() { return frozenCopy(isObject(result()?.trace) ? result().trace : null); },
-      get note() { return plain(read(source, "note", "")); },
-      get running() { return running(); },
-      get calls() { return callsOf(source, historyOf(source, channels())); },
-      get history() { return historyOf(source, channels()); },
+      get topic_teams() {
+        return deepFreeze(labelMap(setupOf(source)?.topic_teams));
+      },
+      get questions() {
+        const q = result()?.trace?.request?.questions;
+        return isObject(q) ? frozenCopy(q) : null;
+      },
+      get meta() {
+        return frozenCopy(isObject(result()?.meta) ? result().meta : null);
+      },
+      get trace() {
+        return frozenCopy(isObject(result()?.trace) ? result().trace : null);
+      },
+      get note() {
+        return plain(read(source, "note", ""));
+      },
+      get running() {
+        return running();
+      },
+      get calls() {
+        return callsOf(source, historyOf(source, channels()));
+      },
+      get history() {
+        return historyOf(source, channels());
+      },
     },
     actions: {
       setPolicy(changes) {
@@ -515,7 +682,9 @@ export function reviewsResultCtx(source = {}) {
         return call(source, "inspect");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;

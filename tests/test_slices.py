@@ -20,17 +20,33 @@ def by_value(rep):
 
 class FieldTests(unittest.TestCase):
     def test_offers_fields_with_two_to_twenty_values(self):
-        rows = [row({"text": "t%d" % i, "channel": ["email", "chat"][i % 2], "one": "x", "n": i % 3,
-                     "_expect": {"q": True}}, True) for i in range(30)]
+        rows = [
+            row(
+                {
+                    "text": "t%d" % i,
+                    "channel": ["email", "chat"][i % 2],
+                    "one": "x",
+                    "n": i % 3,
+                    "_expect": {"q": True},
+                },
+                True,
+            )
+            for i in range(30)
+        ]
         self.assertEqual(slices.fields(rows), [{"name": "channel", "values": 2}, {"name": "n", "values": 3}])
         # Text rows have no fields; a field missing from some rows counts "(none)" as a value.
-        self.assertEqual(slices.fields([row("plain", True), row({"lang": "en"}, True)]), [{"name": "lang", "values": 2}])
+        self.assertEqual(
+            slices.fields([row("plain", True), row({"lang": "en"}, True)]), [{"name": "lang", "values": 2}]
+        )
 
 
 class EvaluateTests(unittest.TestCase):
     def test_counts_accuracy_and_automation_per_value(self):
-        rows = ([row({"channel": "email"}, True)] * 6 + [row({"channel": "email"}, False, automated=False)]
-                + [row({"channel": "chat"}, True), row({"channel": "chat"}, False), row({"channel": "chat"}, True, False)])
+        rows = (
+            [row({"channel": "email"}, True)] * 6
+            + [row({"channel": "email"}, False, automated=False)]
+            + [row({"channel": "chat"}, True), row({"channel": "chat"}, False), row({"channel": "chat"}, True, False)]
+        )
         rep = slices.evaluate(rows)
         self.assertEqual(rep["field"], "channel")
         self.assertEqual([s["value"] for s in rep["slices"]], ["email", "chat"])  # largest first
@@ -77,7 +93,12 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual([s["value"] for s in tie["slices"]], ["z", "(none)"])
 
     def test_values_compare_as_text_and_long_values_are_cut(self):
-        rows = [row({"n": 1}, True), row({"n": "1"}, True), row({"n": "x" * 200}, True), row({"n": "x" * 199 + "y"}, True)]
+        rows = [
+            row({"n": 1}, True),
+            row({"n": "1"}, True),
+            row({"n": "x" * 200}, True),
+            row({"n": "x" * 199 + "y"}, True),
+        ]
         values = [s["value"] for s in slices.evaluate(rows, "n")["slices"]]
         self.assertEqual(values[0], "1")
         # Long values that differ only past the cut stay separate slices; only the shown value is cut.

@@ -20,15 +20,24 @@ from jev import checks, workbench  # noqa: E402
 class SliceCliTests(unittest.TestCase):
     def test_list_and_run_distinguish_slice_failure_and_missing_slice(self):
         questions = {"refund": {"type": "noul", "instructions": "Refund requested?"}}
-        rows = [{"text": str(i), "channel": "email" if i == 0 else "web", "_expect": {"refund": True}}
-                for i in range(10)]
+        rows = [
+            {"text": str(i), "channel": "email" if i == 0 else "web", "_expect": {"refund": True}} for i in range(10)
+        ]
         target = {"field": "channel", "value": "email", "min_accuracy": 1, "min_coverage": 1}
-        spec = {"model": "jev-1.14.0", "gates": {"refund": 0.6}, "min_accuracy": 0.9,
-                "min_coverage": 1, "slice_targets": [target]}
+        spec = {
+            "model": "jev-1.14.0",
+            "gates": {"refund": 0.6},
+            "min_accuracy": 0.9,
+            "min_coverage": 1,
+            "slice_targets": [target],
+        }
         client = FakeClient(lambda state, _: {"refund": 0.02 if state["text"] == "0" else 0.98})
         client.configured, client.backend = True, "fake"
-        client.guard = type("Guard", (), {"snapshot": lambda self: {
-            "live_calls": len(client.calls), "input_tokens": 1000, "spent_usd": 0.0}})()
+        client.guard = type(
+            "Guard",
+            (),
+            {"snapshot": lambda self: {"live_calls": len(client.calls), "input_tokens": 1000, "spent_usd": 0.0}},
+        )()
 
         def main(*args):
             output = io.StringIO()
@@ -37,7 +46,9 @@ class SliceCliTests(unittest.TestCase):
             return code, output.getvalue()
 
         with tempfile.TemporaryDirectory() as directory, patch.object(workbench, "WORKBENCH_DIR", Path(directory)):
-            workbench.save_dataset({"name": "Channels", "rows": "\n".join(map(json.dumps, rows)), "questions": questions})
+            workbench.save_dataset(
+                {"name": "Channels", "rows": "\n".join(map(json.dumps, rows)), "questions": questions}
+            )
             checks.save_check("channels", spec)
             code, text = main("--list")
             self.assertEqual(code, 0, text)

@@ -176,8 +176,16 @@ import { clone } from "../kit.js";
 
 // Mirrors jev/find.py (FOUND, ABSENT, MAX_QUERIES, MAX_LINES, MAX_DOC_CHARS, search(top=5)) and static/js/find.js
 // (hits listed from 1%, highlighted from 5%); tests/js/lab/surface-demo-find.test.mjs keeps them in step.
-export const FIND_RULES = Object.freeze({ found: 0.7, absent: 0.35, max_queries: 8, max_lines: 255, max_doc_chars: 60000, top: 5,
-  list_min: 0.01, highlight_min: 0.05 });
+export const FIND_RULES = Object.freeze({
+  found: 0.7,
+  absent: 0.35,
+  max_queries: 8,
+  max_lines: 255,
+  max_doc_chars: 60000,
+  top: 5,
+  list_min: 0.01,
+  highlight_min: 0.05,
+});
 const HEADING = /^Section [A-Z]:/;
 const VERDICTS = ["answered", "partial", "absent"];
 const EMPTY = Object.freeze([]);
@@ -186,7 +194,11 @@ const isObject = (value) => !!value && typeof value === "object" && !Array.isArr
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const asText = (value) => (typeof value === "string" ? value : "");
 const lineId = (index) => `L${String(index).padStart(3, "0")}`;
-const codePoints = (text) => { let count = 0; for (const _char of text) count += 1; return count; };
+const codePoints = (text) => {
+  let count = 0;
+  for (const _char of text) count += 1;
+  return count;
+};
 
 function deepFreeze(value) {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -199,7 +211,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -210,7 +226,10 @@ function call(source, name, ...args) {
 
 // The page's lines(): split on "\n", trim, drop blanks.
 export function findDocumentLines(text) {
-  return asText(text).split("\n").map((line) => line.trim()).filter(Boolean);
+  return asText(text)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 // Canonical document items for a list of trimmed lines: the shape replaceItems requires.
@@ -251,8 +270,18 @@ function hitOf(raw, rank, sections) {
   const index = Number.isInteger(raw.index) && raw.index >= 0 ? raw.index : null;
   const prob = finite(raw.prob);
   const heading = HEADING.test(text);
-  const section = sections && index !== null && index < sections.length ? sections[index] ?? null : heading ? text : null;
-  return { rank: rank + 1, id: asText(raw.id), index, text, prob, heading, section, listed: rank === 0 || (prob !== null && prob >= FIND_RULES.list_min) };
+  const section =
+    sections && index !== null && index < sections.length ? (sections[index] ?? null) : heading ? text : null;
+  return {
+    rank: rank + 1,
+    id: asText(raw.id),
+    index,
+    text,
+    prob,
+    heading,
+    section,
+    listed: rank === 0 || (prob !== null && prob >= FIND_RULES.list_min),
+  };
 }
 
 // What one raw search result (the page's own Search call) gives the surfaces. Kept per result object, so the items stay the same objects until
@@ -267,17 +296,28 @@ function viewOf(result) {
   const lines = Number.isInteger(result.lines) && result.lines >= 0 ? result.lines : null;
   const rows = (Array.isArray(result.results) ? result.results : []).map((raw, qi) => {
     const res = isObject(raw) ? raw : {};
-    const hits = (Array.isArray(res.hits) ? res.hits : []).filter(isObject).map((hit, rank) => hitOf(hit, rank, sections));
+    const hits = (Array.isArray(res.hits) ? res.hits : [])
+      .filter(isObject)
+      .map((hit, rank) => hitOf(hit, rank, sections));
     const where = answers[`q${qi}.where`];
     const probs = isObject(where) && isObject(where.probabilities) ? where.probabilities : null;
     return {
-      position: qi + 1, key: `q${qi}`, query: asText(res.query), exists: finite(res.exists),
-      verdict: VERDICTS.includes(res.verdict) ? res.verdict : null, confidence: finite(res.confidence),
-      hits, top: hits[0] ? { ...hits[0] } : null, top_prob: hits[0] ? hits[0].prob : null,
-      line_probs: probs && lines !== null ? Array.from({ length: lines }, (_, index) => finite(probs[lineId(index)])) : null,
+      position: qi + 1,
+      key: `q${qi}`,
+      query: asText(res.query),
+      exists: finite(res.exists),
+      verdict: VERDICTS.includes(res.verdict) ? res.verdict : null,
+      confidence: finite(res.confidence),
+      hits,
+      top: hits[0] ? { ...hits[0] } : null,
+      top_prob: hits[0] ? hits[0].prob : null,
+      line_probs:
+        probs && lines !== null ? Array.from({ length: lines }, (_, index) => finite(probs[lineId(index)])) : null,
     };
   });
-  const thresholds = isObject(result.thresholds) ? { found: finite(result.thresholds.found), absent: finite(result.thresholds.absent) } : null;
+  const thresholds = isObject(result.thresholds)
+    ? { found: finite(result.thresholds.found), absent: finite(result.thresholds.absent) }
+    : null;
   const view = deepFreeze({
     rows,
     lines,
@@ -333,31 +373,59 @@ export function findResultsCtx(source = {}) {
     if (!current) throw new Error("Search first: there are no results yet.");
     const item = current.rows.find((row) => row.position === position);
     if (!item) throw new Error(`There is no question ${String(position)} in these results.`);
-    if (!ctx.shown().includes(item)) throw new Error(`Question ${position} is hidden by the current Lab filters. Clear them to go to it.`);
+    if (!ctx.shown().includes(item))
+      throw new Error(`Question ${position} is hidden by the current Lab filters. Clear them to go to it.`);
     return item;
   };
   const ctx = {
     items: () => view()?.rows || EMPTY,
     shown: () => shownOf(ctx, source, ctx.items()),
     data: {
-      get lines() { return view()?.lines ?? null; },
-      get truncated() { return view()?.truncated === true; },
-      get thresholds() { return view()?.thresholds ?? null; },
-      get rules() { return FIND_RULES; },
-      get meta() { return view()?.meta ?? null; },
-      get request() { return view()?.request ?? null; },
-      get trace() { return view()?.trace ?? null; },
-      get searched() { return view()?.searched ?? EMPTY; },
-      get queries() { return Object.freeze(queries()); },
+      get lines() {
+        return view()?.lines ?? null;
+      },
+      get truncated() {
+        return view()?.truncated === true;
+      },
+      get thresholds() {
+        return view()?.thresholds ?? null;
+      },
+      get rules() {
+        return FIND_RULES;
+      },
+      get meta() {
+        return view()?.meta ?? null;
+      },
+      get request() {
+        return view()?.request ?? null;
+      },
+      get trace() {
+        return view()?.trace ?? null;
+      },
+      get searched() {
+        return view()?.searched ?? EMPTY;
+      },
+      get queries() {
+        return Object.freeze(queries());
+      },
       get stale() {
         const current = view();
         if (!current) return false;
-        const typed = queries().map((query) => query.trim()).filter(Boolean).slice(0, FIND_RULES.max_queries);
+        const typed = queries()
+          .map((query) => query.trim())
+          .filter(Boolean)
+          .slice(0, FIND_RULES.max_queries);
         return JSON.stringify(typed) !== JSON.stringify(current.searched);
       },
-      get focus() { return focusOf(source, view()); },
-      get pending() { return flag(source, "pending"); },
-      get editing() { return flag(source, "editing"); },
+      get focus() {
+        return focusOf(source, view());
+      },
+      get pending() {
+        return flag(source, "pending");
+      },
+      get editing() {
+        return flag(source, "editing");
+      },
       get searches() {
         const count = read(source, "searches", 0);
         return Number.isInteger(count) && count >= 0 ? count : 0;
@@ -373,10 +441,14 @@ export function findResultsCtx(source = {}) {
         const item = shownItem(position);
         const hit = item.hits.find((entry) => entry.rank === rank);
         if (!hit) throw new Error(`Question ${position} has no hit ${String(rank)}.`);
-        if (!hit.listed || hit.index === null) throw new Error(`The card does not list hit ${rank} of question ${position} (under ${FIND_RULES.list_min * 100}%).`);
+        if (!hit.listed || hit.index === null)
+          throw new Error(
+            `The card does not list hit ${rank} of question ${position} (under ${FIND_RULES.list_min * 100}%).`,
+          );
         if (flag(source, "editing")) throw new Error("The document is open for editing. Press Done first.");
         call(source, "focusResult", item.position - 1);
-        if (call(source, "showLine", hit.index) === false) throw new Error(`${hit.id} is not shown in the document now (a Lab filter may hide it).`);
+        if (call(source, "showLine", hit.index) === false)
+          throw new Error(`${hit.id} is not shown in the document now (a Lab filter may hide it).`);
         return hit;
       },
       inspect() {
@@ -387,14 +459,18 @@ export function findResultsCtx(source = {}) {
         if (typeof text !== "string" || !text.trim()) throw new Error("There is no question to add.");
         const clean = text.trim();
         const boxes = queries();
-        if (boxes.length >= FIND_RULES.max_queries) throw new Error(`One search takes at most ${FIND_RULES.max_queries} questions. Remove one first.`);
-        if (boxes.some((query) => query.trim().toLowerCase() === clean.toLowerCase())) throw new Error("That question is already in a box.");
+        if (boxes.length >= FIND_RULES.max_queries)
+          throw new Error(`One search takes at most ${FIND_RULES.max_queries} questions. Remove one first.`);
+        if (boxes.some((query) => query.trim().toLowerCase() === clean.toLowerCase()))
+          throw new Error("That question is already in a box.");
         if (flag(source, "pending")) throw new Error("Wait for the search to finish.");
         call(source, "addQuery", clean);
         return clean;
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && Number.isInteger(item.position) ? `Q${item.position}` : String(index + 1)),
   };
   return ctx;
@@ -418,7 +494,9 @@ function textsFrom(items, canonical) {
     const expected = findLineItems(texts);
     items.forEach((item, index) => {
       if (JSON.stringify(item) !== JSON.stringify(expected[index])) {
-        throw new Error(`Line ${index + 1} is out of step with its position: an edit must rebuild index, id, text, heading, section and searched, in that order.`);
+        throw new Error(
+          `Line ${index + 1} is out of step with its position: an edit must rebuild index, id, text, heading, section and searched, in that order.`,
+        );
       }
     });
   }
@@ -433,7 +511,10 @@ function checkWritable(source) {
 function writeTexts(source, texts, label) {
   if (!texts.length) throw new Error("The document needs at least one line.");
   const text = texts.join("\n");
-  if (codePoints(text) > FIND_RULES.max_doc_chars) throw new Error(`The document would be ${codePoints(text).toLocaleString("en-US")} characters; Find takes at most ${FIND_RULES.max_doc_chars.toLocaleString("en-US")}.`);
+  if (codePoints(text) > FIND_RULES.max_doc_chars)
+    throw new Error(
+      `The document would be ${codePoints(text).toLocaleString("en-US")} characters; Find takes at most ${FIND_RULES.max_doc_chars.toLocaleString("en-US")}.`,
+    );
   call(source, "setText", text, typeof label === "string" && label ? label : "Lab edit");
   return texts.length;
 }
@@ -457,25 +538,46 @@ export function findDocumentCtx(source = {}) {
   };
   const ctx = {
     items,
-    shown: () => shownOf(ctx, source, items().filter((item) => item.searched)),
+    shown: () =>
+      shownOf(
+        ctx,
+        source,
+        items().filter((item) => item.searched),
+      ),
     data: {
-      get text() { return text(); },
-      get chars() { return codePoints(text()); },
-      get lines() { return items().length; },
-      get searchable() { return Math.min(items().length, FIND_RULES.max_lines); },
+      get text() {
+        return text();
+      },
+      get chars() {
+        return codePoints(text());
+      },
+      get lines() {
+        return items().length;
+      },
+      get searchable() {
+        return Math.min(items().length, FIND_RULES.max_lines);
+      },
       get sample() {
         const sample = read(source, "sample", null);
         return typeof sample === "string" && sample !== "" && sample === text();
       },
-      get editing() { return flag(source, "editing"); },
-      get pending() { return flag(source, "pending"); },
-      get results() { return resultView(source)?.rows ?? EMPTY; },
+      get editing() {
+        return flag(source, "editing");
+      },
+      get pending() {
+        return flag(source, "pending");
+      },
+      get results() {
+        return resultView(source)?.rows ?? EMPTY;
+      },
       get focused() {
         const current = resultView(source);
         const focus = focusOf(source, current);
         return focus === null ? null : current.rows[focus - 1];
       },
-      get rules() { return FIND_RULES; },
+      get rules() {
+        return FIND_RULES;
+      },
     },
     actions: {
       replaceItems(nextItems, { label } = {}) {
@@ -494,12 +596,17 @@ export function findDocumentCtx(source = {}) {
         if (flag(source, "editing")) throw new Error("The document is open for editing. Press Done first.");
         const item = items().find((entry) => entry.index === index);
         if (!item) throw new Error(`There is no line ${String(index)} in the document.`);
-        if (!ctx.shown().includes(item)) throw new Error(`${item.id} is not shown now${item.searched ? " (a Lab filter hides it)" : " (only the first 255 lines are shown)"}.`);
+        if (!ctx.shown().includes(item))
+          throw new Error(
+            `${item.id} is not shown now${item.searched ? " (a Lab filter hides it)" : " (only the first 255 lines are shown)"}.`,
+          );
         if (call(source, "showLine", index) === false) throw new Error(`${item.id} is not on screen.`);
         return item;
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;

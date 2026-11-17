@@ -11,10 +11,20 @@ from labkit import pack_tests  # noqa: E402
 from jev import health  # noqa: E402
 from jev.lab.packs import health_views  # noqa: E402
 
-TEAM = {"team": {"type": "choice", "instructions": "Which team handles `text`?",
-                 "criteria": {"billing": "Charges and refunds", "shipping": "Delivery problems"}}}
-WHOLE = {"team": {"type": "choice", "instructions": "Which team handles the ticket?",
-                  "criteria": {"billing": "Charges and refunds", "shipping": "Delivery problems"}}}
+TEAM = {
+    "team": {
+        "type": "choice",
+        "instructions": "Which team handles `text`?",
+        "criteria": {"billing": "Charges and refunds", "shipping": "Delivery problems"},
+    }
+}
+WHOLE = {
+    "team": {
+        "type": "choice",
+        "instructions": "Which team handles the ticket?",
+        "criteria": {"billing": "Charges and refunds", "shipping": "Delivery problems"},
+    }
+}
 
 
 def row(text, ident, team=None, test=False):
@@ -28,29 +38,65 @@ def row(text, ident, team=None, test=False):
 
 CASES = {
     "same_view_different_labels": {
-        "hit": ([row("Bag torn badly", "T-1", "shipping"), row("Bag torn badly", "T-2", "billing"), row("Refund please", "T-3", "billing")], TEAM),
+        "hit": (
+            [
+                row("Bag torn badly", "T-1", "shipping"),
+                row("Bag torn badly", "T-2", "billing"),
+                row("Refund please", "T-3", "billing"),
+            ],
+            TEAM,
+        ),
         # Agreeing labels; a conflict on one exact input (the built-in finding); a held-out copy whose label is never read.
-        "miss": ([row("Bag torn badly", "T-1", "shipping"), row("Bag torn badly", "T-2", "shipping"), row("Refund please", "T-3", "billing"),
-                  row("Refund please", "T-3", "shipping"), row("Bag torn badly", "T-9", "billing", test=True)], TEAM),
+        "miss": (
+            [
+                row("Bag torn badly", "T-1", "shipping"),
+                row("Bag torn badly", "T-2", "shipping"),
+                row("Refund please", "T-3", "billing"),
+                row("Refund please", "T-3", "shipping"),
+                row("Bag torn badly", "T-9", "billing", test=True),
+            ],
+            TEAM,
+        ),
         "rows": [1, 2],
-        "message": re.compile(r"^`team` reads `text`, and 2 rows that read the same there but differ elsewhere carry different labels")},
+        "message": re.compile(
+            r"^`team` reads `text`, and 2 rows that read the same there but differ elsewhere carry different labels"
+        ),
+    },
     "same_view_across_split": {
-        "hit": ([row("Bag torn badly", "T-1"), row("Bag torn badly", "T-2", test=True), row("Refund please", "T-3")], TEAM),
-        "miss": ([row("Bag torn badly", "T-1"), row("Bag torn badly", "T-1", test=True), row("Refund please", "T-3")], TEAM),
+        "hit": (
+            [row("Bag torn badly", "T-1"), row("Bag torn badly", "T-2", test=True), row("Refund please", "T-3")],
+            TEAM,
+        ),
+        "miss": (
+            [row("Bag torn badly", "T-1"), row("Bag torn badly", "T-1", test=True), row("Refund please", "T-3")],
+            TEAM,
+        ),
         "rows": [1, 2],
-        "message": re.compile(r"^`team` reads `text`, which is the same on tuning and held-out rows that differ elsewhere \(2 rows\)")},
+        "message": re.compile(
+            r"^`team` reads `text`, which is the same on tuning and held-out rows that differ elsewhere \(2 rows\)"
+        ),
+    },
 }
 
 
 class HealthViewsTests(pack_tests(health_views.PACK, CASES)):
     def test_questions_reading_the_whole_row_are_left_to_exact_identity(self):
-        rows = [row("Bag torn badly", "T-1", "shipping"), row("Bag torn badly", "T-2", "billing"), row("Bag torn badly", "T-3", test=True)]
+        rows = [
+            row("Bag torn badly", "T-1", "shipping"),
+            row("Bag torn badly", "T-2", "billing"),
+            row("Bag torn badly", "T-3", test=True),
+        ]
         self.assertEqual(health_views.same_view_different_labels(rows, WHOLE), [])
         self.assertEqual(health_views.same_view_across_split(rows, WHOLE), [])
 
     def test_a_question_reading_the_picture_sees_different_pictures_as_different(self):
-        damage = {"damage": {"type": "choice", "instructions": "Is the bag in `photo` damaged? The note says `text`.",
-                             "criteria": {"torn": "Torn or split", "intact": "Undamaged"}}}
+        damage = {
+            "damage": {
+                "type": "choice",
+                "instructions": "Is the bag in `photo` damaged? The note says `text`.",
+                "criteria": {"torn": "Torn or split", "intact": "Undamaged"},
+            }
+        }
         torn = dict(row("Bag arrived", "T-1"), _image="torn-bag", _expect={"damage": "torn"})
         intact = dict(row("Bag arrived", "T-2"), _image="intact-bag", _expect={"damage": "intact"})
         self.assertEqual(health_views.same_view_different_labels([torn, intact], damage), [])

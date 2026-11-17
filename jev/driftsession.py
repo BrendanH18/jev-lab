@@ -26,8 +26,11 @@ def input_key(row: Any) -> str:
 
 def context(dataset: dict, members: list) -> str:
     # Question/Choice order belongs to the saved snapshot; row field order does not.
-    raw = json.dumps([dataset, [[item["line"], input_key(item["row"])] for item in members]],
-                     ensure_ascii=False, separators=(",", ":"))
+    raw = json.dumps(
+        [dataset, [[item["line"], input_key(item["row"])] for item in members]],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -44,8 +47,7 @@ def _queue(dataset: dict, members: Any) -> dict:
         if type(line) is not int or not 1 <= line <= workbench.MAX_BULK_ROWS or line in lines:
             raise WorkbenchError("Traffic queue has an invalid or repeated line")
         lines.add(line)
-        if (not isinstance(row, dict) or not row
-                or workbench.LABEL_KEY in row or workbench.TEST_KEY in row):
+        if not isinstance(row, dict) or not row or workbench.LABEL_KEY in row or workbench.TEST_KEY in row:
             raise WorkbenchError("Traffic queue inputs must be objects without labels or test markers")
         workbench.validate_state(row)
         workbench.row_picture(row)
@@ -53,12 +55,23 @@ def _queue(dataset: dict, members: Any) -> dict:
         if key in have or key in seen:
             raise WorkbenchError("Traffic queue contains repeated inputs or inputs already in the dataset")
         seen.add(key)
-        items.append({"index": line - 1, "line": line, "row": row,
-                      "labels": {qid: None for qid in questions}, "open": list(check["gates"])})
-    return {"questions": questions, "gates": check["gates"], "items": items,
-            "room": max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"])),
-            "counts": {"eligible": len(items), "queued": len(items), "in_dataset": 0,
-                       "repeated": 0, "unsupported": 0}, "session_context": context(dataset, members)}
+        items.append(
+            {
+                "index": line - 1,
+                "line": line,
+                "row": row,
+                "labels": {qid: None for qid in questions},
+                "open": list(check["gates"]),
+            }
+        )
+    return {
+        "questions": questions,
+        "gates": check["gates"],
+        "items": items,
+        "room": max(0, workbench.MAX_BULK_ROWS - len(dataset["rows"])),
+        "counts": {"eligible": len(items), "queued": len(items), "in_dataset": 0, "repeated": 0, "unsupported": 0},
+        "session_context": context(dataset, members),
+    }
 
 
 def _edits(items: Any, queue: dict) -> list:
@@ -105,9 +118,15 @@ def export_session(dataset_id: str, snapshot: Any, members: Any, items: Any) -> 
     queue = _queue(dataset, members)
     if not isinstance(snapshot, str) or snapshot != queue["session_context"]:
         raise WorkbenchError("Dataset, check or traffic queue changed. Download before saving dataset changes")
-    session = {"format": "jev-traffic-label-draft", "version": 1, "dataset": dataset_id,
-               "context": snapshot, "questions": queue["questions"], "members": members,
-               "items": _edits(items, queue)}
+    session = {
+        "format": "jev-traffic-label-draft",
+        "version": 1,
+        "dataset": dataset_id,
+        "context": snapshot,
+        "questions": queue["questions"],
+        "members": members,
+        "items": _edits(items, queue),
+    }
     _size(session)
     return session
 
@@ -119,17 +138,28 @@ def import_session(dataset_id: str, session: Any) -> dict:
     if not isinstance(session, dict) or set(session) != keys:
         raise WorkbenchError("Supply a file from Download traffic labeling draft")
     _size(session)
-    if (session["format"] != "jev-traffic-label-draft" or type(session["version"]) is not int
-            or session["version"] != 1 or session["dataset"] != dataset_id):
+    if (
+        session["format"] != "jev-traffic-label-draft"
+        or type(session["version"]) is not int
+        or session["version"] != 1
+        or session["dataset"] != dataset_id
+    ):
         raise WorkbenchError("Traffic labeling draft does not match this dataset")
     dataset = workbench.load_dataset(dataset_id)
     queue = _queue(dataset, session["members"])
-    if (session["context"] != queue["session_context"]
-            or json.dumps(session["questions"]) != json.dumps(queue["questions"])):
+    if session["context"] != queue["session_context"] or json.dumps(session["questions"]) != json.dumps(
+        queue["questions"]
+    ):
         raise WorkbenchError("Traffic labeling draft needs its original queue and unchanged saved dataset/check")
     edits = _edits(session["items"], queue)
     by_line = {item["line"]: item for item in queue["items"]}
     for edit in edits:
         by_line[edit["line"]]["labels"].update(edit["labels"])
-    return {"labeling": queue, "counts": {"rows": len(queue["items"]), "edited_rows": len(edits),
-                                          "labels": sum(len(item["labels"]) for item in edits)}}
+    return {
+        "labeling": queue,
+        "counts": {
+            "rows": len(queue["items"]),
+            "edited_rows": len(edits),
+            "labels": sum(len(item["labels"]) for item in edits),
+        },
+    }

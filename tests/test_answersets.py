@@ -18,25 +18,40 @@ OPTIONS = ("billing", "shipping", "account", "other")
 
 
 class ConfigTests(unittest.TestCase):
-    questions = {"dept": {"type": "choice"}, "refund": {"type": "noul"},
-                 "urgency": {"type": "score"}, "where": {"type": "box"}}
+    questions = {
+        "dept": {"type": "choice"},
+        "refund": {"type": "noul"},
+        "urgency": {"type": "score"},
+        "where": {"type": "box"},
+    }
 
     def test_only_fitted_configuration_survives(self):
         fitted = {"cut": 0.2, "coverage": 0.9, "answers": {"dept": "billing"}, "summary": {"rows": 100}}
         spec = {q: fitted for q in ("dept", "refund", "urgency")}
-        self.assertEqual(answersets.validate_config(spec, self.questions),
-                         {q: {"cut": 0.2, "coverage": 0.9} for q in spec})
+        self.assertEqual(
+            answersets.validate_config(spec, self.questions), {q: {"cut": 0.2, "coverage": 0.9} for q in spec}
+        )
         self.assertEqual(answersets.validate_config(None, self.questions), {})
         self.assertEqual(answersets.validate_config({}, self.questions), {})
-        self.assertEqual(answersets.validate_config({"dept": {"cut": 0, "coverage": 0.8},
-                                                    "refund": {"cut": 1, "coverage": 0.95}}, self.questions),
-                         {"dept": {"cut": 0.0, "coverage": 0.8}, "refund": {"cut": 1.0, "coverage": 0.95}})
+        self.assertEqual(
+            answersets.validate_config(
+                {"dept": {"cut": 0, "coverage": 0.8}, "refund": {"cut": 1, "coverage": 0.95}}, self.questions
+            ),
+            {"dept": {"cut": 0.0, "coverage": 0.8}, "refund": {"cut": 1.0, "coverage": 0.95}},
+        )
 
     def test_rejects_invalid_saved_cuts(self):
-        bad = [[], {"missing": {"cut": 0.2, "coverage": 0.9}},
-               {"where": {"cut": 0.2, "coverage": 0.9}}, {"dept": []}, {"dept": {"cut": 0.2}}]
-        for field, values in (("cut", [True, None, "0.2", -0.1, 1.1, float("nan"), float("inf")]),
-                              ("coverage", [True, None, "0.9", 0, 1, -0.1, 1.1, float("nan")])):
+        bad = [
+            [],
+            {"missing": {"cut": 0.2, "coverage": 0.9}},
+            {"where": {"cut": 0.2, "coverage": 0.9}},
+            {"dept": []},
+            {"dept": {"cut": 0.2}},
+        ]
+        for field, values in (
+            ("cut", [True, None, "0.2", -0.1, 1.1, float("nan"), float("inf")]),
+            ("coverage", [True, None, "0.9", 0, 1, -0.1, 1.1, float("nan")]),
+        ):
             bad += [{"dept": dict({"cut": 0.2, "coverage": 0.9}, **{field: value})} for value in values]
         for spec in bad:
             with self.subTest(spec=spec), self.assertRaises(WorkbenchError):
@@ -120,17 +135,27 @@ class EvaluateTests(unittest.TestCase):
         rows = [row(i, {"billing": 0.9, "shipping": 0.1}, "billing") for i in range(18)]
         rep = answersets.evaluate(rows, 0.95)
         self.assertEqual((rep["cut"], rep["summary"], rep["needed"]), (None, None, 19))
-        self.assertIsNotNone(answersets.evaluate(rows + [row(18, {"billing": 0.9, "shipping": 0.1}, "billing")], 0.95)["cut"])
+        self.assertIsNotNone(
+            answersets.evaluate(rows + [row(18, {"billing": 0.9, "shipping": 0.1}, "billing")], 0.95)["cut"]
+        )
 
     def test_noul_and_score(self):
-        nouls = [{"index": i, "answer": {"type": "noul", "noul": p}, "label": label}
-                 for i, (p, label) in enumerate([(0.9, "yes"), (0.8, True), (0.2, "no"), (0.6, "no"), (0.1, False)])]
+        nouls = [
+            {"index": i, "answer": {"type": "noul", "noul": p}, "label": label}
+            for i, (p, label) in enumerate([(0.9, "yes"), (0.8, True), (0.2, "no"), (0.6, "no"), (0.1, False)])
+        ]
         rep = answersets.evaluate(nouls, 0.8)
         self.assertEqual(rep["type"], "noul")
         self.assertEqual({r["label"] for r in rep["rows"]}, {"yes", "no"})
         self.assertTrue(all(r["covered"] for r in rep["rows"]))
-        scores = [{"index": i, "answer": {"type": "score", "score": 1.0, "probabilities": {"0": 0.1, "1": 0.7, "2": 0.2}},
-                   "label": label} for i, label in enumerate([1, 1, 1, 2, "1"])]
+        scores = [
+            {
+                "index": i,
+                "answer": {"type": "score", "score": 1.0, "probabilities": {"0": 0.1, "1": 0.7, "2": 0.2}},
+                "label": label,
+            }
+            for i, label in enumerate([1, 1, 1, 2, "1"])
+        ]
         rep = answersets.evaluate(scores, 0.8)
         self.assertEqual(rep["type"], "score")
         self.assertEqual(rep["rows"][3]["set"], ["1", "2"])  # the 5th smallest score is 0.8, so the cut is 0.2
@@ -142,7 +167,9 @@ class EvaluateTests(unittest.TestCase):
         with self.assertRaisesRegex(CalibrationError, "Box"):
             answersets.evaluate([{"index": 0, "answer": {"type": "box", "box": {}}, "label": None}])
         with self.assertRaisesRegex(CalibrationError, "same question"):
-            answersets.evaluate([row(0, {"a": 1.0}, "a"), {"index": 1, "answer": {"type": "noul", "noul": 0.5}, "label": "yes"}])
+            answersets.evaluate(
+                [row(0, {"a": 1.0}, "a"), {"index": 1, "answer": {"type": "noul", "noul": 0.5}, "label": "yes"}]
+            )
         with self.assertRaisesRegex(CalibrationError, "Run Bulk"):
             answersets.evaluate([])
         for bad in (1, 0.4, True, "0.9"):
@@ -167,16 +194,19 @@ class EvaluateTests(unittest.TestCase):
         self.assertTrue(lo - 1e-12 <= answersets.cut(train, 0.9) <= hi + 1e-12)
 
     def test_cuts_never_train_on_a_heldout_duplicate(self):
-        rows = [row(i, {"a": 0.6 + (i // 4) * 0.05, "b": 0.4 - (i // 4) * 0.05}, "a",
-                    row={"text": "group %d" % (i // 4)}) for i in range(20)]
+        rows = [
+            row(i, {"a": 0.6 + (i // 4) * 0.05, "b": 0.4 - (i // 4) * 0.05}, "a", row={"text": "group %d" % (i // 4)})
+            for i in range(20)
+        ]
         with patch.object(answersets, "cut", wraps=answersets.cut) as fit:
             report = answersets.evaluate(rows, 0.8)
         assigned = holdout.assign([holdout._key(r) for r in rows], list(range(20)), 5)
         self.assertEqual(report["holdout"]["rows"], 20)
         self.assertEqual(len(fit.call_args_list), 6)
         for f, call in enumerate(fit.call_args_list[1:]):
-            self.assertEqual(call.args[0], [1 - r["answer"]["probabilities"]["a"]
-                                            for r, fold in zip(rows, assigned) if fold != f])
+            self.assertEqual(
+                call.args[0], [1 - r["answer"]["probabilities"]["a"] for r, fold in zip(rows, assigned) if fold != f]
+            )
 
     def test_duplicate_inputs_do_not_supply_unseen_folds(self):
         rows = [row(i, {"a": 0.9, "b": 0.1}, "a", row={"text": "same"}) for i in range(20)]
@@ -197,7 +227,9 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(rep["holdout"]["unreached"], 0)
         rep = answersets.evaluate(rows + [row(9, {"billing": 0.9, "shipping": 0.1}, "billing")], 0.9)
         # 90% needs 9 rows and each fold trains on 8: no fold can promise it, so every row goes to review with every option.
-        self.assertEqual((rep["holdout"]["unreached"], rep["holdout"]["single"], rep["holdout"]["spread"]), (5, 0, None))
+        self.assertEqual(
+            (rep["holdout"]["unreached"], rep["holdout"]["single"], rep["holdout"]["spread"]), (5, 0, None)
+        )
 
     def test_slices_report_coverage_by_field(self):
         rep = answersets.evaluate(simulated(3, 60), 0.9)

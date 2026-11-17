@@ -43,11 +43,16 @@ def row_id(row: Any) -> str:
 
 
 def _questions(dataset: dict) -> Dict[str, dict]:
-    questions = {q: spec for q, spec in (dataset.get("questions") or {}).items()
-                 if isinstance(spec, dict) and spec.get("type") in TYPES}
+    questions = {
+        q: spec
+        for q, spec in (dataset.get("questions") or {}).items()
+        if isinstance(spec, dict) and spec.get("type") in TYPES
+    }
     if not questions:
-        raise WorkbenchError("Dataset %r has no Choice, Noul, or Score questions saved with it. Save it with its questions "
-                             "to compare labels." % dataset["id"])
+        raise WorkbenchError(
+            "Dataset %r has no Choice, Noul, or Score questions saved with it. Save it with its questions "
+            "to compare labels." % dataset["id"]
+        )
     return questions
 
 
@@ -55,7 +60,7 @@ def _labels(row: Any, questions: Dict[str, dict]) -> Dict[str, Any]:
     """A dataset row's valid labels for the questions, {qid: label}. A label that fits no answer is left out."""
     raw = row.get(LABEL_KEY) if isinstance(row, dict) else None
     out = {}
-    for qid, value in (raw.items() if isinstance(raw, dict) else ()):
+    for qid, value in raw.items() if isinstance(raw, dict) else ():
         if qid in questions:
             ok, value = decisions.label(questions[qid], value)
             if ok and value is not None:
@@ -124,7 +129,7 @@ def sample(dataset_id: str, n: Any = 30, seed: Any = 0) -> dict:
     dataset = workbench.load_dataset(dataset_id)
     questions = _questions(dataset)
     n = _count(n, "rows", 1, MAX_SAMPLE)
-    seed = _count(seed, "seed", 0, 2 ** 31)
+    seed = _count(seed, "seed", 0, 2**31)
     eligible, seen = [], set()
     for number, row in enumerate(dataset["rows"], 1):
         labels = _labels(row, questions)
@@ -133,21 +138,32 @@ def sample(dataset_id: str, n: Any = 30, seed: Any = 0) -> dict:
             seen.add(rid)
             eligible.append({ROW_ID: rid, "number": number, "row": _state(row), "questions": list(labels)})
     if not eligible:
-        raise WorkbenchError("Dataset %r has no labeled rows to compare. Label some rows and save them first." % dataset_id)
+        raise WorkbenchError(
+            "Dataset %r has no labeled rows to compare. Label some rows and save them first." % dataset_id
+        )
     items = sorted(random.Random(seed).sample(eligible, min(n, len(eligible))), key=lambda i: i["number"])
-    return {"dataset": workbench.dataset_summary(dataset), "questions": questions, "items": items,
-            "eligible": len(eligible), "csv": sample_csv(items, questions),
-            "session_context": session_context(dataset), "seed": seed, "sample_size": n}
+    return {
+        "dataset": workbench.dataset_summary(dataset),
+        "questions": questions,
+        "items": items,
+        "eligible": len(eligible),
+        "csv": sample_csv(items, questions),
+        "session_context": session_context(dataset),
+        "seed": seed,
+        "sample_size": n,
+    }
 
 
 def _from_csv(text: Any, questions: Dict[str, dict]) -> Tuple[List[dict], List[str]]:
     """([{"row_id", "labels"}], problems) from the sample CSV filled in. Columns are found by name, as Import does."""
     _delimiter, names, rows = csvimport.parse(text)
     if ROW_ID not in names:
-        raise WorkbenchError("The CSV has no %s column. Fill in the CSV that Download CSV wrote, keeping its %s column."
-                             % (ROW_ID, ROW_ID))
+        raise WorkbenchError(
+            "The CSV has no %s column. Fill in the CSV that Download CSV wrote, keeping its %s column."
+            % (ROW_ID, ROW_ID)
+        )
     roles = csvimport.suggest(names, questions)
-    targets = {name: role[len("label:"):] for name, role in roles.items() if role.startswith("label:")}
+    targets = {name: role[len("label:") :] for name, role in roles.items() if role.startswith("label:")}
     if not targets:
         raise WorkbenchError("The CSV has no label columns. Name them label:<question id>, as Download CSV does.")
     at = names.index(ROW_ID)
@@ -172,7 +188,11 @@ def _from_items(items: Any, questions: Dict[str, dict]) -> Tuple[List[dict], Lis
         raise WorkbenchError("items must be a list of rows, each with its row_id and labels")
     out, problems = [], []
     for number, item in enumerate(items, 1):
-        if not isinstance(item, dict) or not isinstance(item.get(ROW_ID), str) or not isinstance(item.get("labels"), dict):
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get(ROW_ID), str)
+            or not isinstance(item.get("labels"), dict)
+        ):
             raise WorkbenchError("Item %d needs its row_id and labels, keyed by question id" % number)
         labels = {}
         for qid, value in item["labels"].items():
@@ -215,8 +235,15 @@ def _question_report(pairs: List[Tuple[Any, Any]]) -> dict:
         if a != b:
             key = json.dumps([a, b])
             mixups.setdefault(key, {"first": a, "second": b, "rows": 0})["rows"] += 1
-    return {"rows": n, "agree": agree, "agreement": agree / n if n else None, "low": low, "high": high,
-            "kappa": kappa(pairs), "mixups": sorted(mixups.values(), key=lambda m: -m["rows"])}
+    return {
+        "rows": n,
+        "agree": agree,
+        "agreement": agree / n if n else None,
+        "low": low,
+        "high": high,
+        "kappa": kappa(pairs),
+        "mixups": sorted(mixups.values(), key=lambda m: -m["rows"]),
+    }
 
 
 def compare(dataset_id: str, items: Any = None, text: Any = None, *, all_disagreements: bool = False) -> dict:
@@ -235,8 +262,16 @@ def compare(dataset_id: str, items: Any = None, text: Any = None, *, all_disagre
     where = _index(dataset)
     pairs: Dict[str, List[Tuple[Any, Any]]] = {q: [] for q in questions}
     disagreements = []
-    counts = {"rows": len(second), "matched": 0, "not_found": 0, "repeated": 0, "unlabeled": 0, "compared": 0,
-              "all_agree": 0, "only_second": 0}
+    counts = {
+        "rows": len(second),
+        "matched": 0,
+        "not_found": 0,
+        "repeated": 0,
+        "unlabeled": 0,
+        "compared": 0,
+        "all_agree": 0,
+        "only_second": 0,
+    }
     done = set()
     for item in second:
         rid = item[ROW_ID]
@@ -262,21 +297,42 @@ def compare(dataset_id: str, items: Any = None, text: Any = None, *, all_disagre
             pairs[qid].append((first[qid], item["labels"][qid]))
             if first[qid] != item["labels"][qid]:
                 differ = True
-                disagreements.append({ROW_ID: rid, "number": index + 1, "row": _state(dataset["rows"][index]),
-                                      "question": qid, "first": first[qid], "second": item["labels"][qid]})
+                disagreements.append(
+                    {
+                        ROW_ID: rid,
+                        "number": index + 1,
+                        "row": _state(dataset["rows"][index]),
+                        "question": qid,
+                        "first": first[qid],
+                        "second": item["labels"][qid],
+                    }
+                )
         counts["all_agree"] += 0 if differ else 1
     report = {q: _question_report(p) for q, p in pairs.items() if p}
     every = [pair for p in pairs.values() for pair in p]
     agree = sum(1 for a, b in every if a == b)
     low, high = calibrate.wilson(counts["all_agree"], counts["compared"])
-    overall = {"labels": len(every), "agree": agree, "agreement": agree / len(every) if every else None,
-               "rows": counts["compared"], "rows_agree": counts["all_agree"],
-               "rows_agreement": counts["all_agree"] / counts["compared"] if counts["compared"] else None,
-               "rows_low": low, "rows_high": high}
-    return {"dataset": workbench.dataset_summary(dataset), "questions": report, "overall": overall,
-            "disagreements": disagreements if all_disagreements else disagreements[:SHOWN],
-            "disagreements_total": len(disagreements), "counts": counts,
-            "problems": problems[:PROBLEMS_SHOWN], "problems_total": len(problems), "second_items": second}
+    overall = {
+        "labels": len(every),
+        "agree": agree,
+        "agreement": agree / len(every) if every else None,
+        "rows": counts["compared"],
+        "rows_agree": counts["all_agree"],
+        "rows_agreement": counts["all_agree"] / counts["compared"] if counts["compared"] else None,
+        "rows_low": low,
+        "rows_high": high,
+    }
+    return {
+        "dataset": workbench.dataset_summary(dataset),
+        "questions": report,
+        "overall": overall,
+        "disagreements": disagreements if all_disagreements else disagreements[:SHOWN],
+        "disagreements_total": len(disagreements),
+        "counts": counts,
+        "problems": problems[:PROBLEMS_SHOWN],
+        "problems_total": len(problems),
+        "second_items": second,
+    }
 
 
 @workbench.dataset_update()
@@ -293,7 +349,11 @@ def settle(dataset_id: str, items: Any) -> dict:
     rows = list(dataset["rows"])
     changed, touched = 0, set()
     for number, item in enumerate(items, 1):
-        if not isinstance(item, dict) or not isinstance(item.get(ROW_ID), str) or not isinstance(item.get("labels"), dict):
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get(ROW_ID), str)
+            or not isinstance(item.get("labels"), dict)
+        ):
             raise WorkbenchError("Item %d needs its row_id and labels, keyed by question id" % number)
         if item[ROW_ID] not in where:
             raise WorkbenchError("Item %d names a row the dataset no longer has. Compare the labels again." % number)

@@ -35,7 +35,7 @@ class Canvas:
             return
         row = y * self.w * 3
         if alpha >= 1:
-            self.px[row + a * 3:row + (b + 1) * 3] = bytes(color) * (b - a + 1)
+            self.px[row + a * 3 : row + (b + 1) * 3] = bytes(color) * (b - a + 1)
             return
         for x in range(a, b + 1):
             i = row + x * 3
@@ -100,8 +100,12 @@ class Canvas:
             return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
         header = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
-        return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(b"".join(rows), 9))
-                + chunk(b"IEND", b""))
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(b"".join(rows), 9))
+            + chunk(b"IEND", b"")
+        )
 
 
 # --- shared scenery ---------------------------------------------------------------------------
@@ -134,7 +138,9 @@ def coffee_bag(c: Canvas, x: int, y: int, w: int = 190, h: int = 250) -> None:
     """A kraft stand-up pouch with a folded, sealed top and a round label."""
     c.ellipse(x + w / 2 + 8, y + h + 4, w / 2 + 18, 14, (95, 64, 40), alpha=0.45)  # contact shadow
     c.polygon([(x, y + 40), (x + w, y + 40), (x + w + 8, y + h), (x - 8, y + h)], KRAFT)
-    c.polygon([(x + w * 0.72, y + 40), (x + w, y + 40), (x + w + 8, y + h), (x + w * 0.76, y + h)], KRAFT_DARK, alpha=0.45)
+    c.polygon(
+        [(x + w * 0.72, y + 40), (x + w, y + 40), (x + w + 8, y + h), (x + w * 0.76, y + h)], KRAFT_DARK, alpha=0.45
+    )
     c.rect(x - 2, y, x + w + 2, y + 44, KRAFT_LIGHT)  # folded top
     c.rect(x - 2, y + 30, x + w + 2, y + 36, (150, 112, 70))  # heat seal
     for i in range(12):
@@ -157,9 +163,21 @@ def torn_bag(rng: random.Random) -> Canvas:
     x, y = 220, 150
     coffee_bag(c, x, y)
     # The seal is ripped open across the top right: a jagged dark gap with torn flaps.
-    tear = [(x + 70, y + 26), (x + 92, y + 46), (x + 108, y + 32), (x + 126, y + 58), (x + 146, y + 40),
-            (x + 166, y + 66), (x + 196, y + 52), (x + 198, y + 92), (x + 170, y + 104), (x + 150, y + 86),
-            (x + 128, y + 108), (x + 104, y + 88), (x + 84, y + 98)]
+    tear = [
+        (x + 70, y + 26),
+        (x + 92, y + 46),
+        (x + 108, y + 32),
+        (x + 126, y + 58),
+        (x + 146, y + 40),
+        (x + 166, y + 66),
+        (x + 196, y + 52),
+        (x + 198, y + 92),
+        (x + 170, y + 104),
+        (x + 150, y + 86),
+        (x + 128, y + 108),
+        (x + 104, y + 88),
+        (x + 84, y + 98),
+    ]
     c.polygon(tear, (52, 34, 22))
     c.polygon([(x + 150, y + 86), (x + 170, y + 104), (x + 214, y + 82), (x + 206, y + 66)], KRAFT_LIGHT)
     c.polygon([(x + 84, y + 98), (x + 104, y + 88), (x + 92, y + 124), (x + 74, y + 118)], KRAFT_DARK)
@@ -205,8 +223,14 @@ def crushed_box(rng: random.Random) -> Canvas:
     c.polygon(dent, (122, 88, 54))
     c.polygon([(360, 236), (396, 262), (420, 300), (404, 312), (376, 280), (346, 252)], (146, 108, 68))
     c.polygon([(420, 210), (470, 180), (452, 250)], (98, 70, 44))
-    creases = [(330, 210, 360, 236), (360, 236, 420, 300), (420, 300, 452, 250), (470, 180, 420, 210),
-               (396, 262, 452, 250), (376, 280, 430, 330)]
+    creases = [
+        (330, 210, 360, 236),
+        (360, 236, 420, 300),
+        (420, 300, 452, 250),
+        (470, 180, 420, 210),
+        (396, 262, 452, 250),
+        (376, 280, 430, 330),
+    ]
     for x0, y0, x1, y1 in creases:
         c.line(x0, y0, x1, y1, 2.2, (84, 58, 36))
     c.polygon([(420, 300), (436, 312), (424, 330), (414, 316)], (232, 214, 186))  # torn flap

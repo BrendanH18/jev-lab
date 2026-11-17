@@ -26,13 +26,29 @@ def check(rows: Any, questions: Any) -> dict:
             findings.extend(dict(f, row=index + 1) for f in lint._missing_paths(qid, question, state, set(refs)))
         notes.extend(lab.preflight_findings(state, asked, set(refs), index + 1))
         if workbench.has_box(asked) and not refs:
-            findings.append({"row": index + 1, "question": None, "code": "missing_picture",
-                             "message": "Box questions need a picture on this row."})
+            findings.append(
+                {
+                    "row": index + 1,
+                    "question": None,
+                    "code": "missing_picture",
+                    "message": "Box questions need a picture on this row.",
+                }
+            )
         if refs:
             try:
                 workbench._picture(split, index)
             except (WorkbenchError, OSError):
-                findings.append({"row": index + 1, "question": None, "code": "missing_picture",
-                                 "message": "The named picture could not be loaded."})
-    return {"rows": len(split), "findings": findings, "held_out": sum(workbench.row_test(row) for row, _ in split),
-            "lab": notes}
+                findings.append(
+                    {
+                        "row": index + 1,
+                        "question": None,
+                        "code": "missing_picture",
+                        "message": "The named picture could not be loaded.",
+                    }
+                )
+    return {
+        "rows": len(split),
+        "findings": findings,
+        "held_out": sum(workbench.row_test(row) for row, _ in split),
+        "lab": notes,
+    }

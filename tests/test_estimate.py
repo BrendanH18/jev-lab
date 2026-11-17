@@ -24,11 +24,22 @@ from jev.config import Settings  # noqa: E402
 from jev.workbench import WorkbenchError  # noqa: E402
 
 Q = {
-    "dept": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "money", "tech": "bugs", "other": None}},
+    "dept": {
+        "type": "choice",
+        "instructions": "Which team?",
+        "criteria": {"billing": "money", "tech": "bugs", "other": None},
+    },
     "refund": {"type": "noul", "instructions": "Does the sender want money back?"},
 }
-SPEC = {"gates": {"refund": 0.6}, "signal": "confidence", "bound": "estimate", "model": "jev-1.14.0",
-        "tuned_on": "jev-1.14.0", "min_accuracy": 0.9, "min_coverage": 0.1}
+SPEC = {
+    "gates": {"refund": 0.6},
+    "signal": "confidence",
+    "bound": "estimate",
+    "model": "jev-1.14.0",
+    "tuned_on": "jev-1.14.0",
+    "min_accuracy": 0.9,
+    "min_coverage": 0.1,
+}
 
 
 class Recorder:
@@ -45,8 +56,11 @@ class Recorder:
             check(reserve_usd)
 
         def post(payload):
-            return {"model": payload["model"], "answers": fake_answers(payload["questions"]),
-                    "usage": {"input_tokens": 1}}
+            return {
+                "model": payload["model"],
+                "answers": fake_answers(payload["questions"]),
+                "usage": {"input_tokens": 1},
+            }
 
         self.client.guard.check = held
         self.client._post_system_one = post
@@ -61,8 +75,9 @@ class EstimateTests(unittest.TestCase):
         self.dir = Path(tempfile.mkdtemp())
         self._orig = workbench.WORKBENCH_DIR
         workbench.WORKBENCH_DIR = self.dir
-        rows = [{"text": ("refund %d" if i % 2 else "thanks %d") % i, "_expect": {"refund": bool(i % 2)}}
-                for i in range(12)]
+        rows = [
+            {"text": ("refund %d" if i % 2 else "thanks %d") % i, "_expect": {"refund": bool(i % 2)}} for i in range(12)
+        ]
         for row in rows[:3]:
             row["_test"] = True
         workbench.save_dataset({"name": "Tickets", "rows": rows_text(rows), "questions": Q})
@@ -98,14 +113,18 @@ class EstimateTests(unittest.TestCase):
 
     def test_compare_counts_each_variant_and_both_orders_and_leaves_test_rows_out(self):
         rows = [{"text": "row %d" % i} for i in range(10)] + [{"text": "held %d" % i, "_test": True} for i in range(2)]
-        variants = [{"questions": Q, "model": "jev-1.13.0"},
-                    {"questions": Q, "perturb": "typos", "average_orders": True}]
+        variants = [
+            {"questions": Q, "model": "jev-1.13.0"},
+            {"questions": Q, "perturb": "typos", "average_orders": True},
+        ]
         rec = Recorder(self.dir)
         preview = estimate.for_compare(rec.client, rows, variants)
         self.assertEqual(preview["calls"], 10 + 2 * 10)
         self.assertEqual(preview["held_out"], 2)
-        self.assertEqual([(p["label"], p["model"], p["calls"]) for p in preview["parts"]],
-                         [("variant A", "jev-1.13.0", 10), ("variant B, both orders", "jev-1.14.0", 20)])
+        self.assertEqual(
+            [(p["label"], p["model"], p["calls"]) for p in preview["parts"]],
+            [("variant A", "jev-1.13.0", 10), ("variant B, both orders", "jev-1.14.0", 20)],
+        )
         workbench.run_compare(rec.client, rows, variants)
         self.same(preview, rec)
 
@@ -124,8 +143,12 @@ class EstimateTests(unittest.TestCase):
         allowance = images.RESERVE_TOKENS_PER_IMAGE * price_per_input_token("jev-1.14.0")
         self.assertGreater(max(rec.reserves) - min(rec.reserves), allowance * 0.99)
         # A saved test that names its picture twice is sent the picture twice.
-        item = {"id": "t", "state": {"a": "photo_one", "b": "photo_one again"}, "questions": questions,
-                "images": {"photo_one": {"sample": "torn-bag"}}}
+        item = {
+            "id": "t",
+            "state": {"a": "photo_one", "b": "photo_one again"},
+            "questions": questions,
+            "images": {"photo_one": {"sample": "torn-bag"}},
+        }
         rec = Recorder(self.dir)
         preview = estimate.for_items(rec.client, [item])
         once = request_reserve_usd(item["state"], questions, "jev-1.14.0")
@@ -168,17 +191,24 @@ class EstimateTests(unittest.TestCase):
         client.guard.spent_usd, client.guard.reserved_usd = 0.25, 0.05
         before = client.guard.snapshot()
         boom = AssertionError("a preview must not call the model or touch the guard")
-        with patch.object(client, "_post_system_one", side_effect=boom), patch.object(client, "models", side_effect=boom), \
-                patch.object(client, "_stdlib_request", side_effect=boom), patch.object(client, "system_one", side_effect=boom), \
-                patch.object(client.guard, "check", side_effect=boom), patch.object(client.guard, "record", side_effect=boom), \
-                patch.object(client.guard, "release", side_effect=boom), \
-                patch("urllib.request.urlopen", side_effect=boom):
-            previews = [estimate.for_bulk(client, ["a", "b"], Q),
-                        estimate.for_compare(client, ["a", "b"], [{"questions": Q}, {"questions": Q}]),
-                        estimate.for_check(client, "tickets"),
-                        estimate.for_drift(client, "tickets", "new row"),
-                        estimate.for_upgrade(client, "tickets", "jev-latest"),
-                        estimate.for_items(client, [{"state": {"t": "x"}, "questions": Q}])]
+        with (
+            patch.object(client, "_post_system_one", side_effect=boom),
+            patch.object(client, "models", side_effect=boom),
+            patch.object(client, "_stdlib_request", side_effect=boom),
+            patch.object(client, "system_one", side_effect=boom),
+            patch.object(client.guard, "check", side_effect=boom),
+            patch.object(client.guard, "record", side_effect=boom),
+            patch.object(client.guard, "release", side_effect=boom),
+            patch("urllib.request.urlopen", side_effect=boom),
+        ):
+            previews = [
+                estimate.for_bulk(client, ["a", "b"], Q),
+                estimate.for_compare(client, ["a", "b"], [{"questions": Q}, {"questions": Q}]),
+                estimate.for_check(client, "tickets"),
+                estimate.for_drift(client, "tickets", "new row"),
+                estimate.for_upgrade(client, "tickets", "jev-latest"),
+                estimate.for_items(client, [{"state": {"t": "x"}, "questions": Q}]),
+            ]
         self.assertEqual(client.guard.snapshot(), before)
         self.assertEqual([p["calls"] for p in previews], [2, 4, 9, 10, 18, 1])
         for p in previews:
@@ -207,7 +237,6 @@ class EstimateTests(unittest.TestCase):
         self.assertIn("local limit of 5 live calls a minute", notes[0])
         self.assertEqual(estimate.for_bulk(rec.client, ["r%d" % i for i in range(5)], Q)["notes"], [])
 
-
     def test_check_script_estimate_makes_no_calls(self):
         settings = Settings(environ={}, env_file=self.dir / "absent.env")
         client = JevClient(settings, guard=SpendGuard(2.0, rpm=120))
@@ -217,9 +246,12 @@ class EstimateTests(unittest.TestCase):
 
         def main(*args):
             output = io.StringIO()
-            with redirect_stdout(output), patch.object(check_script, "JevClient", return_value=client), \
-                    patch.object(client, "_post_system_one", side_effect=boom), \
-                    patch.object(client.guard, "check", side_effect=boom):
+            with (
+                redirect_stdout(output),
+                patch.object(check_script, "JevClient", return_value=client),
+                patch.object(client, "_post_system_one", side_effect=boom),
+                patch.object(client.guard, "check", side_effect=boom),
+            ):
                 code = check_script.main(list(args))
             return code, output.getvalue()
 

@@ -206,8 +206,13 @@ const TYPES = Object.freeze(["noul", "choice", "score", "box"]);
 const SIGNALS = Object.freeze(["confidence", "top_probability"]);
 const BOUNDS = Object.freeze(["estimate", "lower"]);
 const LABELABLE = Object.freeze(["choice", "noul", "score"]);
-const PERTURBS = Object.freeze({ "": "as written", typos: "with typos", lowercase: "in lowercase", distractor: "with an unrelated sentence added",
-  shuffle: "with JSON fields shuffled" });
+const PERTURBS = Object.freeze({
+  "": "as written",
+  typos: "with typos",
+  lowercase: "in lowercase",
+  distractor: "with an unrelated sentence added",
+  shuffle: "with JSON fields shuffled",
+});
 const MAX_ROWS = 200;
 const EMPTY = Object.freeze([]);
 const EDGES = ["left", "top", "right", "bottom"];
@@ -215,7 +220,7 @@ const EDGES = ["left", "top", "right", "bottom"];
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const integer = (value) => (Number.isInteger(value) ? value : null);
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => Object.hasOwn(object, key);
 
 function deepFreeze(value) {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -236,7 +241,11 @@ function frozenCopy(raw) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -318,8 +327,14 @@ function rowText(row) {
 function metaOf(run) {
   const meta = isObject(run) && isObject(run.meta) ? run.meta : null;
   if (!meta) return null;
-  return { model: typeof meta.model === "string" ? meta.model : null, latency_ms: finite(meta.latency_ms), input_tokens: finite(meta.input_tokens),
-    output_tokens: finite(meta.output_tokens), cost_usd: finite(meta.cost_usd), calls: integer(meta.calls) };
+  return {
+    model: typeof meta.model === "string" ? meta.model : null,
+    latency_ms: finite(meta.latency_ms),
+    input_tokens: finite(meta.input_tokens),
+    output_tokens: finite(meta.output_tokens),
+    cost_usd: finite(meta.cost_usd),
+    calls: integer(meta.calls),
+  };
 }
 
 // ---------- workbench.compare.rows ----------
@@ -340,19 +355,32 @@ function rowItem(result, qid, signal, disagreement) {
     number: index + 1,
     row: clone(result.row) ?? null,
     text: rowText(result.row),
-    sent: NAMES.map((_, v) => (run(v) && "input" in run(v) ? clone(run(v).input) ?? null : null)),
+    sent: NAMES.map((_, v) => (run(v) && "input" in run(v) ? (clone(run(v).input) ?? null) : null)),
     label: hasOwn(expect, qid) && expect[qid] !== undefined ? clone(expect[qid]) : null,
     answers: answers.map((answer) => (answer ? clone(answer) : null)),
-    picks: NAMES.map((_, v) => (server && isObject(server[v]) && server[v].predicted !== undefined ? String(server[v].predicted) : reads[v]?.pick ?? null)),
-    signals: NAMES.map((_, v) => (server && isObject(server[v]) ? finite(server[v].signal) : reads[v]?.signal ?? null)),
+    picks: NAMES.map((_, v) =>
+      server && isObject(server[v]) && server[v].predicted !== undefined
+        ? String(server[v].predicted)
+        : (reads[v]?.pick ?? null),
+    ),
+    signals: NAMES.map((_, v) =>
+      server && isObject(server[v]) ? finite(server[v].signal) : (reads[v]?.signal ?? null),
+    ),
     tops: reads.map((entry) => entry?.top ?? null),
-    correct: NAMES.map((_, v) => (server && isObject(server[v]) && typeof server[v].correct === "boolean" ? server[v].correct : null)),
-    verdict: disagreement && ["both_right", "a_only", "b_only", "both_wrong"].includes(disagreement.verdict) ? disagreement.verdict : null,
+    correct: NAMES.map((_, v) =>
+      server && isObject(server[v]) && typeof server[v].correct === "boolean" ? server[v].correct : null,
+    ),
+    verdict:
+      disagreement && ["both_right", "a_only", "b_only", "both_wrong"].includes(disagreement.verdict)
+        ? disagreement.verdict
+        : null,
     differs: !!disagreement,
     paired: answers.every(Boolean),
     orders: NAMES.map((_, v) => {
       const picks = run(v) && isObject(run(v).orders) ? run(v).orders[qid] : null;
-      return Array.isArray(picks) && picks.length === 2 ? picks.map((pick) => (pick === null || pick === undefined ? null : String(pick))) : null;
+      return Array.isArray(picks) && picks.length === 2
+        ? picks.map((pick) => (pick === null || pick === undefined ? null : String(pick)))
+        : null;
     }),
     meta: NAMES.map((_, v) => metaOf(run(v))),
     errors: NAMES.map((_, v) => (run(v) && typeof run(v).error === "string" && run(v).error ? run(v).error : null)),
@@ -371,23 +399,33 @@ function rowItems(result, report, qid) {
     if (isObject(entry) && !differing.has(entry.index)) differing.set(entry.index, entry);
   }
   const results = Array.isArray(result.results) ? result.results : [];
-  const items = deepFreeze(results.filter((entry) => isObject(entry) && Array.isArray(entry.runs)
-    && entry.runs.some((run) => isObject(run) && isObject(run.answers) && isObject(run.answers[qid])))
-    .map((entry) => rowItem(entry, qid, signal, differing.get(entry.index) || null)));
+  const items = deepFreeze(
+    results
+      .filter(
+        (entry) =>
+          isObject(entry) &&
+          Array.isArray(entry.runs) &&
+          entry.runs.some((run) => isObject(run) && isObject(run.answers) && isObject(run.answers[qid])),
+      )
+      .map((entry) => rowItem(entry, qid, signal, differing.get(entry.index) || null)),
+  );
   ROWS.set(report, { result, qid, items });
   return items;
 }
 
 // Question ids both variants ask with the same type, in A's order (the page's cmpQuestions).
 function sharedIds(result) {
-  const [qa, qb] = (Array.isArray(result?.variants) ? result.variants : []).map((variant) => (isObject(variant?.questions) ? variant.questions : {}));
+  const [qa, qb] = (Array.isArray(result?.variants) ? result.variants : []).map((variant) =>
+    isObject(variant?.questions) ? variant.questions : {},
+  );
   if (!qa || !qb) return [];
   return Object.keys(qa).filter((qid) => isObject(qb[qid]) && isObject(qa[qid]) && qb[qid].type === qa[qid].type);
 }
 
 function labeledIds(result) {
   const ids = new Set();
-  for (const entry of Array.isArray(result?.results) ? result.results : []) for (const qid of Object.keys(isObject(entry?.expect) ? entry.expect : {})) ids.add(qid);
+  for (const entry of Array.isArray(result?.results) ? result.results : [])
+    for (const qid of Object.keys(isObject(entry?.expect) ? entry.expect : {})) ids.add(qid);
   return [...ids];
 }
 
@@ -417,7 +455,9 @@ export function compareRowsCtx(source = {}) {
   };
   const running = () => read(source, "running", false) === true;
   const items = () => {
-    const res = result(), rep = report(), id = qid();
+    const res = result(),
+      rep = report(),
+      id = qid();
     return res && rep && id ? rowItems(res, rep, id) : EMPTY;
   };
   const shared = () => (result() ? sharedIds(result()) : []);
@@ -434,8 +474,12 @@ export function compareRowsCtx(source = {}) {
       return Array.isArray(arranged) ? arranged : list;
     },
     data: {
-      get qid() { return qid(); },
-      get type() { return TYPES.includes(report()?.type) ? report().type : null; },
+      get qid() {
+        return qid();
+      },
+      get type() {
+        return TYPES.includes(report()?.type) ? report().type : null;
+      },
       get signal() {
         const value = report()?.signal ?? read(source, "signal", "confidence");
         return SIGNALS.includes(value) ? value : "confidence";
@@ -444,52 +488,94 @@ export function compareRowsCtx(source = {}) {
         const value = report()?.bound ?? read(source, "bound", "estimate");
         return BOUNDS.includes(value) ? value : "estimate";
       },
-      get first() { return read(source, "first", "A") === "B" ? "B" : "A"; },
+      get first() {
+        return read(source, "first", "A") === "B" ? "B" : "A";
+      },
       get cascade_threshold() {
         const value = finite(read(source, "cascadeT", null));
         return value === null ? null : Math.min(1, Math.max(0, value));
       },
       get questions() {
-        const id = qid(), res = result();
+        const id = qid(),
+          res = result();
         if (!id || !res) return deepFreeze([null, null]);
-        return deepFreeze(res.variants.slice(0, 2).map((variant) => (isObject(variant?.questions?.[id]) && hasOwn(variant.questions, id) ? clone(variant.questions[id]) : null)));
+        return deepFreeze(
+          res.variants
+            .slice(0, 2)
+            .map((variant) =>
+              isObject(variant?.questions?.[id]) && hasOwn(variant.questions, id) ? clone(variant.questions[id]) : null,
+            ),
+        );
       },
-      get shared() { return deepFreeze(shared()); },
-      get labeled() { return deepFreeze(labeledIds(result())); },
+      get shared() {
+        return deepFreeze(shared());
+      },
+      get labeled() {
+        return deepFreeze(labeledIds(result()));
+      },
       get variants() {
         const res = result();
         if (!res) return EMPTY;
-        return deepFreeze(res.variants.slice(0, 2).map((variant, v) => ({ name: NAMES[v], model: typeof variant?.model === "string" ? variant.model : null,
-          perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null, average_orders: variant?.average_orders === true,
-          question_count: isObject(variant?.questions) ? Object.keys(variant.questions).length : 0, completed: integer(variant?.completed) ?? 0,
-          errors: integer(variant?.errors) ?? 0, cost_usd: finite(variant?.cost_usd), input_tokens: finite(variant?.input_tokens),
-          latency_ms_median: finite(variant?.latency_ms_median), perturbed_rows: integer(variant?.perturbed_rows) ?? 0,
-          unperturbed_rows: integer(variant?.unperturbed_rows) ?? 0 })));
+        return deepFreeze(
+          res.variants.slice(0, 2).map((variant, v) => ({
+            name: NAMES[v],
+            model: typeof variant?.model === "string" ? variant.model : null,
+            perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null,
+            average_orders: variant?.average_orders === true,
+            question_count: isObject(variant?.questions) ? Object.keys(variant.questions).length : 0,
+            completed: integer(variant?.completed) ?? 0,
+            errors: integer(variant?.errors) ?? 0,
+            cost_usd: finite(variant?.cost_usd),
+            input_tokens: finite(variant?.input_tokens),
+            latency_ms_median: finite(variant?.latency_ms_median),
+            perturbed_rows: integer(variant?.perturbed_rows) ?? 0,
+            unperturbed_rows: integer(variant?.unperturbed_rows) ?? 0,
+          })),
+        );
       },
       get scores() {
         const rep = report();
         return rep && Array.isArray(rep.variants) && rep.variants.length === 2 ? frozenCopy(rep.variants) : null;
       },
-      get paired() { return isObject(report()?.paired) ? frozenCopy(report().paired) : null; },
+      get paired() {
+        return isObject(report()?.paired) ? frozenCopy(report().paired) : null;
+      },
       get counts() {
         const rep = report();
         if (!rep) return null;
-        return deepFreeze({ answered_both: integer(rep.answered_both) ?? 0, agree: integer(rep.agree) ?? 0,
-          disagree: Array.isArray(rep.disagreements) ? rep.disagreements.length : 0, only_a: integer(rep.only_a) ?? 0,
-          only_b: integer(rep.only_b) ?? 0, excluded: integer(rep.excluded) ?? 0 });
+        return deepFreeze({
+          answered_both: integer(rep.answered_both) ?? 0,
+          agree: integer(rep.agree) ?? 0,
+          disagree: Array.isArray(rep.disagreements) ? rep.disagreements.length : 0,
+          only_a: integer(rep.only_a) ?? 0,
+          only_b: integer(rep.only_b) ?? 0,
+          excluded: integer(rep.excluded) ?? 0,
+        });
       },
-      get cascade() { return cascade() ? frozenCopy(cascade()) : null; },
-      get agreement() { return Array.isArray(result()?.agreement) ? frozenCopy(result().agreement) : EMPTY; },
+      get cascade() {
+        return cascade() ? frozenCopy(cascade()) : null;
+      },
+      get agreement() {
+        return Array.isArray(result()?.agreement) ? frozenCopy(result().agreement) : EMPTY;
+      },
       get orders() {
         const res = result();
         if (!res) return EMPTY;
-        return deepFreeze(res.variants.slice(0, 2).map((variant) => (Array.isArray(variant?.orders) ? clone(variant.orders) : null)));
+        return deepFreeze(
+          res.variants.slice(0, 2).map((variant) => (Array.isArray(variant?.orders) ? clone(variant.orders) : null)),
+        );
       },
       get run() {
         const res = result();
         if (!res) return null;
-        return deepFreeze({ rows: integer(res.rows) ?? res.results.length, labeled: integer(res.labeled) ?? 0, held_out: integer(res.held_out) ?? 0,
-          wall_ms: finite(res.wall_ms), cost_usd: finite(res.cost_usd), stopped: typeof res.stopped === "string" && res.stopped ? res.stopped : null });
+        return deepFreeze({
+          rows: integer(res.rows) ?? res.results.length,
+          labeled: integer(res.labeled) ?? 0,
+          held_out: integer(res.held_out) ?? 0,
+          wall_ms: finite(res.wall_ms),
+          cost_usd: finite(res.cost_usd),
+          stopped: typeof res.stopped === "string" && res.stopped ? res.stopped : null,
+        });
       },
       get slices() {
         const value = read(source, "slices", null);
@@ -503,13 +589,18 @@ export function compareRowsCtx(source = {}) {
         const value = read(source, "reportError", null);
         return typeof value === "string" && value ? value : null;
       },
-      get running() { return running(); },
-      get labeling() { return read(source, "labeling", false) === true; },
+      get running() {
+        return running();
+      },
+      get labeling() {
+        return read(source, "labeling", false) === true;
+      },
     },
     actions: {
       selectQuestion(id) {
         idle();
-        if (typeof id !== "string" || !shared().includes(id)) throw new Error(`“${String(id)}” is not a question both variants ask with the same type.`);
+        if (typeof id !== "string" || !shared().includes(id))
+          throw new Error(`“${String(id)}” is not a question both variants ask with the same type.`);
         return call(source, "selectQuestion", id);
       },
       setSignal(signal) {
@@ -525,11 +616,13 @@ export function compareRowsCtx(source = {}) {
       setFirst(name) {
         idle();
         nameIndex(name);
-        if (!cascade()) throw new Error("There is no cascade for this question: it needs labeled rows both variants answered.");
+        if (!cascade())
+          throw new Error("There is no cascade for this question: it needs labeled rows both variants answered.");
         return call(source, "setFirst", name);
       },
       setCascadeThreshold(value) {
-        if (!cascade()) throw new Error("There is no cascade for this question: it needs labeled rows both variants answered.");
+        if (!cascade())
+          throw new Error("There is no cascade for this question: it needs labeled rows both variants answered.");
         const t = finite(value);
         if (t === null || t < 0 || t > 1) throw new Error("A cascade threshold is a number from 0 to 1.");
         const rounded = Math.round(t * 100) / 100;
@@ -539,8 +632,10 @@ export function compareRowsCtx(source = {}) {
       labelDisagreements() {
         idle();
         const type = ctx.data.type;
-        if (!LABELABLE.includes(type)) throw new Error("Blank labels can be opened for Choice, Noul and Score questions only.");
-        if (!items().some((item) => item.differs)) throw new Error("A and B gave the same answer on every row, so there is nothing to label.");
+        if (!LABELABLE.includes(type))
+          throw new Error("Blank labels can be opened for Choice, Noul and Score questions only.");
+        if (!items().some((item) => item.differs))
+          throw new Error("A and B gave the same answer on every row, so there is nothing to label.");
         if (ctx.data.labeling) throw new Error("The labeling handoff is already being prepared.");
         return call(source, "labelDisagreements");
       },
@@ -549,7 +644,9 @@ export function compareRowsCtx(source = {}) {
         return call(source, "useInBuild", nameIndex(name));
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && Number.isInteger(item.number) ? `#${item.number}` : String(index + 1)),
   };
   return ctx;
@@ -558,18 +655,30 @@ export function compareRowsCtx(source = {}) {
 // ---------- workbench.compare.variants ----------
 
 function parsedVariant(variant, v) {
-  try { return { questions: parseVariantText(variant?.text, NAMES[v]), error: null }; }
-  catch (error) { return { questions: null, error: error.message }; }
+  try {
+    return { questions: parseVariantText(variant?.text, NAMES[v]), error: null };
+  } catch (error) {
+    return { questions: null, error: error.message };
+  }
 }
 
 function variantItems(parsed) {
   const [qa, qb] = parsed.map((entry) => entry.questions || Object.create(null));
-  const aIds = Object.keys(qa), bIds = Object.keys(qb);
+  const aIds = Object.keys(qa),
+    bIds = Object.keys(qb);
   const make = (qid) => {
-    const a = hasOwn(qa, qid) ? qa[qid] : undefined, b = hasOwn(qb, qid) ? qb[qid] : undefined;
-    const ia = aIds.indexOf(qid), ib = bIds.indexOf(qid);
-    return { qid, a: a === undefined ? null : clone(a), b: b === undefined ? null : clone(b), ia: ia < 0 ? null : ia, ib: ib < 0 ? null : ib,
-      comparable: isObject(a) && isObject(b) && a.type === b.type };
+    const a = hasOwn(qa, qid) ? qa[qid] : undefined,
+      b = hasOwn(qb, qid) ? qb[qid] : undefined;
+    const ia = aIds.indexOf(qid),
+      ib = bIds.indexOf(qid);
+    return {
+      qid,
+      a: a === undefined ? null : clone(a),
+      b: b === undefined ? null : clone(b),
+      ia: ia < 0 ? null : ia,
+      ib: ib < 0 ? null : ib,
+      comparable: isObject(a) && isObject(b) && a.type === b.type,
+    };
   };
   return deepFreeze([...aIds.map(make), ...bIds.filter((qid) => !hasOwn(qa, qid)).map(make)]);
 }
@@ -577,7 +686,8 @@ function variantItems(parsed) {
 function checkQuestion(question, qid, name) {
   if (question === null) return;
   if (!isObject(question)) throw new Error(`Variant ${name}: question “${qid}” must be an object.`);
-  if (!TYPES.includes(question.type)) throw new Error(`Variant ${name}: question “${qid}” needs a type of noul, choice, score or box.`);
+  if (!TYPES.includes(question.type))
+    throw new Error(`Variant ${name}: question “${qid}” needs a type of noul, choice, score or box.`);
 }
 
 // The two question objects a list of items stands for. Throws an Error a person can act on.
@@ -585,18 +695,23 @@ function questionsFromItems(next) {
   if (!Array.isArray(next)) throw new Error("An edit must give a list of questions.");
   const seen = new Set();
   for (const item of next) {
-    if (!isObject(item) || typeof item.qid !== "string" || !item.qid.trim()) throw new Error("Every question needs a nonblank id.");
-    if (seen.has(item.qid)) throw new Error(`Question id “${item.qid}” appears twice. Give every question a unique id.`);
+    if (!isObject(item) || typeof item.qid !== "string" || !item.qid.trim())
+      throw new Error("Every question needs a nonblank id.");
+    if (seen.has(item.qid))
+      throw new Error(`Question id “${item.qid}” appears twice. Give every question a unique id.`);
     seen.add(item.qid);
-    const a = item.a === undefined ? null : item.a, b = item.b === undefined ? null : item.b;
+    const a = item.a === undefined ? null : item.a,
+      b = item.b === undefined ? null : item.b;
     checkQuestion(a, item.qid, "A");
     checkQuestion(b, item.qid, "B");
   }
-  const qa = Object.create(null), qb = Object.create(null);
+  const qa = Object.create(null),
+    qb = Object.create(null);
   for (const item of next) if (isObject(item.a)) qa[item.qid] = clone(item.a);
   const inB = next.map((item, order) => ({ item, order })).filter(({ item }) => isObject(item.b));
   inB.sort((x, y) => {
-    const px = Number.isInteger(x.item.ib) ? x.item.ib : Infinity, py = Number.isInteger(y.item.ib) ? y.item.ib : Infinity;
+    const px = Number.isInteger(x.item.ib) ? x.item.ib : Infinity,
+      py = Number.isInteger(y.item.ib) ? y.item.ib : Infinity;
     return px === py ? x.order - y.order : px - py;
   });
   for (const { item } of inB) qb[item.qid] = clone(item.b);
@@ -616,7 +731,9 @@ function questionsFromItems(next) {
 export function compareVariantsCtx(source = {}) {
   const raw = () => {
     const list = read(source, "variants", EMPTY);
-    return [0, 1].map((v) => (Array.isArray(list) && isObject(list[v]) ? list[v] : { text: "", model: "", perturb: "", average: false }));
+    return [0, 1].map((v) =>
+      Array.isArray(list) && isObject(list[v]) ? list[v] : { text: "", model: "", perturb: "", average: false },
+    );
   };
   let built = { key: null, parsed: null, items: EMPTY };
   const state = () => {
@@ -630,7 +747,9 @@ export function compareVariantsCtx(source = {}) {
   };
   const items = () => state().items;
   const running = () => read(source, "running", false) === true;
-  const idle = () => { if (running()) throw new Error("Wait for the current Compare run to finish."); };
+  const idle = () => {
+    if (running()) throw new Error("Wait for the current Compare run to finish.");
+  };
   const parsedA = () => {
     const a = state().parsed[0];
     if (a.error) throw new Error(a.error);
@@ -646,9 +765,17 @@ export function compareVariantsCtx(source = {}) {
     data: {
       get variants() {
         const { parsed } = state();
-        return deepFreeze(raw().map((variant, v) => ({ name: NAMES[v], text: typeof variant.text === "string" ? variant.text : "",
-          model: typeof variant.model === "string" ? variant.model : "", perturb: v === 1 && hasOwn(PERTURBS, variant.perturb || "") ? variant.perturb || "" : "",
-          average: v === 1 && variant.average === true, error: parsed[v].error, count: parsed[v].questions ? Object.keys(parsed[v].questions).length : null })));
+        return deepFreeze(
+          raw().map((variant, v) => ({
+            name: NAMES[v],
+            text: typeof variant.text === "string" ? variant.text : "",
+            model: typeof variant.model === "string" ? variant.model : "",
+            perturb: v === 1 && hasOwn(PERTURBS, variant.perturb || "") ? variant.perturb || "" : "",
+            average: v === 1 && variant.average === true,
+            error: parsed[v].error,
+            count: parsed[v].questions ? Object.keys(parsed[v].questions).length : null,
+          })),
+        );
       },
       get current_model() {
         const value = read(source, "currentModel", null);
@@ -658,25 +785,36 @@ export function compareVariantsCtx(source = {}) {
         const value = read(source, "models", null);
         return Array.isArray(value) ? deepFreeze(value.filter((name) => typeof name === "string")) : null;
       },
-      get perturbs() { return PERTURBS; },
+      get perturbs() {
+        return PERTURBS;
+      },
       get rows() {
         const count = integer(read(source, "rowCount", 0)) ?? 0;
         return deepFreeze({ count: Math.max(0, count), sent: Math.min(Math.max(0, count), MAX_ROWS) });
       },
-      get running() { return running(); },
+      get running() {
+        return running();
+      },
       get last_run() {
         const list = read(source, "lastRun", null);
         if (!Array.isArray(list) || list.length < 2) return null;
-        return deepFreeze(list.slice(0, 2).map((variant, v) => ({ name: NAMES[v], model: typeof variant?.model === "string" ? variant.model : null,
-          perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null, average_orders: variant?.average_orders === true,
-          questions: isObject(variant?.questions) ? clone(variant.questions) : {} })));
+        return deepFreeze(
+          list.slice(0, 2).map((variant, v) => ({
+            name: NAMES[v],
+            model: typeof variant?.model === "string" ? variant.model : null,
+            perturb: typeof variant?.perturb === "string" && variant.perturb ? variant.perturb : null,
+            average_orders: variant?.average_orders === true,
+            questions: isObject(variant?.questions) ? clone(variant.questions) : {},
+          })),
+        );
       },
     },
     actions: {
       replaceItems(next) {
         idle();
         const { parsed } = state();
-        for (const entry of parsed) if (entry.error) throw new Error(`${entry.error}. Fix that editor before applying an edit.`);
+        for (const entry of parsed)
+          if (entry.error) throw new Error(`${entry.error}. Fix that editor before applying an edit.`);
         const questions = questionsFromItems(next);
         if (typeof source.setQuestions !== "function") throw new Error("The Compare tab cannot do that here.");
         questions.forEach((list, v) => {
@@ -687,7 +825,8 @@ export function compareVariantsCtx(source = {}) {
         if (!Array.isArray(added) || !added.length) throw new Error("There is nothing to add.");
         const taken = new Set(items().map((item) => item.qid));
         for (const item of added) {
-          if (isObject(item) && taken.has(item.qid)) throw new Error(`Question id “${item.qid}” is already in a variant. Edit it there instead.`);
+          if (isObject(item) && taken.has(item.qid))
+            throw new Error(`Question id “${item.qid}” is already in a variant. Edit it there instead.`);
         }
         ctx.actions.replaceItems([...items(), ...added]);
       },
@@ -697,13 +836,20 @@ export function compareVariantsCtx(source = {}) {
       },
       reverseA() {
         idle();
-        if (!reverseOptions(parsedA())) throw new Error("Variant A has no Choice question whose options can be reordered. Score levels keep their order, and options named by whole numbers always list in ascending order.");
+        if (!reverseOptions(parsedA()))
+          throw new Error(
+            "Variant A has no Choice question whose options can be reordered. Score levels keep their order, and options named by whole numbers always list in ascending order.",
+          );
         return call(source, "reverseA");
       },
       averageA() {
         idle();
         const questions = parsedA();
-        if (!Object.values(questions).some((q) => isObject(q) && q.type === "choice" && isObject(q.criteria) && Object.keys(q.criteria).length > 1)) {
+        if (
+          !Object.values(questions).some(
+            (q) => isObject(q) && q.type === "choice" && isObject(q.criteria) && Object.keys(q.criteria).length > 1,
+          )
+        ) {
           throw new Error("Variant A has no Choice question with two or more options to average over both orders.");
         }
         return call(source, "averageA");
@@ -722,7 +868,12 @@ export function compareVariantsCtx(source = {}) {
       },
       setRows(kind) {
         idle();
-        if (typeof kind !== "string" || !hasOwn(PERTURBS, kind)) throw new Error(`B's rows are ${Object.keys(PERTURBS).map((key) => key || "as written").join(", ")}.`);
+        if (typeof kind !== "string" || !hasOwn(PERTURBS, kind))
+          throw new Error(
+            `B's rows are ${Object.keys(PERTURBS)
+              .map((key) => key || "as written")
+              .join(", ")}.`,
+          );
         return call(source, "setRows", kind);
       },
       setAsk(both) {
@@ -731,7 +882,9 @@ export function compareVariantsCtx(source = {}) {
         return call(source, "setAsk", both);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.qid === "string" && item.qid ? item.qid : String(index + 1)),
   };
   return ctx;

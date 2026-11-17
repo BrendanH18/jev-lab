@@ -7,13 +7,32 @@
 // list as plain objects, shown() what every filter (the page's and Lab's) leaves, data the read-only values packs may
 // read, actions the page's own operations, and env { toast, copy, download }. State lives only in this object:
 // nothing here reads or writes storage, the network or the model.
-import { featureKey, improvementsOf, keysMatch, matchesFilters, parseKeys, sortByFact, filterActive, typingTarget } from "./kit.js";
+import {
+  featureKey,
+  improvementsOf,
+  keysMatch,
+  matchesFilters,
+  parseKeys,
+  sortByFact,
+  filterActive,
+  typingTarget,
+} from "./kit.js";
 import { renderSection } from "./ui.js";
 
-const newView = () => ({ open: {}, filters: [], sort: null, sortDir: "asc", factQuery: "", draft: { key: "", op: "", value: "" }, summaryKey: "",
-  findings: null, transform: { key: "", values: {}, preview: null, undo: null, error: "" },
+const newView = () => ({
+  open: {},
+  filters: [],
+  sort: null,
+  sortDir: "asc",
+  factQuery: "",
+  draft: { key: "", op: "", value: "" },
+  summaryKey: "",
+  findings: null,
+  transform: { key: "", values: {}, preview: null, undo: null, error: "" },
   importer: { key: "", text: "", preview: null, error: "" },
-  tool: { key: "", query: "", group: "", values: {}, result: null, error: "" }, panels: {} });
+  tool: { key: "", query: "", group: "", values: {}, result: null, error: "" },
+  panels: {},
+});
 
 // builders: the ctx builders of static/js/lab/surfaces/*.js for this page, so page code can reach them as LAB.builders.
 export function createLab(packs, builders = {}) {
@@ -61,22 +80,37 @@ export function createLab(packs, builders = {}) {
       return sort && surface.facts.has(sort.key) ? sortByFact(items, sort, surface.facts, ctx) : items;
     },
     refine(id, items, ctx) {
-      return lab.arrange(id, items.filter((item) => lab.matches(id, item, ctx)), ctx);
+      return lab.arrange(
+        id,
+        items.filter((item) => lab.matches(id, item, ctx)),
+        ctx,
+      );
     },
     // Active Lab filters plus an active Lab sort, for a surface's own "filters active" count.
     active(id) {
       const state = views.get(id);
       const surface = surfaces.get(id);
       if (!state || !surface) return 0;
-      return state.filters.filter((filter) => surface.facts.has(filter.key) && filterActive(filter)).length + (state.sort && surface.facts.has(state.sort.key) ? 1 : 0);
+      return (
+        state.filters.filter((filter) => surface.facts.has(filter.key) && filterActive(filter)).length +
+        (state.sort && surface.facts.has(state.sort.key) ? 1 : 0)
+      );
     },
     reset(id) {
       const state = views.get(id);
-      if (state) { state.filters = []; state.sort = null; state.findings = null; }
+      if (state) {
+        state.filters = [];
+        state.sort = null;
+        state.findings = null;
+      }
     },
     // Remember a surface's latest ctx so its commands can run from the palette and from shortcuts.
-    mount(id, ctx) { mounted.set(id, ctx); },
-    unmount(id) { mounted.delete(id); },
+    mount(id, ctx) {
+      mounted.set(id, ctx);
+    },
+    unmount(id) {
+      mounted.delete(id);
+    },
     unmountAll(keep = []) {
       for (const id of [...mounted.keys()]) if (!keep.includes(id)) mounted.delete(id);
     },
@@ -84,7 +118,8 @@ export function createLab(packs, builders = {}) {
     // [[key, command, ctx], ...] for every mounted surface, in pack order.
     commandEntries() {
       const out = [];
-      for (const [id, ctx] of mounted) for (const [key, command] of entries(id, "command")) out.push([key, command, ctx]);
+      for (const [id, ctx] of mounted)
+        for (const [key, command] of entries(id, "command")) out.push([key, command, ctx]);
       return out;
     },
     // Runs the first mounted command whose shortcut matches a keydown. Chords without Ctrl, Cmd or Alt are ignored
@@ -94,9 +129,17 @@ export function createLab(packs, builders = {}) {
         if (!command.keys || !keysMatch(event, command.keys)) continue;
         if (parseKeys(command.keys).bare && typingTarget(event.target)) continue;
         let available = true;
-        try { available = !command.when || command.when(ctx) !== false; } catch { available = false; }
+        try {
+          available = !command.when || command.when(ctx) !== false;
+        } catch {
+          available = false;
+        }
         if (!available) continue;
-        try { Promise.resolve(command.run(ctx)).catch(onError); } catch (error) { onError(error); }
+        try {
+          Promise.resolve(command.run(ctx)).catch(onError);
+        } catch (error) {
+          onError(error);
+        }
         return key;
       }
       return null;

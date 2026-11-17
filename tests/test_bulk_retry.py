@@ -19,8 +19,12 @@ Q = {"urgent": {"type": "noul", "instructions": "Is `text` urgent?"}}
 
 class BulkRetryTests(unittest.TestCase):
     def test_selected_duplicate_positions_keep_labels_but_send_only_inputs(self):
-        rows = ["", {"text": "same", "_expect": {"urgent": False}},
-                {"text": "same", "_expect": {"urgent": True}, "_test": True}, "third"]
+        rows = [
+            "",
+            {"text": "same", "_expect": {"urgent": False}},
+            {"text": "same", "_expect": {"urgent": True}, "_test": True},
+            "third",
+        ]
         client = FakeClient()
         with patch.object(workbench, "BULK_CONCURRENCY", 1):
             report = workbench.run_bulk(client, rows, Q, field="message", indices=[2, 1])
@@ -99,17 +103,29 @@ class BulkRetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             settings = Settings(environ={}, env_file=Path(folder) / "absent.env")
             client = JevClient(settings, guard=SpendGuard(1, rpm=0), api_key="synthetic-key")
-            rows = [{"text": "not sent"}, {"text": "photo", "_image": "torn-bag", "_expect": {"urgent": True}},
-                    "selected text"] + ["unused"] * 200
-            body = {"kind": "bulk", "rows": rows, "questions": Q, "field": "message",
-                    "model": "jev-1.14.0", "indices": [2, 1]}
+            rows = [
+                {"text": "not sent"},
+                {"text": "photo", "_image": "torn-bag", "_expect": {"urgent": True}},
+                "selected text",
+            ] + ["unused"] * 200
+            body = {
+                "kind": "bulk",
+                "rows": rows,
+                "questions": Q,
+                "field": "message",
+                "model": "jev-1.14.0",
+                "indices": [2, 1],
+            }
             before = client.guard.snapshot()
             boom = AssertionError("no network or budget reservation while estimating")
-            with patch.object(server, "client", client), patch.object(server, "check_model", side_effect=boom), \
-                    patch.object(client, "system_one", side_effect=boom), \
-                    patch.object(client.guard, "check", side_effect=boom), \
-                    patch.object(client.guard, "record", side_effect=boom), \
-                    patch("urllib.request.urlopen", side_effect=boom):
+            with (
+                patch.object(server, "client", client),
+                patch.object(server, "check_model", side_effect=boom),
+                patch.object(client, "system_one", side_effect=boom),
+                patch.object(client.guard, "check", side_effect=boom),
+                patch.object(client.guard, "record", side_effect=boom),
+                patch("urllib.request.urlopen", side_effect=boom),
+            ):
                 preview = server.api_wb_estimate(body)
             self.assertEqual(client.guard.snapshot(), before)
             self.assertEqual((preview["calls"], preview["rows"], preview["capped"]), (2, 2, 3))
@@ -122,11 +138,16 @@ class BulkRetryTests(unittest.TestCase):
                 held(value)
 
             def post(payload):
-                return {"model": payload["model"], "answers": fake_answers(payload["questions"]),
-                        "usage": {"input_tokens": 1}}
+                return {
+                    "model": payload["model"],
+                    "answers": fake_answers(payload["questions"]),
+                    "usage": {"input_tokens": 1},
+                }
 
-            with patch.object(client.guard, "check", side_effect=reserve), \
-                    patch.object(client, "_post_system_one", side_effect=post):
+            with (
+                patch.object(client.guard, "check", side_effect=reserve),
+                patch.object(client, "_post_system_one", side_effect=post),
+            ):
                 workbench.run_bulk(client, rows, Q, field="message", model=body["model"], indices=body["indices"])
             self.assertEqual(len(reserves), preview["calls"])
             self.assertAlmostEqual(sum(reserves), preview["usd"], places=15)

@@ -221,10 +221,11 @@ const EMPTY = Object.freeze([]);
 const EMPTY_OBJECT = Object.freeze({});
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const hasOwn = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object, key) => isObject(object) && Object.hasOwn(object, key);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const str = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : String(value));
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : JSON.stringify(value) ?? "");
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const percent = (value, digits = 0) => `${(value * 100).toFixed(digits)}%`;
 
 function deepFreeze(value) {
@@ -243,7 +244,11 @@ function setOwn(object, key, value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -255,20 +260,36 @@ function call(source, name, ...args) {
 function structuredText(text) {
   const trimmed = text.trim();
   if (!/^[[{]/.test(trimmed)) return false;
-  try { const value = JSON.parse(trimmed); return !!value && typeof value === "object"; } catch { return false; }
+  try {
+    const value = JSON.parse(trimmed);
+    return !!value && typeof value === "object";
+  } catch {
+    return false;
+  }
 }
 
-const pictureOf = (image) => ({ ref: str(image.ref), sample: typeof image.sample === "string" ? image.sample : null,
+const pictureOf = (image) => ({
+  ref: str(image.ref),
+  sample: typeof image.sample === "string" ? image.sample : null,
   name: typeof image.name === "string" ? image.name : null,
-  format: image.format === "png" || image.format === "jpg" ? image.format : image.sample ? "png" : null });
+  format: image.format === "png" || image.format === "jpg" ? image.format : image.sample ? "png" : null,
+});
 const picturesOf = (list) => (Array.isArray(list) ? list.filter(isObject).map(pictureOf) : []);
 
 // ---------- workbench.build.questions ----------
 
 function activeCriteria(type, choice, score, noulYes, noulNo) {
-  if (type === "choice") return choice.filter(([key]) => key.trim()).map(([key, text]) => ({ key: key.trim(), text: text.trim() }));
-  if (type === "score") return score.filter((level) => level.trim()).map((level, index) => ({ key: String(index), text: level.trim() }));
-  if (type === "noul") return [["true", noulYes], ["false", noulNo]].filter(([, text]) => text.trim()).map(([key, text]) => ({ key, text: text.trim() }));
+  if (type === "choice")
+    return choice.filter(([key]) => key.trim()).map(([key, text]) => ({ key: key.trim(), text: text.trim() }));
+  if (type === "score")
+    return score.filter((level) => level.trim()).map((level, index) => ({ key: String(index), text: level.trim() }));
+  if (type === "noul")
+    return [
+      ["true", noulYes],
+      ["false", noulNo],
+    ]
+      .filter(([, text]) => text.trim())
+      .map(([key, text]) => ({ key, text: text.trim() }));
   return [];
 }
 
@@ -277,12 +298,31 @@ function questionItem(row, index, expect, ref) {
   const qid = id.trim();
   const type = str(row.type);
   const instructions = str(row.instructions);
-  const choice = Array.isArray(row.choice) ? row.choice.map((pair) => [str(Array.isArray(pair) ? pair[0] : ""), str(Array.isArray(pair) ? pair[1] : "")]) : [];
+  const choice = Array.isArray(row.choice)
+    ? row.choice.map((pair) => [str(Array.isArray(pair) ? pair[0] : ""), str(Array.isArray(pair) ? pair[1] : "")])
+    : [];
   const score = Array.isArray(row.score) ? row.score.map(str) : [];
-  const noulYes = str(row.noulYes), noulNo = str(row.noulNo);
-  const item = { ref, id, type, instructions, choice, score, noulYes, noulNo, expectation: qid && hasOwn(expect, qid) ? clone(expect[qid]) : null };
-  const facts = { position: index + 1, qid, structured: structuredText(instructions), criteria: activeCriteria(type, choice, score, noulYes, noulNo) };
-  for (const [name, value] of Object.entries(facts)) Object.defineProperty(item, name, { value: deepFreeze(value), enumerable: false });
+  const noulYes = str(row.noulYes),
+    noulNo = str(row.noulNo);
+  const item = {
+    ref,
+    id,
+    type,
+    instructions,
+    choice,
+    score,
+    noulYes,
+    noulNo,
+    expectation: qid && hasOwn(expect, qid) ? clone(expect[qid]) : null,
+  };
+  const facts = {
+    position: index + 1,
+    qid,
+    structured: structuredText(instructions),
+    criteria: activeCriteria(type, choice, score, noulYes, noulNo),
+  };
+  for (const [name, value] of Object.entries(facts))
+    Object.defineProperty(item, name, { value: deepFreeze(value), enumerable: false });
   return deepFreeze(item);
 }
 
@@ -296,27 +336,55 @@ function editableRow(raw, where, limits) {
     if (typeof value !== "string") throw new Error(`${where}: ${name} must be text.`);
     return value;
   };
-  let choice = [["", ""], ["", ""]], score = ["", "", ""];
+  let choice = [
+      ["", ""],
+      ["", ""],
+    ],
+    score = ["", "", ""];
   if (raw.choice !== undefined && raw.choice !== null) {
-    if (!Array.isArray(raw.choice) || !raw.choice.every((pair) => Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === "string"))) {
+    if (
+      !Array.isArray(raw.choice) ||
+      !raw.choice.every(
+        (pair) => Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === "string"),
+      )
+    ) {
       throw new Error(`${where}: choice must be a list of [key, description] text pairs.`);
     }
     choice = raw.choice.map(([key, description]) => [key, description]);
   }
   if (raw.score !== undefined && raw.score !== null) {
-    if (!Array.isArray(raw.score) || !raw.score.every((level) => typeof level === "string")) throw new Error(`${where}: score must be a list of level texts.`);
+    if (!Array.isArray(raw.score) || !raw.score.every((level) => typeof level === "string"))
+      throw new Error(`${where}: score must be a list of level texts.`);
     score = raw.score.slice();
   }
-  const row = { id: text("id"), type: raw.type, instructions: text("instructions"), choice, score, noulYes: text("noulYes"), noulNo: text("noulNo") };
+  const row = {
+    id: text("id"),
+    type: raw.type,
+    instructions: text("instructions"),
+    choice,
+    score,
+    noulYes: text("noulYes"),
+    noulNo: text("noulNo"),
+  };
   const name = row.id.trim() || where;
-  if (row.type === "choice" && choice.filter(([key]) => key.trim()).length > limits.choiceOptions) throw new Error(`${name}: a Choice question takes at most ${limits.choiceOptions} options.`);
-  if (row.type === "score" && score.filter((level) => level.trim()).length > limits.scoreLevels) throw new Error(`${name}: a Score question takes at most ${limits.scoreLevels} levels.`);
+  if (row.type === "choice" && choice.filter(([key]) => key.trim()).length > limits.choiceOptions)
+    throw new Error(`${name}: a Choice question takes at most ${limits.choiceOptions} options.`);
+  if (row.type === "score" && score.filter((level) => level.trim()).length > limits.scoreLevels)
+    throw new Error(`${name}: a Score question takes at most ${limits.scoreLevels} levels.`);
   return row;
 }
 
 // The editor fields of an existing row, for telling an unchanged row from an edited one.
-const projection = (row) => JSON.stringify([str(row.id), str(row.type), str(row.instructions), Array.isArray(row.choice) ? row.choice : [],
-  Array.isArray(row.score) ? row.score : [], str(row.noulYes), str(row.noulNo)]);
+const projection = (row) =>
+  JSON.stringify([
+    str(row.id),
+    str(row.type),
+    str(row.instructions),
+    Array.isArray(row.choice) ? row.choice : [],
+    Array.isArray(row.score) ? row.score : [],
+    str(row.noulYes),
+    str(row.noulNo),
+  ]);
 
 // The next rows and expectations for replaceItems; throws an Error a person can act on. Pure. refOf(row) gives a
 // current row's card reference; the plan's refs[i] is the reference the i-th next row keeps (null: a fresh one).
@@ -324,8 +392,12 @@ function planReplace(rows, expect, next, limits, refOf) {
   if (!Array.isArray(next)) throw new Error("The edit returned no question list.");
   if (next.length > limits.questions) throw new Error(`A request takes at most ${limits.questions} questions.`);
   const byRef = new Map();
-  rows.forEach((row, index) => { const ref = refOf(row); if (!byRef.has(ref)) byRef.set(ref, index); });
-  const origins = [], refs = [];
+  rows.forEach((row, index) => {
+    const ref = refOf(row);
+    if (!byRef.has(ref)) byRef.set(ref, index);
+  });
+  const origins = [],
+    refs = [];
   const claimed = new Set();
   const nextRows = next.map((raw, index) => {
     const row = editableRow(raw, `Question ${index + 1}`, limits);
@@ -342,36 +414,56 @@ function planReplace(rows, expect, next, limits, refOf) {
   if (error) throw new Error(error);
   // Who owns an expectation now: the first card with that id. Expectations no card owns stay as they are.
   const owner = new Map();
-  rows.forEach((row, index) => { const qid = str(row.id).trim(); if (qid && !owner.has(qid)) owner.set(qid, index); });
+  rows.forEach((row, index) => {
+    const qid = str(row.id).trim();
+    if (qid && !owner.has(qid)) owner.set(qid, index);
+  });
   const nextExpect = {};
   const holder = new Map();
-  for (const key of Object.keys(expect || {})) if (!owner.has(key)) { setOwn(nextExpect, key, clone(expect[key])); holder.set(key, null); }
+  for (const key of Object.keys(expect || {}))
+    if (!owner.has(key)) {
+      setOwn(nextExpect, key, clone(expect[key]));
+      holder.set(key, null);
+    }
   for (const [qid, from] of owner) {
     if (!hasOwn(expect, qid)) continue;
     const at = origins.indexOf(from);
-    if (at < 0) throw new Error(`Question “${qid}” has human expectations. Remove it with its own Remove button, which keeps an Undo.`);
+    if (at < 0)
+      throw new Error(
+        `Question “${qid}” has human expectations. Remove it with its own Remove button, which keeps an Undo.`,
+      );
     const moved = nextRows[at].id.trim();
     if (!moved) throw new Error(`Question “${qid}” has human expectations, so it needs an id.`);
-    if (hasOwn(nextExpect, moved)) throw new Error(`Expectations already exist for “${moved}”. Keep or remove them before renaming “${qid}”.`);
+    if (hasOwn(nextExpect, moved))
+      throw new Error(`Expectations already exist for “${moved}”. Keep or remove them before renaming “${qid}”.`);
     setOwn(nextExpect, moved, clone(expect[qid]));
     holder.set(moved, at);
   }
   nextRows.forEach((row, index) => {
     const qid = row.id.trim();
-    if (qid && holder.has(qid) && holder.get(qid) !== index) throw new Error(`Expectations already exist for “${qid}”. A new or renamed question cannot take them over.`);
+    if (qid && holder.has(qid) && holder.get(qid) !== index)
+      throw new Error(`Expectations already exist for “${qid}”. A new or renamed question cannot take them over.`);
   });
-  return { rows: nextRows, expect: nextExpect, origins: origins.map((origin) => (origin === null ? null : rows[origin])), refs };
+  return {
+    rows: nextRows,
+    expect: nextExpect,
+    origins: origins.map((origin) => (origin === null ? null : rows[origin])),
+    refs,
+  };
 }
 
 function planImport(rows, expect, items, limits) {
   if (!Array.isArray(items) || !items.length) throw new Error("There is nothing to import.");
-  if (rows.length + items.length > limits.questions) throw new Error(`A request takes at most ${limits.questions} questions; ${rows.length} are already in the editor.`);
+  if (rows.length + items.length > limits.questions)
+    throw new Error(`A request takes at most ${limits.questions} questions; ${rows.length} are already in the editor.`);
   const added = items.map((raw, index) => {
     const row = editableRow(raw, `Imported question ${index + 1}`, limits);
     const qid = row.id.trim();
     if (!qid) throw new Error(`Imported question ${index + 1} needs an id.`);
-    if (rows.some((other) => str(other.id).trim() === qid)) throw new Error(`Question id “${qid}” is already in the editor. Rename it before importing.`);
-    if (hasOwn(expect, qid)) throw new Error(`Expectations already exist for “${qid}”. Imported questions cannot take them over.`);
+    if (rows.some((other) => str(other.id).trim() === qid))
+      throw new Error(`Question id “${qid}” is already in the editor. Rename it before importing.`);
+    if (hasOwn(expect, qid))
+      throw new Error(`Expectations already exist for “${qid}”. Imported questions cannot take them over.`);
     return row;
   });
   const next = [...rows, ...added];
@@ -382,8 +474,13 @@ function planImport(rows, expect, items, limits) {
 
 function stateView(text) {
   let value;
-  try { value = parseBuildState(text); } catch (error) { return { text, kind: "invalid", value: null, error: String(error.message || error) }; }
-  if (value && typeof value === "object") return { text, kind: Array.isArray(value) ? "array" : "object", value, error: null };
+  try {
+    value = parseBuildState(text);
+  } catch (error) {
+    return { text, kind: "invalid", value: null, error: String(error.message || error) };
+  }
+  if (value && typeof value === "object")
+    return { text, kind: Array.isArray(value) ? "array" : "object", value, error: null };
   return { text, kind: "text", value: null, error: null };
 }
 
@@ -409,7 +506,13 @@ export function wbBuildQuestionsCtx(source = {}) {
   const refs = new WeakMap();
   const taken = new Set();
   let counter = 0;
-  const fresh = () => { let ref; do ref = `q${++counter}`; while (taken.has(ref)); taken.add(ref); return ref; };
+  const fresh = () => {
+    let ref;
+    do ref = `q${++counter}`;
+    while (taken.has(ref));
+    taken.add(ref);
+    return ref;
+  };
   const refOf = (row) => {
     if (!isObject(row)) return fresh();
     if (!refs.has(row)) refs.set(row, fresh());
@@ -441,9 +544,14 @@ export function wbBuildQuestionsCtx(source = {}) {
       return item;
     });
   };
-  const limits = () => ({ ...LIMITS, images: Number.isInteger(read(source, "maxImages", 4)) ? read(source, "maxImages", 4) : 4 });
+  const limits = () => ({
+    ...LIMITS,
+    images: Number.isInteger(read(source, "maxImages", 4)) ? read(source, "maxImages", 4) : 4,
+  });
   const rawPending = () => read(source, "rawPending", false) === true;
-  const refuseRaw = (what) => { if (rawPending()) throw new Error(`Apply the Raw JSON edits before ${what}.`); };
+  const refuseRaw = (what) => {
+    if (rawPending()) throw new Error(`Apply the Raw JSON edits before ${what}.`);
+  };
   const stateKind = () => ctx.data.state.kind;
   const outbound = () => {
     refuseRaw("using this request");
@@ -454,12 +562,17 @@ export function wbBuildQuestionsCtx(source = {}) {
   };
   const commit = (plan, label) => {
     plan.rows.forEach((row, index) => {
-      if (refs.has(row)) return;  // an unchanged card keeps its reference
+      if (refs.has(row)) return; // an unchanged card keeps its reference
       const ref = plan.refs[index];
       if (ref !== null) taken.add(ref);
       refs.set(row, ref !== null ? ref : fresh());
     });
-    return call(source, "commit", { rows: plan.rows, expect: plan.expect, origins: plan.origins, label: str(label) || "Lab edit" });
+    return call(source, "commit", {
+      rows: plan.rows,
+      expect: plan.expect,
+      origins: plan.origins,
+      label: str(label) || "Lab edit",
+    });
   };
 
   const ctx = {
@@ -478,7 +591,9 @@ export function wbBuildQuestionsCtx(source = {}) {
         } else visible = list.filter((item) => !source.matches || source.matches(item, ctx) !== false);
         const arranged = source.arrange ? source.arrange(visible, ctx) : visible;
         return Array.isArray(arranged) ? arranged : visible;
-      } finally { busy = false; }
+      } finally {
+        busy = false;
+      }
     },
     data: {
       get state() {
@@ -486,7 +601,9 @@ export function wbBuildQuestionsCtx(source = {}) {
         if (stateMemo.text !== text) stateMemo = { text, view: deepFreeze(clone(stateView(text))) };
         return stateMemo.view;
       },
-      get images() { return deepFreeze(picturesOf(read(source, "images", EMPTY))); },
+      get images() {
+        return deepFreeze(picturesOf(read(source, "images", EMPTY)));
+      },
       get expect() {
         const expect = expectOf();
         const key = JSON.stringify(expect);
@@ -499,23 +616,47 @@ export function wbBuildQuestionsCtx(source = {}) {
         if (answersMemo.raw !== raw) answersMemo = { raw, value: raw ? deepFreeze(clone(raw)) : null };
         return answersMemo.value;
       },
-      get stale() { return !!read(source, "result", null) && read(source, "stale", false) === true; },
-      get running() { return read(source, "running", false) === true; },
-      get rawMode() { return read(source, "rawMode", false) === true; },
-      get rawPending() { return rawPending(); },
-      get editorError() { return editorQuestionError(rowsOf()); },
+      get stale() {
+        return !!read(source, "result", null) && read(source, "stale", false) === true;
+      },
+      get running() {
+        return read(source, "running", false) === true;
+      },
+      get rawMode() {
+        return read(source, "rawMode", false) === true;
+      },
+      get rawPending() {
+        return rawPending();
+      },
+      get editorError() {
+        return editorQuestionError(rowsOf());
+      },
       get lint() {
         const raw = read(source, "lint", null);
         if (lintMemo.raw !== raw) {
           const report = isObject(raw) ? raw : null;
-          lintMemo = { raw, value: report ? deepFreeze({ findings: Array.isArray(report.findings) ? clone(report.findings) : [],
-            counts: isObject(report.counts) ? clone(report.counts) : { problem: 0, advice: 0 }, guide: str(report.guide),
-            lab: isObject(report.lab) ? { findings: Array.isArray(report.lab.findings) ? clone(report.lab.findings) : [],
-              counts: isObject(report.lab.counts) ? clone(report.lab.counts) : { problem: 0, advice: 0 } } : null }) : null };
+          lintMemo = {
+            raw,
+            value: report
+              ? deepFreeze({
+                  findings: Array.isArray(report.findings) ? clone(report.findings) : [],
+                  counts: isObject(report.counts) ? clone(report.counts) : { problem: 0, advice: 0 },
+                  guide: str(report.guide),
+                  lab: isObject(report.lab)
+                    ? {
+                        findings: Array.isArray(report.lab.findings) ? clone(report.lab.findings) : [],
+                        counts: isObject(report.lab.counts) ? clone(report.lab.counts) : { problem: 0, advice: 0 },
+                      }
+                    : null,
+                })
+              : null,
+          };
         }
         return lintMemo.value;
       },
-      get limits() { return deepFreeze(limits()); },
+      get limits() {
+        return deepFreeze(limits());
+      },
       get origin() {
         const origin = read(source, "origin", EMPTY_OBJECT);
         const text = (value) => (typeof value === "string" && value ? value : null);
@@ -534,19 +675,34 @@ export function wbBuildQuestionsCtx(source = {}) {
       addQuestion(type) {
         refuseRaw("adding questions");
         if (!TYPES.includes(type)) throw new Error("Choose a question type: noul, choice, score or box.");
-        if (rowsOf().length >= LIMITS.questions) throw new Error(`A request takes at most ${LIMITS.questions} questions.`);
+        if (rowsOf().length >= LIMITS.questions)
+          throw new Error(`A request takes at most ${LIMITS.questions} questions.`);
         return call(source, "addQuestion", type);
       },
       focus(target) {
         const list = items();
-        const item = typeof target === "number" ? list.find((entry) => entry.position === target)
-          : list.find((entry) => entry.qid && entry.qid === str(target).trim());
-        if (!item) throw new Error(`There is no question ${typeof target === "number" ? `at position ${target}` : `“${str(target)}”`}.`);
-        if (!ctx.shown().includes(item)) throw new Error(`${item.qid || `Question ${item.position}`} is hidden by the question filters. Clear them to go to it.`);
+        const item =
+          typeof target === "number"
+            ? list.find((entry) => entry.position === target)
+            : list.find((entry) => entry.qid && entry.qid === str(target).trim());
+        if (!item)
+          throw new Error(
+            `There is no question ${typeof target === "number" ? `at position ${target}` : `“${str(target)}”`}.`,
+          );
+        if (!ctx.shown().includes(item))
+          throw new Error(
+            `${item.qid || `Question ${item.position}`} is hidden by the question filters. Clear them to go to it.`,
+          );
         return call(source, "focus", item.position - 1);
       },
-      checkQuestions() { outbound(); return call(source, "checkQuestions"); },
-      exportCode() { outbound(); return call(source, "exportCode"); },
+      checkQuestions() {
+        outbound();
+        return call(source, "checkQuestions");
+      },
+      exportCode() {
+        outbound();
+        return call(source, "exportCode");
+      },
       formatState() {
         if (stateKind() === "invalid") throw new Error(`State: ${ctx.data.state.error}`);
         return call(source, "formatState");
@@ -556,13 +712,17 @@ export function wbBuildQuestionsCtx(source = {}) {
         return call(source, "compactState");
       },
       undoRemove() {
-        if (read(source, "canUndoRemove", false) !== true) throw new Error("No removed question is waiting to be restored.");
+        if (read(source, "canUndoRemove", false) !== true)
+          throw new Error("No removed question is waiting to be restored.");
         return call(source, "undoRemove");
       },
       clearFilters: () => call(source, "clearFilters"),
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
-    itemName: (item, index) => (item && typeof item.qid === "string" && item.qid ? item.qid : `question ${item?.position ?? index + 1}`),
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
+    itemName: (item, index) =>
+      item && typeof item.qid === "string" && item.qid ? item.qid : `question ${item?.position ?? index + 1}`,
   };
   return ctx;
 }
@@ -573,9 +733,13 @@ function resultCriteria(type, question, answer) {
   const criteria = isObject(question) ? question.criteria : undefined;
   if (type === "score") {
     if (Array.isArray(criteria)) return criteria.map((text, index) => ({ key: String(index), text: asText(text) }));
-    return Object.entries(isObject(answer.legend) ? answer.legend : {}).map(([key, text]) => ({ key, text: asText(text) }));
+    return Object.entries(isObject(answer.legend) ? answer.legend : {}).map(([key, text]) => ({
+      key,
+      text: asText(text),
+    }));
   }
-  if ((type === "choice" || type === "noul") && isObject(criteria)) return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
+  if ((type === "choice" || type === "noul") && isObject(criteria))
+    return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
   return [];
 }
 
@@ -584,9 +748,17 @@ function answerItem(id, answer, question, position, expect) {
   let probabilities = [];
   if (type === "noul") {
     const yes = finite(answer.noul);
-    probabilities = yes === null ? [] : [{ key: "yes", p: yes }, { key: "no", p: 1 - yes }];
+    probabilities =
+      yes === null
+        ? []
+        : [
+            { key: "yes", p: yes },
+            { key: "no", p: 1 - yes },
+          ];
   } else if (type === "choice" || type === "score") {
-    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) => (finite(p) === null ? [] : [{ key, p }]));
+    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) =>
+      finite(p) === null ? [] : [{ key, p }],
+    );
   }
   let box = null;
   if (type === "box" && isObject(answer.box)) {
@@ -594,13 +766,18 @@ function answerItem(id, answer, question, position, expect) {
     if (!edges.includes(null)) box = { left: edges[0], top: edges[1], right: edges[2], bottom: edges[3] };
   }
   const criteria = resultCriteria(type, question, answer);
-  let value = null, display = "", scale = null;
+  let value = null,
+    display = "",
+    scale = null;
   if (type === "choice") {
     value = answer.choice === null || answer.choice === undefined ? null : String(answer.choice);
     if (value !== null) display = value.replace(/_/g, " ");
   } else if (type === "score") {
     value = finite(answer.score);
-    const levels = isObject(answer.legend) && Object.keys(answer.legend).length ? Object.keys(answer.legend).length : criteria.length;
+    const levels =
+      isObject(answer.legend) && Object.keys(answer.legend).length
+        ? Object.keys(answer.legend).length
+        : criteria.length;
     scale = levels ? levels - 1 : null;
     if (value !== null) display = scale === null ? value.toFixed(2) : `${value.toFixed(2)} / ${scale}`;
   } else if (type === "noul") {
@@ -609,9 +786,22 @@ function answerItem(id, answer, question, position, expect) {
   } else if (box) display = `${percent(box.right - box.left)} × ${percent(box.bottom - box.top)}`;
   let top = null;
   for (const entry of probabilities) if (!top || entry.p > top.p) top = entry;
-  return deepFreeze({ id, position, type, instructions: isObject(question) ? asText(question.instructions) : "", criteria, value, display, scale,
-    probabilities, top: top ? { ...top } : null, confidence: type === "noul" ? null : finite(answer.confidence), box,
-    expectation: hasOwn(expect, id) ? clone(expect[id]) : null, answer: clone(answer) });
+  return deepFreeze({
+    id,
+    position,
+    type,
+    instructions: isObject(question) ? asText(question.instructions) : "",
+    criteria,
+    value,
+    display,
+    scale,
+    probabilities,
+    top: top ? { ...top } : null,
+    confidence: type === "noul" ? null : finite(answer.confidence),
+    box,
+    expectation: hasOwn(expect, id) ? clone(expect[id]) : null,
+    answer: clone(answer),
+  });
 }
 
 // source: {
@@ -638,11 +828,20 @@ export function wbBuildResultCtx(source = {}) {
     if (viewMemo.result !== raw) {
       const trace = isObject(raw.trace) ? raw.trace : {};
       const request = isObject(trace.request) ? trace.request : null;
-      viewMemo = { result: raw, view: deepFreeze({
-        meta: isObject(raw.meta) ? clone(raw.meta) : null,
-        request: request ? clone({ state: request.state, model: request.model ?? null, questions: isObject(request.questions) ? request.questions : {} }) : null,
-        pictures: picturesOf(raw.images),
-      }) };
+      viewMemo = {
+        result: raw,
+        view: deepFreeze({
+          meta: isObject(raw.meta) ? clone(raw.meta) : null,
+          request: request
+            ? clone({
+                state: request.state,
+                model: request.model ?? null,
+                questions: isObject(request.questions) ? request.questions : {},
+              })
+            : null,
+          pictures: picturesOf(raw.images),
+        }),
+      };
     }
     return viewMemo.view;
   };
@@ -654,8 +853,17 @@ export function wbBuildResultCtx(source = {}) {
     const key = JSON.stringify(ids.map((id) => (hasOwn(expect, id) ? expect[id] : null)));
     if (built.result !== raw || built.key !== key) {
       const questions = view().request?.questions || {};
-      built = { result: raw, key, items: Object.freeze(Object.entries(raw.answers).filter(([, answer]) => isObject(answer))
-        .map(([id, answer], index) => answerItem(id, answer, hasOwn(questions, id) ? questions[id] : null, index + 1, expect))) };
+      built = {
+        result: raw,
+        key,
+        items: Object.freeze(
+          Object.entries(raw.answers)
+            .filter(([, answer]) => isObject(answer))
+            .map(([id, answer], index) =>
+              answerItem(id, answer, hasOwn(questions, id) ? questions[id] : null, index + 1, expect),
+            ),
+        ),
+      };
     }
     return built.items;
   };
@@ -667,17 +875,31 @@ export function wbBuildResultCtx(source = {}) {
       return Array.isArray(arranged) ? arranged : list;
     },
     data: {
-      get meta() { return view()?.meta ?? null; },
-      get request() { return view()?.request ?? null; },
-      get pictures() { return view()?.pictures ?? EMPTY; },
-      get stale() { return !!result() && read(source, "stale", false) === true; },
-      get running() { return read(source, "running", false) === true; },
-      get expect() { return deepFreeze(JSON.parse(JSON.stringify(expectOf()))); },
+      get meta() {
+        return view()?.meta ?? null;
+      },
+      get request() {
+        return view()?.request ?? null;
+      },
+      get pictures() {
+        return view()?.pictures ?? EMPTY;
+      },
+      get stale() {
+        return !!result() && read(source, "stale", false) === true;
+      },
+      get running() {
+        return read(source, "running", false) === true;
+      },
+      get expect() {
+        return deepFreeze(JSON.parse(JSON.stringify(expectOf())));
+      },
       get currentIds() {
         const ids = read(source, "currentIds", EMPTY);
         return deepFreeze(Array.isArray(ids) ? ids.filter((id) => typeof id === "string" && id) : []);
       },
-      get saveOpen() { return read(source, "saveOpen", false) === true; },
+      get saveOpen() {
+        return read(source, "saveOpen", false) === true;
+      },
     },
     actions: {
       inspect() {
@@ -691,12 +913,16 @@ export function wbBuildResultCtx(source = {}) {
       },
       focusQuestion(id) {
         const qid = str(id).trim();
-        if (!qid || !ctx.data.currentIds.includes(qid)) throw new Error(`No question in the editor has the id “${str(id)}” now.`);
-        if (call(source, "focusQuestion", qid) === false) throw new Error(`${qid} is hidden by the question filters. Clear them to go to it.`);
+        if (!qid || !ctx.data.currentIds.includes(qid))
+          throw new Error(`No question in the editor has the id “${str(id)}” now.`);
+        if (call(source, "focusQuestion", qid) === false)
+          throw new Error(`${qid} is hidden by the question filters. Clear them to go to it.`);
         return true;
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;

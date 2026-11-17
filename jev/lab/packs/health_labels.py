@@ -43,10 +43,16 @@ def _entries(rows: List[Any]) -> List[dict]:
             state, raw = workbench.split_labels(row, number)
         except WorkbenchError:
             state, raw = row, None
-        out.append({"n": number, "input": workbench.without_marks(state), "labels": raw if isinstance(raw, dict) else {},
-                    "test": isinstance(state, dict) and state.get(workbench.TEST_KEY) is True,
-                    "picture": state.get(workbench.IMAGE_KEY) if isinstance(state, dict) else None,
-                    "key": decisions._key(row)})
+        out.append(
+            {
+                "n": number,
+                "input": workbench.without_marks(state),
+                "labels": raw if isinstance(raw, dict) else {},
+                "test": isinstance(state, dict) and state.get(workbench.TEST_KEY) is True,
+                "picture": state.get(workbench.IMAGE_KEY) if isinstance(state, dict) else None,
+                "key": decisions._key(row),
+            }
+        )
     return out
 
 
@@ -130,8 +136,13 @@ def too_few_cv_labels(rows, questions):
     for qid, question in questions.items():
         answers = _answers(entries, qid, question)
         if 1 <= len(answers) < CV_MIN_ROWS:
-            out.append({"rows": _rows(answers), "message": "Question `%s` has %s on tuning rows; checking a gate on "
-                        "unseen rows needs at least %d." % (qid, _plural(len(answers), "valid label"), CV_MIN_ROWS)})
+            out.append(
+                {
+                    "rows": _rows(answers),
+                    "message": "Question `%s` has %s on tuning rows; checking a gate on "
+                    "unseen rows needs at least %d." % (qid, _plural(len(answers), "valid label"), CV_MIN_ROWS),
+                }
+            )
     return out
 
 
@@ -143,9 +154,14 @@ def too_few_distinct_inputs(rows, questions):
         answers = _answers(entries, qid, question)
         distinct = len({keys[n] for n, _ in answers})
         if len(answers) >= CV_MIN_ROWS and distinct < CV_MIN_INPUTS:
-            out.append({"rows": _rows(answers), "message": "Question `%s`'s %d valid tuning labels come from %s; "
-                        "cross-validation keeps copies of an input in one fold, so it needs at least %d."
-                        % (qid, len(answers), _plural(distinct, "distinct input"), CV_MIN_INPUTS)})
+            out.append(
+                {
+                    "rows": _rows(answers),
+                    "message": "Question `%s`'s %d valid tuning labels come from %s; "
+                    "cross-validation keeps copies of an input in one fold, so it needs at least %d."
+                    % (qid, len(answers), _plural(distinct, "distinct input"), CV_MIN_INPUTS),
+                }
+            )
     return out
 
 
@@ -158,8 +174,13 @@ def target_not_verifiable(rows, questions):
         missed = [target for target in calibrate.TARGETS[:2] if len(answers) < need[target]]
         if len(answers) >= CV_MIN_ROWS and missed:
             shown = " or ".join("%d%% (%d rows)" % (round(target * 100), need[target]) for target in missed)
-            out.append({"rows": _rows(answers), "message": "Question `%s` has %d valid tuning labels: even with every "
-                        "automated row right, that cannot show %s at 95%% confidence." % (qid, len(answers), shown)})
+            out.append(
+                {
+                    "rows": _rows(answers),
+                    "message": "Question `%s` has %d valid tuning labels: even with every "
+                    "automated row right, that cannot show %s at 95%% confidence." % (qid, len(answers), shown),
+                }
+            )
     return out
 
 
@@ -169,8 +190,13 @@ def labels_only_on_held_out(rows, questions):
     for qid, question in questions.items():
         held = _answers(entries, qid, question, test=True)
         if held and not _answers(entries, qid, question):
-            out.append({"rows": _rows(held), "message": "Question `%s` has valid labels only on held-out rows, so "
-                        "tuning has none to learn from." % qid})
+            out.append(
+                {
+                    "rows": _rows(held),
+                    "message": "Question `%s` has valid labels only on held-out rows, so "
+                    "tuning has none to learn from." % qid,
+                }
+            )
     return out
 
 
@@ -185,8 +211,13 @@ def partial_label_rows(rows, questions):
             held += entry["test"]
     if not found:
         return []
-    return [{"rows": found, "message": "%s labeled for some of the %d questions but not the others (%d held out)."
-             % (_plural(len(found), "row is", "rows are"), len(questions), held)}]
+    return [
+        {
+            "rows": found,
+            "message": "%s labeled for some of the %d questions but not the others (%d held out)."
+            % (_plural(len(found), "row is", "rows are"), len(questions), held),
+        }
+    ]
 
 
 def label_key_near_miss(rows, questions):
@@ -201,18 +232,33 @@ def label_key_near_miss(rows, questions):
             target = loose.get(_LOOSE.sub("", str(name).casefold()))
             if target is not None:
                 groups.setdefault((str(name), target), []).append(entry["n"])
-    return [{"rows": found, "message": "Labels saved under `%s` look meant for question `%s`; only exact question "
-             "ids count as its labels." % (name, target)} for (name, target), found in groups.items()]
+    return [
+        {
+            "rows": found,
+            "message": "Labels saved under `%s` look meant for question `%s`; only exact question "
+            "ids count as its labels." % (name, target),
+        }
+        for (name, target), found in groups.items()
+    ]
 
 
 def labels_on_empty_inputs(rows, questions):
-    found = [entry["n"] for entry in _entries(rows)
-             if any(value is not None for value in entry["labels"].values()) and entry["picture"] is None
-             and _empty(entry["input"])]
+    found = [
+        entry["n"]
+        for entry in _entries(rows)
+        if any(value is not None for value in entry["labels"].values())
+        and entry["picture"] is None
+        and _empty(entry["input"])
+    ]
     if not found:
         return []
-    return [{"rows": found, "message": "%s labels but no input: no fields, or only empty ones, and no picture."
-             % _plural(len(found), "row carries", "rows carry")}]
+    return [
+        {
+            "rows": found,
+            "message": "%s labels but no input: no fields, or only empty ones, and no picture."
+            % _plural(len(found), "row carries", "rows carry"),
+        }
+    ]
 
 
 # ---------- answer distributions (tuning rows only) ----------
@@ -226,8 +272,13 @@ def single_answer(rows, questions):
             continue
         answers = _answers(entries, qid, question)
         if len(answers) >= SINGLE_MIN and len(_counts(answers)) == 1:
-            out.append({"rows": _rows(answers), "message": "Every one of the %d valid tuning labels for `%s` is the "
-                        "same answer, so tuning cannot learn when the answer differs." % (len(answers), qid)})
+            out.append(
+                {
+                    "rows": _rows(answers),
+                    "message": "Every one of the %d valid tuning labels for `%s` is the "
+                    "same answer, so tuning cannot learn when the answer differs." % (len(answers), qid),
+                }
+            )
     return out
 
 
@@ -241,9 +292,14 @@ def dominant_answer(rows, questions):
         counts = _counts(answers)
         top = max(counts.values()) if counts else 0
         if len(answers) >= DOMINANT_MIN and len(counts) > 1 and top >= DOMINANT_SHARE * len(answers):
-            out.append({"rows": _rows(answers), "message": "One answer holds %d%% of `%s`'s %d valid tuning labels; "
-                        "accuracy can look high while the other answers go untested."
-                        % (100 * top // len(answers), qid, len(answers))})
+            out.append(
+                {
+                    "rows": _rows(answers),
+                    "message": "One answer holds %d%% of `%s`'s %d valid tuning labels; "
+                    "accuracy can look high while the other answers go untested."
+                    % (100 * top // len(answers), qid, len(answers)),
+                }
+            )
     return out
 
 
@@ -257,10 +313,19 @@ def rare_answers(rows, questions):
         counts = _counts(answers)
         rare = {key for key, count in counts.items() if count < RARE_BELOW}
         if len(answers) >= RARE_MIN_LABELS and rare:
-            out.append({"rows": [n for n, value in answers if _key(value) in rare],
-                        "message": "Question `%s`: %s fewer than %d tuning labels%s; these rows carry %s."
-                        % (qid, _plural(len(rare), "answer has", "answers have"), RARE_BELOW,
-                           "" if len(rare) == 1 else " each", "it" if len(rare) == 1 else "them")})
+            out.append(
+                {
+                    "rows": [n for n, value in answers if _key(value) in rare],
+                    "message": "Question `%s`: %s fewer than %d tuning labels%s; these rows carry %s."
+                    % (
+                        qid,
+                        _plural(len(rare), "answer has", "answers have"),
+                        RARE_BELOW,
+                        "" if len(rare) == 1 else " each",
+                        "it" if len(rare) == 1 else "them",
+                    ),
+                }
+            )
     return out
 
 
@@ -274,9 +339,20 @@ def unused_choice_options(rows, questions):
         options = list(question["criteria"])
         unused = [option for option in options if _key(option) not in _counts(answers)]
         if answers and len(answers) >= len(options) and unused:
-            out.append({"rows": _rows(answers), "message": "Question `%s`: %d of its %d options %s no tuning label, "
-                        "so tuning never sees %s." % (qid, len(unused), len(options), "has" if len(unused) == 1 else "have",
-                                                      "it" if len(unused) == 1 else "them")})
+            out.append(
+                {
+                    "rows": _rows(answers),
+                    "message": "Question `%s`: %d of its %d options %s no tuning label, "
+                    "so tuning never sees %s."
+                    % (
+                        qid,
+                        len(unused),
+                        len(options),
+                        "has" if len(unused) == 1 else "have",
+                        "it" if len(unused) == 1 else "them",
+                    ),
+                }
+            )
     return out
 
 
@@ -292,37 +368,58 @@ def score_level_gap(rows, questions):
             continue
         gaps = [level for level in range(min(used) + 1, max(used)) if level not in used]
         if gaps:
-            out.append({"rows": _rows(answers), "message": "Question `%s`: %s between its lowest and highest labeled "
-                        "levels %s no tuning label." % (qid, _plural(len(gaps), "level"), "has" if len(gaps) == 1 else "have")})
+            out.append(
+                {
+                    "rows": _rows(answers),
+                    "message": "Question `%s`: %s between its lowest and highest labeled "
+                    "levels %s no tuning label."
+                    % (qid, _plural(len(gaps), "level"), "has" if len(gaps) == 1 else "have"),
+                }
+            )
     return out
 
 
 def redundant_questions(rows, questions):
-    return _pairs(rows, questions, lambda a, b: a == b, ANSWER_TYPES,
-                  "Questions `%s` and `%s` have the same label on all %d tuning rows labeled for both; one of them may "
-                  "not be needed.")
+    return _pairs(
+        rows,
+        questions,
+        lambda a, b: a == b,
+        ANSWER_TYPES,
+        "Questions `%s` and `%s` have the same label on all %d tuning rows labeled for both; one of them may "
+        "not be needed.",
+    )
 
 
 def inverse_noul_questions(rows, questions):
-    return _pairs(rows, questions, lambda a, b: a != b, ("noul",),
-                  "Questions `%s` and `%s` have opposite labels on all %d tuning rows labeled for both; one may be the "
-                  "other asked the other way round.")
+    return _pairs(
+        rows,
+        questions,
+        lambda a, b: a != b,
+        ("noul",),
+        "Questions `%s` and `%s` have opposite labels on all %d tuning rows labeled for both; one may be the "
+        "other asked the other way round.",
+    )
 
 
 def _pairs(rows, questions, agree, types, text):
     entries = _entries(rows)
-    labeled = {qid: dict(_answers(entries, qid, question)) for qid, question in questions.items()
-               if question["type"] in types}
+    labeled = {
+        qid: dict(_answers(entries, qid, question)) for qid, question in questions.items() if question["type"] in types
+    }
     qids = list(labeled)
     out = []
     for i, first in enumerate(qids):
-        for second in qids[i + 1:]:
+        for second in qids[i + 1 :]:
             if questions[first]["type"] != questions[second]["type"]:
                 continue
             shared = sorted(set(labeled[first]) & set(labeled[second]))
             # Two questions that each give one answer throughout agree (or disagree) trivially: single_answer covers it.
             varied = len({_key(labeled[first][n]) for n in shared}) > 1
-            if len(shared) >= SHARED_MIN and varied and all(agree(labeled[first][n], labeled[second][n]) for n in shared):
+            if (
+                len(shared) >= SHARED_MIN
+                and varied
+                and all(agree(labeled[first][n], labeled[second][n]) for n in shared)
+            ):
                 out.append({"rows": shared, "message": text % (first, second, len(shared))})
     return out
 
@@ -346,9 +443,17 @@ def unlabeled_test_rows(rows, questions):
             found.append(entry["n"])
     if not found:
         return []
-    return [{"rows": found, "message": "%s no labels%s, so %s cannot score a gate."
-             % (_plural(len(found), "held-out row has", "held-out rows have"),
-                " for the selected questions" if questions else "", "it" if len(found) == 1 else "they")}]
+    return [
+        {
+            "rows": found,
+            "message": "%s no labels%s, so %s cannot score a gate."
+            % (
+                _plural(len(found), "held-out row has", "held-out rows have"),
+                " for the selected questions" if questions else "",
+                "it" if len(found) == 1 else "they",
+            ),
+        }
+    ]
 
 
 def _share(rows, low: bool):
@@ -359,9 +464,20 @@ def _share(rows, low: bool):
     share = len(held) / total
     if (low and share >= testsplit.MIN_SHARE) or (not low and share <= testsplit.MAX_SHARE):
         return []
-    return [{"rows": held, "message": "Held-out rows are %d of %d labeled rows (%d%%); a test split holds %d%% to "
-             "%d%% of them." % (len(held), total, round(100 * share), round(100 * testsplit.MIN_SHARE),
-                                round(100 * testsplit.MAX_SHARE))}]
+    return [
+        {
+            "rows": held,
+            "message": "Held-out rows are %d of %d labeled rows (%d%%); a test split holds %d%% to "
+            "%d%% of them."
+            % (
+                len(held),
+                total,
+                round(100 * share),
+                round(100 * testsplit.MIN_SHARE),
+                round(100 * testsplit.MAX_SHARE),
+            ),
+        }
+    ]
 
 
 def test_share_too_small(rows, questions):
@@ -377,8 +493,13 @@ def split_side_too_small(rows, questions):
     if not tests or (len(tuning) >= testsplit.MIN_ROWS and len(held) >= testsplit.MIN_ROWS):
         return []
     found = tests if len(held) < testsplit.MIN_ROWS else tuning or tests
-    return [{"rows": found, "message": "The split has %d labeled tuning and %d labeled held-out rows; each side needs "
-             "at least %d." % (len(tuning), len(held), testsplit.MIN_ROWS)}]
+    return [
+        {
+            "rows": found,
+            "message": "The split has %d labeled tuning and %d labeled held-out rows; each side needs "
+            "at least %d." % (len(tuning), len(held), testsplit.MIN_ROWS),
+        }
+    ]
 
 
 def test_rows_one_block(rows, questions):
@@ -391,8 +512,13 @@ def test_rows_one_block(rows, questions):
         where = "last"
     else:
         return []
-    return [{"rows": tests, "message": "All %d held-out rows are the %s rows in order, as a split made by hand often "
-             "is; Hold out test rows draws a random split." % (len(tests), where)}]
+    return [
+        {
+            "rows": tests,
+            "message": "All %d held-out rows are the %s rows in order, as a split made by hand often "
+            "is; Hold out test rows draws a random split." % (len(tests), where),
+        }
+    ]
 
 
 # ---------- Score and Box labels ----------
@@ -405,12 +531,20 @@ def score_labels_one_based(rows, questions):
         if question["type"] != "score":
             continue
         levels = len(question["criteria"])
-        over = [n for n, value in _invalid_tuning(entries, qid, question)
-                if not isinstance(value, bool) and _number(value) == levels]
+        over = [
+            n
+            for n, value in _invalid_tuning(entries, qid, question)
+            if not isinstance(value, bool) and _number(value) == levels
+        ]
         lowest = any(value == 0 for _, value in _answers(entries, qid, question))
         if over and not lowest:
-            out.append({"rows": over, "message": "Question `%s`: these tuning labels are one past the top level and "
-                        "none uses the lowest, as if levels were counted from 1; Score levels count from 0." % qid})
+            out.append(
+                {
+                    "rows": over,
+                    "message": "Question `%s`: these tuning labels are one past the top level and "
+                    "none uses the lowest, as if levels were counted from 1; Score levels count from 0." % qid,
+                }
+            )
     return out
 
 
@@ -426,8 +560,13 @@ def box_label_tiny(rows, questions):
     for qid, answers in _boxes(_entries(rows), questions):
         found = [n for n, box in answers if _box_area(box) < BOX_TINY]
         if found:
-            out.append({"rows": found, "message": "Question `%s`: these tuning Box labels cover under %s of the "
-                        "picture; check they mark the whole object." % (qid, "0.5%")})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these tuning Box labels cover under %s of the "
+                    "picture; check they mark the whole object." % (qid, "0.5%"),
+                }
+            )
     return out
 
 
@@ -436,8 +575,13 @@ def box_label_full_picture(rows, questions):
     for qid, answers in _boxes(_entries(rows), questions):
         found = [n for n, box in answers if _box_area(box) > BOX_FULL]
         if found:
-            out.append({"rows": found, "message": "Question `%s`: these tuning Box labels cover over 95%% of the "
-                        "picture, which says little about where the object is." % qid})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these tuning Box labels cover over 95%% of the "
+                    "picture, which says little about where the object is." % qid,
+                }
+            )
     return out
 
 
@@ -450,8 +594,13 @@ def box_label_sliver(rows, questions):
             if _box_area(box) >= BOX_TINY and max(width / height, height / width) > BOX_ASPECT:
                 found.append(n)
         if found:
-            out.append({"rows": found, "message": "Question `%s`: these tuning Box labels are over %d times longer "
-                        "than wide (as shares of the picture), more like a line than a box." % (qid, BOX_ASPECT)})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these tuning Box labels are over %d times longer "
+                    "than wide (as shares of the picture), more like a line than a box." % (qid, BOX_ASPECT),
+                }
+            )
     return out
 
 
@@ -463,8 +612,12 @@ def box_label_without_picture(rows, questions):
             continue
         found = [entry["n"] for entry in entries if entry["labels"].get(qid) is not None and entry["picture"] is None]
         if found:
-            out.append({"rows": found, "message": "Question `%s`: these rows have a Box label but name no picture "
-                        "with _image." % qid})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these rows have a Box label but name no picture with _image." % qid,
+                }
+            )
     return out
 
 
@@ -482,14 +635,22 @@ def labels_not_canonical(rows, questions):
             value = entry["labels"].get(qid)
             if entry["test"] or not _valid(question, value)[0]:
                 continue
-            canonical = isinstance(value, bool) if question["type"] == "noul" else (
-                isinstance(value, int) and not isinstance(value, bool))
+            canonical = (
+                isinstance(value, bool)
+                if question["type"] == "noul"
+                else (isinstance(value, int) and not isinstance(value, bool))
+            )
             if not canonical:
                 found.append(entry["n"])
         if found:
             want = "true or false" if question["type"] == "noul" else "a whole number"
-            out.append({"rows": found, "message": "Question `%s`: these tuning labels are valid but not saved as %s; "
-                        "writing every label one way keeps rows that agree from looking different." % (qid, want)})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these tuning labels are valid but not saved as %s; "
+                    "writing every label one way keeps rows that agree from looking different." % (qid, want),
+                }
+            )
     return out
 
 
@@ -502,11 +663,19 @@ def fixable_choice_labels(rows, questions):
         folded: Dict[str, List[str]] = {}
         for option in question["criteria"]:
             folded.setdefault(option.strip().casefold(), []).append(option)
-        found = [n for n, value in _invalid_tuning(entries, qid, question)
-                 if isinstance(value, str) and len(folded.get(value.strip().casefold(), [])) == 1]
+        found = [
+            n
+            for n, value in _invalid_tuning(entries, qid, question)
+            if isinstance(value, str) and len(folded.get(value.strip().casefold(), [])) == 1
+        ]
         if found:
-            out.append({"rows": found, "message": "Question `%s`: these tuning labels match one option except for "
-                        "case or spaces; Calibrate and health compare option keys exactly." % qid})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these tuning labels match one option except for "
+                    "case or spaces; Calibrate and health compare option keys exactly." % qid,
+                }
+            )
     return out
 
 
@@ -521,12 +690,20 @@ def label_matches_description(rows, questions):
         else:
             continue
         described = {text.strip().casefold() for text in texts if text.strip()}
-        found = [n for n, value in _invalid_tuning(entries, qid, question)
-                 if isinstance(value, str) and value.strip().casefold() in described]
+        found = [
+            n
+            for n, value in _invalid_tuning(entries, qid, question)
+            if isinstance(value, str) and value.strip().casefold() in described
+        ]
         if found:
             what = "option key" if question["type"] == "choice" else "level number"
-            out.append({"rows": found, "message": "Question `%s`: these tuning labels repeat a description from the "
-                        "criteria instead of giving its %s." % (qid, what)})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these tuning labels repeat a description from the "
+                    "criteria instead of giving its %s." % (qid, what),
+                }
+            )
     return out
 
 
@@ -534,11 +711,19 @@ def blank_text_labels(rows, questions):
     out = []
     entries = _entries(rows)
     for qid in questions:
-        found = [entry["n"] for entry in entries if not entry["test"]
-                 and isinstance(entry["labels"].get(qid), str) and not entry["labels"][qid].strip()]
+        found = [
+            entry["n"]
+            for entry in entries
+            if not entry["test"] and isinstance(entry["labels"].get(qid), str) and not entry["labels"][qid].strip()
+        ]
         if found:
-            out.append({"rows": found, "message": "Question `%s`: these tuning labels are blank text, which counts as an "
-                        "invalid label; leave the label out to mark it missing." % qid})
+            out.append(
+                {
+                    "rows": found,
+                    "message": "Question `%s`: these tuning labels are blank text, which counts as an "
+                    "invalid label; leave the label out to mark it missing." % qid,
+                }
+            )
     return out
 
 
@@ -546,45 +731,72 @@ def _check(ident: str, title: str, check) -> dict:
     return {"id": ident, "kind": "health_check", "title": title, "check": check}
 
 
-PACK = kit.define_pack({
-    "id": "health-labels",
-    "surface": "python.health",
-    "title": "Label coverage and quality",
-    "about": "Dataset health findings about how well the human labels cover and fit the questions, reported as "
-             "row numbers, question ids, counts and shares, never as label values.",
-    "features": [
-        _check("too_few_cv_labels", "Questions with too few tuning labels for cross-validation", too_few_cv_labels),
-        _check("too_few_distinct_inputs", "Questions whose labels come from too few distinct inputs for the folds",
-               too_few_distinct_inputs),
-        _check("target_not_verifiable", "Questions with too few tuning labels to show 90% or 95% accuracy",
-               target_not_verifiable),
-        _check("labels_only_on_held_out", "Questions labeled only on held-out rows", labels_only_on_held_out),
-        _check("partial_label_rows", "Rows labeled for some questions but not the others", partial_label_rows),
-        _check("label_key_near_miss", "Label keys that nearly match a question id", label_key_near_miss),
-        _check("labels_on_empty_inputs", "Labels on rows that send no input", labels_on_empty_inputs),
-        _check("single_answer", "Every tuning label of a question is the same answer", single_answer),
-        _check("dominant_answer", "One answer holds 90% or more of a question's tuning labels", dominant_answer),
-        _check("rare_answers", "Answers with fewer than 5 tuning labels", rare_answers),
-        _check("unused_choice_options", "Choice options no tuning row is labeled with", unused_choice_options),
-        _check("score_level_gap", "Score levels skipped between the lowest and highest labeled level", score_level_gap),
-        _check("redundant_questions", "Two questions whose tuning labels always agree", redundant_questions),
-        _check("inverse_noul_questions", "Two yes/no questions whose tuning labels are always opposite",
-               inverse_noul_questions),
-        _check("unlabeled_test_rows", "Held-out rows with no labels", unlabeled_test_rows),
-        _check("test_share_too_small", "Held-out share of labeled rows under 10%", test_share_too_small),
-        _check("test_share_too_large", "Held-out share of labeled rows over 50%", test_share_too_large),
-        _check("split_side_too_small", "A side of the test split with fewer than 2 labeled rows", split_side_too_small),
-        _check("test_rows_one_block", "Held-out rows that are all the first or all the last rows", test_rows_one_block),
-        _check("score_labels_one_based", "Score labels that look counted from 1 instead of 0", score_labels_one_based),
-        _check("box_label_tiny", "Box labels covering under 0.5% of the picture", box_label_tiny),
-        _check("box_label_full_picture", "Box labels covering over 95% of the picture", box_label_full_picture),
-        _check("box_label_sliver", "Box labels over 20 times longer than wide", box_label_sliver),
-        _check("box_label_without_picture", "Box labels on rows without a picture", box_label_without_picture),
-        _check("labels_not_canonical", "Valid yes/no and Score labels saved as text or decimals", labels_not_canonical),
-        _check("fixable_choice_labels", "Invalid Choice labels that match one option except for case or spaces",
-               fixable_choice_labels),
-        _check("label_matches_description", "Labels that repeat a criteria description instead of its key",
-               label_matches_description),
-        _check("blank_text_labels", "Tuning labels that are blank text", blank_text_labels),
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "health-labels",
+        "surface": "python.health",
+        "title": "Label coverage and quality",
+        "about": "Dataset health findings about how well the human labels cover and fit the questions, reported as "
+        "row numbers, question ids, counts and shares, never as label values.",
+        "features": [
+            _check("too_few_cv_labels", "Questions with too few tuning labels for cross-validation", too_few_cv_labels),
+            _check(
+                "too_few_distinct_inputs",
+                "Questions whose labels come from too few distinct inputs for the folds",
+                too_few_distinct_inputs,
+            ),
+            _check(
+                "target_not_verifiable",
+                "Questions with too few tuning labels to show 90% or 95% accuracy",
+                target_not_verifiable,
+            ),
+            _check("labels_only_on_held_out", "Questions labeled only on held-out rows", labels_only_on_held_out),
+            _check("partial_label_rows", "Rows labeled for some questions but not the others", partial_label_rows),
+            _check("label_key_near_miss", "Label keys that nearly match a question id", label_key_near_miss),
+            _check("labels_on_empty_inputs", "Labels on rows that send no input", labels_on_empty_inputs),
+            _check("single_answer", "Every tuning label of a question is the same answer", single_answer),
+            _check("dominant_answer", "One answer holds 90% or more of a question's tuning labels", dominant_answer),
+            _check("rare_answers", "Answers with fewer than 5 tuning labels", rare_answers),
+            _check("unused_choice_options", "Choice options no tuning row is labeled with", unused_choice_options),
+            _check(
+                "score_level_gap", "Score levels skipped between the lowest and highest labeled level", score_level_gap
+            ),
+            _check("redundant_questions", "Two questions whose tuning labels always agree", redundant_questions),
+            _check(
+                "inverse_noul_questions",
+                "Two yes/no questions whose tuning labels are always opposite",
+                inverse_noul_questions,
+            ),
+            _check("unlabeled_test_rows", "Held-out rows with no labels", unlabeled_test_rows),
+            _check("test_share_too_small", "Held-out share of labeled rows under 10%", test_share_too_small),
+            _check("test_share_too_large", "Held-out share of labeled rows over 50%", test_share_too_large),
+            _check(
+                "split_side_too_small", "A side of the test split with fewer than 2 labeled rows", split_side_too_small
+            ),
+            _check(
+                "test_rows_one_block", "Held-out rows that are all the first or all the last rows", test_rows_one_block
+            ),
+            _check(
+                "score_labels_one_based", "Score labels that look counted from 1 instead of 0", score_labels_one_based
+            ),
+            _check("box_label_tiny", "Box labels covering under 0.5% of the picture", box_label_tiny),
+            _check("box_label_full_picture", "Box labels covering over 95% of the picture", box_label_full_picture),
+            _check("box_label_sliver", "Box labels over 20 times longer than wide", box_label_sliver),
+            _check("box_label_without_picture", "Box labels on rows without a picture", box_label_without_picture),
+            _check(
+                "labels_not_canonical", "Valid yes/no and Score labels saved as text or decimals", labels_not_canonical
+            ),
+            _check(
+                "fixable_choice_labels",
+                "Invalid Choice labels that match one option except for case or spaces",
+                fixable_choice_labels,
+            ),
+            _check(
+                "label_matches_description",
+                "Labels that repeat a criteria description instead of its key",
+                label_matches_description,
+            ),
+            _check("blank_text_labels", "Tuning labels that are blank text", blank_text_labels),
+        ],
+    }
+)

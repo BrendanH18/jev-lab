@@ -23,8 +23,14 @@ from . import calibrate
 
 def averaged_ids(questions: Dict[str, dict]) -> List[str]:
     """The question ids an averaged variant reorders and averages: Choice questions with two or more options."""
-    return [qid for qid, q in questions.items()
-            if isinstance(q, dict) and q.get("type") == "choice" and isinstance(q.get("criteria"), dict) and len(q["criteria"]) > 1]
+    return [
+        qid
+        for qid, q in questions.items()
+        if isinstance(q, dict)
+        and q.get("type") == "choice"
+        and isinstance(q.get("criteria"), dict)
+        and len(q["criteria"]) > 1
+    ]
 
 
 def reverse_options(questions: Dict[str, dict]) -> Optional[Dict[str, dict]]:
@@ -34,8 +40,10 @@ def reverse_options(questions: Dict[str, dict]) -> Optional[Dict[str, dict]]:
     ids = set(averaged_ids(questions))
     if not ids:
         return None
-    return {qid: dict(q, criteria=dict(reversed(list(q["criteria"].items())))) if qid in ids else q
-            for qid, q in questions.items()}
+    return {
+        qid: dict(q, criteria=dict(reversed(list(q["criteria"].items())))) if qid in ids else q
+        for qid, q in questions.items()
+    }
 
 
 def _choice(answer: Any, options: List[str]) -> Optional[Dict[str, float]]:
@@ -51,7 +59,9 @@ def _choice(answer: Any, options: List[str]) -> Optional[Dict[str, float]]:
     return probs
 
 
-def average(first: Dict[str, Any], second: Dict[str, Any], questions: Dict[str, dict]) -> Tuple[Dict[str, Any], Dict[str, list]]:
+def average(
+    first: Dict[str, Any], second: Dict[str, Any], questions: Dict[str, dict]
+) -> Tuple[Dict[str, Any], Dict[str, list]]:
     """(averaged answers, {qid: [first order's pick, reversed order's pick]}).
 
     first answered `questions`; second answered reverse_options(questions). A question whose answers
@@ -91,6 +101,14 @@ def disagreement(runs: List[Any], questions: Dict[str, dict]) -> List[dict]:
         pairs = [run["orders"][qid] for run in runs if isinstance(run, dict) and qid in (run.get("orders") or {})]
         changed = sum(1 for a, b in pairs if a != b)
         low, high = calibrate.wilson(changed, len(pairs))
-        out.append({"qid": qid, "answered": len(pairs), "changed": changed,
-                    "rate": changed / len(pairs) if pairs else None, "low": low, "high": high})
+        out.append(
+            {
+                "qid": qid,
+                "answered": len(pairs),
+                "changed": changed,
+                "rate": changed / len(pairs) if pairs else None,
+                "low": low,
+                "high": high,
+            }
+        )
     return out

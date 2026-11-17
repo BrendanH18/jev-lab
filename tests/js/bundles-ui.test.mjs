@@ -18,17 +18,40 @@ function setup(confirm) {
   const calls = [];
   const bulk = {
     bundle: { data: "zip-bytes", report: {}, name: "Existing dataset", busy: false },
-    datasets: [{ id: "existing-dataset" }], dataset: { id: "existing-dataset" },
-    checkRuns: { "existing-dataset": {} }, agreeRuns: { "existing-dataset": {} },
-    testScore: {}, rowsText: "unsaved input", labelsDirty: true,
+    datasets: [{ id: "existing-dataset" }],
+    dataset: { id: "existing-dataset" },
+    checkRuns: { "existing-dataset": {} },
+    agreeRuns: { "existing-dataset": {} },
+    testScore: {},
+    rowsText: "unsaved input",
+    labelsDirty: true,
   };
   const api = async (path, body) => {
     calls.push({ path, body });
     return path.endsWith("/import") ? { dataset: { id: "existing-dataset" } } : { datasets: bulk.datasets };
   };
-  const run = new Function("W", "api", "slugOf", "confirm", "toast", "render", "handleError", "confirmReviewDiscard",
-    `${handler}; return importBundle;`)({ bulk }, api, () => "existing-dataset", confirm,
-    () => {}, () => {}, (e) => { throw e; }, () => true);
+  const run = new Function(
+    "W",
+    "api",
+    "slugOf",
+    "confirm",
+    "toast",
+    "render",
+    "handleError",
+    "confirmReviewDiscard",
+    `${handler}; return importBundle;`,
+  )(
+    { bulk },
+    api,
+    () => "existing-dataset",
+    confirm,
+    () => {},
+    () => {},
+    (e) => {
+      throw e;
+    },
+    () => true,
+  );
   return { run, bulk, calls };
 }
 

@@ -4,9 +4,20 @@
 // network and no storage of its own: storage, the <html> element, the Lab host and the focusable elements are passed
 // in, so tests/js/chrome.test.mjs runs all of it under Node.
 
-export const NAV_LINKS = Object.freeze([["/", "Overview"], ["/shield", "Shield"], ["/dispatch", "Dispatch"], ["/autopilot", "Autopilot"],
-  ["/claims", "Claims"], ["/reviews", "Reviews"], ["/find", "Find"], ["/play", "Play"], ["/counter", "Counter"], ["/workbench", "Workbench"]]
-  .map((link) => Object.freeze(link)));
+export const NAV_LINKS = Object.freeze(
+  [
+    ["/", "Overview"],
+    ["/shield", "Shield"],
+    ["/dispatch", "Dispatch"],
+    ["/autopilot", "Autopilot"],
+    ["/claims", "Claims"],
+    ["/reviews", "Reviews"],
+    ["/find", "Find"],
+    ["/play", "Play"],
+    ["/counter", "Counter"],
+    ["/workbench", "Workbench"],
+  ].map((link) => Object.freeze(link)),
+);
 
 // The id the skip link targets when the page's <main> has none of its own.
 export const MAIN_ID = "main-content";
@@ -23,7 +34,11 @@ export const normalizeTheme = (value) => (value === "light" || value === "dark" 
 
 // The stored preference. A missing key, a blocked storage and an unknown value all read as "system".
 export function readTheme(storage) {
-  try { return normalizeTheme(storage?.getItem(THEME_KEY)); } catch { return "system"; }
+  try {
+    return normalizeTheme(storage?.getItem(THEME_KEY));
+  } catch {
+    return "system";
+  }
 }
 
 // Remember a preference: "light" or "dark" is stored, "system" removes the key. Returns whether the browser kept
@@ -35,7 +50,9 @@ export function writeTheme(storage, preference) {
     if (preference === "system") storage.removeItem(THEME_KEY);
     else storage.setItem(THEME_KEY, preference);
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 // Show a preference on the <html> element. app.css reads data-theme: "light" and "dark" force a scheme, and no
@@ -61,13 +78,16 @@ export const nextTheme = (preference) => THEMES[(THEMES.indexOf(normalizeTheme(p
 // control character. Throws otherwise, so a command can never send the browser to another origin.
 export function localPath(path) {
   const text = typeof path === "string" ? path : "";
-  if (!/^\/(?!\/)/.test(text) || /[\\\s\u0000-\u001f\u007f]/.test(text)) throw new Error("Lab can only open a page of this app (a path that starts with /).");
+  if (!/^\/(?!\/)/.test(text) || /[\\\s\u0000-\u001f\u007f]/.test(text))
+    throw new Error("Lab can only open a page of this app (a path that starts with /).");
   return text;
 }
 
 // The nav links as [{ path, label, current }], `current` marking the link for `path` (query and hash ignored).
 export function pageLinks(links, path) {
-  const here = String(path ?? "").split(/[?#]/)[0].replace(/(.)\/+$/, "$1");
+  const here = String(path ?? "")
+    .split(/[?#]/)[0]
+    .replace(/(.)\/+$/, "$1");
   return (links || []).map(([href, label]) => ({ path: href, label, current: href === here }));
 }
 
@@ -75,8 +95,19 @@ export function pageLinks(links, path) {
 export const EXTERNAL_HOSTS = Object.freeze(["console.typesafe.ai", "docs.typesafe.ai"]);
 export function externalUrl(url) {
   let parsed = null;
-  try { parsed = new URL(String(url)); } catch { /* refused below */ }
-  if (!parsed || parsed.protocol !== "https:" || !EXTERNAL_HOSTS.includes(parsed.hostname) || parsed.username || parsed.password || parsed.port) {
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    /* refused below */
+  }
+  if (
+    !parsed ||
+    parsed.protocol !== "https:" ||
+    !EXTERNAL_HOSTS.includes(parsed.hostname) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.port
+  ) {
     throw new Error("Lab only opens official TypeSafe pages in a new tab.");
   }
   return parsed.href;
@@ -86,7 +117,11 @@ export function externalUrl(url) {
 // password removed (the hash is kept, since the Workbench names its tab there). null for anything else.
 export function pageUrl(href) {
   let parsed = null;
-  try { parsed = new URL(String(href ?? "")); } catch { return null; }
+  try {
+    parsed = new URL(String(href ?? ""));
+  } catch {
+    return null;
+  }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
   parsed.username = "";
   parsed.password = "";
@@ -98,9 +133,21 @@ export function pageUrl(href) {
 // The shortcuts the chrome itself handles, in the order the keyboard help lists them.
 export const BUILT_IN_SHORTCUTS = Object.freeze([
   Object.freeze({ keys: "Mod+K", title: "Open or close the command palette", group: "Every page" }),
-  Object.freeze({ keys: "Escape", title: "Close the newest dialog, drawer or palette and return focus", group: "Every page" }),
-  Object.freeze({ keys: "Tab", title: "Move through a dialog; focus wraps at its last and first control", group: "Every page" }),
-  Object.freeze({ keys: "Tab", title: "From the top of a page, the first Tab reaches Skip to content", group: "Every page" }),
+  Object.freeze({
+    keys: "Escape",
+    title: "Close the newest dialog, drawer or palette and return focus",
+    group: "Every page",
+  }),
+  Object.freeze({
+    keys: "Tab",
+    title: "Move through a dialog; focus wraps at its last and first control",
+    group: "Every page",
+  }),
+  Object.freeze({
+    keys: "Tab",
+    title: "From the top of a page, the first Tab reaches Skip to content",
+    group: "Every page",
+  }),
 ]);
 
 // The commands of the mounted Lab surfaces as [{ key, title, keys, group, surface }], in palette order (each
@@ -113,8 +160,13 @@ export function commandRows(lab) {
     for (const [key, command] of lab.entries(id, "command")) {
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ key, title: String(command.title), keys: typeof command.keys === "string" && command.keys ? command.keys : null,
-        group: typeof command.group === "string" && command.group ? command.group : null, surface: id });
+      out.push({
+        key,
+        title: String(command.title),
+        keys: typeof command.keys === "string" && command.keys ? command.keys : null,
+        group: typeof command.group === "string" && command.group ? command.group : null,
+        surface: id,
+      });
     }
   }
   return out;
@@ -124,16 +176,25 @@ export function commandRows(lab) {
 // reachable only from the palette (keys null). Rows are { keys, title, group, key }; key is null for built-ins.
 export function keyboardHelp(commands) {
   const rows = BUILT_IN_SHORTCUTS.map((row) => ({ ...row, key: null }));
-  const list = (Array.isArray(commands) ? commands : []).filter((row) => row && typeof row.title === "string" && row.title);
-  const shaped = (row) => ({ keys: typeof row.keys === "string" && row.keys ? row.keys : null, title: row.title,
-    group: typeof row.group === "string" && row.group ? row.group : null, key: typeof row.key === "string" ? row.key : null });
+  const list = (Array.isArray(commands) ? commands : []).filter(
+    (row) => row && typeof row.title === "string" && row.title,
+  );
+  const shaped = (row) => ({
+    keys: typeof row.keys === "string" && row.keys ? row.keys : null,
+    title: row.title,
+    group: typeof row.group === "string" && row.group ? row.group : null,
+    key: typeof row.key === "string" ? row.key : null,
+  });
   return [...rows, ...list.filter((row) => row.keys).map(shaped), ...list.filter((row) => !row.keys).map(shaped)];
 }
 
 // "Mod+Shift+K" as this keyboard shows it: Mod is "Cmd" on a Mac and "Ctrl" elsewhere.
 export function keysLabel(keys, mac = false) {
   if (typeof keys !== "string" || !keys) return "";
-  return keys.split("+").map((part) => (part === "Mod" ? (mac ? "Cmd" : "Ctrl") : part === "Meta" ? (mac ? "Cmd" : "Meta") : part)).join(" + ");
+  return keys
+    .split("+")
+    .map((part) => (part === "Mod" ? (mac ? "Cmd" : "Ctrl") : part === "Meta" ? (mac ? "Cmd" : "Meta") : part))
+    .join(" + ");
 }
 
 // ---------- status snapshot ----------
@@ -165,10 +226,25 @@ export function statusSnapshot(status) {
     backend: text(raw.backend),
     version: text(raw.version),
     price_per_mtok_input: number(raw.price_per_mtok_input),
-    spend: spend ? { budget_usd: budget, spent_usd: spent, reserved_usd: reserved, live_calls: number(spend.live_calls),
-      input_tokens: number(spend.input_tokens), rpm: number(spend.rpm),
-      remaining_usd: budget !== null && budget > 0 && spent !== null ? Math.max(0, budget - spent - (reserved || 0)) : null } : null,
-    env: env ? { can_save: flag(env.can_save), perms_ok: flag(env.perms_ok), problem_count: Array.isArray(env.problems) ? env.problems.length : 0 } : null,
+    spend: spend
+      ? {
+          budget_usd: budget,
+          spent_usd: spent,
+          reserved_usd: reserved,
+          live_calls: number(spend.live_calls),
+          input_tokens: number(spend.input_tokens),
+          rpm: number(spend.rpm),
+          remaining_usd:
+            budget !== null && budget > 0 && spent !== null ? Math.max(0, budget - spent - (reserved || 0)) : null,
+        }
+      : null,
+    env: env
+      ? {
+          can_save: flag(env.can_save),
+          perms_ok: flag(env.perms_ok),
+          problem_count: Array.isArray(env.problems) ? env.problems.length : 0,
+        }
+      : null,
   };
 }
 
@@ -206,8 +282,9 @@ export function createLayers() {
 
 // ---------- Tab wrap for dialogs ----------
 
-export const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), '
-  + 'textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+export const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), ' +
+  'textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
 // Where Tab (or Shift+Tab when `backward`) should go so focus stays inside a dialog: the first element after the
 // last, the last before the first, an edge when focus is outside the list, and null when the browser's own move

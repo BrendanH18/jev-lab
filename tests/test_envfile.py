@@ -64,7 +64,9 @@ class WriteTests(unittest.TestCase):
             subprocess.run(["git", "init", "-q", str(self.root)], check=True, capture_output=True, timeout=10)
         except (subprocess.CalledProcessError, OSError):
             self.skipTest("git init not permitted here")
-        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+        env = dict(
+            os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x"
+        )
         (self.root / ".env").write_text("TYPESAFE_API_KEY=leaked\n")
         subprocess.run(["git", "-C", str(self.root), "add", "-f", ".env"], check=True, capture_output=True, env=env)
         subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "oops"], check=True, capture_output=True, env=env)

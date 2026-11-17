@@ -87,7 +87,12 @@ class TriageRuleTests(unittest.TestCase):
         self.assertEqual(failing(out), ["positive"])
 
     def test_every_check_has_the_claims_shape(self):
-        for out in (triage(safety=0.9), triage(about_us=0.1), triage(), triage(severity=0, tone=4, review={"stars": 5})):
+        for out in (
+            triage(safety=0.9),
+            triage(about_us=0.1),
+            triage(),
+            triage(severity=0, tone=4, review={"stars": 5}),
+        ):
             for c in out["checks"]:
                 self.assertEqual(set(c), {"id", "ok", "level", "label", "detail"})
                 self.assertEqual(c["level"] == "ok", c["ok"])
@@ -139,11 +144,15 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(reviews.triage(a, five, {"thank_tone_at": 2.0})["action"], "thank")
 
     def test_p1_never_sits_below_p2(self):
-        out = reviews.redecide(answers(severity=1.5, tone=3.5, wants_reply=0.1), dict(REVIEW, stars=4),
-                               {"p1_at": 1.0, "p2_at": 2.0})
+        out = reviews.redecide(
+            answers(severity=1.5, tone=3.5, wants_reply=0.1), dict(REVIEW, stars=4), {"p1_at": 1.0, "p2_at": 2.0}
+        )
         self.assertEqual(out["policy"]["p1_at"], 2.0, "a P1 cut below P2 is raised to it")
-        self.assertEqual((out["triage"]["priority"], out["triage"]["action"]), ("P3", "thank"),
-                         "never a P1 review that gets the automatic thank-you")
+        self.assertEqual(
+            (out["triage"]["priority"], out["triage"]["action"]),
+            ("P3", "thank"),
+            "never a P1 review that gets the automatic thank-you",
+        )
         self.assertEqual(reviews.priority(2.0, {"p1_at": 1.0, "p2_at": 2.0}), "P1")
 
     def test_bad_policy_values_fall_back_to_defaults(self):
@@ -217,15 +226,28 @@ class RouteTests(unittest.TestCase):
     def test_check_and_decide(self):
         out = server.api_reviews_check({"review": REVIEW})
         self.assertEqual(out["triage"]["action"], "reply")
-        again = server.api_reviews_decide({"answers": out["answers"], "review": out["review"], "policy": {"p2_at": 2.5}})
+        again = server.api_reviews_decide(
+            {"answers": out["answers"], "review": out["review"], "policy": {"p2_at": 2.5}}
+        )
         self.assertEqual(again["triage"]["action"], "log")
         self.assertIn("compute_ms", again)
         self.assertEqual(len(self.client.calls), 1)
 
     def test_check_rejects_bad_reviews_without_a_call(self):
-        bad = [None, "Stale beans.", dict(REVIEW, stars=0), dict(REVIEW, stars=6), dict(REVIEW, stars=2.5),
-               dict(REVIEW, stars="5"), dict(REVIEW, stars=True), dict(REVIEW, channel="fax"), dict(REVIEW, text="  "),
-               dict(REVIEW, text=None), dict(REVIEW, text="x" * (reviews.MAX_TEXT + 1)), dict(REVIEW, about=7)]
+        bad = [
+            None,
+            "Stale beans.",
+            dict(REVIEW, stars=0),
+            dict(REVIEW, stars=6),
+            dict(REVIEW, stars=2.5),
+            dict(REVIEW, stars="5"),
+            dict(REVIEW, stars=True),
+            dict(REVIEW, channel="fax"),
+            dict(REVIEW, text="  "),
+            dict(REVIEW, text=None),
+            dict(REVIEW, text="x" * (reviews.MAX_TEXT + 1)),
+            dict(REVIEW, about=7),
+        ]
         for review in bad:
             with self.subTest(review=review):
                 with self.assertRaises(server.BadRequest):
@@ -237,9 +259,16 @@ class RouteTests(unittest.TestCase):
     def test_decide_rejects_bad_answers(self):
         good = answers()
         missing = {k: v for k, v in good.items() if k != "tone"}
-        bad_answers = [None, [], missing, dict(good, topic={"choice": "weather"}), dict(good, severity={"score": 7}),
-                       dict(good, safety={"noul": "yes"}), dict(good, about_us={"noul": 1.5}),
-                       dict(good, wants_reply="no")]
+        bad_answers = [
+            None,
+            [],
+            missing,
+            dict(good, topic={"choice": "weather"}),
+            dict(good, severity={"score": 7}),
+            dict(good, safety={"noul": "yes"}),
+            dict(good, about_us={"noul": 1.5}),
+            dict(good, wants_reply="no"),
+        ]
         for bad in bad_answers:
             with self.subTest(answers=bad):
                 with self.assertRaises(server.BadRequest):

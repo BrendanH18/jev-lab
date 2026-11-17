@@ -21,13 +21,13 @@ SHOP = "Harbor Coffee Co., a small coffee roaster with two cafés, an online sho
 MAX_TEXT = 2000
 
 DEFAULT_POLICY = {
-    "safety_at": 0.50,       # at or above: the review reports a safety or health risk; escalate
-    "about_us_min": 0.50,    # below: spam, an ad, or another business; hold for moderation
+    "safety_at": 0.50,  # at or above: the review reports a safety or health risk; escalate
+    "about_us_min": 0.50,  # below: spam, an ad, or another business; hold for moderation
     "wants_reply_at": 0.50,  # at or above: the reviewer asked for a reply, refund, or contact
-    "p1_at": 2.0,            # severity score at or above this is P1
-    "p2_at": 1.0,            # severity score at or above this is P2 and gets a person's reply
-    "mismatch_gap": 2.0,     # tone and stars this many levels apart flag a rating mismatch
-    "thank_tone_at": 3.0,    # tone score at or above this may get the thank-you template
+    "p1_at": 2.0,  # severity score at or above this is P1
+    "p2_at": 1.0,  # severity score at or above this is P2 and gets a person's reply
+    "mismatch_gap": 2.0,  # tone and stars this many levels apart flag a rating mismatch
+    "thank_tone_at": 3.0,  # tone score at or above this may get the thank-you template
 }
 
 CHANNELS = {"website": "Website review", "app": "App store review", "maps": "Map listing"}
@@ -91,38 +91,78 @@ TONE = [
 
 # Sample reviews for the page and for scripts/validate.py. `expect` is what a person would decide.
 EXAMPLES = [
-    {"label": "Glowing praise", "stars": 5, "channel": "maps", "about": "Pier Street café",
-     "text": "Best flat white in town. The barista remembered my name on my second visit and the almond "
-             "croissant was still warm from the oven. Already planning to come back on Saturday.",
-     "expect": {"action": "thank", "team": "cafes", "flags": []}},
-    {"label": "Stale beans", "stars": 2, "channel": "website", "about": "Harbor House Blend, 340 g bag",
-     "text": "The bag that came last week says it was roasted almost three months ago. Flat, papery taste and "
-             "no crema at all, so I poured most of it out. Could you send a fresh bag to replace it?",
-     "expect": {"action": "reply", "team": "roasting", "flags": []}},
-    {"label": "Burned hand", "stars": 1, "channel": "app", "about": "Pier Street café",
-     "text": "The lid on my takeaway latte wasn't pressed on, and it popped off as the barista handed it to me. "
-             "Hot milk went all over my hand and I now have a blister the size of a coin.",
-     "expect": {"action": "escalate", "team": "quality_safety", "flags": ["safety"]}},
-    {"label": "5 stars, furious", "stars": 5, "channel": "website", "about": "Harbor Burr Grinder",
-     "text": "Total waste of $180. The burrs started squealing after one week, and now it grinds half powder, "
-             "half gravel. Cheapest-feeling grinder I have ever owned. Do not buy this.",
-     "expect": {"action": "reply", "team": "equipment_support", "flags": ["rating_mismatch"]}},
-    {"label": "1 star, loves it", "stars": 1, "channel": "maps", "about": "Ethiopia Guji, 250 g bag",
-     "text": "Honestly the best coffee I've had all year. Bright, berry-like, and sweet, even as a plain "
-             "filter. I'll be ordering it again.",
-     "expect": {"action": "reply", "team": "roasting", "flags": ["rating_mismatch"]}},
-    {"label": "Spam", "stars": 5, "channel": "maps", "about": "Pier Street café",
-     "text": "Cracked phone screen? Quickfix Phones on Elm Road replaces screens while you wait. 50% off this "
-             "week only at quickfix.example!",
-     "expect": {"action": "moderate", "team": "moderation", "flags": ["not_about_us"]}},
-    {"label": "Late delivery", "stars": 2, "channel": "website", "about": "Holiday Gift Box",
-     "text": "Ordered on the 2nd with three-day shipping so it would arrive for my sister's birthday on the 8th. "
-             "It turned up on the 14th, a week after the party. The coffee itself is fine.",
-     "expect": {"action": "reply", "team": "fulfillment", "flags": []}},
-    {"label": "Double charge", "stars": 1, "channel": "app", "about": "Monthly bean subscription",
-     "text": "I was charged twice for my October subscription box, $24 each time, and only one box arrived. "
-             "Please refund the second charge.",
-     "expect": {"action": "reply", "team": "billing", "flags": []}},
+    {
+        "label": "Glowing praise",
+        "stars": 5,
+        "channel": "maps",
+        "about": "Pier Street café",
+        "text": "Best flat white in town. The barista remembered my name on my second visit and the almond "
+        "croissant was still warm from the oven. Already planning to come back on Saturday.",
+        "expect": {"action": "thank", "team": "cafes", "flags": []},
+    },
+    {
+        "label": "Stale beans",
+        "stars": 2,
+        "channel": "website",
+        "about": "Harbor House Blend, 340 g bag",
+        "text": "The bag that came last week says it was roasted almost three months ago. Flat, papery taste and "
+        "no crema at all, so I poured most of it out. Could you send a fresh bag to replace it?",
+        "expect": {"action": "reply", "team": "roasting", "flags": []},
+    },
+    {
+        "label": "Burned hand",
+        "stars": 1,
+        "channel": "app",
+        "about": "Pier Street café",
+        "text": "The lid on my takeaway latte wasn't pressed on, and it popped off as the barista handed it to me. "
+        "Hot milk went all over my hand and I now have a blister the size of a coin.",
+        "expect": {"action": "escalate", "team": "quality_safety", "flags": ["safety"]},
+    },
+    {
+        "label": "5 stars, furious",
+        "stars": 5,
+        "channel": "website",
+        "about": "Harbor Burr Grinder",
+        "text": "Total waste of $180. The burrs started squealing after one week, and now it grinds half powder, "
+        "half gravel. Cheapest-feeling grinder I have ever owned. Do not buy this.",
+        "expect": {"action": "reply", "team": "equipment_support", "flags": ["rating_mismatch"]},
+    },
+    {
+        "label": "1 star, loves it",
+        "stars": 1,
+        "channel": "maps",
+        "about": "Ethiopia Guji, 250 g bag",
+        "text": "Honestly the best coffee I've had all year. Bright, berry-like, and sweet, even as a plain "
+        "filter. I'll be ordering it again.",
+        "expect": {"action": "reply", "team": "roasting", "flags": ["rating_mismatch"]},
+    },
+    {
+        "label": "Spam",
+        "stars": 5,
+        "channel": "maps",
+        "about": "Pier Street café",
+        "text": "Cracked phone screen? Quickfix Phones on Elm Road replaces screens while you wait. 50% off this "
+        "week only at quickfix.example!",
+        "expect": {"action": "moderate", "team": "moderation", "flags": ["not_about_us"]},
+    },
+    {
+        "label": "Late delivery",
+        "stars": 2,
+        "channel": "website",
+        "about": "Holiday Gift Box",
+        "text": "Ordered on the 2nd with three-day shipping so it would arrive for my sister's birthday on the 8th. "
+        "It turned up on the 14th, a week after the party. The coffee itself is fine.",
+        "expect": {"action": "reply", "team": "fulfillment", "flags": []},
+    },
+    {
+        "label": "Double charge",
+        "stars": 1,
+        "channel": "app",
+        "about": "Monthly bean subscription",
+        "text": "I was charged twice for my October subscription box, $24 each time, and only one box arrived. "
+        "Please refund the second charge.",
+        "expect": {"action": "reply", "team": "billing", "flags": []},
+    },
 ]
 
 
@@ -134,22 +174,41 @@ def questions() -> Dict[str, dict]:
         "tone": score("How does `review.text` feel about Harbor Coffee Co., judged from its words alone?", TONE),
         "safety": noul(
             "Does `review.text` report that someone was hurt or made ill, or that a product contained something harmful?",
-            yes={"what": "The review reports an injury, burn, illness, allergic reaction, or foreign object",
-                 "examples": ["a burn from a loose lid", "a reaction to an unlisted nut", "glass or plastic in a bag of beans"]},
-            no={"what": "Nobody was hurt and nothing harmful was found",
-                "examples": ["stale or bitter coffee", "a late parcel", "a rude barista", "a double charge"]}),
+            yes={
+                "what": "The review reports an injury, burn, illness, allergic reaction, or foreign object",
+                "examples": [
+                    "a burn from a loose lid",
+                    "a reaction to an unlisted nut",
+                    "glass or plastic in a bag of beans",
+                ],
+            },
+            no={
+                "what": "Nobody was hurt and nothing harmful was found",
+                "examples": ["stale or bitter coffee", "a late parcel", "a rude barista", "a double charge"],
+            },
+        ),
         "wants_reply": noul(
             "Does the writer of `review.text` ask Harbor Coffee Co. for a reply, refund, replacement, or contact?",
-            yes={"what": "The reviewer asks for something back from the shop",
-                 "examples": ["please refund me", "send a fresh bag", "can someone call me", "I'd like an answer"]},
-            no={"what": "The reviewer only shares an opinion or experience",
-                "examples": ["best latte in town", "too bitter for me", "it arrived late"]}),
+            yes={
+                "what": "The reviewer asks for something back from the shop",
+                "examples": ["please refund me", "send a fresh bag", "can someone call me", "I'd like an answer"],
+            },
+            no={
+                "what": "The reviewer only shares an opinion or experience",
+                "examples": ["best latte in town", "too bitter for me", "it arrived late"],
+            },
+        ),
         "about_us": noul(
             "Is `review.text` about Harbor Coffee Co.'s own coffee, cafés, shop, or service?",
-            yes={"what": "The review is about something Harbor Coffee Co. sells or does",
-                 "examples": ["a bag of its beans", "a visit to one of its cafés", "its subscription", "its delivery"]},
-            no={"what": "Spam, an advert, or a review of a different business",
-                "examples": ["a link to another shop", "a review of a different café", "a giveaway or promotion"]}),
+            yes={
+                "what": "The review is about something Harbor Coffee Co. sells or does",
+                "examples": ["a bag of its beans", "a visit to one of its cafés", "its subscription", "its delivery"],
+            },
+            no={
+                "what": "Spam, an advert, or a review of a different business",
+                "examples": ["a link to another shop", "a review of a different café", "a giveaway or promotion"],
+            },
+        ),
     }
 
 
@@ -263,50 +322,111 @@ def triage(answers: Dict[str, dict], review: dict, policy: Optional[dict] = None
     flags: List[str] = []
 
     def done(action: str, team: str, prio: str, reasons: List[str]) -> dict:
-        return {"action": action, "action_label": ACTIONS[action], "team": team, "team_label": TEAMS[team],
-                "priority": prio, "flags": flags, "checks": checks, "reasons": reasons,
-                "auto_reply_allowed": action == "thank", "evidence": dict(ev, stars=stars, rating_gap=gap)}
+        return {
+            "action": action,
+            "action_label": ACTIONS[action],
+            "team": team,
+            "team_label": TEAMS[team],
+            "priority": prio,
+            "flags": flags,
+            "checks": checks,
+            "reasons": reasons,
+            "auto_reply_allowed": action == "thank",
+            "evidence": dict(ev, stars=stars, rating_gap=gap),
+        }
 
     safety_at = _num(policy, "safety_at")
     unsafe = ev["safety"] >= safety_at
-    checks.append(_check("safety", not unsafe, "escalate", "No safety or health risk",
-                         "%s that it reports an injury, illness, or foreign object (escalate at %s)"
-                         % (_pct(ev["safety"]), _pct(safety_at))))
+    checks.append(
+        _check(
+            "safety",
+            not unsafe,
+            "escalate",
+            "No safety or health risk",
+            "%s that it reports an injury, illness, or foreign object (escalate at %s)"
+            % (_pct(ev["safety"]), _pct(safety_at)),
+        )
+    )
     if unsafe:
         flags.append("safety")
-        return done("escalate", "quality_safety", "P1", [
-            "Reports a safety or health risk: escalated as P1 to quality & safety, and no public reply until "
-            "a person has looked at it"])
+        return done(
+            "escalate",
+            "quality_safety",
+            "P1",
+            [
+                "Reports a safety or health risk: escalated as P1 to quality & safety, and no public reply until "
+                "a person has looked at it"
+            ],
+        )
 
     about_min = _num(policy, "about_us_min")
     ours = ev["about_us"] >= about_min
-    checks.append(_check("about_us", ours, "moderate", "About Harbor Coffee Co.",
-                         "%s that it is about the shop (hold below %s)" % (_pct(ev["about_us"]), _pct(about_min))))
+    checks.append(
+        _check(
+            "about_us",
+            ours,
+            "moderate",
+            "About Harbor Coffee Co.",
+            "%s that it is about the shop (hold below %s)" % (_pct(ev["about_us"]), _pct(about_min)),
+        )
+    )
     if not ours:
         flags.append("not_about_us")
-        return done("moderate", "moderation", pri, [
-            "Looks like spam, an advert, or another business: held for a person to moderate, with no reply"])
+        return done(
+            "moderate",
+            "moderation",
+            pri,
+            ["Looks like spam, an advert, or another business: held for a person to moderate, with no reply"],
+        )
 
     team = TOPIC_TEAM[ev["topic"]]
-    checks.append(_check("topic", True, "", "Routed by topic", "%s (%s) goes to %s"
-                         % (ev["topic"].replace("_", " "), _pct(ev["topic_prob"]), TEAMS[team])))
+    checks.append(
+        _check(
+            "topic",
+            True,
+            "",
+            "Routed by topic",
+            "%s (%s) goes to %s" % (ev["topic"].replace("_", " "), _pct(ev["topic_prob"]), TEAMS[team]),
+        )
+    )
 
     p1, p2 = _num(policy, "p1_at"), _num(policy, "p2_at")
     serious = ev["severity"] >= p2
-    checks.append(_check("severity", not serious, "reply", "No real problem reported",
-                         "Severity %.2f of 3 is %s (P1 at %.1f, P2 at %.1f)" % (ev["severity"], pri, p1, p2)))
+    checks.append(
+        _check(
+            "severity",
+            not serious,
+            "reply",
+            "No real problem reported",
+            "Severity %.2f of 3 is %s (P1 at %.1f, P2 at %.1f)" % (ev["severity"], pri, p1, p2),
+        )
+    )
 
     reply_at = _num(policy, "wants_reply_at")
     asks = ev["wants_reply"] >= reply_at
-    checks.append(_check("wants_reply", not asks, "reply", "No reply requested",
-                         "%s that the reviewer asks for a reply, refund, or contact (reply at %s)"
-                         % (_pct(ev["wants_reply"]), _pct(reply_at))))
+    checks.append(
+        _check(
+            "wants_reply",
+            not asks,
+            "reply",
+            "No reply requested",
+            "%s that the reviewer asks for a reply, refund, or contact (reply at %s)"
+            % (_pct(ev["wants_reply"]), _pct(reply_at)),
+        )
+    )
 
     gap_at = _num(policy, "mismatch_gap")
     mismatch = gap >= gap_at
-    checks.append(_check("rating", not mismatch, "reply", "Stars match the words",
-                         "%d stars sit at level %d; the words read %.2f of 4, %.2f levels apart (flag at %.1f)"
-                         % (stars, stars - 1, ev["tone"], gap, gap_at)))
+    checks.append(
+        _check(
+            "rating",
+            not mismatch,
+            "reply",
+            "Stars match the words",
+            "%d stars sit at level %d; the words read %.2f of 4, %.2f levels apart (flag at %.1f)"
+            % (stars, stars - 1, ev["tone"], gap, gap_at),
+        )
+    )
     if mismatch:
         flags.append("rating_mismatch")
 
@@ -322,10 +442,19 @@ def triage(answers: Dict[str, dict], review: dict, policy: Optional[dict] = None
 
     thank_at = _num(policy, "thank_tone_at")
     positive = ev["tone"] >= thank_at
-    checks.append(_check("positive", positive, "info", "Positive enough to thank",
-                         "Tone %.2f of 4 (thank-you template at %.1f)" % (ev["tone"], thank_at)))
+    checks.append(
+        _check(
+            "positive",
+            positive,
+            "info",
+            "Positive enough to thank",
+            "Tone %.2f of 4 (thank-you template at %.1f)" % (ev["tone"], thank_at),
+        )
+    )
     if positive:
-        return done("thank", team, pri, ["Positive, low severity, nothing flagged: the thank-you template may be posted"])
+        return done(
+            "thank", team, pri, ["Positive, low severity, nothing flagged: the thank-you template may be posted"]
+        )
     return done("log", team, pri, ["Nothing to act on: logged for %s" % TEAMS[team]])
 
 

@@ -44,7 +44,7 @@ jobs:
         run: python -m unittest discover -v tests
 
   lint:
-    name: Ruff
+    name: Lint and format
     runs-on: namespace-profile-gitrunner
     timeout-minutes: 5
     steps:
@@ -57,8 +57,15 @@ jobs:
           enable-cache: true
       - name: Install locked dependencies
         run: uv sync --locked
-      - name: Lint
+      - name: Lint Python
         run: uv run --locked ruff check
+      - name: Check Python formatting
+        run: uv run --locked ruff format --check
+      - uses: biomejs/setup-biome@v2
+        with:
+          version: 2.6.4
+      - name: Lint and check formatting of JavaScript
+        run: biome ci .
 
   javascript:
     name: JavaScript modules and tests

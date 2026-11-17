@@ -26,12 +26,17 @@ def built_in_requests(test: unittest.TestCase) -> List[Tuple[str, object, dict, 
     """(name, state, validated questions, picture references) for every built-in request. `test` is the running
     TestCase: the network stubs are its cleanups."""
     test_lint.BuiltInRequestTests.setUp(test)
-    out = [(name, request["state"], request["questions"], set(request.get("assets") or {}))
-           for name, request in test_lint.BuiltInRequestTests.demo_requests(test)]
+    out = [
+        (name, request["state"], request["questions"], set(request.get("assets") or {}))
+        for name, request in test_lint.BuiltInRequestTests.demo_requests(test)
+    ]
     out += [("example " + e["id"], e["state"], e["questions"], set(e.get("images") or {})) for e in examples.EXAMPLES]
     for row in workbench.load_sample_rows():
         state = workbench.split_labels(row, 0)[0]
-        out += [("bulk sample", state, examples.BULK_QUESTIONS, set()), (TERSE, state, examples.TERSE_BULK_QUESTIONS, set())]
+        out += [
+            ("bulk sample", state, examples.BULK_QUESTIONS, set()),
+            (TERSE, state, examples.TERSE_BULK_QUESTIONS, set()),
+        ]
     return [(name, state, workbench.validate_questions(questions), refs) for name, state, questions, refs in out]
 
 

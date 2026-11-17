@@ -69,7 +69,7 @@ def _swap(word: str, rng: random.Random) -> str:
     if not spots:
         return word
     i = rng.choice(spots)
-    return word[:i] + word[i + 1] + word[i] + word[i + 2:]
+    return word[:i] + word[i + 1] + word[i] + word[i + 2 :]
 
 
 def _typos(text: str, rng: random.Random) -> str:
@@ -81,7 +81,7 @@ def _typos(text: str, rng: random.Random) -> str:
         hit = {rng.choice(words).start()}
     out, last = [], 0
     for m in words:
-        out.append(text[last:m.start()])
+        out.append(text[last : m.start()])
         out.append(_swap(m.group(), rng) if m.start() in hit else m.group())
         last = m.end()
     out.append(text[last:])

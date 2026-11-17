@@ -38,15 +38,25 @@ CHANGED_SHOWN = 20
 
 def _policy_rows(results: List[dict], gates: Dict[str, float]) -> List[dict]:
     """checks.evaluate's rows for policy: every answered row, with its labels for the gated questions."""
-    return [{"index": r["index"], "answers": r["answers"], "key": checks._row_text(r.get("row")), "row": r.get("row"),
-             "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates}}
-            for r in results if isinstance(r.get("answers"), dict)]
+    return [
+        {
+            "index": r["index"],
+            "answers": r["answers"],
+            "key": checks._row_text(r.get("row")),
+            "row": r.get("row"),
+            "labels": {q: v for q, v in (r.get("expect") or {}).items() if q in gates},
+        }
+        for r in results
+        if isinstance(r.get("answers"), dict)
+    ]
 
 
 def _scored(results: List[dict], check: dict) -> Dict[Any, dict]:
     """Each labeled row's policy result under the check's gate, by row index; {} when the answers cannot be read."""
     try:
-        rep = policy.evaluate(_policy_rows(results, check["gates"]), check["gates"], check["signal"], check.get("rules"))
+        rep = policy.evaluate(
+            _policy_rows(results, check["gates"]), check["gates"], check["signal"], check.get("rules")
+        )
     except CalibrationError:
         return {}
     return {r["index"]: r for r in rep["rows"]}
@@ -63,8 +73,10 @@ def paired(current: List[dict], candidate: List[dict], check: dict) -> dict:
         counts["both_right" if x and y else "current_only" if x else "candidate_only" if y else "both_wrong"] += 1
     n = len(both)
     out: Dict[str, Any] = {"rows": n, **counts, "p": mcnemar(counts["current_only"], counts["candidate_only"])}
-    for side, right in (("current", counts["both_right"] + counts["current_only"]),
-                        ("candidate", counts["both_right"] + counts["candidate_only"])):
+    for side, right in (
+        ("current", counts["both_right"] + counts["current_only"]),
+        ("candidate", counts["both_right"] + counts["candidate_only"]),
+    ):
         low, high = calibrate.wilson(right, n)
         out[side] = {"correct": right, "accuracy": right / n if n else None, "low": low, "high": high}
     return out
@@ -92,8 +104,14 @@ def changed(current: List[dict], candidate: List[dict], check: dict) -> dict:
                 per[q]["changed"] += 1
                 moved[q] = {"current": was, "candidate": now}
         if moved:
-            rows.append({"index": r["index"], "row": checks._row_text(r.get("row")), "changed": moved,
-                         "label": {q: (r.get("expect") or {}).get(q) for q in moved}})
+            rows.append(
+                {
+                    "index": r["index"],
+                    "row": checks._row_text(r.get("row")),
+                    "changed": moved,
+                    "label": {q: (r.get("expect") or {}).get(q) for q in moved},
+                }
+            )
     for p in per.values():
         p["share"] = p["changed"] / p["rows"] if p["rows"] else None
         p["low"], p["high"] = calibrate.wilson(p["changed"], p["rows"])
@@ -117,16 +135,40 @@ def retune(results: List[dict], check: dict) -> dict:
     if cv["targets"]:
         t = cv["targets"][0]
         u = t["unseen"]
-        unseen = {"folds": cv["folds"], "automated": u["automated"], "coverage": u["coverage"],
-                  "accuracy": u["accuracy"], "low": u["low"], "high": u["high"], "unreached": t["unreached"],
-                  "below": t["below"]}
+        unseen = {
+            "folds": cv["folds"],
+            "automated": u["automated"],
+            "coverage": u["coverage"],
+            "accuracy": u["accuracy"],
+            "low": u["low"],
+            "high": u["high"],
+            "unreached": t["unreached"],
+            "below": t["below"],
+        }
     gates = None if steps is None else {q: steps[j] / STEPS for j, q in enumerate(qids)}
-    return {"gates": gates, "problem": None, "unseen": unseen, "minimum": cv["minimum"], "holdout_problem": cv["problem"]}
+    return {
+        "gates": gates,
+        "problem": None,
+        "unseen": unseen,
+        "minimum": cv["minimum"],
+        "holdout_problem": cv["problem"],
+    }
 
 
 def _judged(rep: dict) -> dict:
-    keys = ("status", "reasons", "targets", "labeled", "automated", "correct", "coverage", "accuracy",
-            "accuracy_low", "accuracy_high", "mistakes_total")
+    keys = (
+        "status",
+        "reasons",
+        "targets",
+        "labeled",
+        "automated",
+        "correct",
+        "coverage",
+        "accuracy",
+        "accuracy_low",
+        "accuracy_high",
+        "mistakes_total",
+    )
     out = {k: rep.get(k) for k in keys}
     if "slice_targets" in rep:
         out["slice_targets"] = rep["slice_targets"]
@@ -141,7 +183,9 @@ def compare(current: dict, candidate: dict, check: dict) -> dict:
     tuned = retune(candidate["results"], check)
     retuned = None
     if tuned["gates"] is not None:
-        retuned = _judged(checks.evaluate(candidate["results"], dict(check, gates=tuned["gates"]), candidate["stopped"]))
+        retuned = _judged(
+            checks.evaluate(candidate["results"], dict(check, gates=tuned["gates"]), candidate["stopped"])
+        )
     reasons: List[str] = []
     if now["status"] == "error":
         reasons += ["The run of the version the check was tuned on: %s" % r for r in now["reasons"]]
@@ -155,11 +199,19 @@ def compare(current: dict, candidate: dict, check: dict) -> dict:
         verdict = "retune"
     else:
         verdict = "stay"
-        reasons.append("Neither the saved thresholds nor thresholds tuned on the candidate meet the check's targets "
-                       "on its answers, so keep the check on the version it was tuned on.")
-    return {"verdict": verdict, "reasons": reasons, "current": _judged(now), "candidate": _judged(kept),
-            "retuned": dict(tuned, report=retuned), "paired": paired(current["results"], candidate["results"], check),
-            "changed": changed(current["results"], candidate["results"], check)}
+        reasons.append(
+            "Neither the saved thresholds nor thresholds tuned on the candidate meet the check's targets "
+            "on its answers, so keep the check on the version it was tuned on."
+        )
+    return {
+        "verdict": verdict,
+        "reasons": reasons,
+        "current": _judged(now),
+        "candidate": _judged(kept),
+        "retuned": dict(tuned, report=retuned),
+        "paired": paired(current["results"], candidate["results"], check),
+        "changed": changed(current["results"], candidate["results"], check),
+    }
 
 
 def _answered_by(bulk: dict) -> List[str]:
@@ -168,9 +220,15 @@ def _answered_by(bulk: dict) -> List[str]:
 
 def _side(bulk: dict, asked: str) -> dict:
     latencies = [r["meta"]["latency_ms"] for r in bulk["results"] if "answers" in r]
-    return {"model": asked, "answered_by": _answered_by(bulk), "rows": bulk["rows"], "completed": bulk["completed"],
-            "cost_usd": bulk["cost_usd"], "input_tokens": bulk["input_tokens"],
-            "latency_ms_median": statistics.median(latencies) if latencies else None}
+    return {
+        "model": asked,
+        "answered_by": _answered_by(bulk),
+        "rows": bulk["rows"],
+        "completed": bulk["completed"],
+        "cost_usd": bulk["cost_usd"],
+        "input_tokens": bulk["input_tokens"],
+        "latency_ms_median": statistics.median(latencies) if latencies else None,
+    }
 
 
 def prepare(dataset_id: str, candidate: Any) -> tuple:
@@ -191,23 +249,34 @@ def run(client: JevClient, dataset_id: str, candidate: Any) -> dict:
     dataset, check, current, candidate, questions = prepare(dataset_id, candidate)
     ran = {"current": workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=current)}
     if ran["current"]["stopped"]:  # a missing key or the budget: the candidate would stop too
-        ran["candidate"] = {"results": [], "rows": len(workbench.tuning_rows(dataset)), "completed": 0,
-                            "stopped": ran["current"]["stopped"], "cost_usd": 0.0, "input_tokens": 0, "wall_ms": 0.0}
+        ran["candidate"] = {
+            "results": [],
+            "rows": len(workbench.tuning_rows(dataset)),
+            "completed": 0,
+            "stopped": ran["current"]["stopped"],
+            "cost_usd": 0.0,
+            "input_tokens": 0,
+            "wall_ms": 0.0,
+        }
     else:
         ran["candidate"] = workbench.run_bulk(client, workbench.tuning_rows(dataset), questions, model=candidate)
     report = compare(ran["current"], ran["candidate"], check)
     sides = {"current": _side(ran["current"], current), "candidate": _side(ran["candidate"], candidate)}
     notes: List[str] = []
     if not is_versioned(current):
-        notes.append("The check has no recorded tuned-on version and asks %s, an alias, so the current side is "
-                     "whatever %s points at now." % (current, current))
+        notes.append(
+            "The check has no recorded tuned-on version and asks %s, an alias, so the current side is "
+            "whatever %s points at now." % (current, current)
+        )
     if len(sides["current"]["answered_by"]) > 1:
         notes.append("The current side was answered by %s." % ", ".join(sides["current"]["answered_by"]))
     pinned = sides["candidate"]["answered_by"]
     if report["verdict"] in ("keep", "retune") and (len(pinned) != 1 or not is_versioned(pinned[0])):
         report["verdict"] = "error"
-        report["reasons"].append("The candidate run was answered by %s, so there is no one version to pin the check "
-                                 "to. Run it again." % (", ".join(pinned) or "no version"))
+        report["reasons"].append(
+            "The candidate run was answered by %s, so there is no one version to pin the check "
+            "to. Run it again." % (", ".join(pinned) or "no version")
+        )
     elif pinned and sides["current"]["answered_by"] == pinned:
         notes.append("Both sides were answered by %s, so the comparison only shows run-to-run variation." % pinned[0])
     proposals = {"saved": None, "retuned": None}  # each a check to save, pinned to the candidate's version
@@ -215,18 +284,26 @@ def run(client: JevClient, dataset_id: str, candidate: Any) -> dict:
         # A probability cut fitted on the old version does not carry its coverage to a new model.
         base = {k: v for k, v in check.items() if k not in ("saved_at", "answer_sets")}
         if check.get("answer_sets"):
-            notes.append("The proposed checks leave out the saved answer-set cuts. Refit Answer sets on a Bulk run "
-                         "of the candidate version before exporting review shortlists for it.")
+            notes.append(
+                "The proposed checks leave out the saved answer-set cuts. Refit Answer sets on a Bulk run "
+                "of the candidate version before exporting review shortlists for it."
+            )
         if report["candidate"]["status"] == "pass":
             proposals["saved"] = dict(base, model=pinned[0], tuned_on=pinned[0])
         retuned = report["retuned"]["report"]
         if retuned is not None and retuned["status"] == "pass" and report["retuned"]["gates"] != check["gates"]:
             proposals["retuned"] = dict(base, gates=report["retuned"]["gates"], model=pinned[0], tuned_on=pinned[0])
-    report.update({
-        "id": dataset_id, "name": dataset.get("name") or dataset_id, "check": check, "sides": sides,
-        "notes": notes, "proposals": proposals,
-        "cost_usd": sides["current"]["cost_usd"] + sides["candidate"]["cost_usd"],
-        "input_tokens": sides["current"]["input_tokens"] + sides["candidate"]["input_tokens"],
-        "calls": ran["current"]["completed"] + ran["candidate"]["completed"],
-    })
+    report.update(
+        {
+            "id": dataset_id,
+            "name": dataset.get("name") or dataset_id,
+            "check": check,
+            "sides": sides,
+            "notes": notes,
+            "proposals": proposals,
+            "cost_usd": sides["current"]["cost_usd"] + sides["candidate"]["cost_usd"],
+            "input_tokens": sides["current"]["input_tokens"] + sides["candidate"]["input_tokens"],
+            "calls": ran["current"]["completed"] + ran["candidate"]["completed"],
+        }
+    )
     return report

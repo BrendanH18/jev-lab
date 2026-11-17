@@ -48,8 +48,11 @@ class Temp(unittest.TestCase):
     def second(self, labels_by_text):
         """Browser items: second labels keyed by the row's text."""
         drawn = agreement.sample("tickets", 200)["items"]
-        return [{"row_id": i["row_id"], "labels": labels_by_text[i["row"]["text"]]}
-                for i in drawn if i["row"]["text"] in labels_by_text]
+        return [
+            {"row_id": i["row_id"], "labels": labels_by_text[i["row"]["text"]]}
+            for i in drawn
+            if i["row"]["text"] in labels_by_text
+        ]
 
 
 class KappaTests(unittest.TestCase):
@@ -96,7 +99,9 @@ class SampleTests(Temp):
     def test_csv_has_a_column_per_field_and_label(self):
         self.save()
         names, *lines = agreement.sample("tickets", 30)["csv"].strip().split("\n")
-        self.assertEqual(names, "row_id,text,channel,label:department,label:frustration,label:is_urgent,label:wants_refund")
+        self.assertEqual(
+            names, "row_id,text,channel,label:department,label:frustration,label:is_urgent,label:wants_refund"
+        )
         # Charged twice: labeled for department and is_urgent only, so the others are marked "-".
         self.assertTrue(lines[0].endswith(",Charged twice,,,-,,-"), lines[0])
 
@@ -105,8 +110,10 @@ class SampleTests(Temp):
         self.save(rows)
         names = agreement.sample("tickets", 30)["csv"].split("\n")[0]
         self.assertEqual(names.split(",")[:3], ["row_id", "text", "x"])
-        self.assertEqual(agreement.sample_csv([{"row_id": "r", "row": "plain", "questions": []}], {"a": {}}),
-                         "row_id,row,label:a\nr,plain,-\n")
+        self.assertEqual(
+            agreement.sample_csv([{"row_id": "r", "row": "plain", "questions": []}], {"a": {}}),
+            "row_id,row,label:a\nr,plain,-\n",
+        )
 
     def test_text_a_spreadsheet_would_run_opens_as_text(self):
         self.save([{"text": "=1+1", "n": -3, "_expect": {"department": "none"}}])
@@ -153,13 +160,18 @@ class SampleTests(Temp):
 class CompareTests(Temp):
     def test_compare_counts_agreement_per_question(self):
         self.save()
-        out = agreement.compare("tickets", self.second({
-            "Charged twice": {"department": "billing", "is_urgent": True},
-            "Where is my parcel?": {"department": "billing", "is_urgent": False},
-            "Login fails": {"department": "technical", "is_urgent": "no"},
-            "Love the beans": {"department": "none", "wants_refund": False},  # not in the first labels
-            "Refund the broken grinder": {"department": "billing", "frustration": 2},
-        }))
+        out = agreement.compare(
+            "tickets",
+            self.second(
+                {
+                    "Charged twice": {"department": "billing", "is_urgent": True},
+                    "Where is my parcel?": {"department": "billing", "is_urgent": False},
+                    "Login fails": {"department": "technical", "is_urgent": "no"},
+                    "Love the beans": {"department": "none", "wants_refund": False},  # not in the first labels
+                    "Refund the broken grinder": {"department": "billing", "frustration": 2},
+                }
+            ),
+        )
         dept = out["questions"]["department"]
         self.assertEqual((dept["rows"], dept["agree"]), (5, 4))
         self.assertAlmostEqual(dept["agreement"], 0.8)
@@ -175,8 +187,10 @@ class CompareTests(Temp):
         self.assertEqual(out["counts"]["compared"], 5)
         self.assertEqual(out["overall"]["rows_agree"], 3)
         self.assertEqual((out["overall"]["labels"], out["overall"]["agree"]), (9, 7))
-        self.assertEqual([(d["question"], d["first"], d["second"]) for d in out["disagreements"]],
-                         [("department", "shipping", "billing"), ("is_urgent", True, False)])
+        self.assertEqual(
+            [(d["question"], d["first"], d["second"]) for d in out["disagreements"]],
+            [("department", "shipping", "billing"), ("is_urgent", True, False)],
+        )
         self.assertEqual(out["disagreements"][0]["number"], 2)
         self.assertNotIn("_expect", out["disagreements"][0]["row"])
 
@@ -185,8 +199,19 @@ class CompareTests(Temp):
         items = self.second({"Charged twice": {"department": "billing"}, "Love the beans": {}})
         items += [items[0], {"row_id": "000000000000", "labels": {"department": "none"}}]
         out = agreement.compare("tickets", items)
-        self.assertEqual(out["counts"], {"rows": 4, "matched": 2, "not_found": 1, "repeated": 1, "unlabeled": 1,
-                                         "compared": 1, "all_agree": 1, "only_second": 0})
+        self.assertEqual(
+            out["counts"],
+            {
+                "rows": 4,
+                "matched": 2,
+                "not_found": 1,
+                "repeated": 1,
+                "unlabeled": 1,
+                "compared": 1,
+                "all_agree": 1,
+                "only_second": 0,
+            },
+        )
 
     def test_invalid_second_labels_are_reported_and_skipped(self):
         self.save()
@@ -207,8 +232,13 @@ class CompareTests(Temp):
         text = agreement.sample("tickets", 30)["csv"]
         lines = text.strip().split("\n")
         filled = [lines[0]]
-        answers = {"Charged twice": "billing", "Where is my parcel?": "Shipping", "Login fails": "billing",
-                   "Love the beans": "none", "Refund the broken grinder": "nonsense"}
+        answers = {
+            "Charged twice": "billing",
+            "Where is my parcel?": "Shipping",
+            "Login fails": "billing",
+            "Love the beans": "none",
+            "Refund the broken grinder": "nonsense",
+        }
         for line in lines[1:]:
             cells = next(iter(csvimport.csv.reader([line])))
             cells[3] = answers[cells[1]]
@@ -244,8 +274,13 @@ class SettleTests(Temp):
         self.save()
         checks.save_check("tickets", {"gates": {"department": 0.6}, "min_accuracy": 0.8, "model": "jev-1.14.0"})
         rid = agreement.row_id(ROWS[1])
-        out = agreement.settle("tickets", [{"row_id": rid, "labels": {"department": "billing", "is_urgent": None}},
-                                           {"row_id": agreement.row_id(ROWS[0]), "labels": {"department": "billing"}}])
+        out = agreement.settle(
+            "tickets",
+            [
+                {"row_id": rid, "labels": {"department": "billing", "is_urgent": None}},
+                {"row_id": agreement.row_id(ROWS[0]), "labels": {"department": "billing"}},
+            ],
+        )
         self.assertEqual((out["changed"], out["rows"]), (2, 1))  # the second label was already billing
         saved = workbench.load_dataset("tickets")
         self.assertEqual(saved["rows"][1], {"text": "Where is my parcel?", "_expect": {"department": "billing"}})
@@ -270,10 +305,13 @@ class SettleTests(Temp):
     def test_refusals(self):
         self.save()
         rid = agreement.row_id(ROWS[0])
-        for items, message in [([], "at least one"), ([{"labels": {}}], "needs its row_id"),
-                               ([{"row_id": "000000000000", "labels": {}}], "no longer has"),
-                               ([{"row_id": rid, "labels": {"mood": "x"}}], "not one of the dataset's"),
-                               ([{"row_id": rid, "labels": {"department": "sales"}}], "not an answer")]:
+        for items, message in [
+            ([], "at least one"),
+            ([{"labels": {}}], "needs its row_id"),
+            ([{"row_id": "000000000000", "labels": {}}], "no longer has"),
+            ([{"row_id": rid, "labels": {"mood": "x"}}], "not one of the dataset's"),
+            ([{"row_id": rid, "labels": {"department": "sales"}}], "not an answer"),
+        ]:
             with self.subTest(message), self.assertRaisesRegex(WorkbenchError, message):
                 agreement.settle("tickets", items)
         self.assertEqual(workbench.load_dataset("tickets")["rows"][0], ROWS[0])
@@ -282,9 +320,13 @@ class SettleTests(Temp):
 class ServerTests(Temp):
     def test_routes(self):
         self.save()
-        self.assertIs(server.ROUTES[("POST", "/api/workbench/datasets/agreement/sample")], server.api_wb_agreement_sample)
+        self.assertIs(
+            server.ROUTES[("POST", "/api/workbench/datasets/agreement/sample")], server.api_wb_agreement_sample
+        )
         self.assertIs(server.ROUTES[("POST", "/api/workbench/datasets/agreement")], server.api_wb_agreement)
-        self.assertIs(server.ROUTES[("POST", "/api/workbench/datasets/agreement/settle")], server.api_wb_agreement_settle)
+        self.assertIs(
+            server.ROUTES[("POST", "/api/workbench/datasets/agreement/settle")], server.api_wb_agreement_settle
+        )
         drawn = server.api_wb_agreement_sample({"id": "tickets", "rows": 2, "seed": 3})
         self.assertEqual(len(drawn["items"]), 2)
         items = [{"row_id": i["row_id"], "labels": {"department": "none"}} for i in drawn["items"]]

@@ -12,8 +12,9 @@ from . import calibrate, compare, prelabel, slices, workbench
 from .workbench import WorkbenchError
 
 
-def by_slice(rows: Any, field: Any = None, signal: str = "confidence", first: str = "A",
-             bound: str = "estimate") -> dict:
+def by_slice(
+    rows: Any, field: Any = None, signal: str = "confidence", first: str = "A", bound: str = "estimate"
+) -> dict:
     """Score each input value on the successful pairs the current Compare run supplied."""
     if not isinstance(rows, list) or len(rows) > calibrate.MAX_ROWS:
         raise WorkbenchError("Provide at most %d Compare rows" % calibrate.MAX_ROWS)
@@ -39,15 +40,28 @@ def by_slice(rows: Any, field: Any = None, signal: str = "confidence", first: st
         result = {"value": value, "shown": slices._shown(value), "rows": len(group)}
         try:
             report = compare.evaluate(group, signal, first, bound)
-            result.update(paired=report["paired"], excluded=report["excluded"],
-                          variants=[{key: variant[key] for key in (
-                              "labeled", "correct", "accuracy", "accuracy_low", "accuracy_high", "targets")}
-                                    for variant in report["variants"]])
+            result.update(
+                paired=report["paired"],
+                excluded=report["excluded"],
+                variants=[
+                    {
+                        key: variant[key]
+                        for key in ("labeled", "correct", "accuracy", "accuracy_low", "accuracy_high", "targets")
+                    }
+                    for variant in report["variants"]
+                ],
+            )
         except calibrate.CalibrationError as err:
             result["error"] = str(err)
         reports.append(result)
-    return {"fields": options, "field": field, "paired_rows": len(paired), "slices": reports,
-            "signal": signal, "bound": bound}
+    return {
+        "fields": options,
+        "field": field,
+        "paired_rows": len(paired),
+        "slices": reports,
+        "signal": signal,
+        "bound": bound,
+    }
 
 
 def labeling(rows: Any, questions: Any, indices: Any, qid: Any) -> dict:
@@ -63,15 +77,20 @@ def labeling(rows: Any, questions: Any, indices: Any, qid: Any) -> dict:
         raise WorkbenchError("Choose a shared Choice, Noul, or Score question to label")
     if not isinstance(indices, list) or len(indices) > workbench.MAX_BULK_ROWS:
         raise WorkbenchError("Provide the disagreement row indices")
-    tuning = [index for index, row in enumerate(rows[:workbench.MAX_BULK_ROWS]) if not workbench.row_test(row)]
+    tuning = [index for index, row in enumerate(rows[: workbench.MAX_BULK_ROWS]) if not workbench.row_test(row)]
     selected = set()
     for index in indices:
         if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(tuning):
             raise WorkbenchError("A disagreement index does not match this Compare input snapshot")
         selected.add(tuning[index])
     report = prelabel.prepare(rows, asked)
-    report["items"] = [item for item in report["items"]
-                       if item["index"] in selected and qid in item["missing"]]
-    report.update(eligible=len(report["items"]), missing=sum(len(item["missing"]) for item in report["items"]),
-                  fields=[], field=None, values=[], value=None)
+    report["items"] = [item for item in report["items"] if item["index"] in selected and qid in item["missing"]]
+    report.update(
+        eligible=len(report["items"]),
+        missing=sum(len(item["missing"]) for item in report["items"]),
+        fields=[],
+        field=None,
+        values=[],
+        value=None,
+    )
     return report

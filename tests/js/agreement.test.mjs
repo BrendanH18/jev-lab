@@ -2,8 +2,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { secondItems, settleKey, settledItems, sessionSettlements, sessionItems, changeSecondLabel, agreementEditsUnsaved,
-  restoreAgreementEdits, restoredChoices, unshownSettlements } from "../../static/js/agreement.js";
+import {
+  secondItems,
+  settleKey,
+  settledItems,
+  sessionSettlements,
+  sessionItems,
+  changeSecondLabel,
+  agreementEditsUnsaved,
+  restoreAgreementEdits,
+  restoredChoices,
+  unshownSettlements,
+} from "../../static/js/agreement.js";
 
 const ITEMS = [
   { row_id: "aaa", number: 1, row: { text: "Charged twice" }, questions: ["department", "is_urgent"] },
@@ -26,7 +36,9 @@ test("sends only the labeled rows, and only the questions the first labels cover
 });
 
 test("keeps a no label of false, which is a label", () => {
-  assert.deepEqual(secondItems([ITEMS[0]], { aaa: { is_urgent: false } }), [{ row_id: "aaa", labels: { is_urgent: false } }]);
+  assert.deepEqual(secondItems([ITEMS[0]], { aaa: { is_urgent: false } }), [
+    { row_id: "aaa", labels: { is_urgent: false } },
+  ]);
 });
 
 const DISAGREE = [
@@ -38,8 +50,8 @@ const DISAGREE = [
 test("sends the settled labels that change the saved one, grouped by row", () => {
   const choices = {
     [settleKey("aaa", "department")]: "shipping",
-    [settleKey("aaa", "is_urgent")]: true,  // kept the first label: nothing to write
-    [settleKey("bbb", "department")]: null,  // neither: remove the label
+    [settleKey("aaa", "is_urgent")]: true, // kept the first label: nothing to write
+    [settleKey("bbb", "department")]: null, // neither: remove the label
   };
   assert.deepEqual(settledItems(DISAGREE, choices), [
     { row_id: "aaa", labels: { department: "shipping" } },
@@ -56,8 +68,11 @@ test("a question id such as __proto__ stays an ordinary label", () => {
 });
 
 test("agreement recovery preserves explicit false, zero and cleared settlements", () => {
-  const choices = { [settleKey("aaa", "urgent")]: false, [settleKey("aaa", "score")]: 0,
-    [settleKey("bbb", "department")]: null };
+  const choices = {
+    [settleKey("aaa", "urgent")]: false,
+    [settleKey("aaa", "score")]: 0,
+    [settleKey("bbb", "department")]: null,
+  };
   const settlements = sessionSettlements(choices);
   const edits = restoreAgreementEdits({ items: [{ row_id: "aaa", labels: { urgent: false, score: 0 } }], settlements });
   assert.deepEqual(edits.labels, { aaa: { urgent: false, score: 0 } });
@@ -65,26 +80,46 @@ test("agreement recovery preserves explicit false, zero and cleared settlements"
   assert.equal(agreementEditsUnsaved({ sample: { items: ITEMS }, labels: {} }), false);
   assert.equal(agreementEditsUnsaved({ sample: { items: ITEMS }, labels: { aaa: { is_urgent: false } } }), true);
   assert.equal(agreementEditsUnsaved({ sample: { items: ITEMS }, labels: {}, pendingSettlements: settlements }), true);
-  const recovered = restoredChoices([{ row_id: "aaa", question: "urgent" }, { row_id: "bbb", question: "department" }], settlements);
+  const recovered = restoredChoices(
+    [
+      { row_id: "aaa", question: "urgent" },
+      { row_id: "bbb", question: "department" },
+    ],
+    settlements,
+  );
   assert.deepEqual(recovered, { [settleKey("aaa", "urgent")]: false, [settleKey("bbb", "department")]: null });
 });
 
-
 test("editing another second label preserves restored and current settlements for unaffected questions", () => {
-  const run = { labels: { a: { urgent: false } }, choices: { [settleKey("a", "other")]: 0 },
-    pendingSettlements: [{ row_id: "a", question: "urgent", value: null }], report: {}, sessionPreview: {} };
+  const run = {
+    labels: { a: { urgent: false } },
+    choices: { [settleKey("a", "other")]: 0 },
+    pendingSettlements: [{ row_id: "a", question: "urgent", value: null }],
+    report: {},
+    sessionPreview: {},
+  };
   changeSecondLabel(run, "b", "urgent", true);
   assert.equal(run.report, null);
-  assert.deepEqual(restoredChoices([{ row_id: "a", question: "urgent" }, { row_id: "a", question: "other" }], run.pendingSettlements),
-    { [settleKey("a", "urgent")]: null, [settleKey("a", "other")]: 0 });
+  assert.deepEqual(
+    restoredChoices(
+      [
+        { row_id: "a", question: "urgent" },
+        { row_id: "a", question: "other" },
+      ],
+      run.pendingSettlements,
+    ),
+    { [settleKey("a", "urgent")]: null, [settleKey("a", "other")]: 0 },
+  );
   changeSecondLabel(run, "a", "urgent", true);
   assert.deepEqual(run.pendingSettlements, [{ row_id: "a", question: "other", value: 0 }]);
 });
 
 test("recovery sends all CSV-imported human labels so a mismatched sample cannot be silently truncated", () => {
   const labels = { aaa: { is_urgent: false }, outside: { department: "billing" }, empty: {} };
-  assert.deepEqual(sessionItems(labels), [{ row_id: "aaa", labels: { is_urgent: false } },
-    { row_id: "outside", labels: { department: "billing" } }]);
+  assert.deepEqual(sessionItems(labels), [
+    { row_id: "aaa", labels: { is_urgent: false } },
+    { row_id: "outside", labels: { department: "billing" } },
+  ]);
 });
 
 test("CSV labels outside the current random sample still count as unsaved human edits", () => {
@@ -92,7 +127,10 @@ test("CSV labels outside the current random sample still count as unsaved human 
 });
 
 test("settlements outside a capped report remain pending for the next download and comparison", () => {
-  const settlements = [{ row_id: "first", question: "q", value: false }, { row_id: "beyond-cap", question: "q", value: true }];
+  const settlements = [
+    { row_id: "first", question: "q", value: false },
+    { row_id: "beyond-cap", question: "q", value: true },
+  ];
   const shown = [{ row_id: "first", question: "q" }];
   assert.deepEqual(restoredChoices(shown, settlements), { [settleKey("first", "q")]: false });
   assert.deepEqual(unshownSettlements(shown, settlements), [settlements[1]]);

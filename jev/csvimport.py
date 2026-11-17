@@ -93,7 +93,7 @@ def _label_target(name: str) -> Optional[str]:
     low = name.lower()
     for prefix in LABEL_PREFIXES:
         if low.startswith(prefix) and len(name) > len(prefix):
-            return name[len(prefix):].strip()
+            return name[len(prefix) :].strip()
     return None
 
 
@@ -143,7 +143,7 @@ def _roles(names: List[str], questions: Dict[str, dict], chosen: Any) -> Dict[st
         if name not in roles:
             continue  # a column from an earlier file; the new one does not have it
         if isinstance(role, str) and role.startswith("label:"):
-            if role[len("label:"):] not in questions:
+            if role[len("label:") :] not in questions:
                 continue  # a label for a question no longer being run: keep the suggestion
         elif role not in ("state", "skip"):
             raise WorkbenchError("Column %r: use must be state, skip, or label:<question id>" % name)
@@ -155,7 +155,7 @@ def _roles(names: List[str], questions: Dict[str, dict], chosen: Any) -> Dict[st
     targets = [r for r in roles.values() if r.startswith("label:")]
     for target in targets:
         if targets.count(target) > 1:
-            raise WorkbenchError("Two columns label %r; choose one" % target[len("label:"):])
+            raise WorkbenchError("Two columns label %r; choose one" % target[len("label:") :])
     return roles
 
 
@@ -206,7 +206,7 @@ def convert(text: Any, questions: Any = None, columns: Any = None) -> dict:
     delimiter, names, data = parse(text)
     roles = _roles(names, gateable, columns)
     state_cols = [i for i, n in enumerate(names) if roles[n] == "state"]
-    label_cols = [(i, roles[n][len("label:"):]) for i, n in enumerate(names) if roles[n].startswith("label:")]
+    label_cols = [(i, roles[n][len("label:") :]) for i, n in enumerate(names) if roles[n].startswith("label:")]
     whole_row = len(state_cols) == 1 and names[state_cols[0]] == ROW_COLUMN
 
     rows: List[Any] = []
@@ -243,12 +243,16 @@ def convert(text: Any, questions: Any = None, columns: Any = None) -> dict:
             row = {**row, LABEL_KEY: {**(prior if isinstance(prior, dict) else {}), **expect}}
         rows.append(row)
 
-    problems = [{"column": c, "question": roles[c][len("label:"):], "value": v, "rows": n}
-                for (c, v), n in sorted(bad.items(), key=lambda kv: (-kv[1], kv[0]))]
+    problems = [
+        {"column": c, "question": roles[c][len("label:") :], "value": v, "rows": n}
+        for (c, v), n in sorted(bad.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
     return {
         "delimiter": {",": "comma", "\t": "tab", ";": "semicolon"}[delimiter],
-        "columns": [{"name": n, "use": roles[n], "samples": [r[i] for r in data if r[i].strip()][:SAMPLES]}
-                    for i, n in enumerate(names)],
+        "columns": [
+            {"name": n, "use": roles[n], "samples": [r[i] for r in data if r[i].strip()][:SAMPLES]}
+            for i, n in enumerate(names)
+        ],
         "rows": rows,
         "dropped": dropped,
         "empty": empty,

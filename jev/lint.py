@@ -77,7 +77,7 @@ def _resolve(value: Any, path: str) -> bool:
         for key in value:
             if not isinstance(key, str) or not path.startswith(key):
                 continue
-            rest = path[len(key):]
+            rest = path[len(key) :]
             if rest == "" or rest[0] in ".[":
                 if _resolve(value[key], rest[1:] if rest.startswith(".") else rest):
                     return True
@@ -87,7 +87,7 @@ def _resolve(value: Any, path: str) -> bool:
         if not step:
             return False
         index = int(step.group(1) or step.group(2))
-        rest = path[step.end():]
+        rest = path[step.end() :]
         return index < len(value) and _resolve(value[index], rest[1:] if rest.startswith(".") else rest)
     return False
 
@@ -108,11 +108,15 @@ def _missing_paths(qid: str, question: dict, state: Any, refs: set) -> List[dict
         if path in refs or _resolve(state, path):
             continue
         if isinstance(state, (dict, list)):
-            message = ("`%s` is not in the state, so the model cannot see what this question points at. "
-                       "Add the field, or fix the path." % path)
+            message = (
+                "`%s` is not in the state, so the model cannot see what this question points at. "
+                "Add the field, or fix the path." % path
+            )
         else:
-            message = ("`%s` names a field, but the state is text, which has no fields. Make the state a JSON object "
-                       "with a field named `%s`, or remove the backticks." % (path, path.split(".")[0].split("[")[0]))
+            message = (
+                "`%s` names a field, but the state is text, which has no fields. Make the state a JSON object "
+                "with a field named `%s`, or remove the backticks." % (path, path.split(".")[0].split("[")[0])
+            )
         out.append(_finding("problem", "missing_path", qid, message, "#use-structure-in-the-input-state"))
     return out
 
@@ -128,14 +132,28 @@ def _instructions(qid: str, question: dict) -> List[dict]:
     out = []
     marks = _QUOTED.sub("", text).count("?")
     if marks > 1:
-        out.append(_finding("advice", "several_questions", qid,
-                            "The instructions ask %d questions. Ask one narrow question each, and split the rest into "
-                            "their own questions in the same request." % marks, "#decompose-the-questions"))
+        out.append(
+            _finding(
+                "advice",
+                "several_questions",
+                qid,
+                "The instructions ask %d questions. Ask one narrow question each, and split the rest into "
+                "their own questions in the same request." % marks,
+                "#decompose-the-questions",
+            )
+        )
     words = len(text.split())
     if words > LONG_WORDS:
-        out.append(_finding("advice", "long_instructions", qid,
-                            "The instructions run to %d words. Keep the question short, and move guidance into the "
-                            "criteria, or into structured instructions." % words, "#use-structure-in-the-questions"))
+        out.append(
+            _finding(
+                "advice",
+                "long_instructions",
+                qid,
+                "The instructions run to %d words. Keep the question short, and move guidance into the "
+                "criteria, or into structured instructions." % words,
+                "#use-structure-in-the-questions",
+            )
+        )
     return out
 
 
@@ -156,31 +174,65 @@ def _criteria(qid: str, question: dict) -> List[dict]:
         # option among undescribed ones, or the reverse, usually means a description was forgotten.
         empty = [key for key, about in criteria.items() if about in (None, "", {}, [])]
         if empty and len(empty) < len(criteria):
-            out.append(_finding("advice", "undescribed_option", qid,
-                                "%s %s no description, but the other options do. Unless a key says all it covers, "
-                                "describe it: what it covers, what it is not for, and an example." % (_names(empty), "has" if len(empty) == 1 else "have"),
-                                "#use-structure-in-the-questions"))
+            out.append(
+                _finding(
+                    "advice",
+                    "undescribed_option",
+                    qid,
+                    "%s %s no description, but the other options do. Unless a key says all it covers, "
+                    "describe it: what it covers, what it is not for, and an example."
+                    % (_names(empty), "has" if len(empty) == 1 else "have"),
+                    "#use-structure-in-the-questions",
+                )
+            )
         for same in _repeats(list(criteria.items())):
-            out.append(_finding("problem", "same_options", qid,
-                                "%s have the same description, so the model cannot tell them apart. Describe how they "
-                                "differ, or merge them." % _names(same), "#use-structure-in-the-questions"))
+            out.append(
+                _finding(
+                    "problem",
+                    "same_options",
+                    qid,
+                    "%s have the same description, so the model cannot tell them apart. Describe how they "
+                    "differ, or merge them." % _names(same),
+                    "#use-structure-in-the-questions",
+                )
+            )
         described = [about for about in criteria.values() if about not in (None, "", {}, [])]
         shapes = {tuple(sorted(about)) if isinstance(about, dict) else type(about).__name__ for about in described}
         if any(isinstance(about, dict) for about in described) and len(shapes) > 1:
-            out.append(_finding("advice", "mixed_option_fields", qid,
-                                "The options are described with different fields. Use the same field names for every "
-                                "option, so the model can compare them directly.", "#use-structure-in-the-questions"))
+            out.append(
+                _finding(
+                    "advice",
+                    "mixed_option_fields",
+                    qid,
+                    "The options are described with different fields. Use the same field names for every "
+                    "option, so the model can compare them directly.",
+                    "#use-structure-in-the-questions",
+                )
+            )
     elif qtype == "score":
         for same in _repeats([("level %d" % i, level) for i, level in enumerate(criteria)]):
-            out.append(_finding("problem", "same_levels", qid,
-                                "%s have the same description, so the model cannot tell them apart. Describe what "
-                                "changes from one level to the next." % _names(same), "#use-structure-in-the-questions"))
+            out.append(
+                _finding(
+                    "problem",
+                    "same_levels",
+                    qid,
+                    "%s have the same description, so the model cannot tell them apart. Describe what "
+                    "changes from one level to the next." % _names(same),
+                    "#use-structure-in-the-questions",
+                )
+            )
     elif qtype == "noul":
         given = criteria or {}
         if given.get("true") in (None, "") or given.get("false") in (None, ""):
-            out.append(_finding("advice", "noul_criteria", qid,
-                                "Say what a yes means and what a no means, in true and false criteria, with examples of "
-                                "each.", "#use-structure-in-the-questions"))
+            out.append(
+                _finding(
+                    "advice",
+                    "noul_criteria",
+                    qid,
+                    "Say what a yes means and what a no means, in true and false criteria, with examples of each.",
+                    "#use-structure-in-the-questions",
+                )
+            )
     return out
 
 
@@ -198,9 +250,16 @@ def _duplicates(questions: Dict[str, dict]) -> List[dict]:
     out = []
     for (_type, text, _crit), qids in groups.items():
         if text and len(qids) > 1:
-            out.append(_finding("problem", "same_question", qids[0],
-                                "%s ask the same thing with the same criteria, so they pay for the same answer twice. "
-                                "Remove one, or add the data that makes each one distinct." % _names(qids), "#decompose-the-questions"))
+            out.append(
+                _finding(
+                    "problem",
+                    "same_question",
+                    qids[0],
+                    "%s ask the same thing with the same criteria, so they pay for the same answer twice. "
+                    "Remove one, or add the data that makes each one distinct." % _names(qids),
+                    "#decompose-the-questions",
+                )
+            )
     return out
 
 
@@ -210,9 +269,16 @@ def _state(state: Any) -> List[dict]:
     lines = len(_KEY_VALUE.findall(state))
     if lines < KEY_VALUE_LINES:
         return []
-    return [_finding("advice", "fields_in_text", None,
-                     "The state is text with %d \"Key: value\" lines. Put each value in its own field of a JSON object, "
-                     "and point questions at the fields with backticks." % lines, "#use-structure-in-the-questions")]
+    return [
+        _finding(
+            "advice",
+            "fields_in_text",
+            None,
+            'The state is text with %d "Key: value" lines. Put each value in its own field of a JSON object, '
+            "and point questions at the fields with backticks." % lines,
+            "#use-structure-in-the-questions",
+        )
+    ]
 
 
 def check(state: Any, questions: Dict[str, dict], image_refs: Iterable[str] = ()) -> dict:
@@ -231,5 +297,9 @@ def check(state: Any, questions: Dict[str, dict], image_refs: Iterable[str] = ()
     # Lab packs (jev/lab/packs, kind lint_rule) add checks beside the built-in ones. They are reported apart, under
     # "lab", so the built-in findings and counts stay exactly what they were.
     more = sorted(lab.lint_findings(state, questions, refs, _finding), key=rank)
-    return {"findings": findings, "counts": counts, "guide": GUIDE,
-            "lab": {"findings": more, "counts": {level: sum(f["level"] == level for f in more) for level in LEVELS}}}
+    return {
+        "findings": findings,
+        "counts": counts,
+        "guide": GUIDE,
+        "lab": {"findings": more, "counts": {level: sum(f["level"] == level for f in more) for level in LEVELS}},
+    }

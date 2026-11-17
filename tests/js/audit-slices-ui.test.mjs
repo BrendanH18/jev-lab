@@ -5,20 +5,35 @@ import { workbenchSource } from "./workbench-source.mjs";
 const source = workbenchSource;
 const body = source.match(/function auditSlices\([^\n]*\) \{[\s\S]*?\n\}/)[0];
 function h(tag, attrs, ...children) {
-  return { tag, attrs, children: children.flat(Infinity).filter((x) => x != null), listeners: {},
-    addEventListener(event, fn) { this.listeners[event] = fn; } };
+  return {
+    tag,
+    attrs,
+    children: children.flat(Infinity).filter((x) => x != null),
+    listeners: {},
+    addEventListener(event, fn) {
+      this.listeners[event] = fn;
+    },
+  };
 }
-const text = (node) => typeof node === "object" ? node.children.map(text).join(" ") : String(node);
-const find = (node, tag) => typeof node === "object"
-  ? [...(node.tag === tag ? [node] : []), ...node.children.flatMap((n) => find(n, tag))] : [];
+const text = (node) => (typeof node === "object" ? node.children.map(text).join(" ") : String(node));
+const find = (node, tag) =>
+  typeof node === "object" ? [...(node.tag === tag ? [node] : []), ...node.children.flatMap((n) => find(n, tag))] : [];
 
 test("slice selection renders batch counts and intervals and makes no request", () => {
   let renders = 0;
   const view = new Function("h", "pct", "withCI", "render", `${body}; return auditSlices;`)(
-    h, (p) => `${p * 100}%`, (p, low, high) => `${p} [${low}, ${high}]`, () => renders++);
+    h,
+    (p) => `${p * 100}%`,
+    (p, low, high) => `${p} [${low}, ${high}]`,
+    () => renders++,
+  );
   const stats = { rows: 2, correct: 1, accuracy: 0.5, accuracy_low: 0.1, accuracy_high: 0.9 };
-  const a = { by_slice: [{ field: "channel", slices: [{ ...stats, value: "email" }] },
-    { field: "language", slices: [{ ...stats, value: "fr" }] }] };
+  const a = {
+    by_slice: [
+      { field: "channel", slices: [{ ...stats, value: "email" }] },
+      { field: "language", slices: [{ ...stats, value: "fr" }] },
+    ],
+  };
   let tree = view(a);
   assert.match(text(tree), /email 2 1 50% \[0.1, 0.9\]/);
   assert.doesNotMatch(text(tree), /fr 2/);

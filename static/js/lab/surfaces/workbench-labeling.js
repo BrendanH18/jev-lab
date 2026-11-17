@@ -161,10 +161,15 @@ const LABELING_STATUSES = Object.freeze(["all", "incomplete", "ready"]);
 const LABELING_TYPES = Object.freeze(["choice", "noul", "score"]);
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-const own = (object, key) => isObject(object) && Object.prototype.hasOwnProperty.call(object, key);
-const asText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? ""));
+const own = (object, key) => isObject(object) && Object.hasOwn(object, key);
+const asText = (value) =>
+  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
 const copy = (value) => {
-  try { return value === undefined ? null : clone(value); } catch { return null; }
+  try {
+    return value === undefined ? null : clone(value);
+  } catch {
+    return null;
+  }
 };
 
 function deepFreeze(value) {
@@ -178,7 +183,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -187,11 +196,23 @@ function optionsOf(question) {
   const type = question?.type;
   const criteria = question?.criteria;
   if (type === "noul") {
-    return [{ value: true, text: "yes", description: asText(own(criteria, "true") ? criteria.true : null) },
-      { value: false, text: "no", description: asText(own(criteria, "false") ? criteria.false : null) }];
+    return [
+      { value: true, text: "yes", description: asText(own(criteria, "true") ? criteria.true : null) },
+      { value: false, text: "no", description: asText(own(criteria, "false") ? criteria.false : null) },
+    ];
   }
-  if (type === "score") return (Array.isArray(criteria) ? criteria : []).map((text, index) => ({ value: index, text: String(index), description: asText(text) }));
-  if (type === "choice") return Object.entries(isObject(criteria) ? criteria : {}).map(([key, text]) => ({ value: key, text: key, description: asText(text) }));
+  if (type === "score")
+    return (Array.isArray(criteria) ? criteria : []).map((text, index) => ({
+      value: index,
+      text: String(index),
+      description: asText(text),
+    }));
+  if (type === "choice")
+    return Object.entries(isObject(criteria) ? criteria : {}).map(([key, text]) => ({
+      value: key,
+      text: key,
+      description: asText(text),
+    }));
   return [];
 }
 
@@ -233,7 +254,8 @@ export function labelingQueueCtx(source = {}) {
     const drafts = stateOf().drafts;
     return isObject(drafts) ? drafts : {};
   };
-  const rawItems = () => (prepared() ? stateOf().report.items.filter((raw) => isObject(raw) && Number.isInteger(raw.index)) : []);
+  const rawItems = () =>
+    prepared() ? stateOf().report.items.filter((raw) => isObject(raw) && Number.isInteger(raw.index)) : [];
   const questionMap = () => {
     const questions = prepared() ? stateOf().report.questions : null;
     return isObject(questions) ? questions : {};
@@ -245,7 +267,10 @@ export function labelingQueueCtx(source = {}) {
   const remember = (index, draft) => {
     if (orders.report !== stateOf().report) orders.byIndex = new Map();
     orders.report = stateOf().report;
-    orders.byIndex.set(index, Object.keys(draft).filter((qid) => draft[qid] !== null && draft[qid] !== undefined && draft[qid] !== ""));
+    orders.byIndex.set(
+      index,
+      Object.keys(draft).filter((qid) => draft[qid] !== null && draft[qid] !== undefined && draft[qid] !== ""),
+    );
     memo = null;
   };
 
@@ -255,8 +280,16 @@ export function labelingQueueCtx(source = {}) {
     const state = stateOf();
     const raws = rawItems();
     const pictures = read(source, "pictures", {});
-    const picturesKey = raws.map((raw) => (isObject(raw.row) && typeof raw.row._image === "string" && isObject(pictures)
-      && typeof pictures[raw.row._image] === "string" ? 1 : 0)).join("");
+    const picturesKey = raws
+      .map((raw) =>
+        isObject(raw.row) &&
+        typeof raw.row._image === "string" &&
+        isObject(pictures) &&
+        typeof pictures[raw.row._image] === "string"
+          ? 1
+          : 0,
+      )
+      .join("");
     const key = `${stableStringify(draftsOf())}\u0000${state.nextIndex ?? ""}\u0000${picturesKey}`;
     if (memo && memo.report === state.report && memo.length === raws.length && memo.key === key) return memo.value;
     const questions = questionMap();
@@ -285,14 +318,20 @@ export function labelingQueueCtx(source = {}) {
         identity: stableStringify(row) ?? "",
         image,
         picture_loaded: image !== null && isObject(pictures) && typeof pictures[image] === "string",
-        questions: deepFreeze(missing.map((qid) => ({ id: qid, type: typeof questions[qid]?.type === "string" ? questions[qid].type : "" }))),
+        questions: deepFreeze(
+          missing.map((qid) => ({
+            id: qid,
+            type: typeof questions[qid]?.type === "string" ? questions[qid].type : "",
+          })),
+        ),
         filled,
         blank: missing.length - filled,
         ready,
         status: ready ? "ready" : "incomplete",
         current: state.nextIndex === raw.index,
       };
-      for (const [name, value] of Object.entries(facts)) Object.defineProperty(item, name, { value, enumerable: false });
+      for (const [name, value] of Object.entries(facts))
+        Object.defineProperty(item, name, { value, enumerable: false });
       Object.freeze(item);
       byRaw.set(raw, item);
       return item;
@@ -308,23 +347,34 @@ export function labelingQueueCtx(source = {}) {
     if (!prepared()) return [];
     const { raws, byRaw } = lookup();
     const status = LABELING_STATUSES.includes(stateOf().status) ? stateOf().status : "all";
-    const passed = visibleLabels(raws, draftsOf(), status)
-      .filter((raw) => typeof source.matches !== "function" || source.matches(byRaw.get(raw), ctx) !== false);
+    const passed = visibleLabels(raws, draftsOf(), status).filter(
+      (raw) => typeof source.matches !== "function" || source.matches(byRaw.get(raw), ctx) !== false,
+    );
     if (typeof source.arrange !== "function") return passed;
     const back = new Map(passed.map((raw) => [byRaw.get(raw), raw]));
-    const arranged = source.arrange(passed.map((raw) => byRaw.get(raw)), ctx);
-    if (!Array.isArray(arranged) || arranged.length !== passed.length || !arranged.every((item) => back.has(item))) return passed;
+    const arranged = source.arrange(
+      passed.map((raw) => byRaw.get(raw)),
+      ctx,
+    );
+    if (!Array.isArray(arranged) || arranged.length !== passed.length || !arranged.every((item) => back.has(item)))
+      return passed;
     return arranged.map((item) => back.get(item));
   };
 
-  const notBusy = () => { if (busy()) throw new Error("Wait for the labeling queue to finish preparing, applying or importing."); };
+  const notBusy = () => {
+    if (busy()) throw new Error("Wait for the labeling queue to finish preparing, applying or importing.");
+  };
   const writable = () => {
     notBusy();
-    if (!prepared()) throw new Error("Open the queue with Label missing rows first. It closes when the rows, questions or typed labels change.");
+    if (!prepared())
+      throw new Error(
+        "Open the queue with Label missing rows first. It closes when the rows, questions or typed labels change.",
+      );
   };
   const itemAt = (index) => {
     const item = items().find((entry) => entry.index === index);
-    if (!item) throw new Error(`Row ${Number.isInteger(index) ? index + 1 : String(index)} is not in this labeling queue.`);
+    if (!item)
+      throw new Error(`Row ${Number.isInteger(index) ? index + 1 : String(index)} is not in this labeling queue.`);
     return item;
   };
   const call = (name, ...args) => {
@@ -333,24 +383,39 @@ export function labelingQueueCtx(source = {}) {
   };
   // A row's draft change: every missing question, with its stored label or null. Throws on an invalid label.
   const draftChange = (item, draft) => {
-    if (!isObject(draft)) throw new Error(`Row ${item.row_number}: drafts must be an object of question ids and labels.`);
+    if (!isObject(draft))
+      throw new Error(`Row ${item.row_number}: drafts must be an object of question ids and labels.`);
     for (const qid of Object.keys(draft)) {
-      if (!item.missing.includes(qid)) throw new Error(`Row ${item.row_number}: ${qid} is not missing a label on this row. Existing labels are never replaced here.`);
+      if (!item.missing.includes(qid))
+        throw new Error(
+          `Row ${item.row_number}: ${qid} is not missing a label on this row. Existing labels are never replaced here.`,
+        );
     }
     const questions = questionMap();
     const labels = {};
     for (const qid of item.missing) {
       const raw = draft[qid];
-      if (raw === undefined || raw === null || raw === "") { labels[qid] = null; continue; }
+      if (raw === undefined || raw === null || raw === "") {
+        labels[qid] = null;
+        continue;
+      }
       const value = storedLabel(questions[qid], raw);
       if (value === undefined) {
-        throw new Error(`Row ${item.row_number}: ${labelShown(raw)} is not a label option for ${qid} (options: ${optionsOf(questions[qid]).map((option) => option.text).join(", ")}).`);
+        throw new Error(
+          `Row ${item.row_number}: ${labelShown(raw)} is not a label option for ${qid} (options: ${optionsOf(
+            questions[qid],
+          )
+            .map((option) => option.text)
+            .join(", ")}).`,
+        );
       }
       labels[qid] = value;
     }
     return labels;
   };
-  const sameDraft = (labels, draft) => stableStringify(Object.fromEntries(Object.entries(labels).filter(([, value]) => value !== null))) === stableStringify(draft);
+  const sameDraft = (labels, draft) =>
+    stableStringify(Object.fromEntries(Object.entries(labels).filter(([, value]) => value !== null))) ===
+    stableStringify(draft);
 
   const ctx = {
     items,
@@ -366,7 +431,9 @@ export function labelingQueueCtx(source = {}) {
       const raws = rawItems();
       const drafts = ready ? draftsOf() : {};
       const inSlice = new Set(raws.map((raw) => String(raw.index)));
-      let labels = 0, rows = 0, outside = 0;
+      let labels = 0,
+        rows = 0,
+        outside = 0;
       for (const [index, entry] of Object.entries(drafts)) {
         const count = entry && typeof entry === "object" ? Object.keys(entry).length : 0;
         labels += count;
@@ -376,7 +443,8 @@ export function labelingQueueCtx(source = {}) {
       const preview = isObject(state.csvPreview) && isObject(state.csvPreview.counts) ? state.csvPreview.counts : null;
       const count = (value) => (Number.isInteger(value) && value >= 0 ? value : 0);
       const dataset = read(source, "dataset", {});
-      const loaded = ready && isObject(dataset) && typeof dataset.id === "string" ? read(source, "guidelines", null) : null;
+      const loaded =
+        ready && isObject(dataset) && typeof dataset.id === "string" ? read(source, "guidelines", null) : null;
       let guidelines = null;
       if (isObject(loaded) && (isObject(loaded.guidelines) || loaded.guidelines === undefined)) {
         guidelines = {};
@@ -384,33 +452,57 @@ export function labelingQueueCtx(source = {}) {
           if (!own(loaded.guidelines, qid) || !isObject(loaded.guidelines[qid])) continue;
           const guideline = loaded.guidelines[qid];
           const note = typeof guideline.note === "string" ? guideline.note.trim() : "";
-          const examples = shownExamples(guideline, question).examples.map((example) => ({ input: asText(example.input),
-            label: exampleLabelText(example.label, question), why: typeof example.why === "string" ? example.why : "" }));
+          const examples = shownExamples(guideline, question).examples.map((example) => ({
+            input: asText(example.input),
+            label: exampleLabelText(example.label, question),
+            why: typeof example.why === "string" ? example.why : "",
+          }));
           if (note || examples.length) guidelines[qid] = { note, examples };
         }
       }
-      const slice = report ? {
-        field: typeof report.field === "string" ? report.field : null,
-        value: typeof report.value === "string" ? report.value : null,
-        fields: (Array.isArray(report.fields) ? report.fields : []).map((field) => (isObject(field) ? field.name : field)).filter((name) => typeof name === "string"),
-        values: (Array.isArray(report.values) ? report.values : []).filter(isObject)
-          .map((entry) => ({ value: asText(entry.value), shown: asText(entry.shown ?? entry.value), rows: count(entry.rows) })),
-      } : null;
-      const nextIndex = ready && Number.isInteger(state.nextIndex) && raws.some((raw) => raw.index === state.nextIndex) ? state.nextIndex : null;
+      const slice = report
+        ? {
+            field: typeof report.field === "string" ? report.field : null,
+            value: typeof report.value === "string" ? report.value : null,
+            fields: (Array.isArray(report.fields) ? report.fields : [])
+              .map((field) => (isObject(field) ? field.name : field))
+              .filter((name) => typeof name === "string"),
+            values: (Array.isArray(report.values) ? report.values : []).filter(isObject).map((entry) => ({
+              value: asText(entry.value),
+              shown: asText(entry.shown ?? entry.value),
+              rows: count(entry.rows),
+            })),
+          }
+        : null;
+      const nextIndex =
+        ready && Number.isInteger(state.nextIndex) && raws.some((raw) => raw.index === state.nextIndex)
+          ? state.nextIndex
+          : null;
       return deepFreeze({
         prepared: ready,
         busy: busy(),
         status: LABELING_STATUSES.includes(state.status) ? state.status : "all",
-        questions: Object.entries(questions).filter(([, question]) => LABELING_TYPES.includes(question?.type))
-          .map(([id, question]) => ({ id, type: question.type, instructions: asText(question.instructions), options: optionsOf(question) })),
+        questions: Object.entries(questions)
+          .filter(([, question]) => LABELING_TYPES.includes(question?.type))
+          .map(([id, question]) => ({
+            id,
+            type: question.type,
+            instructions: asText(question.instructions),
+            options: optionsOf(question),
+          })),
         slice,
         eligible: report && Number.isInteger(report.eligible) ? report.eligible : null,
         missing: report && Number.isInteger(report.missing) ? report.missing : null,
         progress: ready ? labelProgress(raws, drafts) : null,
         drafts: { labels, rows, outside_slice: outside },
         next_index: nextIndex,
-        csv_preview: preview ? { rows: count(preview.rows), matched: count(preview.matched), labels: count(preview.labels) } : null,
-        dataset: { id: isObject(dataset) && typeof dataset.id === "string" ? dataset.id : null, name: isObject(dataset) ? asText(dataset.name) : "" },
+        csv_preview: preview
+          ? { rows: count(preview.rows), matched: count(preview.matched), labels: count(preview.labels) }
+          : null,
+        dataset: {
+          id: isObject(dataset) && typeof dataset.id === "string" ? dataset.id : null,
+          name: isObject(dataset) ? asText(dataset.name) : "",
+        },
         guidelines,
       });
     },
@@ -419,7 +511,9 @@ export function labelingQueueCtx(source = {}) {
         writable();
         const item = itemAt(index);
         if (typeof questionId !== "string" || !item.missing.includes(questionId)) {
-          throw new Error(`Row ${item.row_number} does not miss a label for ${String(questionId)}. Existing labels are never replaced here.`);
+          throw new Error(
+            `Row ${item.row_number} does not miss a label for ${String(questionId)}. Existing labels are never replaced here.`,
+          );
         }
         const next = { ...item.draft, [questionId]: label };
         const labels = draftChange(item, next);
@@ -433,15 +527,22 @@ export function labelingQueueCtx(source = {}) {
         const current = items();
         if (!Array.isArray(nextItems)) throw new Error("Give the whole labeling queue as a list.");
         if (nextItems.length !== current.length) {
-          throw new Error(`Edits cannot add or remove queue rows: the queue lists ${current.length} row${current.length === 1 ? "" : "s"}, the edit gave ${nextItems.length}.`);
+          throw new Error(
+            `Edits cannot add or remove queue rows: the queue lists ${current.length} row${current.length === 1 ? "" : "s"}, the edit gave ${nextItems.length}.`,
+          );
         }
         const changes = [];
         const drafts = [];
         nextItems.forEach((entry, position) => {
           const was = current[position];
-          if (!isObject(entry) || entry.index !== was.index) throw new Error(`Position ${position + 1}: edits cannot reorder, add or replace queue rows.`);
-          if (stableStringify(entry.row) !== was.identity) throw new Error(`Row ${was.row_number}: edits cannot change the input, only draft labels.`);
-          if (stableStringify(entry.missing) !== stableStringify(was.missing)) throw new Error(`Row ${was.row_number}: the questions missing a label come from the rows box and cannot change here.`);
+          if (!isObject(entry) || entry.index !== was.index)
+            throw new Error(`Position ${position + 1}: edits cannot reorder, add or replace queue rows.`);
+          if (stableStringify(entry.row) !== was.identity)
+            throw new Error(`Row ${was.row_number}: edits cannot change the input, only draft labels.`);
+          if (stableStringify(entry.missing) !== stableStringify(was.missing))
+            throw new Error(
+              `Row ${was.row_number}: the questions missing a label come from the rows box and cannot change here.`,
+            );
           const draft = entry.draft === undefined || entry.draft === null ? {} : entry.draft;
           const labels = draftChange(was, draft);
           drafts.push([was.index, draft]);
@@ -461,30 +562,40 @@ export function labelingQueueCtx(source = {}) {
         writable();
         if (direction !== 1 && direction !== -1) throw new Error("Go to the next (1) or previous (-1) incomplete row.");
         const { list } = lookup();
-        const open = list.filter((item) => !item.ready && (typeof source.matches !== "function" || source.matches(item, ctx) !== false));
+        const open = list.filter(
+          (item) => !item.ready && (typeof source.matches !== "function" || source.matches(item, ctx) !== false),
+        );
         if (!open.length) throw new Error("No incomplete row is left in this slice under the Lab filters.");
         return call("next", direction);
       },
       setStatus(status) {
         notBusy();
-        if (!LABELING_STATUSES.includes(status)) throw new Error(`Unknown labeling status “${String(status)}”: use all, incomplete or ready.`);
+        if (!LABELING_STATUSES.includes(status))
+          throw new Error(`Unknown labeling status “${String(status)}”: use all, incomplete or ready.`);
         return call("setStatus", status);
       },
       prepare(field = null, value = null) {
         notBusy();
         if (field !== null) {
           const report = prepared() ? stateOf().report : null;
-          const fields = report && Array.isArray(report.fields) ? report.fields.map((entry) => (isObject(entry) ? entry.name : entry)) : [];
-          if (typeof field !== "string" || !fields.includes(field)) throw new Error(`“${String(field)}” is not a field this queue can be sliced by.`);
+          const fields =
+            report && Array.isArray(report.fields)
+              ? report.fields.map((entry) => (isObject(entry) ? entry.name : entry))
+              : [];
+          if (typeof field !== "string" || !fields.includes(field))
+            throw new Error(`“${String(field)}” is not a field this queue can be sliced by.`);
         }
-        if (value !== null && typeof value !== "string") throw new Error("A slice value is text, or null for all values.");
+        if (value !== null && typeof value !== "string")
+          throw new Error("A slice value is text, or null for all values.");
         return call("prepare", field, field === null ? null : value);
       },
       resetFilters() {
         return call("resetFilters");
       },
     },
-    refresh() { if (typeof source.refresh === "function") source.refresh(); },
+    refresh() {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item) => (item && Number.isInteger(item.row_number) ? `Row ${item.row_number}` : "?"),
     // The page's hook (not for packs): Lab's filters on a raw queue row, and the raw rows the page draws, in order.
     page: {

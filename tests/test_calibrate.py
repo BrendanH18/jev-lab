@@ -26,13 +26,15 @@ def rows(*pairs):
 
 class ChoiceTests(unittest.TestCase):
     def setUp(self):
-        self.report = calibrate.evaluate(rows(
-            (choice("billing", 0.95, 0.9), "billing"),
-            (choice("billing", 0.90, 0.8), "billing"),
-            (choice("shipping", 0.60, 0.4), "billing"),   # wrong, low confidence
-            (choice("none", 0.50, 0.25), "none"),
-            (choice("shipping", 0.80, 0.7), None),         # unlabeled: counted, not scored
-        ))
+        self.report = calibrate.evaluate(
+            rows(
+                (choice("billing", 0.95, 0.9), "billing"),
+                (choice("billing", 0.90, 0.8), "billing"),
+                (choice("shipping", 0.60, 0.4), "billing"),  # wrong, low confidence
+                (choice("none", 0.50, 0.25), "none"),
+                (choice("shipping", 0.80, 0.7), None),  # unlabeled: counted, not scored
+            )
+        )
 
     def test_accuracy_and_confusion(self):
         r = self.report
@@ -74,9 +76,14 @@ class ChoiceTests(unittest.TestCase):
 
 class NoulAndScoreTests(unittest.TestCase):
     def test_noul_labels_accept_common_spellings(self):
-        r = calibrate.evaluate(rows(
-            ({"type": "noul", "noul": 0.9}, True), ({"type": "noul", "noul": 0.2}, "no"),
-            ({"type": "noul", "noul": 0.6}, "yes"), ({"type": "noul", "noul": 0.4}, 1)))
+        r = calibrate.evaluate(
+            rows(
+                ({"type": "noul", "noul": 0.9}, True),
+                ({"type": "noul", "noul": 0.2}, "no"),
+                ({"type": "noul", "noul": 0.6}, "yes"),
+                ({"type": "noul", "noul": 0.4}, 1),
+            )
+        )
         self.assertEqual((r["labeled"], r["correct"]), (4, 3))
         self.assertEqual(r["classes"], ["yes", "no"])
         self.assertEqual(r["confusion"], [[2, 1], [0, 1]])
@@ -93,10 +100,18 @@ class NoulAndScoreTests(unittest.TestCase):
 
     def test_score_uses_most_likely_level(self):
         def score(probs, conf):
-            return {"type": "score", "score": sum(i * p for i, p in enumerate(probs)), "confidence": conf,
-                    "probabilities": {str(i): p for i, p in enumerate(probs)}}
-        r = calibrate.evaluate(rows((score([0.1, 0.7, 0.2], 0.6), 1), (score([0.6, 0.3, 0.1], 0.5), "2"),
-                                    (score([0.1, 0.1, 0.8], 0.8), 2.0)))
+            return {
+                "type": "score",
+                "score": sum(i * p for i, p in enumerate(probs)),
+                "confidence": conf,
+                "probabilities": {str(i): p for i, p in enumerate(probs)},
+            }
+
+        r = calibrate.evaluate(
+            rows(
+                (score([0.1, 0.7, 0.2], 0.6), 1), (score([0.6, 0.3, 0.1], 0.5), "2"), (score([0.1, 0.1, 0.8], 0.8), 2.0)
+            )
+        )
         self.assertEqual(r["classes"], ["0", "1", "2"])
         self.assertEqual([x["predicted"] for x in r["rows"]], ["1", "0", "2"])
         self.assertEqual(r["correct"], 2)
@@ -109,9 +124,16 @@ class InputTests(unittest.TestCase):
             if expected is not None:
                 out["score"] = expected
             return out
+
         # Most likely levels 0, 1, 2, 0 against labels 0, 2, 2, 2: within one on three rows, off by 0, 1, 0, 2.
-        r = calibrate.evaluate(rows((score([0.8, 0.1, 0.1], 0.3), 0), (score([0.2, 0.5, 0.3], 1.1), 2),
-                                    (score([0.1, 0.1, 0.8], 1.7), 2), (score([0.5, 0.0, 0.5]), 2)))
+        r = calibrate.evaluate(
+            rows(
+                (score([0.8, 0.1, 0.1], 0.3), 0),
+                (score([0.2, 0.5, 0.3], 1.1), 2),
+                (score([0.1, 0.1, 0.8], 1.7), 2),
+                (score([0.5, 0.0, 0.5]), 2),
+            )
+        )
         o = r["ordinal"]
         self.assertEqual((o["within_one"], o["within_one_accuracy"]), (3, 0.75))
         self.assertEqual((o["within_one_low"], o["within_one_high"]), calibrate.wilson(3, 4))
@@ -131,7 +153,7 @@ class InputTests(unittest.TestCase):
         self.assertEqual([c["level"] for c in lone["ordinal"]["cuts"]], [1])
         # A malformed answer neither crashes nor builds a huge grid: an integer too large for a float falls back to
         # the weighted level, and a level number far past any real Score gets no cuts.
-        huge = calibrate.evaluate(rows((score([0.8, 0.1, 0.1], 10 ** 400), 0), (score([0.1, 0.1, 0.8], 2.0), 2)))
+        huge = calibrate.evaluate(rows((score([0.8, 0.1, 0.1], 10**400), 0), (score([0.1, 0.1, 0.8], 2.0), 2)))
         self.assertAlmostEqual(huge["ordinal"]["expected_error"], (0.3 + 0) / 2)
         far = {"type": "score", "probabilities": {"0": 0.5, "100000000": 0.5}, "confidence": 0.5, "score": 1.0}
         self.assertEqual(calibrate.evaluate(rows((far, 0)))["ordinal"]["cuts"], [])
@@ -139,8 +161,13 @@ class InputTests(unittest.TestCase):
         self.assertIsNone(calibrate.evaluate(rows((choice("billing", 0.9), "billing")))["ordinal"])
 
     def test_bad_labels_are_reported_not_scored(self):
-        r = calibrate.evaluate(rows((choice("billing", 0.9), "refunds"), ({"type": "choice", "choice": "x"}, "x"),
-                                    (choice("billing", 0.9), "billing")))
+        r = calibrate.evaluate(
+            rows(
+                (choice("billing", 0.9), "refunds"),
+                ({"type": "choice", "choice": "x"}, "x"),
+                (choice("billing", 0.9), "billing"),
+            )
+        )
         self.assertEqual(r["labeled"], 1)
         self.assertEqual([x["index"] for x in r["invalid"]], [0, 1])
         self.assertIn("not one of the options", r["invalid"][0]["reason"])
@@ -150,13 +177,24 @@ class InputTests(unittest.TestCase):
 
     def test_out_of_range_or_malformed_answers_are_reported_not_crashed_on(self):
         good = ({"type": "noul", "noul": 0.9}, True)
-        r = calibrate.evaluate(rows(({"type": "noul", "noul": -2}, True), ({"type": "noul", "noul": 2}, True),
-                                    ({"type": "noul", "noul": float("nan")}, True), ({"type": "noul", "noul": "0.9"}, True),
-                                    ({"type": "noul", "noul": 10 ** 400}, True), good))
+        r = calibrate.evaluate(
+            rows(
+                ({"type": "noul", "noul": -2}, True),
+                ({"type": "noul", "noul": 2}, True),
+                ({"type": "noul", "noul": float("nan")}, True),
+                ({"type": "noul", "noul": "0.9"}, True),
+                ({"type": "noul", "noul": 10**400}, True),
+                good,
+            )
+        )
         self.assertEqual((r["labeled"], len(r["invalid"])), (1, 5))
         self.assertTrue(all(0 <= s <= 1 for s in r["signals"].values()))
-        bad_choice = [dict(choice("billing", 0.9), probabilities=[0.9, 0.1]), dict(choice("billing", 0.9), confidence=3),
-                      dict(choice("billing", 0.9), choice="refunds"), dict(choice("billing", 0.9), choice=["billing"])]
+        bad_choice = [
+            dict(choice("billing", 0.9), probabilities=[0.9, 0.1]),
+            dict(choice("billing", 0.9), confidence=3),
+            dict(choice("billing", 0.9), choice="refunds"),
+            dict(choice("billing", 0.9), choice=["billing"]),
+        ]
         r = calibrate.evaluate(rows(*[(a, "billing") for a in bad_choice], (choice("billing", 0.9), "billing")))
         self.assertEqual((r["labeled"], len(r["invalid"])), (1, 4))
         self.assertEqual(r["classes"], ["billing", "shipping", "none"])
@@ -171,8 +209,13 @@ class InputTests(unittest.TestCase):
         self.assertEqual(len(r["confusion"]), 3)
 
     def test_rejects_requests_it_cannot_answer(self):
-        for bad in (None, "rows", [], [{"answer": {"type": "bbox", "box": {}}, "label": "x"}],
-                    rows(({"type": "noul", "noul": 0.5}, True), (choice("billing", 0.9), "billing"))):
+        for bad in (
+            None,
+            "rows",
+            [],
+            [{"answer": {"type": "bbox", "box": {}}, "label": "x"}],
+            rows(({"type": "noul", "noul": 0.5}, True), (choice("billing", 0.9), "billing")),
+        ):
             with self.subTest(bad=bad), self.assertRaises(calibrate.CalibrationError):
                 calibrate.evaluate(bad)
         with self.assertRaises(calibrate.CalibrationError):
@@ -180,21 +223,35 @@ class InputTests(unittest.TestCase):
 
     def test_box_answers_are_right_when_they_overlap_their_label(self):
         def box(left, top, right, bottom, confidence):
-            return {"type": "box", "box": {"left": left, "top": top, "right": right, "bottom": bottom}, "confidence": confidence}
+            return {
+                "type": "box",
+                "box": {"left": left, "top": top, "right": right, "bottom": bottom},
+                "confidence": confidence,
+            }
+
         label = {"left": 0.2, "top": 0.2, "right": 0.6, "bottom": 0.6}
-        r = calibrate.evaluate(rows(
-            (box(0.2, 0.2, 0.6, 0.6, 0.9), label),          # the same box: IoU 1
-            (box(0.25, 0.2, 0.6, 0.6, 0.8), label),         # IoU 0.875
-            (box(0.4, 0.4, 0.8, 0.8, 0.3), label),          # IoU 1/7: wrong, and unsure
-            (box(0.2, 0.2, 0.6, 0.6, 0.7), {"left": 0.5, "top": 0, "right": 0.4, "bottom": 1}),  # left > right
-            (box(0.2, 0.2, 0.6, 0.6, 0.7), None)))
-        self.assertEqual((r["type"], r["labeled"], r["correct"], r["unlabeled"], len(r["invalid"])), ("box", 3, 2, 1, 1))
+        r = calibrate.evaluate(
+            rows(
+                (box(0.2, 0.2, 0.6, 0.6, 0.9), label),  # the same box: IoU 1
+                (box(0.25, 0.2, 0.6, 0.6, 0.8), label),  # IoU 0.875
+                (box(0.4, 0.4, 0.8, 0.8, 0.3), label),  # IoU 1/7: wrong, and unsure
+                (box(0.2, 0.2, 0.6, 0.6, 0.7), {"left": 0.5, "top": 0, "right": 0.4, "bottom": 1}),  # left > right
+                (box(0.2, 0.2, 0.6, 0.6, 0.7), None),
+            )
+        )
+        self.assertEqual(
+            (r["type"], r["labeled"], r["correct"], r["unlabeled"], len(r["invalid"])), ("box", 3, 2, 1, 1)
+        )
         self.assertEqual((r["classes"], r["confusion"], r["iou_right"]), ([], [], 0.5))
         self.assertAlmostEqual(r["iou_mean"], (1 + 0.875 + 1 / 7) / 3)
         self.assertEqual(r["rows"][0]["predicted"], "0.20, 0.20, 0.60, 0.60")
         by_t = {p["threshold"]: p for p in r["sweep"]}
-        self.assertEqual((by_t[0.31]["automated"], by_t[0.31]["accuracy"]), (2, 1.0), "the gate reads the Box's confidence")
-        self.assertEqual(calibrate.evaluate(rows((box(0.2, 0.2, 0.6, 0.6, 0.9), label)), "top_probability")["signals"], {"0": 0.9})
+        self.assertEqual(
+            (by_t[0.31]["automated"], by_t[0.31]["accuracy"]), (2, 1.0), "the gate reads the Box's confidence"
+        )
+        self.assertEqual(
+            calibrate.evaluate(rows((box(0.2, 0.2, 0.6, 0.6, 0.9), label)), "top_probability")["signals"], {"0": 0.9}
+        )
         self.assertAlmostEqual(calibrate.iou(label, {"left": 0.4, "top": 0.2, "right": 0.8, "bottom": 0.6}), 1 / 3)
 
     def test_no_labels_still_reports_shape(self):
@@ -205,8 +262,11 @@ class InputTests(unittest.TestCase):
 class BulkLabelTests(unittest.TestCase):
     def test_labels_are_removed_before_the_call_and_returned(self):
         client = FakeClient(lambda s, q: {"wants_refund": 0.9})
-        report = workbench.run_bulk(client, [{"text": "refund please", "_expect": {"wants_refund": True}}, "hi"],
-                                    {"wants_refund": {"type": "noul", "instructions": "Refund?"}})
+        report = workbench.run_bulk(
+            client,
+            [{"text": "refund please", "_expect": {"wants_refund": True}}, "hi"],
+            {"wants_refund": {"type": "noul", "instructions": "Refund?"}},
+        )
         self.assertEqual(client.calls[0][0], {"text": "refund please"})
         self.assertEqual(report["results"][0]["row"], {"text": "refund please"})
         self.assertEqual(report["results"][0]["expect"], {"wants_refund": True})
@@ -241,8 +301,12 @@ class BulkLabelTests(unittest.TestCase):
         # The sample end to end: fake answers through Bulk, then Calibrate on every labeled question.
         report = workbench.run_bulk(FakeClient(), sample, examples.BULK_QUESTIONS)
         for qid in examples.BULK_QUESTIONS:
-            cal = calibrate.evaluate([{"index": r["index"], "answer": r["answers"][qid], "label": r["expect"][qid]}
-                                      for r in report["results"]])
+            cal = calibrate.evaluate(
+                [
+                    {"index": r["index"], "answer": r["answers"][qid], "label": r["expect"][qid]}
+                    for r in report["results"]
+                ]
+            )
             self.assertEqual((cal["labeled"], cal["invalid"]), (40, []), qid)
 
 
@@ -254,7 +318,7 @@ class IntervalTests(unittest.TestCase):
         self.assertAlmostEqual(high, 0.9862, places=4)
         self.assertEqual(calibrate.wilson(10, 10)[1], 1.0)
         self.assertEqual(calibrate.wilson(0, 10)[0], 0.0)
-        self.assertAlmostEqual(calibrate.wilson(10, 10)[0], 10 / (10 + calibrate.Z ** 2))
+        self.assertAlmostEqual(calibrate.wilson(10, 10)[0], 10 / (10 + calibrate.Z**2))
 
     def test_rows_needed_is_the_fewest_all_right_rows_that_show_the_target(self):
         self.assertEqual([calibrate.rows_needed(t) for t in calibrate.TARGETS], [35, 73, 381])
@@ -264,7 +328,9 @@ class IntervalTests(unittest.TestCase):
             self.assertFalse(calibrate.meets(n - 1, n - 1, target, "lower"))
 
     def test_sweep_and_report_carry_intervals(self):
-        report = calibrate.evaluate(rows(*[(choice("billing", 0.9, 0.9), "billing")] * 19 + [(choice("none", 0.5, 0.2), "billing")]))
+        report = calibrate.evaluate(
+            rows(*[(choice("billing", 0.9, 0.9), "billing")] * 19 + [(choice("none", 0.5, 0.2), "billing")])
+        )
         self.assertEqual(report["bound"], "estimate")
         self.assertEqual((report["accuracy_low"], report["accuracy_high"]), calibrate.wilson(19, 20))
         p = report["sweep"][50]
@@ -279,7 +345,7 @@ class IntervalTests(unittest.TestCase):
         estimate = {t["target"]: t for t in calibrate.evaluate(data)["targets"]}
         lower = {t["target"]: t for t in calibrate.evaluate(data, bound="lower")["targets"]}
         self.assertEqual([estimate[t]["threshold"] for t in calibrate.TARGETS], [0.0, 0.0, 0.21])
-        self.assertAlmostEqual(estimate[0.99]["low"], 20 / (20 + calibrate.Z ** 2))
+        self.assertAlmostEqual(estimate[0.99]["low"], 20 / (20 + calibrate.Z**2))
         for target in calibrate.TARGETS:
             self.assertIsNone(lower[target]["threshold"])
             self.assertEqual(lower[target]["needed"], calibrate.rows_needed(target))
@@ -296,7 +362,9 @@ class IntervalTests(unittest.TestCase):
         n = calibrate.automated_needed(0.9501, 0.95)
         self.assertGreater(n, 1000000)
         self.assertGreaterEqual(calibrate.wilson(0.9501 * n, n)[0] + calibrate._EPS, 0.95)  # the tie rule meets() uses
-        self.assertEqual(calibrate.plan([(100, 100)], 100, 0.99)["automated"], calibrate.automated_needed(101 / 102, 0.99))
+        self.assertEqual(
+            calibrate.plan([(100, 100)], 100, 0.99)["automated"], calibrate.automated_needed(101 / 102, 0.99)
+        )
 
     def test_plan_smooths_accuracy_and_picks_the_fewest_more_rows(self):
         # 3 of 3 right smooths to 80%, which cannot show 90%; 20 of 20 smooths to 95.5% and needs 92 automated

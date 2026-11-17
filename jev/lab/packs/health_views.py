@@ -73,13 +73,21 @@ def same_view_different_labels(rows, questions):
             view = _view(entry, paths, photo) if label is not None else None
             if view is not None:
                 groups.setdefault(view, []).append((entry["n"], entry["key"], label))
-        hits = sorted(n for group in groups.values()
-                      if len({key for _n, key, _given in group}) > 1 and len({given for _n, _key, given in group}) > 1
-                      for n, _key, _given in group)
+        hits = sorted(
+            n
+            for group in groups.values()
+            if len({key for _n, key, _given in group}) > 1 and len({given for _n, _key, given in group}) > 1
+            for n, _key, _given in group
+        )
         if hits:
-            out.append({"rows": hits, "message": "`%s` reads %s, and %s that read the same there but differ elsewhere carry "
-                        "different labels; for this question they are one case, so one label is likely wrong."
-                        % (qid, ", ".join("`%s`" % path for path in paths), inputs._plural(len(hits), "row"))})
+            out.append(
+                {
+                    "rows": hits,
+                    "message": "`%s` reads %s, and %s that read the same there but differ elsewhere carry "
+                    "different labels; for this question they are one case, so one label is likely wrong."
+                    % (qid, ", ".join("`%s`" % path for path in paths), inputs._plural(len(hits), "row")),
+                }
+            )
     return out
 
 
@@ -94,13 +102,24 @@ def same_view_across_split(rows, questions):
             view = _view(entry, paths, photo)
             if view is not None:
                 groups.setdefault(view, []).append(entry)
-        hits = sorted(entry["n"] for group in groups.values()
-                      if any(e["test"] for e in group) and not all(e["test"] for e in group) and len({e["key"] for e in group}) > 1
-                      for entry in group)
+        hits = sorted(
+            entry["n"]
+            for group in groups.values()
+            if any(e["test"] for e in group)
+            and not all(e["test"] for e in group)
+            and len({e["key"] for e in group}) > 1
+            for entry in group
+        )
         if hits:
-            out.append({"rows": hits, "message": "`%s` reads %s, which is the same on tuning and held-out rows that differ "
-                        "elsewhere (%s); the test split keeps exact copies together but not these, so tuning sees the "
-                        "held-out case." % (qid, ", ".join("`%s`" % path for path in paths), inputs._plural(len(hits), "row"))})
+            out.append(
+                {
+                    "rows": hits,
+                    "message": "`%s` reads %s, which is the same on tuning and held-out rows that differ "
+                    "elsewhere (%s); the test split keeps exact copies together but not these, so tuning sees the "
+                    "held-out case."
+                    % (qid, ", ".join("`%s`" % path for path in paths), inputs._plural(len(hits), "row")),
+                }
+            )
     return out
 
 
@@ -108,17 +127,25 @@ def _check(ident: str, title: str, check) -> dict:
     return {"id": ident, "kind": "health_check", "title": title, "check": check}
 
 
-PACK = kit.define_pack({
-    "id": "health-views",
-    "surface": "python.health",
-    "title": "Rows as a question sees them",
-    "about": "Dataset health findings that compare rows through the fields each question points at: different labels on "
-             "rows a question sees the same way, and the same view on both sides of the test split. Row numbers, "
-             "question ids and paths only.",
-    "features": [
-        _check("same_view_different_labels", "Different labels on rows that read the same through a question's fields",
-               same_view_different_labels),
-        _check("same_view_across_split", "Tuning and held-out rows that read the same through a question's fields",
-               same_view_across_split),
-    ],
-})
+PACK = kit.define_pack(
+    {
+        "id": "health-views",
+        "surface": "python.health",
+        "title": "Rows as a question sees them",
+        "about": "Dataset health findings that compare rows through the fields each question points at: different labels on "
+        "rows a question sees the same way, and the same view on both sides of the test split. Row numbers, "
+        "question ids and paths only.",
+        "features": [
+            _check(
+                "same_view_different_labels",
+                "Different labels on rows that read the same through a question's fields",
+                same_view_different_labels,
+            ),
+            _check(
+                "same_view_across_split",
+                "Tuning and held-out rows that read the same through a question's fields",
+                same_view_across_split,
+            ),
+        ],
+    }
+)

@@ -22,6 +22,7 @@ class FindTests(unittest.TestCase):
     def test_search_ranks_and_judges(self):
         def picker(state, questions):
             return {"q0.where": "L001", "q0.exists": 0.95, "q1.where": "L004", "q1.exists": 0.1}
+
         out = find.search(FakeClient(picker), DOC, ["can I bring my dog?", "is there a bonus?"], top=2)
         self.assertEqual(out["results"][0]["hits"][0]["id"], "L001")
         self.assertEqual(out["results"][0]["verdict"], "answered")
@@ -45,8 +46,10 @@ class FindTests(unittest.TestCase):
 
 class PlayTests(unittest.TestCase):
     def test_reply_thresholds(self):
-        self.assertEqual([play.reply_for(p) for p in (0.99, 0.7, 0.5, 0.3, 0.05)],
-                         ["Yes", "Probably", "Hard to say", "Probably not", "No"])
+        self.assertEqual(
+            [play.reply_for(p) for p in (0.99, 0.7, 0.5, 0.3, 0.05)],
+            ["Yes", "Probably", "Hard to say", "Probably not", "No"],
+        )
 
     def test_game_flow(self):
         script = {}
@@ -76,7 +79,10 @@ class PlayTests(unittest.TestCase):
             games.ask(g["id"], "again?")
 
     def test_turn_limit_and_give_up(self):
-        games = play.Games(FakeClient(lambda s, q: {"is_yes_no_question": 0.9, "answer_is_yes": 0.5}), words=[{"word": "owl", "category": "animal"}])
+        games = play.Games(
+            FakeClient(lambda s, q: {"is_yes_no_question": 0.9, "answer_is_yes": 0.5}),
+            words=[{"word": "owl", "category": "animal"}],
+        )
         g = games.new()
         for i in range(play.MAX_TURNS):
             g = games.ask(g["id"], "question %d" % i)

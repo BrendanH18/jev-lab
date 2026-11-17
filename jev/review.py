@@ -101,8 +101,16 @@ def evaluate(rows: Any, question: Optional[str] = None, threshold: Any = 0.5, si
             raw = labels.get(qid)
             if raw in (None, ""):
                 if qid == question:
-                    nxt.append({"index": index, "answer": calibrate._show(qtype, predicted), "top": top,
-                                "signal": gate, "distance": round(abs(gate - t), 9), "above": gate + EPS >= t})
+                    nxt.append(
+                        {
+                            "index": index,
+                            "answer": calibrate._show(qtype, predicted),
+                            "top": top,
+                            "signal": gate,
+                            "distance": round(abs(gate - t), 9),
+                            "above": gate + EPS >= t,
+                        }
+                    )
                 continue
             try:
                 label = calibrate._label(qtype, raw, answer)
@@ -116,10 +124,27 @@ def evaluate(rows: Any, question: Optional[str] = None, threshold: Any = 0.5, si
             strong = given <= STRONG + EPS
             checked[qid]["disagree"] += 1
             checked[qid]["strong"] += strong
-            suspects.append({"index": index, "question": qid, "type": qtype,
-                             "label": calibrate._show(qtype, label), "answer": calibrate._show(qtype, predicted),
-                             "label_probability": given, "top": top, "signal": gate, "strong": strong})
+            suspects.append(
+                {
+                    "index": index,
+                    "question": qid,
+                    "type": qtype,
+                    "label": calibrate._show(qtype, label),
+                    "answer": calibrate._show(qtype, predicted),
+                    "label_probability": given,
+                    "top": top,
+                    "signal": gate,
+                    "strong": strong,
+                }
+            )
     suspects.sort(key=lambda s: (s["label_probability"], -s["signal"], _order(s["index"]), s["question"]))
     nxt.sort(key=lambda r: (r["distance"], r["signal"], _order(r["index"])))
-    return {"signal": signal, "question": question, "threshold": t, "strong_at": STRONG,
-            "questions": checked, "suspects": suspects, "next": nxt}
+    return {
+        "signal": signal,
+        "question": question,
+        "threshold": t,
+        "strong_at": STRONG,
+        "questions": checked,
+        "suspects": suspects,
+        "next": nxt,
+    }

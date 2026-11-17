@@ -11,12 +11,23 @@ export function uniqueQuestionId(rows, preferred = "question") {
 }
 
 export function duplicateQuestionRow(row, rows) {
-  return { ...JSON.parse(JSON.stringify(row)), id: uniqueQuestionId(rows, `${String(row.id || "question").trim()}_copy`) };
+  return {
+    ...JSON.parse(JSON.stringify(row)),
+    id: uniqueQuestionId(rows, `${String(row.id || "question").trim()}_copy`),
+  };
 }
 
 export function moveEditorEntry(entries, index, direction) {
   const next = index + direction;
-  if (!Number.isInteger(index) || ![-1, 1].includes(direction) || index < 0 || index >= entries.length || next < 0 || next >= entries.length) return entries;
+  if (
+    !Number.isInteger(index) ||
+    ![-1, 1].includes(direction) ||
+    index < 0 ||
+    index >= entries.length ||
+    next < 0 ||
+    next >= entries.length
+  )
+    return entries;
   const moved = entries.slice();
   [moved[index], moved[next]] = [moved[next], moved[index]];
   return moved;
@@ -24,13 +35,23 @@ export function moveEditorEntry(entries, index, direction) {
 
 export function removeEditorQuestion(rows, expect, index) {
   if (!rows[index]) return null;
-  const row = rows[index], id = String(row.id || "").trim();
+  const row = rows[index],
+    id = String(row.id || "").trim();
   const kept = rows.filter((_, i) => i !== index);
   const ownsExpectation = !kept.some((q) => String(q.id || "").trim() === id) && Object.hasOwn(expect, id);
   const expectations = { ...expect };
   if (ownsExpectation) delete expectations[id];
-  return { rows: kept, expect: expectations, undo: { row, index, id, ownsExpectation,
-    expectation: ownsExpectation ? JSON.parse(JSON.stringify(expect[id])) : undefined } };
+  return {
+    rows: kept,
+    expect: expectations,
+    undo: {
+      row,
+      index,
+      id,
+      ownsExpectation,
+      expectation: ownsExpectation ? JSON.parse(JSON.stringify(expect[id])) : undefined,
+    },
+  };
 }
 
 export function restoreEditorQuestion(rows, expect, undo) {
@@ -39,7 +60,9 @@ export function restoreEditorQuestion(rows, expect, undo) {
     throw new Error(`Cannot restore “${undo.id}”: another question now uses that id. Rename it first.`);
   }
   if (undo.ownsExpectation && Object.hasOwn(expect, undo.id)) {
-    throw new Error(`Cannot restore “${undo.id}”: its expectations have changed. Keep the current expectations or restore the question manually.`);
+    throw new Error(
+      `Cannot restore “${undo.id}”: its expectations have changed. Keep the current expectations or restore the question manually.`,
+    );
   }
   const restored = rows.slice();
   restored.splice(Math.min(undo.index, restored.length), 0, undo.row);
@@ -55,37 +78,103 @@ export function buildRequestSummary(stateText, rows, imageCount) {
 }
 
 // Filtering keeps the complete editor request intact, including hidden questions.
-export function matchesEditorQuestion(row, { query = "", type = "all", instructions = "all", criteria = "all", expectations = "all", searchField = "all", exclude = "", minCriteria = "", maxCriteria = "", idPrefix = "", minInstructions = "", maxInstructions = "", ...advanced } = {}, expect = {}) {
+export function matchesEditorQuestion(
+  row,
+  {
+    query = "",
+    type = "all",
+    instructions = "all",
+    criteria = "all",
+    expectations = "all",
+    searchField = "all",
+    exclude = "",
+    minCriteria = "",
+    maxCriteria = "",
+    idPrefix = "",
+    minInstructions = "",
+    maxInstructions = "",
+    ...advanced
+  } = {},
+  expect = {},
+) {
   if (!matchesAdvancedEditorQuestion(row, advanced, advanced.allRows || [])) return false;
   if (!matchesBuildRefinements(row, advanced)) return false;
-  if (!String(row.id || "").trim().toLocaleLowerCase().startsWith(String(idPrefix).trim().toLocaleLowerCase())) return false;
+  if (
+    !String(row.id || "")
+      .trim()
+      .toLocaleLowerCase()
+      .startsWith(String(idPrefix).trim().toLocaleLowerCase())
+  )
+    return false;
   const instructionCharacters = Array.from(String(row.instructions || "")).length;
-  for (const [value, maximum] of [[minInstructions, false], [maxInstructions, true]]) {
+  for (const [value, maximum] of [
+    [minInstructions, false],
+    [maxInstructions, true],
+  ]) {
     if (String(value).trim() === "") continue;
     const limit = Number(value);
-    if (!Number.isInteger(limit) || limit < 0 || (maximum ? instructionCharacters > limit : instructionCharacters < limit)) return false;
+    if (
+      !Number.isInteger(limit) ||
+      limit < 0 ||
+      (maximum ? instructionCharacters > limit : instructionCharacters < limit)
+    )
+      return false;
   }
   const hasInstructions = !!String(row.instructions || "").trim();
-  const hasCriteria = row.type === "choice" ? (row.choice || []).some(([key]) => key.trim())
-    : row.type === "score" ? (row.score || []).some((level) => level.trim())
-    : row.type === "noul" ? [row.noulYes, row.noulNo].some((value) => String(value || "").trim()) : false;
+  const hasCriteria =
+    row.type === "choice"
+      ? (row.choice || []).some(([key]) => key.trim())
+      : row.type === "score"
+        ? (row.score || []).some((level) => level.trim())
+        : row.type === "noul"
+          ? [row.noulYes, row.noulNo].some((value) => String(value || "").trim())
+          : false;
   const hasExpectation = Object.hasOwn(expect || {}, String(row.id || "").trim());
-  for (const [filter, present] of [[instructions, hasInstructions], [criteria, hasCriteria], [expectations, hasExpectation]]) {
+  for (const [filter, present] of [
+    [instructions, hasInstructions],
+    [criteria, hasCriteria],
+    [expectations, hasExpectation],
+  ]) {
     if ((filter === "with" && !present) || (filter === "without" && present)) return false;
   }
   if (type !== "all" && row.type !== type) return false;
-  const fields = { id: [row.id], instructions: [row.instructions],
-    criteria: row.type === "choice" ? (row.choice || []).flat() : row.type === "score" ? (row.score || [])
-      : row.type === "noul" ? [row.noulYes, row.noulNo] : [] };
-  const scoped = searchField === "choiceKeys" ? row.type === "choice" ? (row.choice || []).map(([key]) => key) : []
-    : searchField === "descriptions" ? row.type === "choice" ? (row.choice || []).map(([, description]) => description)
-      : row.type === "score" ? row.score || [] : row.type === "noul" ? [row.noulYes, row.noulNo] : [] : fields[searchField] || Object.values(fields).flat();
+  const fields = {
+    id: [row.id],
+    instructions: [row.instructions],
+    criteria:
+      row.type === "choice"
+        ? (row.choice || []).flat()
+        : row.type === "score"
+          ? row.score || []
+          : row.type === "noul"
+            ? [row.noulYes, row.noulNo]
+            : [],
+  };
+  const scoped =
+    searchField === "choiceKeys"
+      ? row.type === "choice"
+        ? (row.choice || []).map(([key]) => key)
+        : []
+      : searchField === "descriptions"
+        ? row.type === "choice"
+          ? (row.choice || []).map(([, description]) => description)
+          : row.type === "score"
+            ? row.score || []
+            : row.type === "noul"
+              ? [row.noulYes, row.noulNo]
+              : []
+        : fields[searchField] || Object.values(fields).flat();
   const text = scoped
-    .filter((value) => value != null).join("\n").toLocaleLowerCase();
+    .filter((value) => value != null)
+    .join("\n")
+    .toLocaleLowerCase();
   if (!text.includes(String(query).trim().toLocaleLowerCase())) return false;
   if (String(exclude).trim() && text.includes(String(exclude).trim().toLocaleLowerCase())) return false;
   const count = editorCriterionCount(row);
-  for (const [value, maximum] of [[minCriteria, false], [maxCriteria, true]]) {
+  for (const [value, maximum] of [
+    [minCriteria, false],
+    [maxCriteria, true],
+  ]) {
     if (String(value).trim() === "") continue;
     const limit = Number(value);
     if (!Number.isInteger(limit) || limit < 0 || (maximum ? count > limit : count < limit)) return false;
@@ -94,8 +183,16 @@ export function matchesEditorQuestion(row, { query = "", type = "all", instructi
 }
 
 export function moveEditorEntryTo(entries, index, target) {
-  if (!Number.isInteger(index) || !Number.isInteger(target) || index < 0 || index >= entries.length
-    || target < 0 || target >= entries.length || index === target) return entries;
+  if (
+    !Number.isInteger(index) ||
+    !Number.isInteger(target) ||
+    index < 0 ||
+    index >= entries.length ||
+    target < 0 ||
+    target >= entries.length ||
+    index === target
+  )
+    return entries;
   const moved = entries.slice();
   moved.splice(target, 0, moved.splice(index, 1)[0]);
   return moved;
@@ -103,22 +200,28 @@ export function moveEditorEntryTo(entries, index, target) {
 
 // Rename is explicit so existing human expectations travel with their question.
 export function renameEditorQuestion(rows, expect, index, requestedId) {
-  const id = String(requestedId).trim(), row = rows[index];
+  const id = String(requestedId).trim(),
+    row = rows[index];
   if (!row || !id) throw new Error("Give the question a nonempty id.");
   const previous = String(row.id || "").trim();
   if (rows.some((other, i) => i !== index && String(other.id || "").trim() === id)) {
     throw new Error(`Another question already uses “${id}”.`);
   }
-  if (previous !== id && Object.hasOwn(expect, id)) throw new Error(`Expectations already exist for “${id}”. Keep or remove them before renaming.`);
-  if (previous !== id && rows.some((other, i) => i !== index && String(other.id || "").trim() === previous)
-      && Object.hasOwn(expect, previous)) throw new Error("Fix the repeated original id before moving its expectations.");
+  if (previous !== id && Object.hasOwn(expect, id))
+    throw new Error(`Expectations already exist for “${id}”. Keep or remove them before renaming.`);
+  if (
+    previous !== id &&
+    rows.some((other, i) => i !== index && String(other.id || "").trim() === previous) &&
+    Object.hasOwn(expect, previous)
+  )
+    throw new Error("Fix the repeated original id before moving its expectations.");
   const expectations = { ...expect };
   if (previous !== id && Object.hasOwn(expectations, previous)) {
     const value = expectations[previous];
     delete expectations[previous];
     Object.defineProperty(expectations, id, { value, enumerable: true, writable: true, configurable: true });
   }
-  return { rows: rows.map((other, i) => i === index ? { ...other, id } : other), expect: expectations };
+  return { rows: rows.map((other, i) => (i === index ? { ...other, id } : other)), expect: expectations };
 }
 
 export function duplicateChoiceOption(options, index) {
@@ -135,14 +238,16 @@ export function duplicateChoiceOption(options, index) {
 
 // Insert fresh criteria rather than copying a neighboring label or changing its key.
 export function insertEditorCriterion(entries, index, after, type) {
-  if (!["choice", "score"].includes(type) || !Number.isInteger(index) || index < 0 || index >= entries.length) return entries;
+  if (!["choice", "score"].includes(type) || !Number.isInteger(index) || index < 0 || index >= entries.length)
+    return entries;
   const result = entries.slice();
   result.splice(index + Number(after), 0, type === "choice" ? ["", ""] : "");
   return result;
 }
 
 export function duplicateShownQuestions(rows, shown) {
-  const selected = new Set(shown), result = [];
+  const selected = new Set(shown),
+    result = [];
   const used = rows.slice();
   for (const row of rows) {
     result.push(row);
@@ -165,9 +270,20 @@ export function editorCriterionCount(row) {
 
 export function editorQuestionOutline(rows) {
   // JSON strings keep tabs/newlines in an id from becoming extra outline columns.
-  return ["position\tid\ttype\tcriteria\tinstruction_characters", ...rows.map((row, index) =>
-    [index + 1, JSON.stringify(String(row.id || "")), row.type, editorCriterionCount(row),
-      Array.from(String(row.instructions || "")).length].join("\t"))].join("\n") + "\n";
+  return (
+    [
+      "position\tid\ttype\tcriteria\tinstruction_characters",
+      ...rows.map((row, index) =>
+        [
+          index + 1,
+          JSON.stringify(String(row.id || "")),
+          row.type,
+          editorCriterionCount(row),
+          Array.from(String(row.instructions || "")).length,
+        ].join("\t"),
+      ),
+    ].join("\n") + "\n"
+  );
 }
 
 export function reorderEditorCriteria(row, action) {
@@ -194,8 +310,11 @@ export function moveShownQuestionsToEdge(rows, shown, last = false) {
 
 // Remove only completely empty editor placeholders; keep unnamed descriptions for repair.
 export function removeBlankEditorCriteria(row) {
-  if (row.type === "choice") return { ...row, choice: row.choice.filter(([key, description]) =>
-    String(key).trim() || String(description).trim()) };
+  if (row.type === "choice")
+    return {
+      ...row,
+      choice: row.choice.filter(([key, description]) => String(key).trim() || String(description).trim()),
+    };
   if (row.type === "score") return { ...row, score: row.score.filter((level) => String(level).trim()) };
   return row;
 }
@@ -212,12 +331,33 @@ export function editorQuestionsMarkdown(rows) {
     const fence = "`".repeat(ticks);
     return `${fence}\n${text}\n${fence}`;
   };
-  return "# Authored questions\n\n" + rows.map((row, index) => {
-    const lines = [`## Question ${index + 1}`, "", "ID", literal(row.id), "", `Type: ${row.type}`, "", "Instructions", literal(row.instructions)];
-    const criteria = row.type === "choice" ? row.choice.filter(([key]) => key.trim()).map(([key, description]) => ({ key, description }))
-      : row.type === "score" ? row.score.filter((level) => level.trim())
-      : row.type === "noul" ? { yes: row.noulYes || "", no: row.noulNo || "" } : null;
-    if (criteria !== null) lines.push("", "Criteria", literal(JSON.stringify(criteria, null, 2)));
-    return lines.join("\n");
-  }).join("\n\n") + "\n";
+  return (
+    "# Authored questions\n\n" +
+    rows
+      .map((row, index) => {
+        const lines = [
+          `## Question ${index + 1}`,
+          "",
+          "ID",
+          literal(row.id),
+          "",
+          `Type: ${row.type}`,
+          "",
+          "Instructions",
+          literal(row.instructions),
+        ];
+        const criteria =
+          row.type === "choice"
+            ? row.choice.filter(([key]) => key.trim()).map(([key, description]) => ({ key, description }))
+            : row.type === "score"
+              ? row.score.filter((level) => level.trim())
+              : row.type === "noul"
+                ? { yes: row.noulYes || "", no: row.noulNo || "" }
+                : null;
+        if (criteria !== null) lines.push("", "Criteria", literal(JSON.stringify(criteria, null, 2)));
+        return lines.join("\n");
+      })
+      .join("\n\n") +
+    "\n"
+  );
 }

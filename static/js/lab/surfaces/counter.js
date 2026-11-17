@@ -199,13 +199,25 @@ const LIMITS = deepFreeze({
 const RULES = deepFreeze([
   { id: "handed_off", label: "Already handed to a person", keys: [] },
   { id: "asks_for_person", label: "The customer asks for a person", keys: ["person_at"] },
-  { id: "frustration_streak", label: "Frustration stayed above the cut for consecutive turns", keys: ["frustration_at", "streak_turns"] },
+  {
+    id: "frustration_streak",
+    label: "Frustration stayed above the cut for consecutive turns",
+    keys: ["frustration_at", "streak_turns"],
+  },
   { id: "missed_turns", label: "The bot missed the point too often", keys: ["missed_at", "missed_turns"] },
   { id: "resolved", label: "The customer's need is met", keys: ["resolved_at"] },
   { id: "intent_confidence", label: "The intent is uncertain or has no reply template", keys: ["intent_min"] },
 ]);
 // jev/counter.py INTENTS, in question order.
-const INTENTS = Object.freeze(["shipping_times", "return_policy", "wholesale_pricing", "subscription_help", "brewing_guide", "order_status", "other"]);
+const INTENTS = Object.freeze([
+  "shipping_times",
+  "return_policy",
+  "wholesale_pricing",
+  "subscription_help",
+  "brewing_guide",
+  "order_status",
+  "other",
+]);
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
@@ -224,7 +236,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -246,13 +262,22 @@ function setupOf(source) {
 // A policy reduced to the sliders' keys with finite values, frozen; null when it is not an object.
 function policyCopy(value) {
   if (!isObject(value)) return null;
-  return Object.freeze(Object.fromEntries(Object.keys(LIMITS).filter((key) => finite(value[key]) !== null).map((key) => [key, value[key]])));
+  return Object.freeze(
+    Object.fromEntries(
+      Object.keys(LIMITS)
+        .filter((key) => finite(value[key]) !== null)
+        .map((key) => [key, value[key]]),
+    ),
+  );
 }
 
 function decisionOf(raw, withCounts) {
   if (!isObject(raw)) return null;
   const out = { action: textOr(raw.action), reply: textOr(raw.reply), reason: textOr(raw.reason) };
-  if (withCounts) { out.streak = integer(raw.streak); out.misses = integer(raw.misses); }
+  if (withCounts) {
+    out.streak = integer(raw.streak);
+    out.misses = integer(raw.misses);
+  }
   return out;
 }
 
@@ -279,8 +304,15 @@ function evidenceOf(answers) {
 
 function metaOf(raw) {
   const meta = isObject(raw) ? raw : {};
-  return { model: textOr(meta.model), latency_ms: finite(meta.latency_ms), question_count: integer(meta.question_count),
-    input_tokens: integer(meta.input_tokens), output_tokens: integer(meta.output_tokens), cost_usd: finite(meta.cost_usd), backend: textOr(meta.backend) };
+  return {
+    model: textOr(meta.model),
+    latency_ms: finite(meta.latency_ms),
+    question_count: integer(meta.question_count),
+    input_tokens: integer(meta.input_tokens),
+    output_tokens: integer(meta.output_tokens),
+    cost_usd: finite(meta.cost_usd),
+    backend: textOr(meta.backend),
+  };
 }
 
 function turnItem(turn, index, transcript, current) {
@@ -297,7 +329,11 @@ function turnItem(turn, index, transcript, current) {
     sent,
     sent_policy: policyCopy(turn.policy),
     decision,
-    changed: !!decision && sent.action !== null && decision.action !== null && (decision.action !== sent.action || decision.reply !== sent.reply),
+    changed:
+      !!decision &&
+      sent.action !== null &&
+      decision.action !== null &&
+      (decision.action !== sent.action || decision.reply !== sent.reply),
     evidence,
     intent_choice: textOr(choice),
     intents,
@@ -306,14 +342,16 @@ function turnItem(turn, index, transcript, current) {
 }
 
 function snapPolicy(settings, changes) {
-  if (!isObject(changes) || !Object.keys(changes).length) throw new Error("Name at least one policy setting to change.");
+  if (!isObject(changes) || !Object.keys(changes).length)
+    throw new Error("Name at least one policy setting to change.");
   const next = { ...settings };
   for (const [key, raw] of Object.entries(changes)) {
     const limit = LIMITS[key];
     if (!limit) throw new Error(`There is no policy setting "${key}".`);
     const value = typeof raw === "string" ? toNumber(raw) : finite(raw);
     if (value === null) throw new Error(`${limit.label} must be a number.`);
-    if (value < limit.min - 1e-9 || value > limit.max + 1e-9) throw new Error(`${limit.label} must be from ${limit.min} to ${limit.max}.`);
+    if (value < limit.min - 1e-9 || value > limit.max + 1e-9)
+      throw new Error(`${limit.label} must be from ${limit.min} to ${limit.max}.`);
     const steps = (value - limit.min) / limit.step;
     if (Math.abs(steps - Math.round(steps)) > 1e-6) throw new Error(`${limit.label} moves in steps of ${limit.step}.`);
     next[key] = Number((limit.min + Math.round(steps) * limit.step).toFixed(2));
@@ -334,12 +372,25 @@ function chatOf(source) {
     const key = JSON.stringify(sample);
     index = examples.findIndex((example) => JSON.stringify(example) === key);
   }
-  const sampleTurns = isObject(sample) && Array.isArray(sample.turns) ? sample.turns.filter((turn) => typeof turn === "string") : EMPTY;
+  const sampleTurns =
+    isObject(sample) && Array.isArray(sample.turns) ? sample.turns.filter((turn) => typeof turn === "string") : EMPTY;
   const customer = turns.map((_, i) => (isObject(transcript[i * 2]) ? plain(transcript[i * 2].text) : ""));
   const last = decisions.length ? decisions[decisions.length - 1] : null;
-  const stopped = turns.length >= MAX_TURNS ? "turn_limit" : isObject(last) && last.action === "handoff" ? "handoff" : null;
-  return { turns, decisions, transcript, examples, sample: isObject(sample) ? sample : null, index: index < 0 ? null : index, sampleTurns, customer, stopped,
-    following: isObject(sample) && customer.length <= sampleTurns.length && customer.every((text, i) => text === sampleTurns[i]) };
+  const stopped =
+    turns.length >= MAX_TURNS ? "turn_limit" : isObject(last) && last.action === "handoff" ? "handoff" : null;
+  return {
+    turns,
+    decisions,
+    transcript,
+    examples,
+    sample: isObject(sample) ? sample : null,
+    index: index < 0 ? null : index,
+    sampleTurns,
+    customer,
+    stopped,
+    following:
+      isObject(sample) && customer.length <= sampleTurns.length && customer.every((text, i) => text === sampleTurns[i]),
+  };
 }
 
 const running = (source) => read(source, "running", false) === true;
@@ -372,8 +423,17 @@ export function counterTurnsCtx(source = {}) {
     const decisions = listOf(source, "decisions");
     const transcript = listOf(source, "transcript");
     const parts = [decisions, transcript, ...turns];
-    if (!built.parts || built.parts.length !== parts.length || built.parts.some((part, index) => part !== parts[index])) {
-      built = { parts, items: deepFreeze(turns.flatMap((turn, index) => (isObject(turn) ? [turnItem(turn, index, transcript, decisions[index])] : []))) };
+    if (
+      !built.parts ||
+      built.parts.length !== parts.length ||
+      built.parts.some((part, index) => part !== parts[index])
+    ) {
+      built = {
+        parts,
+        items: deepFreeze(
+          turns.flatMap((turn, index) => (isObject(turn) ? [turnItem(turn, index, transcript, decisions[index])] : [])),
+        ),
+      };
     }
     return built.items;
   };
@@ -381,31 +441,70 @@ export function counterTurnsCtx(source = {}) {
     const value = read(source, "policy", null);
     return setupOf(source) && isObject(value) ? value : null;
   };
-  const needSetup = () => { if (!setupOf(source) || !settings()) throw new Error("The policy has not loaded yet."); };
+  const needSetup = () => {
+    if (!setupOf(source) || !settings()) throw new Error("The policy has not loaded yet.");
+  };
   const ctx = {
     items,
     shown: null,
     data: {
-      get policy() { return policyCopy(settings()); },
-      get decided_with() { return listOf(source, "turns").length ? policyCopy(read(source, "decidedWith", null)) : null; },
-      get defaults() { return policyCopy(setupOf(source)?.policy); },
-      get changed() {
-        const now = settings(), defaults = setupOf(source)?.policy;
-        if (!now || !isObject(defaults)) return EMPTY;
-        return Object.freeze(Object.keys(LIMITS).filter((key) => finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) > 1e-9));
+      get policy() {
+        return policyCopy(settings());
       },
-      get limits() { return LIMITS; },
-      get rules() { return RULES; },
-      get intents() { return INTENTS; },
+      get decided_with() {
+        return listOf(source, "turns").length ? policyCopy(read(source, "decidedWith", null)) : null;
+      },
+      get defaults() {
+        return policyCopy(setupOf(source)?.policy);
+      },
+      get changed() {
+        const now = settings(),
+          defaults = setupOf(source)?.policy;
+        if (!now || !isObject(defaults)) return EMPTY;
+        return Object.freeze(
+          Object.keys(LIMITS).filter(
+            (key) =>
+              finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) > 1e-9,
+          ),
+        );
+      },
+      get limits() {
+        return LIMITS;
+      },
+      get rules() {
+        return RULES;
+      },
+      get intents() {
+        return INTENTS;
+      },
       get chat() {
         const chat = chatOf(source);
-        const sample = chat.sample ? { index: chat.index, label: textOr(chat.sample.label, chat.index === null ? "Example" : `Example ${chat.index + 1}`), turns: chat.sampleTurns.length } : null;
-        return deepFreeze({ turns: chat.turns.length, max_turns: MAX_TURNS, max_chars: MAX_CHARS, stopped: chat.stopped, sample,
-          following: chat.following, next: chat.sample && chat.turns.length < chat.sampleTurns.length ? chat.sampleTurns[chat.turns.length] : null });
+        const sample = chat.sample
+          ? {
+              index: chat.index,
+              label: textOr(chat.sample.label, chat.index === null ? "Example" : `Example ${chat.index + 1}`),
+              turns: chat.sampleTurns.length,
+            }
+          : null;
+        return deepFreeze({
+          turns: chat.turns.length,
+          max_turns: MAX_TURNS,
+          max_chars: MAX_CHARS,
+          stopped: chat.stopped,
+          sample,
+          following: chat.following,
+          next: chat.sample && chat.turns.length < chat.sampleTurns.length ? chat.sampleTurns[chat.turns.length] : null,
+        });
       },
-      get draft() { return plain(read(source, "draft", "")); },
-      get note() { return plain(read(source, "note", "")); },
-      get running() { return running(source); },
+      get draft() {
+        return plain(read(source, "draft", ""));
+      },
+      get note() {
+        return plain(read(source, "note", ""));
+      },
+      get running() {
+        return running(source);
+      },
     },
     actions: {
       setPolicy(changes) {
@@ -423,18 +522,23 @@ export function counterTurnsCtx(source = {}) {
       draftMessage(text, options = {}) {
         if (!setupOf(source)) throw new Error("The chat has not loaded yet.");
         if (typeof text !== "string" || !text.trim()) throw new Error("There is no message to put in the box.");
-        if (text.length > MAX_CHARS) throw new Error(`A customer message can be at most ${MAX_CHARS.toLocaleString("en-US")} characters.`);
+        if (text.length > MAX_CHARS)
+          throw new Error(`A customer message can be at most ${MAX_CHARS.toLocaleString("en-US")} characters.`);
         if (running(source)) throw new Error("Wait for the current turn to finish.");
         const stopped = chatOf(source).stopped;
-        if (stopped === "handoff") throw new Error("This chat was handed to a person. Start a new chat to write another message.");
-        if (stopped === "turn_limit") throw new Error(`This chat has reached ${MAX_TURNS} customer turns. Start a new chat.`);
+        if (stopped === "handoff")
+          throw new Error("This chat was handed to a person. Start a new chat to write another message.");
+        if (stopped === "turn_limit")
+          throw new Error(`This chat has reached ${MAX_TURNS} customer turns. Start a new chat.`);
         const draft = plain(read(source, "draft", ""));
-        if (draft.trim() && draft !== text && options?.replace !== true) throw new Error("The message box already holds text you typed. Clear it first.");
+        if (draft.trim() && draft !== text && options?.replace !== true)
+          throw new Error("The message box already holds text you typed. Clear it first.");
         call(source, "setDraft", text);
         return text;
       },
       focusMessage() {
-        if (!setupOf(source) || running(source) || chatOf(source).stopped || typeof source.focusMessage !== "function") return false;
+        if (!setupOf(source) || running(source) || chatOf(source).stopped || typeof source.focusMessage !== "function")
+          return false;
         return source.focusMessage() !== false;
       },
       inspectTurn(n) {
@@ -443,7 +547,9 @@ export function counterTurnsCtx(source = {}) {
         return call(source, "inspect", n);
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => `Turn ${item && Number.isInteger(item.n) ? item.n : index + 1}`,
   };
   ctx.shown = shownOf(source, ctx, items);
@@ -455,9 +561,16 @@ export function counterTurnsCtx(source = {}) {
 function exampleItem(raw, index, chat) {
   const turns = Array.isArray(raw.turns) ? raw.turns.filter((turn) => typeof turn === "string") : [];
   const active = chat.index === index;
-  return { index, position: index + 1, label: plain(raw.label).trim() || `Example ${index + 1}`, turns,
+  return {
+    index,
+    position: index + 1,
+    label: plain(raw.label).trim() || `Example ${index + 1}`,
+    turns,
     expect: Array.isArray(raw.expect) ? raw.expect.filter((action) => typeof action === "string") : [],
-    active, sent: active ? chat.turns.length : 0, following: active && chat.following };
+    active,
+    sent: active ? chat.turns.length : 0,
+    following: active && chat.following,
+  };
 }
 
 // source: {
@@ -471,7 +584,13 @@ export function counterExamplesCtx(source = {}) {
     const chat = chatOf(source);
     const key = JSON.stringify([chat.index, chat.turns.length, chat.following]);
     if (chat.examples !== built.examples || key !== built.key) {
-      built = { key, examples: chat.examples, items: deepFreeze(chat.examples.flatMap((raw, index) => (isObject(raw) ? [exampleItem(raw, index, chat)] : []))) };
+      built = {
+        key,
+        examples: chat.examples,
+        items: deepFreeze(
+          chat.examples.flatMap((raw, index) => (isObject(raw) ? [exampleItem(raw, index, chat)] : [])),
+        ),
+      };
     }
     return built.items;
   };
@@ -479,7 +598,8 @@ export function counterExamplesCtx(source = {}) {
     if (!setupOf(source)) throw new Error("The examples have not loaded yet.");
     if (running(source)) throw new Error("Wait for the current turn to finish before starting another chat.");
     const sent = chatOf(source).turns.length;
-    if (sent && options?.discard !== true) throw new Error(`This clears the current chat of ${sent} turn${sent === 1 ? "" : "s"}. Confirm to discard it.`);
+    if (sent && options?.discard !== true)
+      throw new Error(`This clears the current chat of ${sent} turn${sent === 1 ? "" : "s"}. Confirm to discard it.`);
   };
   const ctx = {
     items,
@@ -487,20 +607,29 @@ export function counterExamplesCtx(source = {}) {
     data: {
       get chat() {
         const chat = chatOf(source);
-        return deepFreeze({ index: chat.index, turns: chat.turns.length,
+        return deepFreeze({
+          index: chat.index,
+          turns: chat.turns.length,
           actions: chat.turns.map((_, i) => (isObject(chat.decisions[i]) ? textOr(chat.decisions[i].action) : null)),
           sent_actions: chat.turns.map((turn) => {
             const own = Array.isArray(turn.decisions) ? turn.decisions[turn.decisions.length - 1] : null;
             return isObject(own) ? textOr(own.action) : null;
           }),
-          stopped: chat.stopped });
+          stopped: chat.stopped,
+        });
       },
       get defaults_in_force() {
-        const now = read(source, "policy", null), defaults = setupOf(source)?.policy;
+        const now = read(source, "policy", null),
+          defaults = setupOf(source)?.policy;
         if (!isObject(now) || !isObject(defaults)) return false;
-        return Object.keys(LIMITS).every((key) => finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) <= 1e-9);
+        return Object.keys(LIMITS).every(
+          (key) =>
+            finite(now[key]) !== null && finite(defaults[key]) !== null && Math.abs(now[key] - defaults[key]) <= 1e-9,
+        );
       },
-      get running() { return running(source); },
+      get running() {
+        return running(source);
+      },
       max_turns: MAX_TURNS,
       max_chars: MAX_CHARS,
       actions: ACTIONS,
@@ -518,7 +647,9 @@ export function counterExamplesCtx(source = {}) {
         return call(source, "newChat");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.label === "string" && item.label ? item.label : String(index + 1)),
   };
   ctx.shown = shownOf(source, ctx, items);

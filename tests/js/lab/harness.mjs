@@ -26,8 +26,24 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { applyTransform, compareText, factValue, filterMatches, improvementsOf, parseKeys, previewTransform, runDiagnostics, runExporter,
-  runImporter, runMetrics, runTool, snapshot, sortByFact, summarizeFact, undoTransform } from "../../../static/js/lab/kit.js";
+import {
+  applyTransform,
+  compareText,
+  factValue,
+  filterMatches,
+  improvementsOf,
+  parseKeys,
+  previewTransform,
+  runDiagnostics,
+  runExporter,
+  runImporter,
+  runMetrics,
+  runTool,
+  snapshot,
+  sortByFact,
+  summarizeFact,
+  undoTransform,
+} from "../../../static/js/lab/kit.js";
 import { createLab } from "../../../static/js/lab/host.js";
 
 // ---------- stand-ins for the browser ----------
@@ -38,15 +54,24 @@ const keep = (child) => child !== null && child !== undefined && child !== false
 export function fakeDom() {
   return {
     h: (tag, attrs = {}, ...children) => ({ tag, attrs: attrs || {}, children: children.flat(Infinity).filter(keep) }),
-    mount: (node, ...children) => { node.children = children.flat(Infinity).filter(Boolean); return node; },
+    mount: (node, ...children) => {
+      node.children = children.flat(Infinity).filter(Boolean);
+      return node;
+    },
   };
 }
 
 export function fakeEnv() {
   const env = { ...fakeDom(), toasts: [], copied: [], downloads: [] };
-  env.toast = (message, kind = "") => { env.toasts.push({ message, kind }); };
-  env.copy = (text) => { env.copied.push(text); };
-  env.download = (filename, text, mime) => { env.downloads.push({ filename, text, mime }); };
+  env.toast = (message, kind = "") => {
+    env.toasts.push({ message, kind });
+  };
+  env.copy = (text) => {
+    env.copied.push(text);
+  };
+  env.download = (filename, text, mime) => {
+    env.downloads.push({ filename, text, mime });
+  };
   return env;
 }
 
@@ -55,14 +80,21 @@ export function fakeCtx({ items = [], shown = null, data = {}, actions = {}, ite
   const ctx = { list: items, visible: shown, data, actions, refreshes: 0, env: fakeEnv() };
   ctx.items = () => ctx.list;
   ctx.shown = () => ctx.visible || ctx.list;
-  ctx.refresh = () => { ctx.refreshes++; };
+  ctx.refresh = () => {
+    ctx.refreshes++;
+  };
   if (itemName) ctx.itemName = itemName;
   return ctx;
 }
 
-export const nodes = (node) => (node && typeof node === "object" ? [node, ...(node.children || []).flatMap(nodes)] : []);
-export const textOf = (node) => (typeof node === "string" || typeof node === "number" ? String(node)
-  : node && node.children ? node.children.map(textOf).join("") : "");
+export const nodes = (node) =>
+  node && typeof node === "object" ? [node, ...(node.children || []).flatMap(nodes)] : [];
+export const textOf = (node) =>
+  typeof node === "string" || typeof node === "number"
+    ? String(node)
+    : node && node.children
+      ? node.children.map(textOf).join("")
+      : "";
 export const findAll = (root, match) => nodes(root).filter(match);
 export const find = (root, match) => nodes(root).find(match) || null;
 export const byText = (root, tag, text) => find(root, (node) => node.tag === tag && textOf(node).includes(text));
@@ -70,12 +102,19 @@ export const byText = (root, tag, text) => find(root, (node) => node.tag === tag
 export function fire(node, type, event = {}) {
   const handler = node?.attrs?.[`on${type}`];
   assert.equal(typeof handler, "function", `no on${type} handler on <${node?.tag}>`);
-  return handler({ target: { value: node.attrs.value, checked: node.attrs.checked, open: true }, preventDefault() {}, ...event });
+  return handler({
+    target: { value: node.attrs.value, checked: node.attrs.checked, open: true },
+    preventDefault() {},
+    ...event,
+  });
 }
 
 export function approx(actual, expected, tolerance = 1e-9, label = "") {
   if (typeof expected === "number" && typeof actual === "number") {
-    assert.ok(Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected)), `${label} expected ${expected}, got ${actual}`);
+    assert.ok(
+      Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected)),
+      `${label} expected ${expected}, got ${actual}`,
+    );
   } else assert.deepEqual(actual, expected, label);
 }
 
@@ -90,53 +129,108 @@ function factCase(pack, feature, kase, title) {
   const { items, values } = kase;
   const ctx = kase.ctx || fakeCtx({ items });
   const actual = () => {
-    assert.ok(Array.isArray(items) && Array.isArray(values) && items.length === values.length && items.length >= 2,
-      "a fact case needs items and one expected value per item (two or more)");
-    assert.ok(items.every((item) => item && typeof item === "object") && new Set(items).size === items.length, "fact case items must be distinct objects");
+    assert.ok(
+      Array.isArray(items) && Array.isArray(values) && items.length === values.length && items.length >= 2,
+      "a fact case needs items and one expected value per item (two or more)",
+    );
+    assert.ok(
+      items.every((item) => item && typeof item === "object") && new Set(items).size === items.length,
+      "fact case items must be distinct objects",
+    );
     return items.map((item, index) => {
-      const direct = feature.value(item, ctx);  // not through factValue, so an exception fails the test
+      const direct = feature.value(item, ctx); // not through factValue, so an exception fails the test
       const value = factValue(feature, item, ctx);
       const expected = values[index] === undefined ? null : values[index];
-      approx(value, feature.type === "flag" ? expected === true : feature.type === "text" ? String(expected ?? "") : expected, kase.tolerance, `${key} item ${index}:`);
+      approx(
+        value,
+        feature.type === "flag" ? expected === true : feature.type === "text" ? String(expected ?? "") : expected,
+        kase.tolerance,
+        `${key} item ${index}:`,
+      );
       if (feature.type === "number" && value !== null) assert.equal(typeof direct, "number");
       return value;
     });
   };
   const picked = (filter) => where(items, (item) => filterMatches(feature, { key, ...filter }, item, ctx));
   const order = (dir) => sortByFact(items, { key, dir }, facts, ctx).map((item) => items.indexOf(item));
-  const expectedOrder = (got, dir, missing, compare) => got.map((value, index) => ({ value, index })).sort((a, b) => {
-    const am = missing(a.value), bm = missing(b.value);
-    if (am || bm) return am === bm ? a.index - b.index : am ? 1 : -1;
-    return compare(a.value, b.value) * dir || a.index - b.index;
-  }).map((entry) => entry.index);
+  const expectedOrder = (got, dir, missing, compare) =>
+    got
+      .map((value, index) => ({ value, index }))
+      .sort((a, b) => {
+        const am = missing(a.value),
+          bm = missing(b.value);
+        if (am || bm) return am === bm ? a.index - b.index : am ? 1 : -1;
+        return compare(a.value, b.value) * dir || a.index - b.index;
+      })
+      .map((entry) => entry.index);
 
   if (feature.type === "number") {
     const distinct = (got) => [...new Set(got.filter((value) => value !== null))].sort((a, b) => a - b);
     test(title(".min"), () => {
-      const got = actual(), steps = distinct(got);
+      const got = actual(),
+        steps = distinct(got);
       assert.ok(steps.length >= 2, "a numeric fact case needs two different expected values");
-      for (const bound of [steps[0], steps[steps.length - 1]]) assert.deepEqual(picked({ op: "min", value: String(bound) }), where(got, (value) => value !== null && value >= bound));
-      assert.deepEqual(picked({ op: "min", value: "" }), items.map((_, index) => index), "a blank bound filters nothing");
+      for (const bound of [steps[0], steps[steps.length - 1]])
+        assert.deepEqual(
+          picked({ op: "min", value: String(bound) }),
+          where(got, (value) => value !== null && value >= bound),
+        );
+      assert.deepEqual(
+        picked({ op: "min", value: "" }),
+        items.map((_, index) => index),
+        "a blank bound filters nothing",
+      );
       assert.deepEqual(picked({ op: "min", value: "many" }), [], "a bound that is not a number matches nothing");
     });
     test(title(".max"), () => {
-      const got = actual(), steps = distinct(got);
+      const got = actual(),
+        steps = distinct(got);
       assert.ok(steps.length >= 2, "a numeric fact case needs two different expected values");
-      for (const bound of [steps[0], steps[steps.length - 1]]) assert.deepEqual(picked({ op: "max", value: String(bound) }), where(got, (value) => value !== null && value <= bound));
-      assert.deepEqual(picked({ op: "max", value: "Infinity" }), [], "a bound that is not a finite number matches nothing");
+      for (const bound of [steps[0], steps[steps.length - 1]])
+        assert.deepEqual(
+          picked({ op: "max", value: String(bound) }),
+          where(got, (value) => value !== null && value <= bound),
+        );
+      assert.deepEqual(
+        picked({ op: "max", value: "Infinity" }),
+        [],
+        "a bound that is not a finite number matches nothing",
+      );
     });
     test(title(".sort"), () => {
       const got = actual();
       assert.ok(distinct(got).length >= 2, "a numeric fact case needs two different expected values");
-      assert.deepEqual(order("asc"), expectedOrder(got, 1, (value) => value === null, (a, b) => a - b));
-      assert.deepEqual(order("desc"), expectedOrder(got, -1, (value) => value === null, (a, b) => a - b));
+      assert.deepEqual(
+        order("asc"),
+        expectedOrder(
+          got,
+          1,
+          (value) => value === null,
+          (a, b) => a - b,
+        ),
+      );
+      assert.deepEqual(
+        order("desc"),
+        expectedOrder(
+          got,
+          -1,
+          (value) => value === null,
+          (a, b) => a - b,
+        ),
+      );
     });
   } else if (feature.type === "flag") {
     test(title(""), () => {
       const got = actual();
       assert.ok(got.includes(true) && got.includes(false), "a flag case needs one item with the flag and one without");
-      assert.deepEqual(picked({ op: "with" }), where(got, (value) => value === true));
-      assert.deepEqual(picked({ op: "without" }), where(got, (value) => value !== true));
+      assert.deepEqual(
+        picked({ op: "with" }),
+        where(got, (value) => value === true),
+      );
+      assert.deepEqual(
+        picked({ op: "without" }),
+        where(got, (value) => value !== true),
+      );
     });
   } else if (feature.type === "text") {
     const filled = (got) => [...new Set(got.filter((value) => value.trim() !== ""))];
@@ -154,22 +248,35 @@ function factCase(pack, feature, kase, title) {
     test(title(".sort"), () => {
       const got = actual();
       assert.ok(filled(got).length >= 2, "a text fact case needs two different nonempty expected values");
-      assert.deepEqual(order("asc"), expectedOrder(got, 1, (value) => value.trim() === "", compareText));
-      assert.deepEqual(order("desc"), expectedOrder(got, -1, (value) => value.trim() === "", compareText));
+      assert.deepEqual(
+        order("asc"),
+        expectedOrder(got, 1, (value) => value.trim() === "", compareText),
+      );
+      assert.deepEqual(
+        order("desc"),
+        expectedOrder(got, -1, (value) => value.trim() === "", compareText),
+      );
     });
   } else {
     const groupsOf = (got) => [...new Set(got.filter((value) => value !== null))];
     test(title(".is"), () => {
       const got = actual();
       assert.ok(groupsOf(got).length >= 2, "a category fact case needs two different expected values");
-      for (const value of groupsOf(got)) assert.deepEqual(picked({ op: "is", value }), where(got, (entry) => entry === value));
+      for (const value of groupsOf(got))
+        assert.deepEqual(
+          picked({ op: "is", value }),
+          where(got, (entry) => entry === value),
+        );
       assert.deepEqual(picked({ op: "is", value: "\u0000 not a value \u0000" }), []);
     });
     test(title(".breakdown"), () => {
       const got = actual();
       assert.ok(groupsOf(got).length >= 2, "a category fact case needs two different expected values");
       const summary = summarizeFact(feature, items, ctx);
-      assert.deepEqual(Object.fromEntries(summary.groups), Object.fromEntries(groupsOf(got).map((value) => [value, got.filter((entry) => entry === value).length])));
+      assert.deepEqual(
+        Object.fromEntries(summary.groups),
+        Object.fromEntries(groupsOf(got).map((value) => [value, got.filter((entry) => entry === value).length])),
+      );
       assert.equal(summary.missing, got.filter((value) => value === null).length);
     });
   }
@@ -182,23 +289,39 @@ function diagnosticCase(pack, feature, kase, title) {
     const found = (items) => runDiagnostics([[key, feature]], items, ctx);
     const matches = (findings) => findings.every((finding) => !kase.message || kase.message.test(finding.message));
     if ((feature.scope || "item") === "list") {
-      assert.ok(Array.isArray(kase.hitList) && Array.isArray(kase.missList), "a list check case needs hitList and missList");
+      assert.ok(
+        Array.isArray(kase.hitList) && Array.isArray(kase.missList),
+        "a list check case needs hitList and missList",
+      );
       const missCtx = kase.missCtx || ctx;
-      feature.check(kase.hitList, ctx); feature.check(kase.missList, missCtx);  // direct calls: an exception fails the test
+      feature.check(kase.hitList, ctx);
+      feature.check(kase.missList, missCtx); // direct calls: an exception fails the test
       const hits = found(kase.hitList);
-      assert.ok(hits.length > 0 && matches(hits), `${key} should report on hitList${kase.message ? ` with a message like ${kase.message}` : ""}`);
+      assert.ok(
+        hits.length > 0 && matches(hits),
+        `${key} should report on hitList${kase.message ? ` with a message like ${kase.message}` : ""}`,
+      );
       assert.equal(hits[0].index, null);
-      assert.deepEqual(runDiagnostics([[key, feature]], kase.missList, missCtx), [], `${key} should stay quiet on missList`);
+      assert.deepEqual(
+        runDiagnostics([[key, feature]], kase.missList, missCtx),
+        [],
+        `${key} should stay quiet on missList`,
+      );
     } else {
-      const hits = list(kase.hit), misses = list(kase.miss);
+      const hits = list(kase.hit),
+        misses = list(kase.miss);
       assert.ok(hits.length && misses.length, "an item check case needs hit and miss");
       for (const item of [...hits, ...misses]) feature.check(item, ctx, 0);
       for (const item of hits) {
         const findings = found([item]);
-        assert.ok(findings.length > 0 && matches(findings), `${key} should report on ${JSON.stringify(item).slice(0, 200)}${kase.message ? ` with a message like ${kase.message}` : ""}`);
+        assert.ok(
+          findings.length > 0 && matches(findings),
+          `${key} should report on ${JSON.stringify(item).slice(0, 200)}${kase.message ? ` with a message like ${kase.message}` : ""}`,
+        );
         assert.equal(findings[0].index, 0);
       }
-      for (const item of misses) assert.deepEqual(found([item]), [], `${key} should stay quiet on ${JSON.stringify(item).slice(0, 200)}`);
+      for (const item of misses)
+        assert.deepEqual(found([item]), [], `${key} should stay quiet on ${JSON.stringify(item).slice(0, 200)}`);
     }
   });
 }
@@ -217,13 +340,27 @@ function transformCase(pack, feature, kase, title) {
     const applied = applyTransform(preview, kase.input);
     assert.deepEqual(applied.items, kase.output);
     assert.deepEqual(undoTransform(applied.undo, applied.items), kase.input, "undo restores the list exactly");
-    assert.throws(() => applyTransform(preview, kase.output), /Preview again/, "a preview binds to the list it was made from");
+    assert.throws(
+      () => applyTransform(preview, kase.output),
+      /Preview again/,
+      "a preview binds to the list it was made from",
+    );
     if (kase.unchanged) {
-      const same = previewTransform(key, feature, kase.unchanged, new Set(kase.unchanged.map((_, index) => index)), kase.params || {}, ctx);
+      const same = previewTransform(
+        key,
+        feature,
+        kase.unchanged,
+        new Set(kase.unchanged.map((_, index) => index)),
+        kase.params || {},
+        ctx,
+      );
       assert.deepEqual(same.next, kase.unchanged, "the unchanged list must stay as it is");
     }
     for (const reject of kase.rejects || []) {
-      assert.throws(() => previewTransform(key, feature, reject.input || kase.input, shown, reject.params || {}, ctx), reject.message || Error);
+      assert.throws(
+        () => previewTransform(key, feature, reject.input || kase.input, shown, reject.params || {}, ctx),
+        reject.message || Error,
+      );
     }
   });
 }
@@ -251,11 +388,16 @@ function exporterCase(pack, feature, kase, title) {
     const out = runExporter(feature, kase.ctx);
     assert.ok(kase.text !== undefined || kase.includes || kase.check, "an exporter case needs text, includes or check");
     if (kase.text !== undefined) assert.equal(out.text, kase.text);
-    for (const part of kase.includes || []) assert.ok(out.text.includes(part), `export should contain ${JSON.stringify(part)}`);
-    for (const part of kase.excludes || []) assert.ok(!out.text.includes(part), `export must not contain ${JSON.stringify(part)}`);
+    for (const part of kase.includes || [])
+      assert.ok(out.text.includes(part), `export should contain ${JSON.stringify(part)}`);
+    for (const part of kase.excludes || [])
+      assert.ok(!out.text.includes(part), `export must not contain ${JSON.stringify(part)}`);
     if (kase.filename instanceof RegExp) assert.match(out.filename, kase.filename);
     else if (kase.filename) assert.equal(out.filename, kase.filename);
-    assert.ok(/^[\w][\w .()-]*\.[a-z0-9]+$/i.test(out.filename), `a download needs a plain filename with an extension, got ${JSON.stringify(out.filename)}`);
+    assert.ok(
+      /^[\w][\w .()-]*\.[a-z0-9]+$/i.test(out.filename),
+      `a download needs a plain filename with an extension, got ${JSON.stringify(out.filename)}`,
+    );
     kase.check?.(out);
   });
 }
@@ -266,7 +408,8 @@ function importerCase(pack, feature, kase, title) {
     const out = runImporter(feature, kase.text, ctx);
     assert.deepEqual(out.items, kase.items);
     if (kase.warnings !== undefined) assert.equal(out.warnings.length, kase.warnings);
-    for (const bad of kase.rejects || []) assert.throws(() => runImporter(feature, bad, ctx), Error, `should reject ${JSON.stringify(bad).slice(0, 80)}`);
+    for (const bad of kase.rejects || [])
+      assert.throws(() => runImporter(feature, bad, ctx), Error, `should reject ${JSON.stringify(bad).slice(0, 80)}`);
   });
 }
 
@@ -278,11 +421,15 @@ function commandCase(pack, feature, kase, title) {
     if (feature.when) assert.notEqual(feature.when(ctx), false, "the command should be available for the case ctx");
     await feature.run(ctx);
     await kase.check(ctx);
-    if (kase.hidden) assert.equal(feature.when?.(kase.hidden()), false, "the command should be hidden for the hidden ctx");
+    if (kase.hidden)
+      assert.equal(feature.when?.(kase.hidden()), false, "the command should be hidden for the hidden ctx");
     if (feature.keys) {
       const chord = parseKeys(feature.keys);
       assert.ok(chord, `shortcut ${feature.keys} is not a chord`);
-      assert.ok(!(chord.mod && chord.key === "k" && !chord.alt && !chord.shift), "Mod+K belongs to the command palette");
+      assert.ok(
+        !(chord.mod && chord.key === "k" && !chord.alt && !chord.shift),
+        "Mod+K belongs to the command palette",
+      );
     }
   });
 }
@@ -292,11 +439,20 @@ function toolCase(pack, feature, kase, title) {
     const result = runTool(feature, one.values || {});
     if (typeof one.expect === "function") return one.expect(result);
     if (Array.isArray(one.expect)) {
-      assert.deepEqual(result.rows.map(([label]) => label), one.expect.map(([label]) => label), "result row labels");
-      one.expect.forEach(([label, value], index) => approx(result.rows[index][1], value, one.tolerance, `${feature.id} ${label}:`));
+      assert.deepEqual(
+        result.rows.map(([label]) => label),
+        one.expect.map(([label]) => label),
+        "result row labels",
+      );
+      one.expect.forEach(([label, value], index) =>
+        approx(result.rows[index][1], value, one.tolerance, `${feature.id} ${label}:`),
+      );
       return undefined;
     }
-    assert.ok(one.expect && (one.expect.text !== undefined || one.expect.table), "a tool case needs expect: rows, { text }, { table } or a function");
+    assert.ok(
+      one.expect && (one.expect.text !== undefined || one.expect.table),
+      "a tool case needs expect: rows, { text }, { table } or a function",
+    );
     if (one.expect.text !== undefined) assert.equal(result.text, one.expect.text);
     if (one.expect.table) assert.deepEqual(result.table, one.expect.table);
     return undefined;
@@ -304,7 +460,8 @@ function toolCase(pack, feature, kase, title) {
   test(title(""), () => {
     compare(kase);
     for (const one of kase.more || []) compare(one);
-    for (const values of kase.invalid || []) assert.throws(() => runTool(feature, values), Error, `should reject ${JSON.stringify(values)}`);
+    for (const values of kase.invalid || [])
+      assert.throws(() => runTool(feature, values), Error, `should reject ${JSON.stringify(values)}`);
   });
 }
 
@@ -315,7 +472,15 @@ function panelCase(pack, feature, kase, title) {
       assert.equal(typeof check, "function", `panel improvement ${item.id} needs a test function`);
       const env = fakeEnv();
       const state = {};
-      const render = (ctx) => feature.render(env.h, ctx, { state, mount: env.mount, redraw: () => {}, toast: env.toast, copy: env.copy, download: env.download });
+      const render = (ctx) =>
+        feature.render(env.h, ctx, {
+          state,
+          mount: env.mount,
+          redraw: () => {},
+          toast: env.toast,
+          copy: env.copy,
+          download: env.download,
+        });
       await check({ render, env, state, nodes, textOf, find, findAll, byText, fire, fakeCtx });
     });
   }
@@ -328,8 +493,18 @@ function behaviorCase(pack, feature, kase, title) {
   });
 }
 
-const RUNNERS = { fact: factCase, diagnostic: diagnosticCase, transform: transformCase, metric: metricCase, exporter: exporterCase, importer: importerCase,
-  command: commandCase, tool: toolCase, panel: panelCase, behavior: behaviorCase };
+const RUNNERS = {
+  fact: factCase,
+  diagnostic: diagnosticCase,
+  transform: transformCase,
+  metric: metricCase,
+  exporter: exporterCase,
+  importer: importerCase,
+  command: commandCase,
+  tool: toolCase,
+  panel: panelCase,
+  behavior: behaviorCase,
+};
 
 // Registers the tests for one pack. options.ctx: () => a realistic surface ctx for the render check.
 export function checkPack(pack, cases, options = {}) {
@@ -344,20 +519,37 @@ export function checkPack(pack, cases, options = {}) {
   for (const feature of pack.features) {
     const kase = cases[feature.id];
     if (!kase) continue;
-    const title = (suffix, fallback) => `${pack.id}/${feature.id}${suffix} — ${titles.get(`${pack.id}/${feature.id}${suffix}`) || fallback || ""}`;
+    const title = (suffix, fallback) =>
+      `${pack.id}/${feature.id}${suffix} — ${titles.get(`${pack.id}/${feature.id}${suffix}`) || fallback || ""}`;
     RUNNERS[feature.kind](pack, feature, kase, title);
   }
   test(`${pack.id}: its controls render with every block open`, () => {
     const lab = createLab([pack]);
-    const ctx = options.ctx ? options.ctx() : fakeCtx({ items: Object.values(cases).find((kase) => Array.isArray(kase?.items))?.items || [] });
+    const ctx = options.ctx
+      ? options.ctx()
+      : fakeCtx({ items: Object.values(cases).find((kase) => Array.isArray(kase?.items))?.items || [] });
     ctx.actions = { replaceItems: () => {}, importItems: () => {}, ...(ctx.actions || {}) };
     const view = lab.view(pack.surface);
-    for (const name of ["section", "refine", "checks", "transforms", "metrics", "exports", "imports", "commands", "tools"]) view.open[name] = true;
+    for (const name of [
+      "section",
+      "refine",
+      "checks",
+      "transforms",
+      "metrics",
+      "exports",
+      "imports",
+      "commands",
+      "tools",
+    ])
+      view.open[name] = true;
     for (const [key] of lab.entries(pack.surface, "panel")) view.open[`panel:${key}`] = true;
     const env = fakeEnv();
     const tree = lab.section(env, pack.surface, ctx);
     assert.ok(tree, "the section renders");
-    assert.ok(!textOf(tree).includes("could not be shown"), `a panel failed to render: ${textOf(tree).match(/could not be shown: [^\n]*/)?.[0]}`);
+    assert.ok(
+      !textOf(tree).includes("could not be shown"),
+      `a panel failed to render: ${textOf(tree).match(/could not be shown: [^\n]*/)?.[0]}`,
+    );
     assert.equal(lab.improvements().length, improvements.length);
   });
   return improvements;

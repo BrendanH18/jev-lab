@@ -15,7 +15,8 @@ const TESTS = join(ROOT, "tests/js/lab");
 // What a pack may import: the kit and the shared pure libraries.
 const ALLOWED_IMPORT = /^\.\.\/\.\.\/(?:kit\.js|lib\/[\w.-]+\.js)$/;
 // A pack reaches the page, the clipboard and downloads through ctx; it never touches these itself.
-const FORBIDDEN = /(?<![.\w$])(?:document|window|navigator|location|localStorage|sessionStorage|indexedDB|globalThis)\.[A-Za-z_$]|(?<![.\w$])(?:fetch|XMLHttpRequest|eval|importScripts|setInterval)\s*\(|\bnew\s+Function\b|\bimport\s*\(/;
+const FORBIDDEN =
+  /(?<![.\w$])(?:document|window|navigator|location|localStorage|sessionStorage|indexedDB|globalThis)\.[A-Za-z_$]|(?<![.\w$])(?:fetch|XMLHttpRequest|eval|importScripts|setInterval)\s*\(|\bnew\s+Function\b|\bimport\s*\(/;
 
 test("every pack is a frozen definePack result named after its file, on a surface of its own page", () => {
   const ids = new Set();
@@ -29,7 +30,10 @@ test("every pack is a frozen definePack result named after its file, on a surfac
     assert.ok(page === "chrome" || PAGES.includes(page), `${page} is not a page`);
     if (page === "chrome") {
       assert.equal(pack.surface, "chrome");
-      assert.ok(pack.features.every((feature) => feature.kind === "command" || feature.kind === "behavior"), `${file}: page-wide packs hold commands and behaviors only`);
+      assert.ok(
+        pack.features.every((feature) => feature.kind === "command" || feature.kind === "behavior"),
+        `${file}: page-wide packs hold commands and behaviors only`,
+      );
     }
   }
 });
@@ -50,12 +54,18 @@ test("every pack has a test file that runs checkPack on it", () => {
     const path = join(TESTS, `${pack.id}.test.mjs`);
     assert.ok(existsSync(path), `tests/js/lab/${pack.id}.test.mjs is missing`);
     const source = readFileSync(path, "utf8");
-    assert.ok(source.includes(`packs/${page}/${file}`) && /\bcheckPack\(/.test(source), `tests/js/lab/${pack.id}.test.mjs must import the pack and call checkPack`);
+    assert.ok(
+      source.includes(`packs/${page}/${file}`) && /\bcheckPack\(/.test(source),
+      `tests/js/lab/${pack.id}.test.mjs must import the pack and call checkPack`,
+    );
   }
   const known = new Set(loaded.map(({ pack }) => `${pack.id}.test.mjs`));
   const framework = new Set(["kit.test.mjs", "registry.test.mjs"]);
   for (const name of readdirSync(TESTS).filter((entry) => entry.endsWith(".test.mjs"))) {
-    assert.ok(known.has(name) || framework.has(name) || name.startsWith("lib-") || name.startsWith("surface-"), `tests/js/lab/${name} matches no pack`);
+    assert.ok(
+      known.has(name) || framework.has(name) || name.startsWith("lib-") || name.startsWith("surface-"),
+      `tests/js/lab/${name} matches no pack`,
+    );
   }
 });
 
@@ -64,26 +74,68 @@ test("every pack has a test file that runs checkPack on it", () => {
 function codeOnly(src) {
   let out = "";
   let i = 0;
-  const templates = [];  // brace depth at each open ${
+  const templates = []; // brace depth at each open ${
   let depth = 0;
-  const skipTemplate = () => {  // from just after ` or } up to the closing ` or ${
+  const skipTemplate = () => {
+    // from just after ` or } up to the closing ` or ${
     while (i < src.length) {
-      if (src[i] === "\\") { i += 2; continue; }
-      if (src[i] === "`") { i++; out += '""'; return; }
-      if (src[i] === "$" && src[i + 1] === "{") { i += 2; out += "("; templates.push(depth); depth++; return; }
+      if (src[i] === "\\") {
+        i += 2;
+        continue;
+      }
+      if (src[i] === "`") {
+        i++;
+        out += '""';
+        return;
+      }
+      if (src[i] === "$" && src[i + 1] === "{") {
+        i += 2;
+        out += "(";
+        templates.push(depth);
+        depth++;
+        return;
+      }
       i++;
     }
   };
   while (i < src.length) {
-    const c = src[i], n = src[i + 1];
-    if (c === "/" && n === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
-    if (c === "/" && n === "*") { const end = src.indexOf("*/", i + 2); i = end < 0 ? src.length : end + 2; out += " "; continue; }
-    if (c === '"' || c === "'") { i++; while (i < src.length && src[i] !== c) { if (src[i] === "\\") i++; i++; } i++; out += '""'; continue; }
-    if (c === "`") { i++; skipTemplate(); continue; }
+    const c = src[i],
+      n = src[i + 1];
+    if (c === "/" && n === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && n === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end < 0 ? src.length : end + 2;
+      out += " ";
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      i++;
+      while (i < src.length && src[i] !== c) {
+        if (src[i] === "\\") i++;
+        i++;
+      }
+      i++;
+      out += '""';
+      continue;
+    }
+    if (c === "`") {
+      i++;
+      skipTemplate();
+      continue;
+    }
     if (c === "{") depth++;
     if (c === "}") {
       depth--;
-      if (templates.length && templates[templates.length - 1] === depth) { templates.pop(); i++; out += ")"; skipTemplate(); continue; }
+      if (templates.length && templates[templates.length - 1] === depth) {
+        templates.pop();
+        i++;
+        out += ")";
+        skipTemplate();
+        continue;
+      }
     }
     out += c;
     i++;
@@ -95,10 +147,18 @@ test("packs import only the kit and the shared libraries, and never touch the pa
   for (const { page, file, path } of loaded) {
     const source = readFileSync(path, "utf8");
     // Static import statements only (a help text may well contain the word "from" followed by a quote).
-    const imports = [...source.matchAll(/^\s*import\b[^;"'`]*?\bfrom\s*["']([^"']+)["']/gm), ...source.matchAll(/^\s*import\s*["']([^"']+)["']/gm)];
-    for (const [, specifier] of imports) assert.match(specifier, ALLOWED_IMPORT, `${page}/${file} imports ${specifier}`);
+    const imports = [
+      ...source.matchAll(/^\s*import\b[^;"'`]*?\bfrom\s*["']([^"']+)["']/gm),
+      ...source.matchAll(/^\s*import\s*["']([^"']+)["']/gm),
+    ];
+    for (const [, specifier] of imports)
+      assert.match(specifier, ALLOWED_IMPORT, `${page}/${file} imports ${specifier}`);
     const statements = (source.match(/^\s*import\b/gm) || []).length;
-    assert.equal(imports.length, statements, `${page}/${file}: every import statement must name a module the check can read`);
+    assert.equal(
+      imports.length,
+      statements,
+      `${page}/${file}: every import statement must name a module the check can read`,
+    );
     const hit = codeOnly(source).match(FORBIDDEN);
     assert.equal(hit, null, `${page}/${file} uses ${hit?.[0]}: go through ctx instead`);
   }
@@ -115,7 +175,10 @@ test("each page's packs load together: no pack twice, and no two commands share 
         const chord = parseKeys(feature.keys);
         assert.ok(chord, `${pack.id}/${feature.id}: ${feature.keys} is not a chord`);
         const key = JSON.stringify(chord);
-        assert.ok(!chords.has(key), `${pack.id}/${feature.id} and ${chords.get(key)} share the shortcut ${feature.keys} on the ${page} page`);
+        assert.ok(
+          !chords.has(key),
+          `${pack.id}/${feature.id} and ${chords.get(key)} share the shortcut ${feature.keys} on the ${page} page`,
+        );
         chords.set(key, `${pack.id}/${feature.id}`);
       }
     }

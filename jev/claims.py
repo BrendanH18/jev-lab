@@ -17,10 +17,10 @@ from .client import JevClient, box, choice, chosen, noul, ranked, score, support
 from .world import REFUND_WINDOW_DAYS, World
 
 DEFAULT_POLICY = {
-    "damage_yes": 0.70,     # at or above: the photo shows damage
-    "damage_no": 0.30,      # below: the photo shows no damage; ask for another photo
-    "shows_order": 0.50,    # below: the photo may show something else
-    "matches_note": 0.50,   # below: the photo does not show what the customer describes
+    "damage_yes": 0.70,  # at or above: the photo shows damage
+    "damage_no": 0.30,  # below: the photo shows no damage; ask for another photo
+    "shows_order": 0.50,  # below: the photo may show something else
+    "matches_note": 0.50,  # below: the photo does not show what the customer describes
     "full_refund_at": 1.5,  # severity score at or above this earns a full refund
     "auto_limit_usd": 100.0,  # larger refunds always go to a person
     "box_confidence": 0.60,  # below: pad the box before showing or cropping it
@@ -37,14 +37,34 @@ DAMAGE_KINDS = {
 
 # Sample claims for the page and for scripts/validate.py. `expect` is what a person would decide.
 EXAMPLES = [
-    {"label": "Torn bag", "order": "A-1041", "sample": "torn-bag", "expect": "approve",
-     "note": "One bag's seal was torn open and beans spilled all over the box."},
-    {"label": "Intact bag", "order": "A-1041", "sample": "intact-bag", "expect": "retake",
-     "note": "The bag arrived ripped and half the beans fell out."},
-    {"label": "Crushed box", "order": "A-1044", "sample": "crushed-box", "expect": "review",
-     "note": "The kit's box came crushed on one corner."},
-    {"label": "Grinder", "order": "A-1042", "sample": "grinder-ok", "expect": "retake",
-     "note": "The grinder's hopper arrived cracked."},
+    {
+        "label": "Torn bag",
+        "order": "A-1041",
+        "sample": "torn-bag",
+        "expect": "approve",
+        "note": "One bag's seal was torn open and beans spilled all over the box.",
+    },
+    {
+        "label": "Intact bag",
+        "order": "A-1041",
+        "sample": "intact-bag",
+        "expect": "retake",
+        "note": "The bag arrived ripped and half the beans fell out.",
+    },
+    {
+        "label": "Crushed box",
+        "order": "A-1044",
+        "sample": "crushed-box",
+        "expect": "review",
+        "note": "The kit's box came crushed on one corner.",
+    },
+    {
+        "label": "Grinder",
+        "order": "A-1042",
+        "sample": "grinder-ok",
+        "expect": "retake",
+        "note": "The grinder's hopper arrived cracked.",
+    },
 ]
 
 SEVERITY = [
@@ -55,26 +75,42 @@ SEVERITY = [
 ]
 
 
-def questions(item: str = "the item described in `order.items`", note: str = "`customer_note`",
-              photo: str = "`photo`", with_box: bool = True) -> Dict[str, dict]:
+def questions(
+    item: str = "the item described in `order.items`",
+    note: str = "`customer_note`",
+    photo: str = "`photo`",
+    with_box: bool = True,
+) -> Dict[str, dict]:
     """The photo questions. Autopilot reuses them with the email standing in for the order and note."""
     qs = {
         "shows_item": noul(
             "Does %s show %s, or the packaging it was shipped in?" % (photo, item),
             yes="The product or its shipping packaging is visible",
-            no="The photo shows something unrelated, or nothing recognizable"),
+            no="The photo shows something unrelated, or nothing recognizable",
+        ),
         "damage_visible": noul(
             "Does %s show visible damage to the product or its packaging?" % photo,
-            yes={"what": "Damage is visible", "examples": ["a torn bag with beans spilling out", "a crushed box corner",
-                                                           "a cracked glass part", "a leak or stain"]},
-            no={"what": "Everything visible looks intact", "examples": ["a sealed, undamaged bag",
-                                                                         "a machine with no cracks or dents"]}),
+            yes={
+                "what": "Damage is visible",
+                "examples": [
+                    "a torn bag with beans spilling out",
+                    "a crushed box corner",
+                    "a cracked glass part",
+                    "a leak or stain",
+                ],
+            },
+            no={
+                "what": "Everything visible looks intact",
+                "examples": ["a sealed, undamaged bag", "a machine with no cracks or dents"],
+            },
+        ),
         "severity": score("How badly damaged is the product in %s?" % photo, SEVERITY),
         "damage_kind": choice("What kind of damage does %s show?" % photo, DAMAGE_KINDS),
         "matches_note": noul(
             "Does %s show the problem described in %s?" % (photo, note),
             yes="The photo shows the same kind of problem the text describes",
-            no="The photo shows a different problem, or no problem"),
+            no="The photo shows a different problem, or no problem",
+        ),
     }
     if with_box:
         qs["damage_box"] = box("the most visibly damaged part of the product or its packaging in %s" % photo)
@@ -139,22 +175,40 @@ def located(answers: Dict[str, dict], ev: dict, policy: Optional[dict] = None) -
     edges = {k: float(answer["box"][k]) for k in ("left", "top", "right", "bottom")}
     confidence = float(answer.get("confidence", 0.0))
     if ev["damage"] < _num(policy, "damage_no"):
-        return {"shown": False, "box": edges, "confidence": confidence,
-                "reason": "Hidden: the photo shows no damage, so there is nothing to locate."}
+        return {
+            "shown": False,
+            "box": edges,
+            "confidence": confidence,
+            "reason": "Hidden: the photo shows no damage, so there is nothing to locate.",
+        }
     padded = confidence < _num(policy, "box_confidence")
     if padded:
-        edges = {"left": max(0.0, edges["left"] - BOX_PAD), "top": max(0.0, edges["top"] - BOX_PAD),
-                 "right": min(1.0, edges["right"] + BOX_PAD), "bottom": min(1.0, edges["bottom"] + BOX_PAD)}
+        edges = {
+            "left": max(0.0, edges["left"] - BOX_PAD),
+            "top": max(0.0, edges["top"] - BOX_PAD),
+            "right": min(1.0, edges["right"] + BOX_PAD),
+            "bottom": min(1.0, edges["bottom"] + BOX_PAD),
+        }
     tentative = ev["damage"] < _num(policy, "damage_yes")
     reasons = []
     if tentative:
-        reasons.append("Tentative: damage is uncertain (%.0f%%), so this only shows a reviewer where to look."
-                       % (ev["damage"] * 100))
+        reasons.append(
+            "Tentative: damage is uncertain (%.0f%%), so this only shows a reviewer where to look."
+            % (ev["damage"] * 100)
+        )
     if padded:
-        reasons.append("Padded by %d%% on each side: confidence %.0f%% is below %.0f%%."
-                       % (BOX_PAD * 100, confidence * 100, _num(policy, "box_confidence") * 100))
-    return {"shown": True, "box": edges, "confidence": confidence, "padded": padded, "tentative": tentative,
-            "reason": " ".join(reasons) or None}
+        reasons.append(
+            "Padded by %d%% on each side: confidence %.0f%% is below %.0f%%."
+            % (BOX_PAD * 100, confidence * 100, _num(policy, "box_confidence") * 100)
+        )
+    return {
+        "shown": True,
+        "box": edges,
+        "confidence": confidence,
+        "padded": padded,
+        "tentative": tentative,
+        "reason": " ".join(reasons) or None,
+    }
 
 
 def _check(cid: str, ok: bool, level: str, label: str, detail: str) -> dict:
@@ -165,36 +219,89 @@ def decide(ev: dict, facts: dict, policy: Optional[dict] = None) -> dict:
     """Pure policy: photo evidence plus order facts -> approve, review, retake, or reject."""
     checks: List[dict] = []
     days = facts.get("days_since_delivery")
-    checks.append(_check("not_refunded", not facts["refunded"], "reject", "Not already refunded",
-                         "Already refunded" if facts["refunded"] else "No previous refund"))
+    checks.append(
+        _check(
+            "not_refunded",
+            not facts["refunded"],
+            "reject",
+            "Not already refunded",
+            "Already refunded" if facts["refunded"] else "No previous refund",
+        )
+    )
     if facts["status"] != "delivered":
-        checks.append(_check("delivered", False, "reject", "Order was delivered",
-                             "Order is %s; damage claims start after delivery" % facts["status"]))
+        checks.append(
+            _check(
+                "delivered",
+                False,
+                "reject",
+                "Order was delivered",
+                "Order is %s; damage claims start after delivery" % facts["status"],
+            )
+        )
     else:
-        checks.append(_check("window", days <= REFUND_WINDOW_DAYS, "review",
-                             "Within %d-day window" % REFUND_WINDOW_DAYS, "Delivered %d days ago" % days))
+        checks.append(
+            _check(
+                "window",
+                days <= REFUND_WINDOW_DAYS,
+                "review",
+                "Within %d-day window" % REFUND_WINDOW_DAYS,
+                "Delivered %d days ago" % days,
+            )
+        )
 
     shows = ev["shows_item"] >= _num(policy, "shows_order")
-    checks.append(_check("shows_item", shows, "retake", "Photo shows the order",
-                         "%.0f%% that the photo shows this item or its packaging" % (ev["shows_item"] * 100)))
+    checks.append(
+        _check(
+            "shows_item",
+            shows,
+            "retake",
+            "Photo shows the order",
+            "%.0f%% that the photo shows this item or its packaging" % (ev["shows_item"] * 100),
+        )
+    )
     if ev["damage"] >= _num(policy, "damage_yes"):
-        checks.append(_check("damage", True, "", "Damage visible", "%.0f%% that damage is visible" % (ev["damage"] * 100)))
+        checks.append(
+            _check("damage", True, "", "Damage visible", "%.0f%% that damage is visible" % (ev["damage"] * 100))
+        )
     elif ev["damage"] < _num(policy, "damage_no"):
-        checks.append(_check("damage", False, "retake", "Damage visible",
-                             "Only %.0f%% that damage is visible" % (ev["damage"] * 100)))
+        checks.append(
+            _check(
+                "damage", False, "retake", "Damage visible", "Only %.0f%% that damage is visible" % (ev["damage"] * 100)
+            )
+        )
     else:
-        checks.append(_check("damage", False, "review", "Damage visible",
-                             "%.0f%% is between the retake and approve thresholds" % (ev["damage"] * 100)))
-    checks.append(_check("matches_note", ev["matches_note"] >= _num(policy, "matches_note"), "review",
-                         "Matches the customer's description",
-                         "%.0f%% that the photo shows the problem described" % (ev["matches_note"] * 100)))
+        checks.append(
+            _check(
+                "damage",
+                False,
+                "review",
+                "Damage visible",
+                "%.0f%% is between the retake and approve thresholds" % (ev["damage"] * 100),
+            )
+        )
+    checks.append(
+        _check(
+            "matches_note",
+            ev["matches_note"] >= _num(policy, "matches_note"),
+            "review",
+            "Matches the customer's description",
+            "%.0f%% that the photo shows the problem described" % (ev["matches_note"] * 100),
+        )
+    )
 
     full = ev["severity"] >= _num(policy, "full_refund_at")
     remedy = "full_refund" if full else "replacement_or_credit"
     amount = facts["total"] if full else round(facts["total"] / 2, 2)
     limit = _num(policy, "auto_limit_usd")
-    checks.append(_check("auto_limit", amount <= limit, "review", "Within the automatic limit",
-                         "$%.2f against a $%.2f limit" % (amount, limit)))
+    checks.append(
+        _check(
+            "auto_limit",
+            amount <= limit,
+            "review",
+            "Within the automatic limit",
+            "$%.2f against a $%.2f limit" % (amount, limit),
+        )
+    )
 
     failing = [c for c in checks if not c["ok"]]
     if any(c["level"] == "reject" for c in failing):
@@ -207,12 +314,14 @@ def decide(ev: dict, facts: dict, policy: Optional[dict] = None) -> dict:
         decision = "approve"
     reasons = [c["detail"] for c in failing] or [
         "Damage is visible and matches the note; %s of $%.2f is within the automatic limit"
-        % ("full refund" if full else "50% credit", amount)]
+        % ("full refund" if full else "50% credit", amount)
+    ]
     return {"decision": decision, "remedy": remedy, "amount": amount, "checks": checks, "reasons": reasons}
 
 
-def check(client: JevClient, world: World, order_id: str, note: str, image: dict,
-          policy: Optional[dict] = None) -> dict:
+def check(
+    client: JevClient, world: World, order_id: str, note: str, image: dict, policy: Optional[dict] = None
+) -> dict:
     """One live call: the photo questions, then code applies the policy."""
     facts = order_facts(world, order_id)
     ref = images.new_ref(image["data"], "photo")
@@ -237,5 +346,9 @@ def check(client: JevClient, world: World, order_id: str, note: str, image: dict
 def redecide(answers: Dict[str, dict], facts: dict, policy: Optional[dict] = None) -> dict:
     """Apply a changed policy to existing answers. Pure code: no Jev call."""
     ev = evidence(answers)
-    return {"evidence": ev, "location": located(answers, ev, policy), "verdict": decide(ev, facts, policy),
-            "policy": dict(DEFAULT_POLICY, **{k: _num(policy, k) for k in DEFAULT_POLICY})}
+    return {
+        "evidence": ev,
+        "location": located(answers, ev, policy),
+        "verdict": decide(ev, facts, policy),
+        "policy": dict(DEFAULT_POLICY, **{k: _num(policy, k) for k in DEFAULT_POLICY}),
+    }

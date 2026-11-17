@@ -5,7 +5,14 @@ import { playHistoryCtx } from "./lab/surfaces/play.js";
 
 // past: the earlier games of this page session (raw server objects, oldest first, the last 20), for Lab packs only.
 const S = { game: null, busy: false, past: [] };
-const SUGGESTIONS = ["Is it alive?", "Is it bigger than a car?", "Can you eat it?", "Is it man-made?", "Would I find it in a kitchen?", "Does it have wheels?"];
+const SUGGESTIONS = [
+  "Is it alive?",
+  "Is it bigger than a car?",
+  "Can you eat it?",
+  "Is it man-made?",
+  "Would I find it in a kitchen?",
+  "Does it have wheels?",
+];
 
 // Lab surface "play.history": the turns of the current game (contract in static/js/lab/surfaces/play.js). The ctx
 // reads everything at call time, so one serves the whole page session. Packs can fill the question box but never
@@ -51,7 +58,9 @@ async function newGame() {
     S.game = next;
     render();
     $("#ask-input")?.focus();
-  } catch (e) { handleError(e); }
+  } catch (e) {
+    handleError(e);
+  }
 }
 
 async function ask(text) {
@@ -61,7 +70,9 @@ async function ask(text) {
   render();
   try {
     S.game = await api("/api/play/ask", { id: S.game.id, text });
-  } catch (e) { handleError(e); } finally {
+  } catch (e) {
+    handleError(e);
+  } finally {
     S.busy = false;
     render();
     $("#ask-input")?.focus();
@@ -69,7 +80,12 @@ async function ask(text) {
 }
 
 async function giveUp() {
-  try { S.game = await api("/api/play/giveup", { id: S.game.id }); render(); } catch (e) { handleError(e); }
+  try {
+    S.game = await api("/api/play/giveup", { id: S.game.id });
+    render();
+  } catch (e) {
+    handleError(e);
+  }
 }
 
 function toneFor(turn) {
@@ -81,22 +97,36 @@ function toneFor(turn) {
 }
 
 function turnNode(t) {
-  return h("div", { class: "turn pop" },
-    h("span", { class: "n" }, `#${t.n}`), h("span", { class: "q" }, t.text), h("span", { class: `r ${toneFor(t)}` }, t.reply),
-    h("div", { class: "probs" },
+  return h(
+    "div",
+    { class: "turn pop" },
+    h("span", { class: "n" }, `#${t.n}`),
+    h("span", { class: "q" }, t.text),
+    h("span", { class: `r ${toneFor(t)}` }, t.reply),
+    h(
+      "div",
+      { class: "probs" },
       h("span", { title: "answer_is_yes" }, `P(yes) ${pct(t.probs.answer_is_yes)}`),
       h("span", { title: "is_yes_no_question" }, `yes/no-question ${pct(t.probs.is_yes_no_question)}`),
       h("span", { title: "names_a_guess" }, `guess ${pct(t.probs.names_a_guess)}`),
-      t.probs.names_a_guess >= 0.6 ? h("span", { title: "guess_matches" }, `match ${pct(t.probs.guess_matches)}`) : null,
-      h("span", {}, ms(t.meta.latency_ms))));
+      t.probs.names_a_guess >= 0.6
+        ? h("span", { title: "guess_matches" }, `match ${pct(t.probs.guess_matches)}`)
+        : null,
+      h("span", {}, ms(t.meta.latency_ms)),
+    ),
+  );
 }
 
 // The turns to list: newest first, minus what a Lab filter hides, in Lab's sort order when one is set. Items are
 // matched back to the server's turns by number (the builder numbers a turn without one by its position).
 function shownTurns() {
   const turns = (S.game?.turns || []).filter((turn) => turn && typeof turn === "object");
-  const byNumber = new Map(turns.map((turn, index) => [Number.isInteger(turn.n) && turn.n >= 1 ? turn.n : index + 1, turn]));
-  return HISTORY.shown().map((item) => byNumber.get(item.n)).filter(Boolean);
+  const byNumber = new Map(
+    turns.map((turn, index) => [Number.isInteger(turn.n) && turn.n >= 1 ? turn.n : index + 1, turn]),
+  );
+  return HISTORY.shown()
+    .map((item) => byNumber.get(item.n))
+    .filter(Boolean);
 }
 
 function resetLab() {
@@ -110,13 +140,25 @@ function renderTurns() {
   const box = $("#turns");
   if (!box || !S.game) return;
   const turns = shownTurns();
-  const total = S.game.turns.length, active = LAB.active(HISTORY_ID);
-  mount(box,
-    active && total ? h("div", { class: "faint", role: "status", style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" } },
-      `Showing ${turns.length} of ${total} question${total === 1 ? "" : "s"}: ${active} Lab filter or sort setting${active === 1 ? " is" : "s are"} active.`,
-      h("button", { class: "btn ghost sm", onclick: resetLab }, "Show all, newest first")) : null,
+  const total = S.game.turns.length,
+    active = LAB.active(HISTORY_ID);
+  mount(
+    box,
+    active && total
+      ? h(
+          "div",
+          {
+            class: "faint",
+            role: "status",
+            style: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", fontSize: "12.5px" },
+          },
+          `Showing ${turns.length} of ${total} question${total === 1 ? "" : "s"}: ${active} Lab filter or sort setting${active === 1 ? " is" : "s are"} active.`,
+          h("button", { class: "btn ghost sm", onclick: resetLab }, "Show all, newest first"),
+        )
+      : null,
     active && total && !turns.length ? h("div", { class: "faint" }, "No question matches the Lab filters.") : null,
-    turns.map(turnNode));
+    turns.map(turnNode),
+  );
 }
 
 function render() {
@@ -124,28 +166,101 @@ function render() {
   if (!g) return mount("#board", h("div", { class: "empty" }, h("span", { class: "spin" }), " Picking a secret…"));
   const cost = g.turns.reduce((s, t) => s + (t.meta?.cost_usd || 0), 0);
   const avg = g.turns.length ? g.turns.reduce((s, t) => s + (t.meta?.latency_ms || 0), 0) / g.turns.length : 0;
-  const input = h("input", { id: "ask-input", class: "input", placeholder: g.over ? "Game over" : "Ask a yes/no question, or name your guess…", disabled: g.over || S.busy, autocomplete: "off" });
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { ask(input.value); input.value = ""; } });
-  mount("#board",
-    h("div", { style: { display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" } },
-      h("div", { class: "thinking" }, "I'm thinking of ", h("em", {}, /^[aeiou]/i.test(g.category) ? `an ${g.category}` : `a ${g.category}`), "."),
+  const input = h("input", {
+    id: "ask-input",
+    class: "input",
+    placeholder: g.over ? "Game over" : "Ask a yes/no question, or name your guess…",
+    disabled: g.over || S.busy,
+    autocomplete: "off",
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      ask(input.value);
+      input.value = "";
+    }
+  });
+  mount(
+    "#board",
+    h(
+      "div",
+      { style: { display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" } },
+      h(
+        "div",
+        { class: "thinking" },
+        "I'm thinking of ",
+        h("em", {}, /^[aeiou]/i.test(g.category) ? `an ${g.category}` : `a ${g.category}`),
+        ".",
+      ),
       h("div", { style: { flex: 1 } }),
       h("span", { class: "stat" }, "questions left", h("b", {}, String(g.turns_left))),
       g.turns.length ? h("span", { class: "stat" }, "avg", h("b", {}, ms(avg))) : null,
-      g.turns.length ? h("span", { class: "stat" }, "game cost", h("b", {}, usd(cost))) : null),
-    g.over ? h("div", { class: "ends pop" },
-      h("div", {}, g.won ? "🎉 You got it in " + g.turns.length + (g.turns.length === 1 ? " question." : " questions.") : "It was:"),
-      h("div", { class: "secret" }, g.secret),
-      h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
-        h("button", { class: "btn primary", onclick: newGame }, icon("play"), "Play again"),
-        g.traces?.length ? h("button", { class: "btn", onclick: () => inspect(g.traces[g.traces.length - 1], "Play · last turn (secret now revealed)") }, icon("code"), "Inspect a turn's JSON") : null))
-      : h("div", { class: "ask" }, input, h("button", { class: "btn primary", disabled: S.busy, onclick: () => { ask(input.value); input.value = ""; } }, S.busy ? h("span", { class: "spin" }) : icon("send"), "Ask")),
-    !g.over && g.turns.length === 0 ? h("div", { class: "chips" }, SUGGESTIONS.map((s) => h("button", { class: "chip", onclick: () => ask(s) }, s))) : null,
+      g.turns.length ? h("span", { class: "stat" }, "game cost", h("b", {}, usd(cost))) : null,
+    ),
+    g.over
+      ? h(
+          "div",
+          { class: "ends pop" },
+          h(
+            "div",
+            {},
+            g.won
+              ? "🎉 You got it in " + g.turns.length + (g.turns.length === 1 ? " question." : " questions.")
+              : "It was:",
+          ),
+          h("div", { class: "secret" }, g.secret),
+          h(
+            "div",
+            { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+            h("button", { class: "btn primary", onclick: newGame }, icon("play"), "Play again"),
+            g.traces?.length
+              ? h(
+                  "button",
+                  {
+                    class: "btn",
+                    onclick: () => inspect(g.traces[g.traces.length - 1], "Play · last turn (secret now revealed)"),
+                  },
+                  icon("code"),
+                  "Inspect a turn's JSON",
+                )
+              : null,
+          ),
+        )
+      : h(
+          "div",
+          { class: "ask" },
+          input,
+          h(
+            "button",
+            {
+              class: "btn primary",
+              disabled: S.busy,
+              onclick: () => {
+                ask(input.value);
+                input.value = "";
+              },
+            },
+            S.busy ? h("span", { class: "spin" }) : icon("send"),
+            "Ask",
+          ),
+        ),
+    !g.over && g.turns.length === 0
+      ? h(
+          "div",
+          { class: "chips" },
+          SUGGESTIONS.map((s) => h("button", { class: "chip", onclick: () => ask(s) }, s)),
+        )
+      : null,
     h("div", { class: "turns", id: "turns" }),
-    !g.over ? h("div", { style: { display: "flex", gap: "8px" } },
-      h("button", { class: "btn ghost sm", onclick: giveUp }, "Give up & reveal"),
-      h("button", { class: "btn ghost sm", onclick: newGame }, icon("reset"), "New game")) : null,
-    LAB.section(labEnv, HISTORY_ID, HISTORY));
+    !g.over
+      ? h(
+          "div",
+          { style: { display: "flex", gap: "8px" } },
+          h("button", { class: "btn ghost sm", onclick: giveUp }, "Give up & reveal"),
+          h("button", { class: "btn ghost sm", onclick: newGame }, icon("reset"), "New game"),
+        )
+      : null,
+    LAB.section(labEnv, HISTORY_ID, HISTORY),
+  );
   renderTurns();
 }
 

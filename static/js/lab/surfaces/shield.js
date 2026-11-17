@@ -194,8 +194,14 @@ const POLICY_KEYS = Object.freeze(["review_at", "quarantine_at", "hard_rule_at"]
 // Mirrors jev/shield.py verdict(); tests/js/lab/surface-demo-shield.test.mjs keeps these in step with the Python.
 const RULES = Object.freeze({ hot: 0.15, max_drivers: 3, mismatch_prob: 0.6, risky_ask: 0.5, harm_quarantine: 2.5 });
 const SIGNAL_SOURCES = Object.freeze({
-  ai_instructions: "noul", credential_request: "noul", payment_change: "noul", secrecy_or_bypass: "noul", link_lure: "noul",
-  unexpected_reward: "noul", pressure: "score", identity_mismatch: "code",
+  ai_instructions: "noul",
+  credential_request: "noul",
+  payment_change: "noul",
+  secrecy_or_bypass: "noul",
+  link_lure: "noul",
+  unexpected_reward: "noul",
+  pressure: "score",
+  identity_mismatch: "code",
 });
 const RISKY_ASKS = Object.freeze(["payment_change", "credential_request", "link_lure"]);
 
@@ -216,7 +222,11 @@ function deepFreeze(value) {
 // A source field: a value, or a function that returns the value now.
 function read(source, name, fallback) {
   let value;
-  try { value = typeof source[name] === "function" ? source[name]() : source[name]; } catch { value = undefined; }
+  try {
+    value = typeof source[name] === "function" ? source[name]() : source[name];
+  } catch {
+    value = undefined;
+  }
   return value === undefined || value === null ? fallback : value;
 }
 
@@ -228,24 +238,40 @@ function call(source, name, ...args) {
 // The same string jev/shield.py _domain() compares. (Not exported: every export of this module is a LAB builder.)
 function senderDomain(email) {
   const text = str(email);
-  return text.includes("@") ? text.slice(text.lastIndexOf("@") + 1).trim().toLowerCase() : "";
+  return text.includes("@")
+    ? text
+        .slice(text.lastIndexOf("@") + 1)
+        .trim()
+        .toLowerCase()
+    : "";
 }
 
 // ---------- normalizing one result ----------
 
 function answerOf(raw) {
   if (!isObject(raw)) return null;
-  const type = typeof raw.type === "string" ? raw.type
-    : "noul" in raw ? "noul" : "score" in raw ? "score" : "choice" in raw ? "choice" : "";
+  const type =
+    typeof raw.type === "string"
+      ? raw.type
+      : "noul" in raw
+        ? "noul"
+        : "score" in raw
+          ? "score"
+          : "choice" in raw
+            ? "choice"
+            : "";
   const probabilities = {};
   if (type !== "noul" && isObject(raw.probabilities)) {
     for (const [key, p] of Object.entries(raw.probabilities)) if (finite(p) !== null) probabilities[key] = p;
   }
-  let value = null, scale = null, legend = null;
+  let value = null,
+    scale = null,
+    legend = null;
   if (type === "noul") value = finite(raw.noul);
   else if (type === "score") {
     value = finite(raw.score);
-    if (isObject(raw.legend)) legend = Object.fromEntries(Object.entries(raw.legend).map(([key, text]) => [key, str(text)]));
+    if (isObject(raw.legend))
+      legend = Object.fromEntries(Object.entries(raw.legend).map(([key, text]) => [key, str(text)]));
     const levels = legend ? Object.keys(legend).length : Object.keys(probabilities).length;
     scale = levels ? levels - 1 : null;
   } else if (type === "choice") value = textOrNull(raw.choice);
@@ -270,11 +296,18 @@ function verdictOf(raw) {
     level: LEVELS.includes(raw.level) ? raw.level : null,
     risk: finite(raw.risk),
     harm: finite(raw.harm),
-    rules: (Array.isArray(raw.rules) ? raw.rules : []).filter(isObject).map((rule) => ({ id: str(rule.id), action: str(rule.action), text: str(rule.text) })),
+    rules: (Array.isArray(raw.rules) ? raw.rules : [])
+      .filter(isObject)
+      .map((rule) => ({ id: str(rule.id), action: str(rule.action), text: str(rule.text) })),
     drivers: (Array.isArray(raw.drivers) ? raw.drivers : []).filter((id) => typeof id === "string"),
     category: textOrNull(raw.category),
-    signals: (Array.isArray(raw.signals) ? raw.signals : []).filter(isObject).map((signal) => ({ id: str(signal.id), label: str(signal.label),
-      value: finite(signal.value), weight: finite(signal.weight), contribution: finite(signal.contribution) })),
+    signals: (Array.isArray(raw.signals) ? raw.signals : []).filter(isObject).map((signal) => ({
+      id: str(signal.id),
+      label: str(signal.label),
+      value: finite(signal.value),
+      weight: finite(signal.weight),
+      contribution: finite(signal.contribution),
+    })),
   };
 }
 
@@ -293,18 +326,39 @@ function factOf(raw) {
 
 function metaOf(raw) {
   if (!isObject(raw)) return null;
-  return { model: textOrNull(raw.model), latency_ms: finite(raw.latency_ms), question_count: integerOrNull(raw.question_count),
-    input_tokens: integerOrNull(raw.input_tokens), output_tokens: integerOrNull(raw.output_tokens), cost_usd: finite(raw.cost_usd),
-    backend: textOrNull(raw.backend) };
+  return {
+    model: textOrNull(raw.model),
+    latency_ms: finite(raw.latency_ms),
+    question_count: integerOrNull(raw.question_count),
+    input_tokens: integerOrNull(raw.input_tokens),
+    output_tokens: integerOrNull(raw.output_tokens),
+    cost_usd: finite(raw.cost_usd),
+    backend: textOrNull(raw.backend),
+  };
 }
 
 // The RESULT part of one raw page result (the page's own screening response, or a batch entry without a verdict).
 function resultPart(raw) {
-  if (!isObject(raw)) return { status: "unscreened", error: null, verdict: null, answers: null, fact: null, meta: null };
+  if (!isObject(raw))
+    return { status: "unscreened", error: null, verdict: null, answers: null, fact: null, meta: null };
   if (isObject(raw.verdict)) {
-    return { status: "screened", error: null, verdict: verdictOf(raw.verdict), answers: answersOf(raw.answers), fact: factOf(raw.fact), meta: metaOf(raw.meta) };
+    return {
+      status: "screened",
+      error: null,
+      verdict: verdictOf(raw.verdict),
+      answers: answersOf(raw.answers),
+      fact: factOf(raw.fact),
+      meta: metaOf(raw.meta),
+    };
   }
-  return { status: raw.skipped ? "skipped" : "failed", error: textOrNull(raw.error), verdict: null, answers: null, fact: null, meta: null };
+  return {
+    status: raw.skipped ? "skipped" : "failed",
+    error: textOrNull(raw.error),
+    verdict: null,
+    answers: null,
+    fact: null,
+    meta: null,
+  };
 }
 
 const traceOf = (raw) => (isObject(raw) && isObject(raw.verdict) && isObject(raw.trace) ? raw.trace : null);
@@ -335,7 +389,10 @@ function inboxItem(message, index, raw, selected, pending) {
     position: index + 1,
     ...messageFields(message),
     sender_domain: senderDomain(message.from_email),
-    attachments: (Array.isArray(message.attachments) ? message.attachments : []).filter(isObject).map((entry) => str(entry.name) || str(entry.sample)).filter(Boolean),
+    attachments: (Array.isArray(message.attachments) ? message.attachments : [])
+      .filter(isObject)
+      .map((entry) => str(entry.name) || str(entry.sample))
+      .filter(Boolean),
     note: str(label?.expect),
     expected,
     attack: typeof label?.attack === "boolean" ? label.attack : null,
@@ -359,7 +416,7 @@ function pageState(source) {
     return isObject(map) ? map : {};
   };
   const resultFor = (id) => {
-    const raw = Object.prototype.hasOwnProperty.call(results(), id) ? results()[id] : null;
+    const raw = Object.hasOwn(results(), id) ? results()[id] : null;
     return isObject(raw) ? raw : null;
   };
   const selectedRaw = () => {
@@ -377,9 +434,16 @@ function pageState(source) {
   };
   const labelMap = (name) => {
     const value = labels()[name];
-    return deepFreeze(isObject(value) ? Object.fromEntries(Object.entries(value).map(([key, text]) => [key, str(text)])) : {});
+    return deepFreeze(
+      isObject(value) ? Object.fromEntries(Object.entries(value).map(([key, text]) => [key, str(text)])) : {},
+    );
   };
-  const numberMap = (value) => (isObject(value) ? Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => (finite(entry) === null ? [] : [[key, entry]]))) : null);
+  const numberMap = (value) =>
+    isObject(value)
+      ? Object.fromEntries(
+          Object.entries(value).flatMap(([key, entry]) => (finite(entry) === null ? [] : [[key, entry]])),
+        )
+      : null;
   const weights = () => deepFreeze(numberMap(read(source, "weights", null)));
   const policy = () => deepFreeze(numberMap(read(source, "policy", null)));
   const defaults = () => {
@@ -401,7 +465,13 @@ function pageState(source) {
       const isSelected = selected === id;
       const isPending = pending.has(id);
       const known = cache.get(message);
-      if (known && known.raw === raw && known.index === index && known.selected === isSelected && known.pending === isPending) {
+      if (
+        known &&
+        known.raw === raw &&
+        known.index === index &&
+        known.selected === isSelected &&
+        known.pending === isPending
+      ) {
         out.push(known.item);
         return;
       }
@@ -440,16 +510,43 @@ function pageState(source) {
   };
 
   const shared = {
-    get weights() { return weights(); },
-    get policy() { return policy(); },
-    get defaults() { return defaults(); },
-    get signal_names() { return labelMap("signals"); },
-    get identity_labels() { return labelMap("identities"); },
-    get category_labels() { return labelMap("categories"); },
-    get rules() { return RULES; },
+    get weights() {
+      return weights();
+    },
+    get policy() {
+      return policy();
+    },
+    get defaults() {
+      return defaults();
+    },
+    get signal_names() {
+      return labelMap("signals");
+    },
+    get identity_labels() {
+      return labelMap("identities");
+    },
+    get category_labels() {
+      return labelMap("categories");
+    },
+    get rules() {
+      return RULES;
+    },
   };
 
-  return { composeId, inbox, results, resultFor, selectedRaw, pendingSet, draft, items, find, actions, shared, defaults };
+  return {
+    composeId,
+    inbox,
+    results,
+    resultFor,
+    selectedRaw,
+    pendingSet,
+    draft,
+    items,
+    find,
+    actions,
+    shared,
+    defaults,
+  };
 }
 
 // partial: { key: number } for keys in `known`, each 0..1 in steps of 0.05 (the sliders' range and step).
@@ -458,7 +555,8 @@ function checkedValues(partial, known, what) {
   const out = {};
   for (const [key, value] of Object.entries(partial)) {
     if (!known.includes(key)) throw new Error(`There is no ${what} "${key}" on this page.`);
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${key} must be a number from 0 to 1.`);
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1)
+      throw new Error(`${key} must be a number from 0 to 1.`);
     const steps = value * 20;
     if (Math.abs(steps - Math.round(steps)) > 1e-9) throw new Error(`${key} moves in steps of 0.05, like its slider.`);
     out[key] = Math.round(steps) / 20;
@@ -467,7 +565,9 @@ function checkedValues(partial, known, what) {
 }
 
 function shownOf(source, ctx) {
-  const list = ctx.items().filter((item) => typeof source.matches !== "function" || source.matches(item, ctx) !== false);
+  const list = ctx
+    .items()
+    .filter((item) => typeof source.matches !== "function" || source.matches(item, ctx) !== false);
   const arranged = typeof source.arrange === "function" ? source.arrange(list, ctx) : list;
   return Array.isArray(arranged) ? arranged : list;
 }
@@ -492,23 +592,54 @@ export function shieldInboxCtx(source = {}) {
   const ctx = {
     items: page.items,
     shown: () => shownOf(source, ctx),
-    data: Object.defineProperties({}, {
-      ...Object.getOwnPropertyDescriptors(page.shared),
-      selected: { enumerable: true, get() { const id = page.selectedRaw(); return id === page.composeId ? null : id; } },
-      compose: { enumerable: true, get() {
-        const raw = page.resultFor(page.composeId);
-        const draft = page.draft();
-        return deepFreeze({ open: page.selectedRaw() === page.composeId, live: read(source, "live", false) === true, draft,
-          pending: page.pendingSet().has(page.composeId), stale: draftStale(draft, raw), ...resultPart(raw) });
-      } },
-      batch: { enumerable: true, get() { return batchOf(read(source, "batch", null)); } },
-      scanning: { enumerable: true, get() { return read(source, "scanning", false) === true; } },
-    }),
+    data: Object.defineProperties(
+      {},
+      {
+        ...Object.getOwnPropertyDescriptors(page.shared),
+        selected: {
+          enumerable: true,
+          get() {
+            const id = page.selectedRaw();
+            return id === page.composeId ? null : id;
+          },
+        },
+        compose: {
+          enumerable: true,
+          get() {
+            const raw = page.resultFor(page.composeId);
+            const draft = page.draft();
+            return deepFreeze({
+              open: page.selectedRaw() === page.composeId,
+              live: read(source, "live", false) === true,
+              draft,
+              pending: page.pendingSet().has(page.composeId),
+              stale: draftStale(draft, raw),
+              ...resultPart(raw),
+            });
+          },
+        },
+        batch: {
+          enumerable: true,
+          get() {
+            return batchOf(read(source, "batch", null));
+          },
+        },
+        scanning: {
+          enumerable: true,
+          get() {
+            return read(source, "scanning", false) === true;
+          },
+        },
+      },
+    ),
     actions: {
       ...page.actions,
       open(id) {
         const item = page.find(id);
-        if (item.status === "unscreened") throw new Error(`“${item.subject || item.id}” has not been screened in this session. Opening it asks Jev, so click it in the inbox yourself.`);
+        if (item.status === "unscreened")
+          throw new Error(
+            `“${item.subject || item.id}” has not been screened in this session. Opening it asks Jev, so click it in the inbox yourself.`,
+          );
         call(source, "open", item.id);
         return item.id;
       },
@@ -531,7 +662,9 @@ export function shieldInboxCtx(source = {}) {
         return call(source, "inspect", trace, "Shield · one Jev request");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => {
       const position = Number.isInteger(item?.position) ? item.position : index + 1;
       const name = str(item?.from_name).trim();
@@ -566,7 +699,11 @@ function signalRules(id, value, fired) {
     if (rule.id === "prompt_injection" && id === "ai_instructions") out.push(rule.id);
     else if (rule.id === "credential_phish" && id === "credential_request") out.push(rule.id);
     else if (rule.id === "unverified_sender" && id === "identity_mismatch") out.push(rule.id);
-    else if (rule.id === "impersonation" && (id === "identity_mismatch" || (RISKY_ASKS.includes(id) && value !== null && value >= RULES.risky_ask))) out.push(rule.id);
+    else if (
+      rule.id === "impersonation" &&
+      (id === "identity_mismatch" || (RISKY_ASKS.includes(id) && value !== null && value >= RULES.risky_ask))
+    )
+      out.push(rule.id);
   }
   return out;
 }
@@ -578,20 +715,32 @@ function signalItems(raw, defaults, names) {
   // The page's order: [...v.signals].sort((x, y) => y.contribution - x.contribution) on the raw signals.
   const rawSignals = (Array.isArray(raw.verdict.signals) ? raw.verdict.signals : []).filter(isObject);
   const order = [...rawSignals].sort((x, y) => y.contribution - x.contribution);
-  return deepFreeze(order.map((signal, rank) => {
-    const position = rawSignals.indexOf(signal) + 1;
-    const id = str(signal.id);
-    const value = finite(signal.value);
-    const contribution = finite(signal.contribution);
-    const question = id === "identity_mismatch" ? "claimed_identity" : id;
-    return {
-      id, position, rank: rank + 1, label: str(signal.label), name: names[id] || str(signal.label),
-      source: SIGNAL_SOURCES[id] || "noul", question, value, weight: finite(signal.weight),
-      default_weight: finite(defaults?.weights?.[id]), contribution,
-      hot: contribution !== null && contribution >= RULES.hot, driver: verdict.drivers.includes(id),
-      rules: signalRules(id, value, verdict.rules), answer: part.answers?.[question] || null,
-    };
-  }));
+  return deepFreeze(
+    order.map((signal, rank) => {
+      const position = rawSignals.indexOf(signal) + 1;
+      const id = str(signal.id);
+      const value = finite(signal.value);
+      const contribution = finite(signal.contribution);
+      const question = id === "identity_mismatch" ? "claimed_identity" : id;
+      return {
+        id,
+        position,
+        rank: rank + 1,
+        label: str(signal.label),
+        name: names[id] || str(signal.label),
+        source: SIGNAL_SOURCES[id] || "noul",
+        question,
+        value,
+        weight: finite(signal.weight),
+        default_weight: finite(defaults?.weights?.[id]),
+        contribution,
+        hot: contribution !== null && contribution >= RULES.hot,
+        driver: verdict.drivers.includes(id),
+        rules: signalRules(id, value, verdict.rules),
+        answer: part.answers?.[question] || null,
+      };
+    }),
+  );
 }
 
 // source: the same fields as shieldInboxCtx, with matches/arrange/refresh for this surface. It reads the opened
@@ -603,43 +752,132 @@ export function shieldResultCtx(source = {}) {
     if (id === null) return { id: null, compose: false, message: null, raw: null };
     if (id === page.composeId) return { id: null, compose: true, message: page.draft(), raw: page.resultFor(id) };
     const message = page.inbox().find((entry) => isObject(entry) && entry.id === id) || null;
-    return { id, compose: false, message: message ? messageFields(message) : null, label: isObject(message?.label) ? message.label : null, raw: page.resultFor(id) };
+    return {
+      id,
+      compose: false,
+      message: message ? messageFields(message) : null,
+      label: isObject(message?.label) ? message.label : null,
+      raw: page.resultFor(id),
+    };
   };
   let built = { raw: undefined, defaults: undefined, items: EMPTY };
   const items = () => {
     const { raw } = current();
     const defaults = page.defaults();
     const key = JSON.stringify(defaults);
-    if (built.raw !== raw || built.defaults !== key) built = { raw, defaults: key, items: signalItems(raw, defaults, page.shared.signal_names) };
+    if (built.raw !== raw || built.defaults !== key)
+      built = { raw, defaults: key, items: signalItems(raw, defaults, page.shared.signal_names) };
     return built.items;
   };
   const requests = new WeakMap();
   const requestOf = (raw) => {
     const request = traceOf(raw)?.request;
     if (!isObject(request)) return null;
-    if (!requests.has(request)) requests.set(request, deepFreeze(clone({ state: request.state ?? null, questions: request.questions ?? null, model: request.model ?? null })));
+    if (!requests.has(request))
+      requests.set(
+        request,
+        deepFreeze(
+          clone({ state: request.state ?? null, questions: request.questions ?? null, model: request.model ?? null }),
+        ),
+      );
     return requests.get(request);
   };
   const ctx = {
     items,
     shown: () => shownOf(source, ctx),
-    data: Object.defineProperties({}, {
-      ...Object.getOwnPropertyDescriptors(page.shared),
-      id: { enumerable: true, get() { return current().id; } },
-      compose: { enumerable: true, get() { return current().compose; } },
-      message: { enumerable: true, get() { return deepFreeze(current().message); } },
-      note: { enumerable: true, get() { return str(current().label?.expect); } },
-      expected: { enumerable: true, get() { const now = current(); return now.compose ? null : expectedOf(now.label); } },
-      status: { enumerable: true, get() { return resultPart(current().raw).status; } },
-      error: { enumerable: true, get() { return resultPart(current().raw).error; } },
-      verdict: { enumerable: true, get() { return deepFreeze(resultPart(current().raw).verdict); } },
-      answers: { enumerable: true, get() { return deepFreeze(resultPart(current().raw).answers); } },
-      fact: { enumerable: true, get() { return deepFreeze(resultPart(current().raw).fact); } },
-      meta: { enumerable: true, get() { return deepFreeze(resultPart(current().raw).meta); } },
-      pending: { enumerable: true, get() { const id = page.selectedRaw(); return id !== null && page.pendingSet().has(id); } },
-      stale: { enumerable: true, get() { const now = current(); return now.compose ? draftStale(now.message, now.raw) : false; } },
-      request: { enumerable: true, get() { return requestOf(current().raw); } },
-    }),
+    data: Object.defineProperties(
+      {},
+      {
+        ...Object.getOwnPropertyDescriptors(page.shared),
+        id: {
+          enumerable: true,
+          get() {
+            return current().id;
+          },
+        },
+        compose: {
+          enumerable: true,
+          get() {
+            return current().compose;
+          },
+        },
+        message: {
+          enumerable: true,
+          get() {
+            return deepFreeze(current().message);
+          },
+        },
+        note: {
+          enumerable: true,
+          get() {
+            return str(current().label?.expect);
+          },
+        },
+        expected: {
+          enumerable: true,
+          get() {
+            const now = current();
+            return now.compose ? null : expectedOf(now.label);
+          },
+        },
+        status: {
+          enumerable: true,
+          get() {
+            return resultPart(current().raw).status;
+          },
+        },
+        error: {
+          enumerable: true,
+          get() {
+            return resultPart(current().raw).error;
+          },
+        },
+        verdict: {
+          enumerable: true,
+          get() {
+            return deepFreeze(resultPart(current().raw).verdict);
+          },
+        },
+        answers: {
+          enumerable: true,
+          get() {
+            return deepFreeze(resultPart(current().raw).answers);
+          },
+        },
+        fact: {
+          enumerable: true,
+          get() {
+            return deepFreeze(resultPart(current().raw).fact);
+          },
+        },
+        meta: {
+          enumerable: true,
+          get() {
+            return deepFreeze(resultPart(current().raw).meta);
+          },
+        },
+        pending: {
+          enumerable: true,
+          get() {
+            const id = page.selectedRaw();
+            return id !== null && page.pendingSet().has(id);
+          },
+        },
+        stale: {
+          enumerable: true,
+          get() {
+            const now = current();
+            return now.compose ? draftStale(now.message, now.raw) : false;
+          },
+        },
+        request: {
+          enumerable: true,
+          get() {
+            return requestOf(current().raw);
+          },
+        },
+      },
+    ),
     actions: {
       ...page.actions,
       inspect() {
@@ -648,7 +886,9 @@ export function shieldResultCtx(source = {}) {
         return call(source, "inspect", trace, "Shield · one Jev request");
       },
     },
-    refresh: () => { if (typeof source.refresh === "function") source.refresh(); },
+    refresh: () => {
+      if (typeof source.refresh === "function") source.refresh();
+    },
     itemName: (item, index) => (item && typeof item.label === "string" && item.label ? item.label : String(index + 1)),
   };
   return ctx;

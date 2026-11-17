@@ -43,8 +43,9 @@ Cond = Tuple[str, str, List[str]]  # (question id, operator, values)
 def _cond(text: str) -> Cond:
     m = _COND.match(text.strip())
     if not m:
-        raise ValueError("%r is not a condition such as `department = billing` or `department in billing, shipping`"
-                         % text.strip())
+        raise ValueError(
+            "%r is not a condition such as `department = billing` or `department in billing, shipping`" % text.strip()
+        )
     qid, op, rest = m.group(1), " ".join(m.group(2).lower().split()), m.group(3).strip()
     values = [v.strip() for v in rest.split(",")] if op in ("in", "not in") else [rest]
     if not all(values):
@@ -69,9 +70,14 @@ def parse(text: Any) -> List[dict]:
         try:
             if not m:
                 raise ValueError("write it as `if <condition> then <condition>`")
-            out.append({"line": number, "text": line.strip(),
-                        "if": [_cond(c) for c in _AND.split(m.group(1))],
-                        "then": [_cond(c) for c in _AND.split(m.group(2))]})
+            out.append(
+                {
+                    "line": number,
+                    "text": line.strip(),
+                    "if": [_cond(c) for c in _AND.split(m.group(1))],
+                    "then": [_cond(c) for c in _AND.split(m.group(2))],
+                }
+            )
         except ValueError as err:
             raise CalibrationError("Rule on line %d: %s" % (number, err)) from err
     if len(out) > MAX_RULES:
@@ -116,20 +122,24 @@ def check(rules: List[dict], kinds: Dict[str, Tuple[str, List[str]]]) -> None:
     evaluating them."""
     for rule in rules:
         for side in ("if", "then"):
-            rule[side] = [(q, op, [_yes_no(v) for v in vs] if kinds.get(q, ("",))[0] == "noul" else vs)
-                          for q, op, vs in rule[side]]
+            rule[side] = [
+                (q, op, [_yes_no(v) for v in vs] if kinds.get(q, ("",))[0] == "noul" else vs)
+                for q, op, vs in rule[side]
+            ]
         for qid, op, values in rule["if"] + rule["then"]:
             where = "Rule on line %d" % rule["line"]
             if qid not in kinds:
                 raise CalibrationError("%s: %r is not a Choice, Noul, or Score question here" % (where, qid))
             qtype, allowed = kinds[qid]
             if op in ORDERED and qtype != "score":
-                raise CalibrationError("%s: %s compares levels, so it needs a Score question; %r is a %s"
-                                       % (where, op, qid, qtype))
+                raise CalibrationError(
+                    "%s: %s compares levels, so it needs a Score question; %r is a %s" % (where, op, qid, qtype)
+                )
             for v in values:
                 if v not in allowed:
-                    raise CalibrationError("%s: %r cannot answer %r; it answers %s"
-                                           % (where, qid, v, ", ".join(allowed)))
+                    raise CalibrationError(
+                        "%s: %r cannot answer %r; it answers %s" % (where, qid, v, ", ".join(allowed))
+                    )
 
 
 def _yes_no(value: str) -> str:
@@ -251,13 +261,29 @@ def report(text: Any, rows: Any, question_set: Any = None) -> dict:
             side[0] += 1
             side[1] += any(shown[q] != truth[q] for q in qids)
         (bn, bw), (kn, kw) = labeled["broken"], labeled["kept"]
-        out_rules.append({
-            "line": rule["line"], "text": rule["text"], "questions": qids,
-            "applies": applies, "broken": broken_n, "kept": kept_n, "unknown": unknown, "broken_rows": broken_rows,
-            "labeled_broken": bn, "wrong_broken": bw, "labeled_kept": kn, "wrong_kept": kw,
-            "wrong_broken_rate": bw / bn if bn else None, "wrong_kept_rate": kw / kn if kn else None,
-            "p": fisher_exact(bw, bn - bw, kw, kn - kw) if bn and kn else None,
-            "labels_break": labels_break,
-        })
-    return {"rules": out_rules, "rows": len(rows), "broken_any": len(any_broken),
-            "broken_rows": sorted(i for i in any_broken if isinstance(i, int))}
+        out_rules.append(
+            {
+                "line": rule["line"],
+                "text": rule["text"],
+                "questions": qids,
+                "applies": applies,
+                "broken": broken_n,
+                "kept": kept_n,
+                "unknown": unknown,
+                "broken_rows": broken_rows,
+                "labeled_broken": bn,
+                "wrong_broken": bw,
+                "labeled_kept": kn,
+                "wrong_kept": kw,
+                "wrong_broken_rate": bw / bn if bn else None,
+                "wrong_kept_rate": kw / kn if kn else None,
+                "p": fisher_exact(bw, bn - bw, kw, kn - kw) if bn and kn else None,
+                "labels_break": labels_break,
+            }
+        )
+    return {
+        "rules": out_rules,
+        "rows": len(rows),
+        "broken_any": len(any_broken),
+        "broken_rows": sorted(i for i in any_broken if isinstance(i, int)),
+    }

@@ -51,8 +51,8 @@ def dimensions(data: bytes) -> Tuple[str, int, int]:
         # APNG puts its acTL chunk before the first IDAT; walk the chunk list rather than search bytes.
         i = 8
         while i + 8 <= len(data):
-            (length,) = struct.unpack(">I", data[i:i + 4])
-            kind = data[i + 4:i + 8]
+            (length,) = struct.unpack(">I", data[i : i + 4])
+            kind = data[i + 4 : i + 8]
             if kind == b"acTL":
                 raise ImageError("Animated PNGs are not accepted.")
             if kind in (b"IDAT", b"IEND"):
@@ -70,10 +70,10 @@ def dimensions(data: bytes) -> Tuple[str, int, int]:
             if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7 or marker == 0xFF:
                 i += 1 if marker == 0xFF else 2
                 continue
-            (length,) = struct.unpack(">H", data[i + 2:i + 4])
+            (length,) = struct.unpack(">H", data[i + 2 : i + 4])
             # SOF0-SOF15 carry the frame size, except DHT (C4), JPG (C8), and DAC (CC).
             if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-                height, width = struct.unpack(">HH", data[i + 5:i + 9])
+                height, width = struct.unpack(">HH", data[i + 5 : i + 9])
                 return "jpg", width, height
             i += 2 + length
         raise ImageError("The JPEG file is damaged or incomplete.")
@@ -89,8 +89,13 @@ def check(data: bytes) -> dict:
         raise ImageError("Image is %d×%d; each side must be %d to %d pixels." % (width, height, MIN_SIDE, MAX_SIDE))
     if not MIN_PIXELS <= width * height <= MAX_PIXELS:
         raise ImageError("Image has %d pixels; the limit is %d to %d." % (width * height, MIN_PIXELS, MAX_PIXELS))
-    return {"format": fmt, "width": width, "height": height, "bytes": len(data),
-            "sha": hashlib.sha256(data).hexdigest()[:16]}
+    return {
+        "format": fmt,
+        "width": width,
+        "height": height,
+        "bytes": len(data),
+        "sha": hashlib.sha256(data).hexdigest()[:16],
+    }
 
 
 def decode(data_base64: Any) -> bytes:
@@ -160,9 +165,12 @@ def wire_asset(entry: dict) -> dict:
 
 def trace_asset(entry: dict) -> dict:
     """What the inspector shows instead of megabytes of base64."""
-    out = {"type": "image", "format": entry["format"],
-           "data_base64": "<%s %d×%d, %.0f KB, omitted from this view>" % (
-               entry["format"].upper(), entry["width"], entry["height"], entry["bytes"] / 1024)}
+    out = {
+        "type": "image",
+        "format": entry["format"],
+        "data_base64": "<%s %d×%d, %.0f KB, omitted from this view>"
+        % (entry["format"].upper(), entry["width"], entry["height"], entry["bytes"] / 1024),
+    }
     if entry.get("sample"):
         out["sample"] = entry["sample"]
     return out

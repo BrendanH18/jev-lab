@@ -55,18 +55,23 @@ export const DOC_LINES = Object.freeze([
   "Section E: Contact",
   "Questions about this handbook go to people@harborcoffee.example or call 555-0142.",
 ]);
-const SHORT_TEXT = [DOC_LINES[0], DOC_LINES[1], DOC_LINES[2], `  ${DOC_LINES[3]}`, "", ...DOC_LINES.slice(4)].join("\n");
+const SHORT_TEXT = [DOC_LINES[0], DOC_LINES[1], DOC_LINES[2], `  ${DOC_LINES[3]}`, "", ...DOC_LINES.slice(4)].join(
+  "\n",
+);
 
 // 260 lines: a heading every 50 lines ("Section A: Roast log week 1" at 0, 50, 100, …), entries in between.
-const LONG_LINES = Array.from({ length: 260 }, (_, index) => (index % 50 === 0
-  ? `Section ${String.fromCharCode(65 + index / 50)}: Roast log week ${index / 50 + 1}`
-  : `Batch ${index}: Harbor House Blend, ${12 + (index % 7)} minutes, roasted by the ${index % 2 ? "morning" : "evening"} crew.`));
+const LONG_LINES = Array.from({ length: 260 }, (_, index) =>
+  index % 50 === 0
+    ? `Section ${String.fromCharCode(65 + index / 50)}: Roast log week ${index / 50 + 1}`
+    : `Batch ${index}: Harbor House Blend, ${12 + (index % 7)} minutes, roasted by the ${index % 2 ? "morning" : "evening"} crew.`,
+);
 
 export const DOCS = Object.freeze({
   short: SHORT_TEXT,
   long: LONG_LINES.join("\n"),
   // No section headings at all, and a line with curly quotes and doubled spaces.
-  plain: "Grinders are cleaned every night.\nWe say “good morning” to every regular.\nRefunds  go  through the register.",
+  plain:
+    "Grinders are cleaned every night.\nWe say “good morning” to every regular.\nRefunds  go  through the register.",
   empty: "",
 });
 
@@ -82,7 +87,8 @@ export const QUERIES = Object.freeze([
   "is there paid parental leave?",
   "what is the wifi password?",
 ]);
-const zeros = (except) => Object.fromEntries(DOC_LINES.map((_, index) => [index, 0]).filter(([index]) => !except.includes(Number(index))));
+const zeros = (except) =>
+  Object.fromEntries(DOC_LINES.map((_, index) => [index, 0]).filter(([index]) => !except.includes(Number(index))));
 const ANSWERS = [
   { exists: 0.82, confidence: 0.71, probs: { ...zeros([0]), 10: 0.71, 9: 0.2, 11: 0.04, 2: 0.03, 5: 0.02 } },
   { exists: 0.93, confidence: 0.64, probs: { ...zeros([]), 8: 0.64, 6: 0.3, 7: 0.03, 3: 0.02, 0: 0.005, 12: 0.005 } },
@@ -99,35 +105,83 @@ export function rawSearch(lines, queries, answers, { meta = {}, truncated = fals
   const questions = {};
   const responseAnswers = {};
   queries.forEach((query, qi) => {
-    questions[`q${qi}.where`] = { type: "choice", instructions: `Which line of \`document\` contains the answer to: “${query}”?`, criteria: ids };
-    questions[`q${qi}.exists`] = { type: "noul", instructions: `Does any line of \`document\` address or answer: “${query}”?`,
-      criteria: { true: "At least one line states or directly implies the answer", false: "No line addresses this question" } };
+    questions[`q${qi}.where`] = {
+      type: "choice",
+      instructions: `Which line of \`document\` contains the answer to: “${query}”?`,
+      criteria: ids,
+    };
+    questions[`q${qi}.exists`] = {
+      type: "noul",
+      instructions: `Does any line of \`document\` address or answer: “${query}”?`,
+      criteria: {
+        true: "At least one line states or directly implies the answer",
+        false: "No line addresses this question",
+      },
+    };
     const probs = Object.fromEntries(Object.entries(answers[qi].probs).map(([index, p]) => [lineId(Number(index)), p]));
     const top = Object.entries(probs).sort((a, b) => b[1] - a[1])[0];
-    responseAnswers[`q${qi}.where`] = { type: "choice", choice: top[0], confidence: answers[qi].confidence, probabilities: probs };
+    responseAnswers[`q${qi}.where`] = {
+      type: "choice",
+      choice: top[0],
+      confidence: answers[qi].confidence,
+      probabilities: probs,
+    };
     responseAnswers[`q${qi}.exists`] = { type: "noul", noul: answers[qi].exists };
   });
   const results = queries.map((query, qi) => {
     const probs = answers[qi].probs;
-    const ranked = lines.map((_, index) => index).sort((a, b) => (probs[b] ?? 0) - (probs[a] ?? 0) || a - b).slice(0, 5);
-    return { query, exists: answers[qi].exists, verdict: verdict(answers[qi].exists), confidence: answers[qi].confidence,
-      hits: ranked.map((index) => ({ id: lineId(index), index, text: lines[index], prob: probs[index] ?? 0 })) };
+    const ranked = lines
+      .map((_, index) => index)
+      .sort((a, b) => (probs[b] ?? 0) - (probs[a] ?? 0) || a - b)
+      .slice(0, 5);
+    return {
+      query,
+      exists: answers[qi].exists,
+      verdict: verdict(answers[qi].exists),
+      confidence: answers[qi].confidence,
+      hits: ranked.map((index) => ({ id: lineId(index), index, text: lines[index], prob: probs[index] ?? 0 })),
+    };
   });
-  const fullMeta = { model: "jev-1.14.0", latency_ms: 412.6, question_count: queries.length * 2, input_tokens: 1840, output_tokens: 0,
-    cost_usd: 0.000092, backend: "sdk", ...meta };
-  return { results, lines: lines.length, truncated, meta: fullMeta,
-    trace: { request: { state: { document }, model: "jev-latest", questions }, response: { model: "jev-1.14.0", answers: responseAnswers }, meta: fullMeta },
-    thresholds: { found: 0.7, absent: 0.35 } };
+  const fullMeta = {
+    model: "jev-1.14.0",
+    latency_ms: 412.6,
+    question_count: queries.length * 2,
+    input_tokens: 1840,
+    output_tokens: 0,
+    cost_usd: 0.000092,
+    backend: "sdk",
+    ...meta,
+  };
+  return {
+    results,
+    lines: lines.length,
+    truncated,
+    meta: fullMeta,
+    trace: {
+      request: { state: { document }, model: "jev-latest", questions },
+      response: { model: "jev-1.14.0", answers: responseAnswers },
+      meta: fullMeta,
+    },
+    thresholds: { found: 0.7, absent: 0.35 },
+  };
 }
 
 // Three questions whose answers pull against each other (every line not in a map is 0):
 //   1 Sunday    exists 0.20 absent    L002 .55  L003 .30  L001 .10  L000 .05  L004 0    (absent, yet a strong top line)
 //   2 entrance  exists 0.75 answered  L001 .15  L000 .14  L003 .14  L004 .12  L011 .10  (a heading on top, flat spread)
 //   3 payday    exists 0.97 answered  L005 .97  L004 .02  L006 .01  L000 0    L001 0    (every listed line in Section B)
-export const MIXED_QUERIES = Object.freeze(["who roasts on Sunday?", "where is the staff entrance?", "when is payday?"]);
+export const MIXED_QUERIES = Object.freeze([
+  "who roasts on Sunday?",
+  "where is the staff entrance?",
+  "when is payday?",
+]);
 const MIXED_ANSWERS = [
   { exists: 0.2, confidence: 0.55, probs: { ...zeros([]), 2: 0.55, 3: 0.3, 1: 0.1, 0: 0.05 } },
-  { exists: 0.75, confidence: 0.15, probs: { ...zeros([]), 1: 0.15, 0: 0.14, 3: 0.14, 4: 0.12, 11: 0.1, 2: 0.09, 5: 0.09, 6: 0.09, 7: 0.08 } },
+  {
+    exists: 0.75,
+    confidence: 0.15,
+    probs: { ...zeros([]), 1: 0.15, 0: 0.14, 3: 0.14, 4: 0.12, 11: 0.1, 2: 0.09, 5: 0.09, 6: 0.09, 7: 0.08 },
+  },
   { exists: 0.97, confidence: 0.97, probs: { ...zeros([]), 5: 0.97, 4: 0.02, 6: 0.01 } },
 ];
 
@@ -135,15 +189,28 @@ export const RESULTS = Object.freeze({
   // The default: four questions over the short handbook, focus on question 1.
   handbook: rawSearch(DOC_LINES, QUERIES, ANSWERS),
   // Three questions where the verdict and the top line disagree, or one section holds every listed line.
-  mixed: rawSearch(DOC_LINES, MIXED_QUERIES, MIXED_ANSWERS, { meta: { latency_ms: 377.4, input_tokens: 1610, cost_usd: 0.00008, question_count: 6 } }),
+  mixed: rawSearch(DOC_LINES, MIXED_QUERIES, MIXED_ANSWERS, {
+    meta: { latency_ms: 377.4, input_tokens: 1610, cost_usd: 0.00008, question_count: 6 },
+  }),
   // One question only (the dog question), cheaper and quicker.
-  single: rawSearch(DOC_LINES, QUERIES.slice(0, 1), ANSWERS.slice(0, 1), { meta: { latency_ms: 188, input_tokens: 820, cost_usd: 0.000041, question_count: 2 } }),
+  single: rawSearch(DOC_LINES, QUERIES.slice(0, 1), ANSWERS.slice(0, 1), {
+    meta: { latency_ms: 188, input_tokens: 820, cost_usd: 0.000041, question_count: 2 },
+  }),
   // Shapes the builder must survive: a blank query, an exists that is text, an unknown verdict, a hit whose
   // probability is text and one without an index, a non-object hit, a result with no hits, no trace and no lines.
   odd: {
     results: [
-      { query: "  ", exists: "0.5", verdict: "maybe", confidence: null,
-        hits: [{ id: "L001", index: 1, text: "Section A: Hours and scheduling", prob: "high" }, null, { text: "a hit without an index", prob: 0.02 }] },
+      {
+        query: "  ",
+        exists: "0.5",
+        verdict: "maybe",
+        confidence: null,
+        hits: [
+          { id: "L001", index: 1, text: "Section A: Hours and scheduling", prob: "high" },
+          null,
+          { text: "a hit without an index", prob: 0.02 },
+        ],
+      },
       { query: "do we ship to Canada?", exists: 0.2, verdict: "absent" },
       null,
     ],
@@ -157,7 +224,15 @@ const hooks = ({ hide = [], order = [], matches, arrange }, keyOf) => {
   const rank = (item) => (order.includes(keyOf(item)) ? order.indexOf(keyOf(item)) : order.length);
   return {
     matches: matches || ((item) => !hidden.has(keyOf(item))),
-    arrange: arrange || ((list) => (order.length ? list.map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map((entry) => entry.item) : list)),
+    arrange:
+      arrange ||
+      ((list) =>
+        order.length
+          ? list
+              .map((item, index) => ({ item, index }))
+              .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
+              .map((entry) => entry.item)
+          : list),
   };
 };
 
@@ -168,11 +243,23 @@ export function sampleFindResultsCtx(overrides = {}) {
   const { hide, order, matches, arrange, offScreen = [], missing = [], ...rest } = overrides;
   const queries = "queries" in rest ? rest.queries : [...QUERIES];
   const callbacks = {
-    focusResult: (index) => { log.push(["focusResult", index]); },
-    showLine: (index) => { log.push(["showLine", index]); return !offScreen.includes(index); },
-    inspect: () => { log.push(["inspect"]); },
-    addQuery: (text) => { log.push(["addQuery", text]); if (Array.isArray(queries)) queries.push(text); },
-    refresh: () => { log.push(["refresh"]); },
+    focusResult: (index) => {
+      log.push(["focusResult", index]);
+    },
+    showLine: (index) => {
+      log.push(["showLine", index]);
+      return !offScreen.includes(index);
+    },
+    inspect: () => {
+      log.push(["inspect"]);
+    },
+    addQuery: (text) => {
+      log.push(["addQuery", text]);
+      if (Array.isArray(queries)) queries.push(text);
+    },
+    refresh: () => {
+      log.push(["refresh"]);
+    },
   };
   for (const name of missing) delete callbacks[name];
   const ctx = findResultsCtx({
@@ -197,9 +284,17 @@ export function sampleFindDocumentCtx(overrides = {}) {
   const { hide, order, matches, arrange, offScreen = [], missing = [], ...rest } = overrides;
   const state = { text: "text" in rest ? rest.text : DOCS.short };
   const callbacks = {
-    setText: (text, label) => { log.push(["setText", text, label]); state.text = text; },
-    showLine: (index) => { log.push(["showLine", index]); return !offScreen.includes(index); },
-    refresh: () => { log.push(["refresh"]); },
+    setText: (text, label) => {
+      log.push(["setText", text, label]);
+      state.text = text;
+    },
+    showLine: (index) => {
+      log.push(["showLine", index]);
+      return !offScreen.includes(index);
+    },
+    refresh: () => {
+      log.push(["refresh"]);
+    },
   };
   for (const name of missing) delete callbacks[name];
   const ctx = findDocumentCtx({
