@@ -1101,6 +1101,7 @@ function toolsBlock(s) {
                     state.error = "";
                     fillList();
                     fillForm();
+                    s.options.onSelectTool?.(key);
                   },
                 },
                 tool.title,
@@ -1162,6 +1163,16 @@ function toolsBlock(s) {
           "div",
           { class: "chips lab-row" },
           h("button", { class: "btn sm primary", onclick: compute }, "Calculate"),
+          s.options.toolLink
+            ? h(
+                "button",
+                {
+                  class: "btn sm ghost",
+                  onclick: () => attemptAsync(s.env, () => s.env.copy(s.options.toolLink(key))),
+                },
+                "Copy link",
+              )
+            : null,
           h(
             "button",
             {

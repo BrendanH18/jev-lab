@@ -49,6 +49,7 @@ const TABS = [
 // static/js/examples-browser.js. Page code reaches Lab only through W, so views rendered in tests/js see no Lab.
 const SHELL_LAB = "workbench.shell";
 const TOOLBOX_LAB = "workbench.toolbox";
+const TOOL_HASH = "#toolbox/";
 let wbShellReady = false; // boot() has loaded the page's data
 let wbShellRenderedTab = null; // the tab the last render showed
 let wbShellPreviousTab = null; // the tab shown before that one, for data.previousTab
@@ -94,7 +95,8 @@ async function boot() {
   const first = W.examples[0];
   let handed = null;
   try {
-    handed = readHandoff(localStorage);
+    // A shared tool opens independently of a pending demo handoff in another tab.
+    if (!location.hash.startsWith(TOOL_HASH)) handed = readHandoff(localStorage);
   } catch {
     /* site data blocked: reading localStorage itself throws */
   }
@@ -106,16 +108,13 @@ async function boot() {
     return;
   }
   loadInto(first.state, first.questions, { expect: first.expect, example: first.id, images: first.images });
-  const hash = location.hash.replace("#", "");
-  if (TABS.some(([k]) => k === hash)) {
-    W.tab = hash;
-    render();
-  }
+  applyWorkbenchHash();
 }
 
 // ---------- tabs and the page shell ----------
 // Shows a tab exactly as a click on the tab bar does. Switching keeps every editor, queue and draft (they live in W).
 function openWorkbenchTab(tab) {
+  if (tab === "toolbox" && W.tab === tab && location.hash.startsWith(TOOL_HASH)) return;
   W.tab = tab;
   location.hash = tab;
   render();
@@ -201,7 +200,16 @@ function renderToolbox() {
           refresh: () => render(),
         })
       : null;
-  const section = ctx ? W.lab?.section(W.labEnv, TOOLBOX_LAB, ctx, { flat: true }) : null;
+  const section = ctx
+    ? W.lab.section(W.labEnv, TOOLBOX_LAB, ctx, {
+        flat: true,
+        toolLink: (key) => `${location.origin}${location.pathname}${TOOL_HASH}${key}`,
+        onSelectTool: (key) => {
+          const hash = TOOL_HASH + key;
+          if (location.hash !== hash) history.pushState(null, "", hash);
+        },
+      })
+    : null;
   return h(
     "div",
     { class: "panel", id: "toolbox-panel" },
@@ -313,13 +321,34 @@ export function render() {
   }
 }
 
-// A link or Back/Forward that changes the hash to a tab's name opens that tab.
-window.addEventListener("hashchange", () => {
-  const tab = location.hash.replace("#", "");
-  if (wbShellReady && tab !== W.tab && TABS.some(([k]) => k === tab)) {
-    W.tab = tab;
+// Browser history and fresh links use the same registered pack/tool keys as the Toolbox picker.
+function applyWorkbenchHash(previousHash = "") {
+  const hash = location.hash;
+  if (hash.startsWith(TOOL_HASH)) {
+    const key = hash.slice(TOOL_HASH.length);
+    const found = W.lab.entries(TOOLBOX_LAB, "tool").some(([id]) => key === id);
+    const state = W.lab.view(TOOLBOX_LAB).tool;
+    Object.assign(state, { key: found ? key : "", group: "", query: "", result: null, error: "" });
+    W.tab = "toolbox";
     render();
+    if (found) {
+      const form = $("#toolbox-panel .lab-tool-form");
+      (form.querySelector("input, select, textarea") || form.querySelector("button"))?.focus();
+    } else {
+      toast("This tool is unavailable. Choose another tool from the Toolbox.");
+    }
+    return;
   }
+  const tab = hash.slice(1) || "build";
+  if (tab === "toolbox" && previousHash.startsWith(TOOL_HASH)) {
+    Object.assign(W.lab.view(TOOLBOX_LAB).tool, { key: "", result: null, error: "" });
+  } else if (tab === W.tab || !TABS.some(([id]) => tab === id)) return;
+  W.tab = tab;
+  render();
+}
+
+window.addEventListener("hashchange", (event) => {
+  if (wbShellReady) applyWorkbenchHash(new URL(event.oldURL).hash);
 });
 window.addEventListener(
   "resize",
