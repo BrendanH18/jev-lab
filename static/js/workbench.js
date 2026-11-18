@@ -115,8 +115,10 @@ async function boot() {
 // Shows a tab exactly as a click on the tab bar does. Switching keeps every editor, queue and draft (they live in W).
 function openWorkbenchTab(tab) {
   if (tab === "toolbox" && W.tab === tab && location.hash.startsWith(TOOL_HASH)) return;
+  const key = tab === "toolbox" && W.lab.view(TOOLBOX_LAB).tool.key;
+  const hash = key ? TOOL_HASH + key : "#" + tab;
+  if (location.hash !== hash) history.pushState(null, "", hash);
   W.tab = tab;
-  location.hash = tab;
   render();
 }
 
