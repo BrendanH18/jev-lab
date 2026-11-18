@@ -1033,6 +1033,34 @@ test("Metrics, exports, imports, commands, tools and panels work from their bloc
   );
 });
 
+test("sharing a tool passes only its registered key after entering data and calculating", () => {
+  const lab = createLab([pack]);
+  const env = fakeEnv();
+  const selected = [];
+  const linked = [];
+  const tree = lab.section(env, "test.list", fakeCtx({}), {
+    flat: true,
+    onSelectTool: (...args) => selected.push(args),
+    toolLink: (...args) => {
+      linked.push(args);
+      return "/workbench#toolbox/" + args[0];
+    },
+  });
+  fire(button(tree, "Double a number"), "click");
+  fire(
+    find(tree, (node) => node.tag === "input" && node.attrs.type === "number"),
+    "input",
+    {
+      target: { value: "12345" },
+    },
+  );
+  fire(button(tree, "Calculate"), "click");
+  fire(button(tree, "Copy link"), "click");
+  assert.deepEqual(selected, [["fixture-pack/double"]]);
+  assert.deepEqual(linked, [["fixture-pack/double"]]);
+  assert.equal(env.copied.at(-1), "/workbench#toolbox/fixture-pack/double");
+});
+
 test("flat sections show tools without a disclosure", () => {
   const lab = createLab([pack]);
   const tree = lab.section(fakeEnv(), "test.list", fakeCtx({}), { flat: true });

@@ -560,6 +560,51 @@ test("workbench.js lists the Toolbox tab, opens it from #toolbox and reaches Lab
   }
 });
 
+test("reopening Toolbox records the displayed tool so Back can restore it", () => {
+  const lab = createLab([toolboxPack], builders);
+  const surface = "workbench.toolbox";
+  const [[first], [second]] = lab.entries(surface, "tool");
+  const state = lab.view(surface).tool;
+  const location = new URL("http://localhost/workbench#toolbox/" + first);
+  const history = {
+    pushState: (_state, _title, hash) => {
+      location.hash = hash;
+    },
+  };
+  const W = { lab, tab: "toolbox" };
+  const [openTab, applyHash] = new Function(
+    "W",
+    "TOOLBOX_LAB",
+    "TOOL_HASH",
+    "location",
+    "history",
+    "render",
+    "$",
+    "TABS",
+    `${body("openWorkbenchTab")} ${body("applyWorkbenchHash")} return [openWorkbenchTab, applyWorkbenchHash];`,
+  )(
+    W,
+    surface,
+    "#toolbox/",
+    location,
+    history,
+    () => {},
+    () => ({ querySelector: () => null }),
+    SHELL_TABS,
+  );
+  state.key = first;
+  openTab("build");
+  openTab("toolbox");
+  const reopened = location.hash;
+  state.key = second;
+  location.hash = "#toolbox/" + second;
+  const previous = location.hash;
+  location.hash = reopened;
+  applyHash(previous);
+  assert.equal(state.key, first);
+  assert.equal(location.hash, "#toolbox/" + first);
+});
+
 test("renderToolbox: an empty state without tools, and the flat Toolbox section with them", () => {
   const make = new Function(
     "W",
