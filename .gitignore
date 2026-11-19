@@ -25,3 +25,7 @@ __pycache__/
 
 # Workbench dataset revisions (jev/history.py): local undo state, not fixtures
 /data/workbench/datasets/.history/
+
+# Secrets and local-only files
+*.pem
+*.key
