@@ -29,6 +29,8 @@ LABEL_TYPES = ("choice", "noul", "score")
 
 
 def _bytes(path: str) -> bytes:
+    if ".." in path:
+        raise Exception("Invalid file path")
     try:
         with open(path, "rb") as handle:
             data = handle.read(bundles.MAX_BUNDLE_BYTES + 1)

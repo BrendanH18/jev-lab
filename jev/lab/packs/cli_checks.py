@@ -326,6 +326,8 @@ def _wording(question: Any) -> str:
 
 
 def _question_file(path: str) -> Dict[str, dict]:
+    if ".." in path:
+        raise kit.CliError("Invalid file path")
     try:
         with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)

@@ -80,6 +80,8 @@ def _write_out(path: str, text: str, force: Optional[bool] = None) -> None:
         )
     if not target.parent.is_dir():
         raise kit.CliError("the folder for --out %s does not exist" % path)
+    if ".." in path:
+        raise kit.CliError("Invalid file path")
     target.write_text(text, encoding="utf-8")
 
 

@@ -851,7 +851,13 @@ def run_site(args) -> int:
         pages[links[dataset["id"]]] = to_markdown(blocks) if args.markdown else to_html(title, blocks)
     folder.mkdir(exist_ok=True)
     for name, text in pages.items():
-        (folder / name).write_text(text, encoding="utf-8")
+        base_dir = folder.resolve()
+        target_path = (folder / name).resolve()
+        try:
+            target_path.relative_to(base_dir)
+        except ValueError:
+            raise Exception("Invalid file path")
+        target_path.write_text(text, encoding="utf-8")
     print(
         "Wrote %d %s pages to %s: %s"
         % (len(pages), "Markdown" if args.markdown else "HTML", args.out_dir, ", ".join(pages))
