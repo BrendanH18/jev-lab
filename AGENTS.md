@@ -121,7 +121,7 @@ inputs go along, and let a trap delete the sandbox even when the run fails or is
   trap 'if [ -n "$id" ]; then boat delete "$id" --yes; fi; rm -rf "$src"' EXIT
   trap 'exit 130' INT TERM
   git archive HEAD | tar -x -C "$src"
-  id=$(boat new --environment jev-lab-live --fail-fast --json | jq -r '.id // empty' | head -n 1)
+  id=$(boat new --environment jev-lab-live --name jev-lab-live-validate --fail-fast --json | jq -r '.id // empty' | head -n 1)
   boat push "$id" "$src" --to /home/user/jev-lab
   boat exec "$id" --timeout 0 "cd /home/user/jev-lab && uv run --locked scripts/validate.py"
 )
@@ -132,6 +132,10 @@ Agents never read key values from `.env` or pass them on the command line, and n
 
 Other Boat rules:
 
+- Name every sandbox you create by hand `jev-lab-<purpose>` (owner decision, 2026-11-21): the owner's projects share
+  one Boat account, and Boat's default "Box <date>" names can't be traced to a project. Pass `--name` to `boat new`;
+  `boat run` has no `--name`, so rename a `boat run --keep` sandbox right away with `boat rename <id> jev-lab-<purpose>`.
+  Never leave one unnamed. `scripts/boat-check.sh` already names its sandboxes `jev-lab-check-<worktree>`.
 - Run: `boat exec "$id" "CMD"` (30 s timeout; `--timeout 0` = no limit). Server: `boat exec "$id" --detach "CMD"`,
   then `boat exec "$id" --status <pid>`. Always pass the sandbox id; `current` does not work in a non-interactive shell.
 - `server.py` binds 127.0.0.1 and accepts only loopback Host names (`jev/security.py`). To see the UI, run it in the sandbox and use the sandbox's desktop Chrome, or `boat forward` the port to the same port on this Mac. Never expose it with `boat host` or the in-sandbox `host`, and never widen the allow-list or the bind address.

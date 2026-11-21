@@ -239,3 +239,5 @@ Made by the maintainer on 2026-11-21.
 - **D7. Live runs use the `jev-lab-live` Boat environment.** It injects only `TYPESAFE_API_KEY`, with no
   GitHub, agent or Boat credentials. A live run gets its own sandbox, only when the maintainer asks, and it
   is deleted afterwards. Agents never read keys from `.env` or pass them on the command line.
+- **D8. Name every hand-made Boat sandbox `jev-lab-<purpose>`.** `boat new` gets `--name`, and a kept `boat run`
+  sandbox is renamed at once, so sandboxes on the shared account can be traced to this project.
