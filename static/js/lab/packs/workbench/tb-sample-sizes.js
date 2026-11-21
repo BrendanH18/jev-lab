@@ -103,10 +103,13 @@ const STRATA_FORMAT =
 const fail = (message) => {
   throw new Error(message);
 };
-const ceilCount = (x) => Math.ceil(x - 1e-9);
+const ceilCount = (x) => (x > 0 ? Math.max(1, Math.ceil(x - 1e-9)) : Math.ceil(x));
 const zTwo = (level) => normalQuantile(1 - (1 - Number(level)) / 2);
 const zOf = (p) => normalQuantile(Number(p));
 const short = (text) => (text.length > 24 ? `${text.slice(0, 24)}…` : text);
+// Allow roundoff when a computed tail lands on the inclusive significance cutoff.
+const probabilityAtMost = (probability, cutoff) =>
+  probability !== null && probability <= cutoff * (1 + 8 * Number.EPSILON);
 
 function strictShare(value, label) {
   if (value <= 0 || value >= 1) fail(`${label} must be strictly between 0 and 1.`);
@@ -324,11 +327,11 @@ export default definePack({
         );
         // the smallest n whose exact test (reject when X >= c, c the smallest count with P(X >= c | target) <= alpha) has the power
         let n = Math.max(1, Math.floor(Math.log(alpha) / Math.log(target)));
-        while (binomialSf(n, n, target) > alpha) n++;
+        while (n <= MAX_SCAN && !probabilityAtMost(binomialSf(n, n, target), alpha)) n++;
         let c = n,
           exact = null,
           reached = null;
-        for (; n <= MAX_SCAN; n++, c = binomialSf(c, n, target) <= alpha ? c : c + 1) {
+        for (; n <= MAX_SCAN; n++, c = probabilityAtMost(binomialSf(c, n, target), alpha) ? c : c + 1) {
           const chance = binomialSf(c, n, expected);
           if (chance >= Number(power)) {
             exact = n;
@@ -380,8 +383,10 @@ export default definePack({
       ],
       ({ size, rate, allowed, level }) => {
         strictShare(rate, "The error rate");
-        const errors = ceilCount(rate * size),
-          alpha = 1 - Number(level);
+        const whole = Math.floor(rate * size);
+        // Compare rates so rounding in rate * size cannot promote an exact batch count or erase a fractional one.
+        const errors = rate <= whole / size ? whole : whole + 1;
+        const alpha = 1 - Number(level);
         if (errors <= allowed)
           fail(`At that rate the batch holds only ${errors} errors, no more than the errors allowed.`);
         const passes = (n) => {
@@ -393,10 +398,10 @@ export default definePack({
           hi = size;
         while (lo < hi) {
           const mid = Math.floor((lo + hi) / 2);
-          if (passes(mid) <= alpha) hi = mid;
+          if (probabilityAtMost(passes(mid), alpha)) hi = mid;
           else lo = mid + 1;
         }
-        const binomial = firstTrue((n) => binomialCdf(allowed, n, rate) <= alpha, allowed + 1);
+        const binomial = firstTrue((n) => probabilityAtMost(binomialCdf(allowed, n, rate), alpha), allowed + 1);
         return [
           ["Errors in the batch at that rate", errors],
           ["Rows to audit (finite batch)", lo],
@@ -431,7 +436,7 @@ export default definePack({
     tool(
       "stratified_total",
       "Rows for a stratified audit's margin",
-      `The total rows a stratified audit needs to estimate the overall error rate within ± the margin. The Neyman total uses the same whole-row allocation as Split an audit across strata. The proportional and simple random totals use Cochran's formulas. All three use S² = p(1 − p) and the finite population correction. ${STRATA_FORMAT}`,
+      `Plans sample sizes for the margin using your assumed error rates, S² = p(1 − p), and the finite population correction. Neyman uses the same whole-row allocation as Split an audit across strata. To calculate a confidence interval from the audit, sample at least two rows per stratum or audit the entire stratum. The proportional and simple random totals use Cochran's formulas. The proportional approximation assumes fractional quotas. Rounding to whole rows can miss the margin or leave a stratum unsampled. ${STRATA_FORMAT}`,
       [STRATA, share("margin", "Margin of error (e.g. 0.02)", "e.g. 0.02"), LEVEL],
       ({ strata: text, margin, level }) => {
         if (margin <= 0) fail("The margin must be above 0.");
@@ -459,7 +464,7 @@ export default definePack({
           : 0;
         return [
           ["Rows with Neyman allocation", neymanTotal],
-          ["Rows with proportional allocation", ceilCount(ws2 / (v + ws2 / population))],
+          ["Rows with proportional allocation (approximate)", ceilCount(ws2 / (v + ws2 / population))],
           ["Rows as one simple random sample", ceilCount(s2 / (v + s2 / population))],
           ["Expected overall error rate", overall],
         ];
@@ -574,7 +579,7 @@ export default definePack({
     tool(
       "per_class_labels",
       "Labels needed per class",
-      "For a target ± margin on each class's own accuracy (or recall): the labels each class needs, and how many rows to sample at random so the class holds that many, from its share of rows. The rarest, hardest class usually decides the total. Paste one class per line: name, share of rows, expected accuracy.",
+      "Uses the normal approximation to plan labels per class for a target margin on accuracy or recall. Precision can be worse when correct or incorrect outcomes are rare. The random sample size gives the planned label count on average, based on class share. Actual counts can fall short. Paste one class per line: name, share of rows, expected accuracy.",
       [
         {
           name: "classes",
@@ -597,10 +602,13 @@ export default definePack({
         const most = rows.reduce((best, row) => (row[4] > best[4] ? row : best), rows[0]);
         return {
           rows: [
-            ["Rows to sample so every class has enough", most[4]],
+            ["Rows to sample for enough labels on average", most[4]],
             ["Class that needs the most rows", most[0]],
           ],
-          table: { columns: ["Class", "Share of rows", "Expected accuracy", "Labels needed", "Rows to sample"], rows },
+          table: {
+            columns: ["Class", "Share of rows", "Expected accuracy", "Labels needed", "Rows to sample on average"],
+            rows,
+          },
         };
       },
     ),

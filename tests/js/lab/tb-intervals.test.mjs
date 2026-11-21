@@ -300,6 +300,25 @@ checkPack(
           ],
         },
         { values: { n: "29", target: "0.9", level: "0.95" }, expect: (result) => assert.equal(result.rows[0][1], 29) },
+        {
+          values: { n: "1", target: "0.1", level: "0.9" },
+          expect: [
+            ["Correct rows needed", 1],
+            ["Accuracy needed", 1],
+            ["Errors allowed", 0],
+            ["Fewest rows that could show it (all correct)", 1],
+          ],
+        },
+        {
+          // A tail just above 10% cannot reject with one row. Its square is below 10%.
+          values: { n: "1", target: "0.10000000001", level: "0.9" },
+          expect: [
+            ["Correct rows needed", null],
+            ["Accuracy needed", null],
+            ["Errors allowed", null],
+            ["Fewest rows that could show it (all correct)", 2],
+          ],
+        },
       ],
       invalid: [{ n: "200", target: "0", level: "0.95" }],
     },
@@ -332,6 +351,17 @@ checkPack(
             ["Lower 95% bound", 2.6761831072109326],
             ["Upper 95% bound", null],
           ],
+        },
+        {
+          values: { x1: "1", n1: "1000000", x2: "0", n2: "1000000", level: "0.95" },
+          expect: (result) => {
+            // With one success and equal group sizes N, the null fit for B is 0 < q < 1/N.
+            // Its score is 1/(ratio * (1 - q)), so the cutoff lies between these bounds.
+            const critical = 1.959963984540054 ** 2;
+            const lower = result.rows[3][1];
+            assert.ok(lower > 1 / critical && lower < 1 / (critical * (1 - 1e-6)));
+            assert.equal(result.rows[4][1], null);
+          },
         },
       ],
       invalid: [
@@ -376,9 +406,15 @@ checkPack(
         {
           values: { m: "412", sd: "95", n: "25", level: "0.95", population: "100" },
           expect: (result) => {
-            near(result.rows[0][1], 16.537377315791296);
-            near(result.rows[3][1], 34.13146925516157);
+            const se = 19 * Math.sqrt(3 / 4);
+            near(result.rows[0][1], se);
+            near(result.rows[3][1], 2.063898561628024 * se);
           },
+        },
+        {
+          // A sample of 0, 2 has s² = 2. Sampling two of three gives (1 − 2/3)s²/2 = 1/3.
+          values: { m: "1", sd: String(Math.SQRT2), n: "2", level: "0.95", population: "3" },
+          expect: (result) => near(result.rows[0][1], Math.sqrt(1 / 3)),
         },
       ],
       invalid: [
@@ -525,6 +561,24 @@ checkPack(
               result.table.rows.map((row) => row[0]),
               ["Stratum 1", "Stratum 2"],
             ),
+        },
+        {
+          values: { strata: "retail, 1, 1, 1\nwholesale, 2, 2, 1", level: "0.95" },
+          expect: (result) => {
+            near(result.rows[0][1], 2 / 3);
+            assert.equal(result.rows[1][1], 0);
+            near(result.rows[2][1], 2 / 3);
+            near(result.rows[3][1], 2 / 3);
+          },
+        },
+        {
+          values: { strata: "retail, 1000, 10, 10\nwholesale, 1000, 10, 10", level: "0.95" },
+          expect: (result) => {
+            assert.equal(result.rows[0][1], 1);
+            assert.equal(result.rows[2][1], null);
+            assert.equal(result.rows[3][1], null);
+            assert.match(result.note, /incomplete strata show no variation/);
+          },
         },
       ],
       invalid: [

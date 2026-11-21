@@ -25,6 +25,17 @@ checkPack(
         ["Correct rows needed among them", 72],
         ["Exact power at that size", 0.8057063959899639],
       ],
+      more: [
+        {
+          // One success rejects at the inclusive 10% cutoff and has power 0.9.
+          values: { target: "0.1", expected: "0.9", level: "0.9", power: "0.8" },
+          expect: (result) => {
+            assert.equal(result.rows[1][1], 1);
+            assert.equal(result.rows[2][1], 1);
+            near(result.rows[3][1], 0.9);
+          },
+        },
+      ],
       invalid: [
         { target: "0.9", expected: "0.8", level: "0.95", power: "0.8" },
         { target: "0", expected: "0.8", level: "0.95", power: "0.8" },
@@ -37,6 +48,13 @@ checkPack(
         ["Rows needed", 18824],
         ["Expected cases among them", 18824 * 0.02],
         ["Events needed for a Poisson rate", 385],
+      ],
+      more: [
+        {
+          // The positive planning result (about 3.84e-10 rows before rounding) still requires one whole row.
+          values: { rate: "0.9999999999", relative: "1", level: "0.95" },
+          expect: (result) => assert.equal(result.rows[0][1], 1),
+        },
       ],
       invalid: [
         { rate: "0", relative: "0.1", level: "0.95" },
@@ -60,6 +78,32 @@ checkPack(
             assert.equal(result.rows[1][1], 225);
             assert.equal(result.rows[2][1], 236);
           },
+        },
+        {
+          // One error is the smallest positive count. The chance of missing it in n draws is (100 − n)/100.
+          values: { size: "100", rate: "0.000000000001", allowed: "0", level: "0.95" },
+          expect: (result) => {
+            assert.equal(result.rows[0][1], 1);
+            assert.equal(result.rows[1][1], 95);
+          },
+        },
+        {
+          // At least two errors. The chance of missing both is 23*22/(100*99) at 77 draws and 22*21/(100*99) at 78.
+          values: { size: "100", rate: "0.010000000001", allowed: "0", level: "0.95" },
+          expect: (result) => {
+            assert.equal(result.rows[0][1], 2);
+            assert.equal(result.rows[1][1], 78);
+          },
+        },
+        {
+          // 0.14 * 100 rounds slightly above 14 in binary floating point.
+          values: { size: "100", rate: "0.14", allowed: "0", level: "0.95" },
+          expect: (result) => assert.equal(result.rows[0][1], 14),
+        },
+        {
+          // Missing the single error in nine draws has probability exactly 10%.
+          values: { size: "10", rate: "0.1", allowed: "0", level: "0.9" },
+          expect: (result) => assert.equal(result.rows[1][1], 9),
         },
       ],
       invalid: [
@@ -121,7 +165,7 @@ checkPack(
       values: { strata: STRATA, margin: "0.02", level: "0.95" },
       expect: [
         ["Rows with Neyman allocation", 583],
-        ["Rows with proportional allocation", 630],
+        ["Rows with proportional allocation (approximate)", 630],
         ["Rows as one simple random sample", 661],
         ["Expected overall error rate", 0.08],
       ],
@@ -218,11 +262,11 @@ checkPack(
       values: { classes: "refund, 0.6, 0.95\nexchange, 0.3, 0.9\nfraud, 0.1, 0.8", margin: "0.05", level: "0.95" },
       expect: (result) => {
         assert.deepEqual(result.rows, [
-          ["Rows to sample so every class has enough", 2460],
+          ["Rows to sample for enough labels on average", 2460],
           ["Class that needs the most rows", "fraud"],
         ]);
         assert.deepEqual(result.table, {
-          columns: ["Class", "Share of rows", "Expected accuracy", "Labels needed", "Rows to sample"],
+          columns: ["Class", "Share of rows", "Expected accuracy", "Labels needed", "Rows to sample on average"],
           rows: [
             ["refund", 0.6, 0.95, 73, 122],
             ["exchange", 0.3, 0.9, 139, 464],
