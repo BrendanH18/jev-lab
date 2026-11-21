@@ -300,8 +300,9 @@ conditions.
   and more.
 - **Export:** generate Python, JavaScript, or curl requests for use outside Jev Lab.
 
-Saved tests are JSON files in `data/workbench/`, and saved datasets are in `data/workbench/datasets/`. They persist across restarts and can be committed
-deliberately as fixtures. Review their input data before sharing them.
+Saved tests are JSON files in `data/workbench/`, and saved datasets are in `data/workbench/datasets/`. They persist across restarts. Saved tests
+can be committed deliberately as fixtures; review their input data before sharing them. Datasets hold your input rows and labels, so
+`.gitignore` excludes their folder; force-add (`git add -f`) only a synthetic dataset you mean to keep as a fixture.
 
 See the [Workbench guide](docs/workbench.md) for a complete request, expectation format, and limits.
 

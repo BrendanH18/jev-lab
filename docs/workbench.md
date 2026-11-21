@@ -589,8 +589,8 @@ row. The file is ordinary JSON with one row per line, so a changed label is a on
 }
 ```
 
-Datasets are meant to be committed, like saved tests, so use synthetic data or review the rows
-before you commit them.
+Datasets hold your input rows and labels, so `.gitignore` excludes `data/workbench/datasets/`. To keep a
+synthetic dataset as a fixture, review its rows and add it with `git add -f`.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
