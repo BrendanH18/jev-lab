@@ -88,6 +88,7 @@ function retryHarness({ confirmSpend = async () => true, retry, wide = false } =
       return confirmSpend(kind, data);
     },
     api: async (path, data) => {
+      if (path === "/api/status") return statuses;
       requests.push({ path, data });
       return path.endsWith("/retry") ? (retry?.(attempt) ?? attempt) : initial;
     },

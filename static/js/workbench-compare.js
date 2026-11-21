@@ -473,7 +473,7 @@ async function runCompare() {
   let done = false;
   try {
     if (request.body.variants.some((variant) => !variant.model)) {
-      const model = currentStatus()?.model || (await api("/api/status")).model;
+      const { model } = await api("/api/status");
       request.body.variants = request.body.variants.map((variant) => ({ ...variant, model: variant.model || model }));
     }
     if (!(await confirmSpend(api, "compare", request.body))) return;
