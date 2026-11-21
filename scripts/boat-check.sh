@@ -314,11 +314,13 @@ fi
 uv python install 3.9 --quiet # the stdlib-fallback tests (AGENTS.md)
 cd "$run"
 uv sync --locked --quiet
-if [ ! -d "$deps/node/node_modules" ] || ! cmp -s package.json "$deps/node/package.json" ||
+# .installed is written only after npm ci succeeds, so a failed install is never reused.
+if [ ! -f "$deps/node/.installed" ] || ! cmp -s package.json "$deps/node/package.json" ||
     ! cmp -s package-lock.json "$deps/node/package-lock.json"; then
     rm -rf "$deps/node" && mkdir -p "$deps/node"
     cp package.json package-lock.json "$deps/node/"
     (cd "$deps/node" && npm ci --no-audit --no-fund --loglevel=error)
+    touch "$deps/node/.installed"
 fi
 # Biome reads .gitignore through git, and the sample-picture check diffs against the index.
 git -c init.defaultBranch=main init -q && git add -A
