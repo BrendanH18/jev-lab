@@ -241,7 +241,8 @@ function strata(text) {
       if (value === null || !Number.isInteger(value) || value < 0)
         fail(`Line ${index + 1}: sizes and counts must be whole numbers 0 or more.`);
     }
-    if (audited < 2) fail(`Line ${index + 1}: audit at least 2 rows in every stratum.`);
+    if (audited < 1 || (audited === 1 && size > 1))
+      fail(`Line ${index + 1}: audit at least 2 rows in every stratum, or the whole stratum if it has just one row.`);
     if (audited > size) fail(`Line ${index + 1}: more rows audited than the stratum holds.`);
     if (correct > audited) fail(`Line ${index + 1}: more rows correct than audited.`);
     return { name: cells[0] || `Stratum ${index + 1}`, size, audited, correct };
@@ -533,9 +534,10 @@ export default definePack({
       ],
       ({ n, target, level }) => {
         if (target <= 0 || target >= 1) fail("The target must be strictly between 0 and 1.");
-        const alpha = 1 - Number(level);
-        const fewest = Math.ceil(Math.log(alpha) / Math.log(target) - 1e-9);
-        if (binomialSf(n, n, target) > alpha) {
+        // Allow roundoff at the inclusive cutoff, including when solving target^n <= cutoff for n.
+        const cutoff = (1 - Number(level)) * (1 + 8 * Number.EPSILON);
+        const fewest = Math.ceil(Math.log(cutoff) / Math.log(target));
+        if (n < fewest) {
           return {
             rows: [
               ["Correct rows needed", null],
@@ -550,7 +552,8 @@ export default definePack({
           hi = n; // the smallest k with P(X >= k | target) <= alpha
         while (lo < hi) {
           const mid = Math.floor((lo + hi) / 2);
-          if (binomialSf(mid, n, target) <= alpha) hi = mid;
+          const tail = binomialSf(mid, n, target);
+          if (tail !== null && tail <= cutoff) hi = mid;
           else lo = mid + 1;
         }
         return [
@@ -584,7 +587,8 @@ export default definePack({
           const A = total * t,
             B = -(n1 * t + x1 + n2 + x2 * t),
             C = x1 + x2;
-          const q2 = Math.min(1, (-B - Math.sqrt(Math.max(0, B * B - 4 * A * C))) / (2 * A)),
+          // The rationalized smaller root avoids subtracting two nearly equal numbers for rare successes.
+          const q2 = Math.min(1, (2 * C) / (-B + Math.sqrt(Math.max(0, B * B - 4 * A * C)))),
             q1 = Math.min(1, t * q2);
           const top = (p1 - t * p2) ** 2,
             spread = (q1 * (1 - q1)) / n1 + (t * t * q2 * (1 - q2)) / n2;
@@ -651,7 +655,7 @@ export default definePack({
       ],
       ({ m, sd, n, level, population }) => {
         if (population !== null && population < n) fail("The population cannot be smaller than the sample.");
-        const correction = population === null ? 1 : Math.sqrt((population - n) / (population - 1));
+        const correction = population === null ? 1 : Math.sqrt((population - n) / population);
         const se = (sd / Math.sqrt(n)) * correction,
           t = studentTQuantile(1 - (1 - Number(level)) / 2, n - 1);
         return [
@@ -826,22 +830,28 @@ export default definePack({
           const weight = row.size / population,
             p = row.correct / row.audited;
           estimate += weight * p;
-          variance += (weight * weight * (1 - row.audited / row.size) * p * (1 - p)) / (row.audited - 1);
+          if (row.audited < row.size) {
+            variance += (weight * weight * (1 - row.audited / row.size) * p * (1 - p)) / (row.audited - 1);
+          }
           return [row.name, weight, row.audited, p];
         });
         const se = Math.sqrt(variance),
           z = zTwo(level);
+        const intervalUnavailable = variance === 0 && list.some((row) => row.audited < row.size);
         const pooled =
           list.reduce((sum, row) => sum + row.correct, 0) / list.reduce((sum, row) => sum + row.audited, 0);
         return {
           rows: [
             ["Stratified accuracy", estimate],
             ["Standard error", se],
-            [`Lower ${percent(level)} bound`, clip(estimate - z * se)],
-            [`Upper ${percent(level)} bound`, clip(estimate + z * se)],
+            [`Lower ${percent(level)} bound`, intervalUnavailable ? null : clip(estimate - z * se)],
+            [`Upper ${percent(level)} bound`, intervalUnavailable ? null : clip(estimate + z * se)],
             ["Unweighted accuracy of the audited rows", pooled],
           ],
           table: { columns: ["Stratum", "Weight", "Rows audited", "Accuracy"], rows },
+          note: intervalUnavailable
+            ? "The normal interval is unavailable because the incomplete strata show no variation."
+            : null,
         };
       },
     ),
