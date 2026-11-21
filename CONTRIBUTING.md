@@ -62,6 +62,23 @@ done
 node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 ```
 
+### Checks on Boat
+
+The maintainer's agents run these checks on [Boat](https://docs.boat.dev) sandboxes rather than on their
+own machines. `scripts/boat-check.sh` runs everything CI's `test.yml` runs (Ruff, Biome, JavaScript syntax
+and tests, the locked-SDK suite, the Python 3.9 fallback and the sample pictures) in one long-lived
+sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs:
+
+```sh
+scripts/boat-check.sh                    # all hand-off checks; exits nonzero if any failed
+scripts/boat-check.sh -- npm run lint    # one command in a fresh copy of the worktree
+scripts/boat-check.sh --done             # delete the worktree's sandbox when the work ends
+scripts/boat-check.sh --save             # checks, then refresh the jev-lab-warm snapshot
+```
+
+The sandbox carries no credentials and stops 45 minutes after the last check. It never runs a live model
+call: live runs get a separate sandbox (see `AGENTS.md`). `--help` lists the options.
+
 For interface changes, also inspect the affected pages in a browser at desktop and narrow widths.
 Check keyboard navigation, empty and error states, and the request inspector where relevant.
 Syntax checks do not replace browser testing.
