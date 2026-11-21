@@ -16,6 +16,7 @@ import {
   toast,
   usd,
 } from "./common.js";
+import { compareScorePayload, mergeCompareRetry } from "./compare-retry.js";
 import { parseVariantText, reverseOptions } from "./variants.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W, canon } from "./workbench-state.js";
@@ -86,6 +87,7 @@ function variantPanel(i) {
   area.addEventListener("input", () => {
     v.text = area.value;
     mount(note, variantStatus(i));
+    updateCompareRetry();
   });
   const model = h("input", {
     class: "input",
@@ -97,6 +99,7 @@ function variantPanel(i) {
   });
   model.addEventListener("input", () => {
     v.model = model.value;
+    updateCompareRetry();
   });
   const rows =
     i === 1
@@ -289,7 +292,9 @@ export function renderCompare() {
   const runBtn = h(
     "button",
     { class: "btn primary", id: "cmp-run", onclick: runCompare, disabled: c.running },
-    c.running ? [h("span", { class: "spin" }), " Running both variants…"] : runLabel(countRows(b.rowsText)),
+    c.running === "compare"
+      ? [h("span", { class: "spin" }), " Running both variants…"]
+      : runLabel(countRows(b.rowsText)),
   );
   const rows = h(
     "textarea",
@@ -302,6 +307,7 @@ export function renderCompare() {
     const n = countRows(b.rowsText);
     count.textContent = `Rows · ${n}`;
     if (!c.running) mount(runBtn, runLabel(n));
+    updateCompareRetry();
   });
   return h(
     "div",
@@ -384,28 +390,105 @@ const compareVariants = () =>
     average_orders: !!W.compare.variants[i].average,
   }));
 
+function compareEditorKey() {
+  return JSON.stringify(W.compare.variants.map((v) => [v.text, v.model.trim(), v.perturb, v.average]));
+}
+
+function compareDraftMatches(request) {
+  return request?.sourceText === W.bulk.rowsText && request.editorKey === compareEditorKey();
+}
+
+function compareRetryBody() {
+  const c = W.compare;
+  if (!compareDraftMatches(c.runRequest) || !c.result?.retry) return null;
+  const { rows, variants } = c.runRequest.body;
+  return {
+    rows,
+    variants: variants.map((v, i) => ({ ...v, model: c.result.variants[i].model })),
+    retry: c.result.retry,
+  };
+}
+
+const compareRetryChanged = "Rows or variant settings changed. Restore the original inputs or run both variants again.";
+
+function updateCompareRetry() {
+  const host = $("#compare-retry");
+  if (!host) return;
+  const changed = !compareDraftMatches(W.compare.runRequest);
+  $("#compare-retry-run", host).disabled = changed || !!W.compare.running;
+  $("#compare-retry-estimate", host).hidden = changed;
+  $("#compare-retry-reason", host).textContent = changed ? compareRetryChanged : "";
+}
+
+function compareRetryControls() {
+  const c = W.compare;
+  const count = c.result.retry?.models.filter((model) => model === null).length;
+  if (!count) return null;
+  const changed = !compareDraftMatches(c.runRequest);
+  return h(
+    "div",
+    { id: "compare-retry", class: "grid", style: { gap: "4px", fontSize: "12.5px" } },
+    h(
+      "div",
+      {},
+      h(
+        "button",
+        { class: "btn sm", id: "compare-retry-run", disabled: changed || !!c.running, onclick: retryCompare },
+        c.running === "retry"
+          ? "Retrying unanswered calls…"
+          : `Retry ${count} unanswered call${count === 1 ? "" : "s"}`,
+      ),
+      " ",
+      h(
+        "span",
+        { id: "compare-retry-estimate", hidden: changed },
+        estimateLine(h, api, "compare_retry", compareRetryBody),
+      ),
+    ),
+    h(
+      "span",
+      { id: "compare-retry-reason", class: "muted", "aria-live": "polite" },
+      changed ? compareRetryChanged : "",
+    ),
+  );
+}
+
 async function runCompare() {
   const c = W.compare;
-  let variants;
+  if (c.running) return;
+  const sourceText = W.bulk.rowsText;
+  let request;
   try {
-    variants = compareVariants();
+    request = {
+      sourceText,
+      editorKey: compareEditorKey(),
+      body: { rows: rowsPayload(sourceText), variants: compareVariants() },
+    };
   } catch (e) {
     return toast(e.message, "error");
   }
-  if (c.running) return;
-  if (!(await confirmSpend(api, "compare", { rows: rowsPayload(), variants }))) return;
-  c.running = true;
-  const sourceText = W.bulk.rowsText;
+  const previous = c.result;
+  c.running = "compare";
   render();
   let done = false;
   try {
-    c.result = await api("/api/workbench/compare", { rows: rowsPayload(sourceText), variants });
+    if (request.body.variants.some((variant) => !variant.model)) {
+      const { model } = await api("/api/status");
+      request.body.variants = request.body.variants.map((variant) => ({ ...variant, model: variant.model || model }));
+    }
+    if (!(await confirmSpend(api, "compare", request.body))) return;
+    if (c.result !== previous || !compareDraftMatches(request))
+      return toast("The comparison changed. Run both variants again.", "error");
+    const result = await api("/api/workbench/compare", request.body);
+    if (c.result !== previous) return toast("The earlier comparison finished. Its calls counted toward the budget.");
+    c.result = result;
+    c.runRequest = request;
     c.sourceText = sourceText;
     c.sliceField = null;
     c.qid = chooseCmpQuestion();
     await rescoreCompare();
-    if (c.result.stopped) toast(c.result.stopped, "error");
-    done = true;
+    if (result.stopped) toast(result.stopped, "error");
+    done = c.result === result;
   } catch (e) {
     handleError(e);
   } finally {
@@ -413,6 +496,37 @@ async function runCompare() {
     render();
   }
   if (done && W.tab === "compare") $("#compare-report")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function retryCompare() {
+  const c = W.compare;
+  if (c.running) return;
+  const body = compareRetryBody();
+  if (!body) return;
+  const previous = c.result;
+  const request = c.runRequest;
+  c.running = "retry";
+  render();
+  try {
+    if (!(await confirmSpend(api, "compare_retry", body))) return;
+    if (c.result !== previous || c.runRequest !== request || !compareDraftMatches(request))
+      return toast("The comparison changed. Check the report before retrying.", "error");
+    const attempt = await api("/api/workbench/compare/retry", body);
+    if (c.result !== previous || c.runRequest !== request)
+      return toast("The earlier comparison finished retrying. Its calls counted toward the budget.");
+    // The report and retry both belong to the same frozen request, even if the editor changed after dispatch.
+    const result = mergeCompareRetry(previous, attempt);
+    c.result = result;
+    if (!cmpQuestions(result).includes(c.qid)) c.qid = chooseCmpQuestion();
+    await rescoreCompare();
+    if (result.stopped) toast(result.stopped, "error");
+    if (result.retry_error) toast(result.retry_error, "error");
+  } catch (e) {
+    handleError(e);
+  } finally {
+    c.running = false;
+    render();
+  }
 }
 
 // Question ids both variants asked with the same type, in A's order.
@@ -436,14 +550,15 @@ function chooseCmpQuestion() {
 let cmpSeq = 0;
 async function rescoreCompare() {
   const c = W.compare;
+  const result = c.result;
   const qid = c.qid;
   const seq = ++cmpSeq; // only the latest request may install its report
   c.report = null;
   c.reportError = null;
   c.slices = null;
   c.slicesError = null;
-  if (!qid) return;
-  const rows = c.result.results
+  if (!qid || !result) return;
+  const rows = result.results
     .filter((r) => r.runs.some((run) => run.answers?.[qid]))
     .map((r) => ({
       index: r.index,
@@ -454,13 +569,15 @@ async function rescoreCompare() {
     }));
   if (!rows.length) return;
   try {
+    const payload = compareScorePayload(rows);
     const report = await api("/api/workbench/compare/score", {
-      rows,
+      ...payload,
+      rows: payload.rows.map(({ row: _input, ...scoreRow }) => scoreRow),
       signal: c.signal,
       first: c.first,
       bound: c.bound,
     });
-    if (seq === cmpSeq) {
+    if (seq === cmpSeq && c.result === result) {
       c.report = report;
       // Start where the cascade first matches the second variant. When the first variant matches it
       // alone, or nothing does, start at the most accurate point instead.
@@ -468,19 +585,19 @@ async function rescoreCompare() {
       if (cas) c.cascadeT = (cas.match?.escalated ? cas.match : cas.best).threshold;
       try {
         const bySlice = await api("/api/workbench/compare/slices", {
-          rows,
+          ...payload,
           field: c.sliceField,
           signal: c.signal,
           first: c.first,
           bound: c.bound,
         });
-        if (seq === cmpSeq) c.slices = bySlice;
+        if (seq === cmpSeq && c.result === result) c.slices = bySlice;
       } catch (e) {
-        if (seq === cmpSeq) c.slicesError = e.message;
+        if (seq === cmpSeq && c.result === result) c.slicesError = e.message;
       }
     }
   } catch (e) {
-    if (seq === cmpSeq) c.reportError = e.message;
+    if (seq === cmpSeq && c.result === result) c.reportError = e.message;
   }
 }
 
@@ -679,11 +796,12 @@ function renderCompareReport() {
     r.runs.map((run, v) => (run.error ? `row ${r.index + 1} (${VARIANTS[v]}): ${run.error}` : null)).filter(Boolean),
   );
   const notes = [
+    res.retry_error ? h("p", { style: { color: "var(--critical-text)" } }, res.retry_error) : null,
     failures.length
       ? h(
           "p",
           { style: { color: "var(--critical-text)" } },
-          `${failures.length} calls failed: `,
+          "Failed variant runs · ",
           failures.slice(0, 3).join("; "),
           failures.length > 3 ? "…" : "",
         )
@@ -810,6 +928,7 @@ function renderCompareReport() {
         stat("wall", ms(res.wall_ms), true),
         stat("cost, both variants", usd(res.cost_usd)),
       ),
+      compareRetryControls(),
       agreementBlock(res),
       ordersBlock(res),
       body,
@@ -1267,7 +1386,7 @@ function cmpLabRows() {
     slices: () => c.slices,
     slicesError: () => c.slicesError,
     reportError: () => c.reportError,
-    running: () => c.running,
+    running: () => !!c.running,
     labeling: () => c.labelingBusy,
     matches: (item, ctx) => W.lab.matches("workbench.compare.rows", item, ctx),
     arrange: (items, ctx) => W.lab.arrange("workbench.compare.rows", items, ctx),
@@ -1315,7 +1434,7 @@ function cmpLabVariants() {
     currentModel: () => currentStatus()?.model || null,
     models: () => c.models,
     rowCount: () => countRows(W.bulk.rowsText),
-    running: () => c.running,
+    running: () => !!c.running,
     lastRun: () => c.result?.variants || null,
     matches: (item, ctx) => W.lab.matches("workbench.compare.variants", item, ctx),
     arrange: (items, ctx) => W.lab.arrange("workbench.compare.variants", items, ctx),

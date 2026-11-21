@@ -126,6 +126,7 @@ export const W = {
     modelsLoading: false,
     running: false,
     result: null,
+    runRequest: null,
     qid: null,
     signal: "confidence",
     bound: "estimate",

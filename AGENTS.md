@@ -420,6 +420,13 @@ Bulk retry selection uses original unanswered row indices only. Failed/skipped f
 presentation, preserving selections across filters; estimates and paid requests use the same explicit
 selection. Selection changes during spend preview require another deliberate retry.
 
+Compare retries preview and send only unanswered calls from the original request, including
+individual calls in an order-averaged variant. Preserve successful calls, original row positions,
+and held-out exclusions. Pin retries to the resolved version where a requested model has answered,
+sharing the pin across variants that asked the same model. Keep incompatible answers out of paired
+scores and count spend across attempts. Bind the retry receipt to the original ordered request and
+call completion state. Retry requests carry no prior answers; merge new outcomes in the current tab.
+
 Drift labeling draft recovery carries original weak-support inputs, ordered question schema and human
 draft labels only, bound to the unchanged saved dataset/check snapshot. Restore previews before explicit
 acceptance, works without a paid comparison, and never restores model answers, shortlists or measured

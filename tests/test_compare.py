@@ -456,6 +456,45 @@ class RunTests(unittest.TestCase):
         self.assertEqual(report["results"][2]["runs"], [{"error": "budget"}, {"skipped": True}])
         self.assertEqual(report["results"][3]["runs"], [{"skipped": True}, {"skipped": True}])
 
+    def test_retry_pins_the_shared_model_when_only_one_variant_answered(self):
+        class Budget(FakeClient):
+            stopped = True
+
+            def system_one(self, state, questions, assets=None, model=None):
+                if len(self.calls) == 1 and self.stopped:
+                    raise JevError("budget", status=402)
+                result = super().system_one(state, questions, model=model)
+                if not self.stopped and state["text"] == "Second":
+                    result.model = "jev-1.15.0"
+                return result
+
+        client = Budget()
+        client.model = "jev-1.14.0"
+        variants = [
+            {"questions": Q, "model": "jev-latest"},
+            {"questions": Q, "model": "jev-latest", "perturb": "lowercase"},
+        ]
+        inputs = ["First", "Second"]
+        with patch.object(workbench, "BULK_CONCURRENCY", 1):
+            first = workbench.run_compare(client, inputs, variants)
+            self.assertEqual([v["completed"] for v in first["variants"]], [1, 0])
+            self.assertEqual(first["results"][1]["runs"], [{"skipped": True}, {"skipped": True}])
+            client.stopped = False
+            retried = workbench.retry_compare(client, inputs, variants, first["retry"])
+        self.assertEqual(
+            [(state["text"], model) for (state, _), model in zip(client.calls, client.models)],
+            [("First", "jev-latest"), ("first", "jev-1.14.0"), ("Second", "jev-1.14.0"), ("second", "jev-1.14.0")],
+        )
+        updates = dict(retried["updates"])
+        self.assertEqual(list(updates), [1, 2, 3])
+        self.assertIn("answers", updates[1])
+        self.assertNotIn("answers", updates[2])
+        self.assertGreater(updates[2]["discarded"]["cost_usd"], 0)
+        self.assertIn("answers", updates[3])
+        self.assertEqual(retried["retry"]["models"], ["jev-1.14.0", "jev-1.14.0", None, "jev-1.14.0"])
+        self.assertIn("incompatible", retried["retry_error"])
+        self.assertIsNone(retried["stopped"])
+
     def test_a_stop_between_the_two_calls_of_a_row_leaves_it_out_of_scoring(self):
         class Budget(FakeClient):
             def system_one(self, state, questions, assets=None, model=None):

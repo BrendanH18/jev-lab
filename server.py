@@ -91,6 +91,8 @@ PAGES = {
     "/workbench": "workbench.html",
 }
 MAX_BODY_BYTES = 12 * 1024 * 1024  # room for a few base64 photos
+COMPARE_RETRY_OVERHEAD = 128 * 1024  # receipt for up to four calls on each of 200 rows
+COMPARE_SCORE_OVERHEAD = 4 * 1024 * 1024  # up to two vectors of 255 indexed Choice probabilities per row
 
 settings = Settings()
 client = JevClient(settings)
@@ -683,9 +685,20 @@ def api_wb_compare(body):
     return workbench.run_compare(client, bulk_rows(body), variants, str(body.get("field") or "text"))
 
 
+def api_wb_compare_retry(body):
+    return workbench.retry_compare(
+        client,
+        bulk_rows(body),
+        body.get("variants"),
+        body.get("retry"),
+        str(body.get("field") or "text"),
+        check_model,
+    )
+
+
 def api_wb_compare_score(body):
     return compare.evaluate(
-        body.get("rows"),
+        compare_workflows.score_rows(body.get("rows"), body.get("option_keys")),
         str(body.get("signal") or "confidence"),
         str(body.get("first") or "A"),
         str(body.get("bound") or "estimate"),
@@ -694,7 +707,7 @@ def api_wb_compare_score(body):
 
 def api_wb_compare_slices(body):
     return compare_workflows.by_slice(
-        body.get("rows"),
+        compare_workflows.score_rows(body.get("rows"), body.get("option_keys")),
         body.get("field"),
         str(body.get("signal") or "confidence"),
         str(body.get("first") or "A"),
@@ -902,6 +915,8 @@ def api_wb_estimate(body):
         )
     if kind == "compare":
         return estimate.for_compare(client, bulk_rows(body), body.get("variants"), field)
+    if kind == "compare_retry":
+        return estimate.for_compare_retry(client, bulk_rows(body), body.get("variants"), body.get("retry"), field)
     if kind == "check":
         return estimate.for_check(client, str(body.get("id", "")), model)
     if kind == "drift":
@@ -1157,6 +1172,7 @@ ROUTES = {
     ("POST", "/api/workbench/slices"): api_wb_slices,
     ("POST", "/api/workbench/cost"): api_wb_cost,
     ("POST", "/api/workbench/compare"): api_wb_compare,
+    ("POST", "/api/workbench/compare/retry"): api_wb_compare_retry,
     ("POST", "/api/workbench/compare/slices"): api_wb_compare_slices,
     ("POST", "/api/workbench/compare/labeling"): api_wb_compare_labeling,
     ("POST", "/api/workbench/datasets/agreement/session/export"): api_wb_agreement_session_export,
@@ -1214,11 +1230,20 @@ class Handler(BaseHTTPRequestHandler):
         route = ROUTES.get((method, path))
         if route:
             try:
-                if length > MAX_BODY_BYTES:
+                retry_route = path in ("/api/workbench/compare/retry", "/api/workbench/estimate")
+                score_route = path in ("/api/workbench/compare/score", "/api/workbench/compare/slices")
+                allowance = COMPARE_RETRY_OVERHEAD if retry_route else COMPARE_SCORE_OVERHEAD if score_route else 0
+                if length > MAX_BODY_BYTES + allowance:
                     raise BadRequest("Request body too large")
                 body = json.loads(self.rfile.read(length).decode() or "{}") if length else {}
                 if not isinstance(body, dict):
                     raise BadRequest("Body must be a JSON object")
+                if length > MAX_BODY_BYTES and not (
+                    path == "/api/workbench/compare/retry"
+                    or (retry_route and body.get("kind") == "compare_retry")
+                    or (score_route and isinstance(body.get("option_keys"), list))
+                ):
+                    raise BadRequest("Request body too large")
                 self._send(200, route(body))
             except (
                 BadRequest,
