@@ -81,7 +81,10 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(headers["Content-Type"], "text/html; charset=utf-8")
                 self.assertEqual(headers["Cache-Control"], "no-store")
                 self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
-                self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
+                csp = headers["Content-Security-Policy"]
+                self.assertIn("script-src 'self'", csp)
+                self.assertIn("style-src 'self' 'unsafe-inline';", csp)
+                self.assertIn("font-src 'none';", csp)
 
     def test_dataset_editor_routes_require_preview_and_make_no_calls_or_writes(self):
         questions = {"urgent": {"type": "noul", "instructions": "Is `text` urgent?"}}

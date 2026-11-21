@@ -321,8 +321,7 @@ and download, Paste to import, Commands, Tools, panels), the Workbench's Toolbox
 - Never store `TYPESAFE_API_KEY` (or any model key) as a GitHub secret, and never make live model calls
   in CI. Live checks (`scripts/validate.py`, `scripts/check.py`) run by hand on Boat, in a `jev-lab-live` sandbox
   (see the Boat section).
-- Use system fonts. Add no web fonts, CDNs or other third-party requests to the app (the Google Fonts
-  import is being removed).
+- Use system fonts. Add no web fonts, CDNs or other third-party requests to the app.
 - Python: no type-checker is configured, but signatures are typed; `from __future__ import
   annotations` at the top of every `jev/*.py` module; f-strings/`%`-formatting mixed, follow
   the surrounding function. Ruff and Biome own layout; don't hand-format.
