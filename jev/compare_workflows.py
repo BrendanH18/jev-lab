@@ -12,6 +12,41 @@ from . import calibrate, compare, prelabel, slices, workbench
 from .workbench import WorkbenchError
 
 
+def score_rows(rows: Any, option_keys: Any) -> Any:
+    """Expand the browser's shared Choice option table. Existing score callers send answer dictionaries."""
+    if option_keys is None:
+        return rows
+    if (
+        not isinstance(option_keys, list)
+        or any(not isinstance(key, str) for key in option_keys)
+        or not isinstance(rows, list)
+        or len(rows) > calibrate.MAX_ROWS
+    ):
+        raise WorkbenchError("Invalid compact Compare scores")
+
+    def key(index):
+        if type(index) is not int or not 0 <= index < len(option_keys):
+            raise WorkbenchError("Invalid compact Compare option index")
+        return option_keys[index]
+
+    def expand(answer):
+        if not isinstance(answer, list):
+            return answer
+        try:
+            choice, entries, confidence = answer
+            probabilities = {key(index): value for index, value in entries}
+        except (TypeError, ValueError) as err:
+            raise WorkbenchError("Invalid compact Compare answer") from err
+        return {"type": "choice", "choice": key(choice), "probabilities": probabilities, "confidence": confidence}
+
+    return [
+        dict(row, answers=[expand(answer) for answer in row["answers"]])
+        if isinstance(row, dict) and isinstance(row.get("answers"), list)
+        else row
+        for row in rows
+    ]
+
+
 def by_slice(
     rows: Any, field: Any = None, signal: str = "confidence", first: str = "A", bound: str = "estimate"
 ) -> dict:

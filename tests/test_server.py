@@ -1208,6 +1208,181 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(one, 400)
         self.assertIn("exactly two variants", json.loads(err)["error"])
 
+    def test_compare_retry_prices_and_runs_only_the_missing_order(self):
+        q = {"dept": {"type": "choice", "instructions": "Which team?", "criteria": {"sales": "orders", "ops": "stock"}}}
+        variants = [{"questions": q}, {"questions": q, "perturb": "lowercase", "average_orders": True}]
+        rows = [{"text": "Order", "_expect": {"dept": "sales"}}, {"text": "Held out", "_test": True}]
+        with tempfile.TemporaryDirectory() as folder:
+            settings = Settings(environ={"TYPESAFE_DEFAULT_MODEL": "jev-latest"}, env_file=Path(folder) / "absent.env")
+            client = JevClient(settings, api_key="synthetic-key")
+            sent = []
+            resolved = None
+
+            def transport(payload):
+                sent.append(payload)
+                reversed_order = list(payload["questions"]["dept"]["criteria"]) == ["ops", "sales"]
+                if reversed_order and resolved is None:
+                    raise JevError("Temporary failure", status=429)
+                return {
+                    "model": resolved or "jev-1.14.0",
+                    "answers": fake_answers(payload["questions"]),
+                    "usage": {"input_tokens": 10},
+                }
+
+            def post(path, body):
+                status, _, raw = self.request("POST", path, json.dumps(body), self.post_headers())
+                self.assertEqual(status, 200, raw)
+                return json.loads(raw)
+
+            path = "/api/workbench/compare"
+            with (
+                patch.object(server, "client", client),
+                patch.object(client, "_post_system_one", side_effect=transport),
+                patch.object(client, "models", side_effect=AssertionError("No model list call")),
+            ):
+                first = post(path, {"variants": variants, "rows": rows})
+                self.assertEqual(len(sent), 3)
+                self.assertEqual(first["held_out"], 1)
+                self.assertEqual(first["variants"][1]["input_tokens"], 10)
+                self.assertNotIn("answers", first["results"][0]["runs"][1])
+                body = {
+                    "rows": rows,
+                    "variants": [dict(v, model=s["model"]) for v, s in zip(variants, first["variants"])],
+                    "retry": first["retry"],
+                }
+                self.assertEqual(body["retry"]["models"], ["jev-1.14.0", "jev-1.14.0", None])
+                self.assertEqual(first["calls"][1]["input"], {"text": "order"})
+                self.assertEqual(first["calls"][1]["picks"], {"dept": "ops"})
+                client.set_model("jev-1.15.0")
+                snap = client.guard.snapshot()
+                spend = post("/api/workbench/estimate", dict(body, kind="compare_retry"))
+                self.assertEqual((spend["calls"], spend["models"], spend["held_out"]), (1, ["jev-1.14.0"], 1))
+                self.assertEqual(client.guard.snapshot(), snap)
+                self.assertEqual(len(sent), 3)
+
+                reordered = {"dept": dict(q["dept"], criteria={"ops": "stock", "sales": "orders"})}
+                for changes in (
+                    {"rows": list(reversed(rows))},
+                    {"field": "message"},
+                    {"variants": [dict(body["variants"][0], questions=reordered), body["variants"][1]]},
+                    {"retry": dict(body["retry"], models=[None, "jev-1.14.0", None])},
+                ):
+                    for endpoint, extra in (
+                        ("/api/workbench/estimate", {"kind": "compare_retry"}),
+                        (path + "/retry", {}),
+                    ):
+                        status, _, raw = self.request(
+                            "POST", endpoint, json.dumps(dict(body, **changes, **extra)), self.post_headers()
+                        )
+                        self.assertEqual(status, 400, raw)
+                        self.assertIn("valid receipt", json.loads(raw)["error"])
+                self.assertEqual(len(sent), 3)
+                self.assertEqual(client.guard.snapshot(), snap)
+
+                resolved = "jev-1.15.0"
+                refused = post(path + "/retry", body)
+                self.assertIn("incompatible", refused["retry_error"])
+                [(position, rejected)] = refused["updates"]
+                self.assertEqual(position, 2)
+                self.assertNotIn("answers", rejected)
+                self.assertEqual(rejected["discarded"]["input_tokens"], 10)
+                self.assertGreater(rejected["discarded"]["cost_usd"], 0)
+                self.assertEqual(refused["retry"], first["retry"])
+
+                resolved = "jev-1.14.0"
+                result = post(path + "/retry", dict(body, retry=refused["retry"]))
+                self.assertIsNone(result["retry_error"])
+                self.assertEqual(len(sent), 5)
+                for payload in sent[-2:]:
+                    self.assertEqual(payload["model"], resolved)
+                    self.assertEqual(payload["state"], {"text": "order"})
+                    self.assertEqual(list(payload["questions"]["dept"]["criteria"]), ["ops", "sales"])
+                self.assertIsNone(result["retry"])
+                [(position, accepted)] = result["updates"]
+                self.assertEqual(position, 2)
+                self.assertEqual(accepted["answers"]["dept"]["choice"], "sales")
+                self.assertEqual(accepted["picks"], {"dept": "sales"})
+                self.assertEqual(accepted["input"], {"text": "order"})
+                self.assertGreaterEqual(result["wall_ms"], 0)
+
+    def test_compare_retries_when_original_answers_exceed_the_request_limit(self):
+        criteria = {"department_%02d" % i: "Route to this department." for i in range(40)}
+        questions = {"dept": {"type": "choice", "instructions": "Which team?", "criteria": criteria}}
+        model = "jev-1.14.0"
+        variants = [{"questions": questions, "model": model}, {"questions": questions, "model": model}]
+        rows = ["row %d" % i for i in range(20)]
+        fake = FakeClient()
+        fake.model = model
+        fail = True
+
+        def complete(state, questions, assets=None, model=None):
+            nonlocal fail
+            if state["text"] == rows[-1] and fail:
+                fail = False
+                raise JevError("Temporary failure", status=429)
+            return fake.system_one(state, questions, assets=assets, model=model)
+
+        path = "/api/workbench/compare"
+        headers = self.post_headers()
+        body = {"rows": rows, "variants": variants}
+        original = json.dumps(body)
+        with (
+            patch.object(server, "MAX_BODY_BYTES", len(original)),
+            patch.object(server.workbench, "BULK_CONCURRENCY", 1),
+            patch.object(server.client, "system_one", side_effect=complete),
+            patch.object(server.client, "models", side_effect=AssertionError("No model list call")),
+        ):
+            status, _, raw = self.request("POST", path, original, headers)
+            self.assertEqual(status, 200, raw)
+            first = json.loads(raw)
+            self.assertGreater(len(json.dumps(first["calls"]).encode()), server.MAX_BODY_BYTES)
+            self.assertEqual(len(fake.calls), 39)
+            body["retry"] = first["retry"]
+            self.assertGreater(len(json.dumps(body)), server.MAX_BODY_BYTES)
+            status, _, raw = self.request(
+                "POST", "/api/workbench/estimate", json.dumps(dict(body, kind="compare_retry")), headers
+            )
+            self.assertEqual(status, 200, raw)
+            self.assertEqual(json.loads(raw)["calls"], 1)
+            status, _, raw = self.request("POST", path + "/retry", json.dumps(body), headers)
+            self.assertEqual(status, 200, raw)
+            result = json.loads(raw)
+            self.assertIsNone(result["retry"])
+            self.assertEqual(len(result["updates"]), 1)
+            self.assertEqual(len(fake.calls), 40)
+
+    def test_compact_compare_scores_and_slices_match_the_legacy_payload(self):
+        option_keys = ["a" + "x" * 200, "b" + "y" * 200]
+        a, b = option_keys
+        legacy = [
+            {
+                "index": i,
+                "row": {"channel": channel},
+                "label": label,
+                "answers": [
+                    {"type": "choice", "choice": a, "probabilities": {a: 0.75, b: 0.25}},
+                    {"type": "choice", "choice": b, "probabilities": {b: 0.9, a: 0.1}, "confidence": 0.8},
+                ],
+            }
+            for i, (channel, label) in enumerate((("chat", a), ("email", "invalid"), ("email", b)))
+        ]
+        compact = [
+            dict(row, answers=[[0, [[0, 0.75], [1, 0.25]], None], [1, [[1, 0.9], [0, 0.1]], 0.8]]) for row in legacy
+        ]
+        headers = self.post_headers()
+        for endpoint in ("score", "slices"):
+            path = "/api/workbench/compare/" + endpoint
+            full = json.dumps({"rows": legacy, "field": "channel"})
+            packed = json.dumps({"rows": compact, "option_keys": option_keys, "field": "channel"})
+            status, _, expected = self.request("POST", path, full, headers)
+            self.assertEqual(status, 200, expected)
+            with patch.object(server, "MAX_BODY_BYTES", len(packed) - 1):
+                status, _, actual = self.request("POST", path, packed, headers)
+                self.assertEqual(status, 200, actual)
+                self.assertEqual(json.loads(actual), json.loads(expected))
+                status, _, raw = self.request("POST", path, full, headers)
+                self.assertEqual(status, 400, raw)
+
     def test_model_choice_is_checked_against_the_key(self):
         self.addCleanup(server.client.set_model, None)
         listed = {"models": [{"name": "jev-latest"}, {"name": "jev-preview"}]}  # the list currently holds aliases

@@ -156,6 +156,7 @@ test("every paid Workbench run asks confirmSpend before its paid request", () =>
   for (const [fn, kind, path] of [
     ["runBulk", "bulk", "/api/workbench/bulk"],
     ["runCompare", "compare", "/api/workbench/compare"],
+    ["retryCompare", "compare_retry", "/api/workbench/compare/retry"],
     ["runCheck", "check", "/api/workbench/checks/run"],
     ["runDrift", "drift", "/api/workbench/checks/drift"],
     ["runUpgrade", "upgrade", "/api/workbench/checks/upgrade"],

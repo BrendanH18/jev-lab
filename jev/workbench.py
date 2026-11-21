@@ -10,18 +10,21 @@ their labels can be saved as datasets in data/workbench/datasets/.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
+import secrets
 import statistics
 import threading
 import time
+from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-from . import compare, images, orders, perturb
-from .client import JevClient, JevError, pin_note
+from . import calibrate, compare, images, orders, perturb
+from .client import JevClient, JevError, is_versioned, pin_note
 from .config import SAMPLES_DIR, WORKBENCH_DIR
 
 MAX_QUESTIONS = 100
@@ -920,6 +923,10 @@ def run_bulk(
 
 # --- compare -------------------------------------------------------------------------------
 
+# Sign compact retry receipts without keeping calls on the server. The signing key stays
+# separate from the request token made available to the browser.
+_COMPARE_RETRY_KEY = secrets.token_bytes(32)
+
 
 def validate_variants(variants: Any) -> List[dict]:
     """Two variants, each a Bulk question set, an optional model name (None uses the current model), and an
@@ -970,7 +977,7 @@ def _pair(outcomes: List[dict], questions: Dict[str, dict]) -> dict:
 
 def prepare_compare(client: JevClient, rows: List[Any], variants: Any) -> tuple:
     """(variants, models, question sets asked per variant, split rows, test rows left out, jobs) for a Compare run.
-    jobs: [(row index, questions, model, perturbation)], one per call, interleaved row by row."""
+    jobs: [(row index, variant index, questions, model, perturbation)], interleaved row by row."""
     variants = validate_variants(variants)
     # Resolve a blank model once: the current model can change in Settings while the run is going,
     # and every call of a variant must use the same model.
@@ -986,9 +993,9 @@ def prepare_compare(client: JevClient, rows: List[Any], variants: Any) -> tuple:
     for v in variants:
         _need_pictures(split, v["questions"])
     jobs = [
-        (i, questions, model, v["perturb"])
+        (i, j, questions, model, v["perturb"])
         for i in range(len(split))
-        for v, model, sets in zip(variants, models, asked)
+        for j, (v, model, sets) in enumerate(zip(variants, models, asked))
         for questions in sets
     ]
     return variants, models, asked, split, held_out, jobs
@@ -998,9 +1005,22 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     """Both variants over the same rows: one call per row and variant, two for a variant that averages
     over both orders, interleaved row by row so a run stopped by the budget leaves the variants with
     nearly the same rows. Scoring (compare.evaluate) uses only rows both variants answered."""
-    variants, models, asked, split, held_out, jobs = prepare_compare(client, rows, variants)
+    prepared = prepare_compare(client, rows, variants)
+    _, _, _, split, _, jobs = prepared
     started = time.perf_counter()
-    flat, stopped = _run_jobs(client, split, jobs, field)
+    flat, stopped = _run_compare_jobs(client, split, jobs, field)
+    report = _compare_report(prepared, flat, stopped, (time.perf_counter() - started) * 1000)
+    versions = [_compare_answer_model(call) if "answers" in call else None for call in flat]
+    receipt = _compare_receipt(rows, prepared, field, versions)
+    return dict(report, retry=receipt, calls=[_compare_call(call) for call in flat] if receipt else [])
+
+
+def _run_compare_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
+    return _run_jobs(client, split, [(i, questions, model, kind) for i, _, questions, model, kind in jobs], field)
+
+
+def _compare_report(prepared: tuple, flat: List[dict], stopped: Optional[str], wall_ms: float) -> dict:
+    variants, models, asked, split, held_out, _ = prepared
     width = sum(len(sets) for sets in asked)
     results = []
     for i in range(len(split)):
@@ -1051,8 +1071,157 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
             [v["average_orders"] for v in variants],
         ),
         "labeled": sum(1 for r in results if r.get("expect")),
-        "wall_ms": (time.perf_counter() - started) * 1000,
+        "wall_ms": wall_ms,
         "cost_usd": sum(s["cost_usd"] for s in summaries),
+    }
+
+
+def _compare_call(call: dict) -> dict:
+    """Include the same display predictions used by server-side agreement for browser-side merges."""
+    if "answers" not in call:
+        return call
+    picks = {}
+    for qid, answer in call["answers"].items():
+        try:
+            picks[qid] = calibrate.read(answer)[0]
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+    return dict(call, picks=picks)
+
+
+def _compare_token(rows: List[Any], prepared: tuple, field: str, versions: list) -> str:
+    variants, models, _, _, _, _ = prepared
+    frozen = [dict(variant, model=model) for variant, model in zip(variants, models)]
+    # Object order matters for Choice options, question order, and order-sensitive inputs.
+    context = json.dumps([rows, frozen, field, versions], separators=(",", ":")).encode("ascii")
+    return hmac.new(_COMPARE_RETRY_KEY, context, hashlib.sha256).hexdigest()
+
+
+def _compare_receipt(rows: List[Any], prepared: tuple, field: str, versions: list) -> Optional[dict]:
+    if None not in versions:
+        return None
+    return {"models": versions, "token": _compare_token(rows, prepared, field, versions)}
+
+
+def _compare_retry_versions(receipt: Any, rows: List[Any], prepared: tuple, field: str) -> list:
+    versions = receipt.get("models") if isinstance(receipt, dict) else None
+    token = receipt.get("token") if isinstance(receipt, dict) else None
+    if (
+        not isinstance(versions, list)
+        or len(versions) != len(prepared[5])
+        or any(v is not None and not isinstance(v, str) for v in versions)
+        or not isinstance(token, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", token)
+        or not hmac.compare_digest(token, _compare_token(rows, prepared, field, versions))
+    ):
+        raise WorkbenchError("Retry needs a valid receipt for the original Compare request. Run both variants again.")
+    return versions
+
+
+def _compare_retry_model(asked: str, observed: set) -> Optional[str]:
+    if not observed:
+        return asked
+    if len(observed) == 1:
+        model = next(iter(observed))
+        if is_versioned(model) and (not is_versioned(asked) or asked == model):
+            return model
+    return None
+
+
+def _compare_answer_model(call: dict) -> str:
+    model = call["meta"].get("model")
+    return model if isinstance(model, str) else ""
+
+
+def prepare_compare_retry(client: JevClient, rows: List[Any], variants: Any, receipt: Any, field: str) -> tuple:
+    """Select missing calls and freeze their models to the versions the completed calls used."""
+    prepared = prepare_compare(client, rows, variants)
+    specs, _, _, _, _, jobs = prepared
+    if any(v["model"] is None for v in specs):
+        raise WorkbenchError("Retry needs the original Compare model for each variant")
+    versions = _compare_retry_versions(receipt, rows, prepared, field)
+    seen = defaultdict(set)
+    missing = []
+    for position, (job, version) in enumerate(zip(jobs, versions)):
+        if version is None:
+            missing.append(position)
+        else:
+            seen[job[3]].add(version)
+    if not missing:
+        raise WorkbenchError("Every Compare call already answered")
+
+    pins = {}
+    for requested in dict.fromkeys(jobs[p][3] for p in missing):
+        # One original model shared by A and B is one group, even if only one side answered.
+        pinned = _compare_retry_model(requested, seen[requested])
+        if pinned is None:
+            raise WorkbenchError(
+                "Successful Compare calls for %s do not identify one compatible model version. "
+                "Run the full comparison again." % requested
+            )
+        pins[requested] = pinned
+    attempts = {}
+    for p in missing:
+        i, variant, questions, requested, kind = jobs[p]
+        attempts[p] = (i, variant, questions, pins[requested], kind)
+    return prepared, attempts, versions
+
+
+def retry_compare(
+    client: JevClient,
+    rows: List[Any],
+    variants: Any,
+    receipt: Any,
+    field: str = "text",
+    check_model: Optional[Callable[[str], None]] = None,
+) -> dict:
+    """Run only pending calls and return their updates and a receipt for any that remain pending."""
+    prepared, attempts, prior_versions = prepare_compare_retry(client, rows, variants, receipt, field)
+    _, _, _, split, _, _ = prepared
+    if check_model is not None:
+        for model in dict.fromkeys(job[3] for job in attempts.values()):
+            check_model(model)
+
+    started = time.perf_counter()
+    outcomes, stopped = _run_compare_jobs(client, split, list(attempts.values()), field)
+    wall_ms = (time.perf_counter() - started) * 1000
+    seen = defaultdict(set)
+    for job, call in zip(attempts.values(), outcomes):
+        asked = job[3]
+        if "answers" in call and not is_versioned(asked):
+            seen[asked].add(_compare_answer_model(call))
+    resolved = {asked: _compare_retry_model(asked, versions) for asked, versions in seen.items()}
+    updates = []
+    versions = list(prior_versions)
+    refused = set()
+    for position, call in zip(attempts, outcomes):
+        if call.get("skipped"):
+            continue  # keep the outcome of any earlier attempt at this position
+        if "answers" in call:
+            asked = attempts[position][3]
+            expected = asked if is_versioned(asked) else resolved[asked]
+            observed = _compare_answer_model(call)
+            if observed == expected:
+                versions[position] = observed
+            else:
+                refused.add(asked)
+                meta = call.pop("meta")
+                call.pop("answers")
+                call["error"] = "The retry returned an incompatible model version."
+                call["discarded"] = {key: meta[key] for key in ("cost_usd", "input_tokens")}
+        updates.append((position, _compare_call(call)))
+    error = (
+        "Retry returned incompatible model versions for %s. Its spend is counted and those calls remain unanswered."
+        % ", ".join(sorted(refused))
+        if refused
+        else None
+    )
+    return {
+        "updates": updates,
+        "retry": _compare_receipt(rows, prepared, field, versions),
+        "stopped": stopped,
+        "wall_ms": wall_ms,
+        "retry_error": error,
     }
 
 

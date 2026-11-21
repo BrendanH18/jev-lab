@@ -18,7 +18,7 @@ from . import checks, drift, upgrade, workbench
 from .client import JevClient, request_reserve_usd
 from .compare import NAMES
 
-KINDS = ("bulk", "compare", "check", "drift", "upgrade", "items")
+KINDS = ("bulk", "compare", "compare_retry", "check", "drift", "upgrade", "items")
 
 
 def _rows_cost(
@@ -108,18 +108,32 @@ def for_bulk(
 def for_compare(client: JevClient, rows: List[Any], variants: Any, field: str = "text") -> dict:
     """workbench.run_compare: one call per row and variant, two for a variant that averages over both orders.
     Test rows are left out."""
-    variants, models, asked, split, held_out, jobs = workbench.prepare_compare(client, rows, variants)
+    prepared = workbench.prepare_compare(client, rows, variants)
+    return _compare_cost(client, rows, prepared, prepared[5], field, "compare")
+
+
+def for_compare_retry(client: JevClient, rows: List[Any], variants: Any, receipt: Any, field: str = "text") -> dict:
+    """Price only the missing calls, using the same version pins as retry_compare."""
+    prepared, attempts, _ = workbench.prepare_compare_retry(client, rows, variants, receipt, field)
+    return _compare_cost(client, rows, prepared, list(attempts.values()), field, "compare_retry")
+
+
+def _compare_cost(
+    client: JevClient, rows: List[Any], prepared: tuple, jobs: List[tuple], field: str, kind: str
+) -> dict:
+    variants, models, _, split, held_out, _ = prepared
     costs: Dict[int, List[float]] = {}
-    width = sum(len(sets) for sets in asked)
-    for n, (index, questions, model, kind) in enumerate(jobs):
-        state, _sent = workbench.job_state(split, index, field, kind)
-        variant = 0 if n % width < len(asked[0]) else 1
+    rows_sent = set()
+    for index, variant, questions, model, perturbation in jobs:
+        state, _sent = workbench.job_state(split, index, field, perturbation)
+        rows_sent.add(index)
+        models[variant] = model
         costs.setdefault(variant, []).append(
             request_reserve_usd(state, questions, model, workbench.picture_refs(split, index))
         )
     parts = [
         _part(
-            "variant %s%s" % (NAMES[v], ", both orders" if variants[v]["average_orders"] else ""),
+            "variant %s%s" % (NAMES[v], ", both orders" if kind == "compare" and variants[v]["average_orders"] else ""),
             models[v],
             costs.get(v, []),
         )
@@ -127,7 +141,7 @@ def for_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     ]
     given = min(_nonempty(rows), workbench.MAX_BULK_ROWS)
     return summarize(
-        client, "compare", parts, rows=len(split), held_out=held_out, capped=max(0, _nonempty(rows) - given)
+        client, kind, parts, rows=len(rows_sent), held_out=held_out, capped=max(0, _nonempty(rows) - given)
     )
 
 
