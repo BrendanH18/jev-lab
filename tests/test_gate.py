@@ -1,7 +1,7 @@
 """Gate export (jev/gate.py): the exported files route rows exactly as the Workbench's Policy does.
 
-The exported Python runs here against a stand-in typesafe_sdk package, and, when the real SDK is
-installed (Python 3.10+), against the real client with its HTTP transport mocked, which also checks that
+The exported Python runs here against a stand-in typesafe_sdk package and against the real client
+with its HTTP transport mocked, which also checks that
 the SDK's question classes send the questions as the Workbench does. The exported JavaScript runs under
 Node against a stand-in @typesafe-ai/sdk package, skipped when Node is missing. No key, no network.
 """
@@ -17,16 +17,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx2
+import typesafe_sdk
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import server  # noqa: E402
 from jev import calibrate, examples, gate, images, policy, rules, workbench  # noqa: E402
-
-try:
-    import httpx2
-    import typesafe_sdk
-except ImportError:  # Python 3.9: the stdlib fallback has no SDK
-    typesafe_sdk = None
 
 QUESTIONS = examples.BULK_QUESTIONS  # department (choice), frustration (score), is_urgent and wants_refund (noul)
 GATES = {"department": 0.6, "is_urgent": 0.4, "frustration": 0.5}
@@ -534,7 +531,6 @@ assert.equal(unsure.route, "review");
             all(json.loads(line)["provenance"] == gate.provenance(QUESTIONS, GATES, model="jev-1.14.0") for line in out)
         )
 
-    @unittest.skipUnless(typesafe_sdk, "the TypeSafe SDK needs Python 3.10+")
     def test_python_with_the_real_sdk(self):
         sent = []
 
@@ -569,7 +565,6 @@ assert.equal(unsure.route, "review");
             "the SDK sends the questions as the Workbench does",
         )
 
-    @unittest.skipUnless(typesafe_sdk, "the TypeSafe SDK needs Python 3.10+")
     def test_python_picture_gate_with_real_sdk_multipart(self):
         from email.parser import BytesParser
         from email.policy import default

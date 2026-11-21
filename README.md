@@ -46,7 +46,7 @@ Create and activate a virtual environment, then install the application's runtim
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install "typesafe-sdk>=0.6.0"
+python -m pip install "typesafe-sdk>=0.7.5"
 python server.py
 ```
 
@@ -326,7 +326,7 @@ anything by itself; each works on what the page already holds, including the ans
 - Offline commands for saved datasets, tests, question files and statistics run from a terminal with no key:
 
   ```sh
-  python3 scripts/lab.py --help
+  uv run --locked scripts/lab.py --help
   ```
 
 Python packs also add question checks, dataset health findings and Bulk input notes, shown apart from the built-in
@@ -369,8 +369,9 @@ uv run --locked python -m unittest discover -v tests
 
 No API key or external API access is needed for the tests. SDK tests use an in-memory transport;
 HTTP tests start a temporary loopback server. CI tests the locked dependencies on Python
-3.10–3.14, the legacy standard-library fallback on Python 3.9, JavaScript syntax and module tests
-(`node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs`), and that the committed sample pictures match their script.
+3.10–3.14. CI also runs JavaScript syntax and module tests
+(`uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs`), and checks that the committed
+sample pictures match their script.
 After adding or changing a Lab pack, regenerate its page index and the inventory with `node scripts/lab_inventory.mjs`. A
 separate workflow audits `uv.lock` for known vulnerabilities on pull requests and weekly.
 
@@ -384,7 +385,7 @@ python3 scripts/draw_samples.py
 For optional live evaluation after changing question wording or model versions:
 
 ```sh
-uv run --locked scripts/validate.py --out report.json
+uv run --locked scripts/validate.py --strict --out report.json
 ```
 
 To rerun the [checks](docs/workbench.md#keep-a-gate-as-a-check) saved with Workbench datasets, which exit
@@ -395,9 +396,9 @@ uv run --locked scripts/check.py
 uv run --locked scripts/check.py support-tickets --drift new.jsonl  # compare unlabeled rows with that dataset
 ```
 
-`validate.py` makes paid API calls using the configured key and prints observed results. Its exit status
-reports execution errors, not whether the model matched every scenario expectation. Review the
-report before sharing it.
+`validate.py` makes paid API calls using the configured key and prints observed results. With
+`--strict`, a missed expectation or an incomplete scenario returns a nonzero exit code. Omit the
+flag to use the original observation report. Review the report before sharing it.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and pull request guidance, and the
 [architecture guide](docs/architecture.md) for the request flow and source map.

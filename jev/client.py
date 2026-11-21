@@ -1,8 +1,6 @@
 """The one place Jev Lab talks to TypeSafe.
 
-Uses the official `typesafe-sdk` when it is installed (Python 3.10+). On an older Python the same
-requests go through a small stdlib fallback so the demo still runs; the request and response JSON
-are identical either way (https://docs.typesafe.ai/api).
+Uses the official `typesafe-sdk` (https://docs.typesafe.ai/api).
 
 Around the call sit two things a demo that spends real money should have:
   * a spend guard (per-run budget and a local rate limit),
@@ -12,40 +10,32 @@ Around the call sit two things a demo that spends real money should have:
 from __future__ import annotations
 
 import json
-import random
 import re
 import threading
 import time
-import urllib.error
-import urllib.request
 from collections import deque
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, Optional
+
+import typesafe_sdk
+from typesafe_sdk import (
+    Image,
+    RetryPolicy,
+    TypeSafeAPIConnectionError,
+    TypeSafeAPIError,
+    TypeSafeClient,
+    TypeSafeError,
+)
 
 from . import images
 from .config import Settings
 
-try:  # the official SDK needs Python >= 3.10
-    import typesafe_sdk
-    from typesafe_sdk import (
-        Image,
-        RetryPolicy,
-        TypeSafeAPIConnectionError,
-        TypeSafeAPIError,
-        TypeSafeClient,
-        TypeSafeError,
-    )
-
-    SDK_VERSION: Optional[str] = getattr(typesafe_sdk, "__version__", None)
-    if SDK_VERSION is None:
-        try:
-            from importlib.metadata import version as _pkg_version
-
-            SDK_VERSION = _pkg_version("typesafe-sdk")
-        except Exception:  # noqa: BLE001
-            SDK_VERSION = "unknown"
-except ImportError:  # pragma: no cover - exercised on Python 3.9
-    TypeSafeClient = None
-    SDK_VERSION = None
+SDK_VERSION = getattr(typesafe_sdk, "__version__", None)
+if SDK_VERSION is None:
+    try:
+        SDK_VERSION = version("typesafe-sdk")
+    except PackageNotFoundError:
+        SDK_VERSION = "unknown"
 
 # Published input prices (https://docs.typesafe.ai/models). Output tokens are free. Jev 1.14 and
 # 1.13 both cost $0.042 per million input tokens. GET /v1/models does not include a price, so
@@ -67,7 +57,6 @@ _KNOWN_INPUT_USD = {
 ALIASES = {"jev-latest": "jev-1.14.0", "jev-preview": "jev-1.14.0"}
 # A versioned model id, which never moves. Any other name may be an alias.
 VERSIONED_MODEL = re.compile(r"jev-\d+\.\d+(\.\d+)?")
-RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504, 529}
 
 
 def price_per_input_token(model: str) -> float:
@@ -187,9 +176,10 @@ class SpendGuard:
     therefore see each other's reservations instead of all reading the same spent total.
     """
 
-    def __init__(self, budget_usd: float = 2.0, rpm: int = 120):
+    def __init__(self, budget_usd: float = 2.0, rpm: int = 120, *, wait_for_rate_limit: bool = False):
         self.budget_usd = budget_usd
         self.rpm = rpm
+        self._wait_for_rate_limit = wait_for_rate_limit
         self.spent_usd = 0.0
         self.reserved_usd = 0.0
         self.live_calls = 0
@@ -199,25 +189,31 @@ class SpendGuard:
 
     def check(self, reserve_usd: float = 0.0) -> None:
         reserve_usd = max(0.0, float(reserve_usd))
-        with self._lock:
-            committed = self.spent_usd + self.reserved_usd
-            if self.budget_usd > 0 and committed + reserve_usd > self.budget_usd:
-                raise JevError(
-                    "This server run has spent its $%.2f budget ($%.4f recorded, $%.4f held by calls "
-                    "still running, %d live calls). Restart it with JEV_LAB_BUDGET_USD=<amount> to allow more."
-                    % (self.budget_usd, self.spent_usd, self.reserved_usd, self.live_calls),
-                    status=402,
-                )
-            now = time.monotonic()
-            while self._times and self._times[0] < now - 60:
-                self._times.popleft()
-            if self.rpm > 0 and len(self._times) >= self.rpm:
-                raise JevError(
-                    "Local rate limit: more than %d live calls in the last minute. Wait a moment." % self.rpm,
-                    status=429,
-                )
-            self._times.append(now)
-            self.reserved_usd += reserve_usd
+        while True:
+            with self._lock:
+                committed = self.spent_usd + self.reserved_usd
+                if self.budget_usd > 0 and committed + reserve_usd > self.budget_usd:
+                    raise JevError(
+                        "This server run has spent its $%.2f budget ($%.4f recorded, $%.4f held by calls "
+                        "still running, %d live calls). Restart it with JEV_LAB_BUDGET_USD=<amount> to allow more."
+                        % (self.budget_usd, self.spent_usd, self.reserved_usd, self.live_calls),
+                        status=402,
+                    )
+                now = time.monotonic()
+                while self._times and self._times[0] + 60 <= now:
+                    self._times.popleft()
+                if self.rpm <= 0 or len(self._times) < self.rpm:
+                    self._times.append(now)
+                    self.reserved_usd += reserve_usd
+                    return
+                if not self._wait_for_rate_limit:
+                    raise JevError(
+                        "Local rate limit: more than %d live calls in the last minute. Wait a moment." % self.rpm,
+                        status=429,
+                    )
+                delay = self._times[0] + 60 - now
+            # A sleeping caller holds neither the lock nor any budget.
+            time.sleep(delay)
 
     def release(self, reserve_usd: float = 0.0) -> None:
         """Drop a hold when the call failed and nothing should be billed."""
@@ -294,7 +290,7 @@ class JevClient:
 
     @property
     def backend(self) -> str:
-        return "typesafe-sdk %s" % SDK_VERSION if TypeSafeClient is not None else "stdlib fallback"
+        return "typesafe-sdk %s" % SDK_VERSION
 
     def set_api_key(self, key: Optional[str]) -> Optional[str]:
         """Install an in-memory key and return the previous one, so a failed check can roll back."""
@@ -347,19 +343,16 @@ class JevClient:
     def models(self) -> dict:
         if not self.api_key:
             raise JevError("No TypeSafe API key configured.", status=401)
-        if TypeSafeClient is not None:
-            try:
-                return self._sdk_client().models.list().raw_http_response.json()
-            except TypeSafeAPIError as err:
-                raise JevError(_error_message(err.status, err.body), status=err.status, body=err.body) from err
-            except TypeSafeAPIConnectionError as err:
-                raise JevError("Could not reach TypeSafe: %s" % err) from err
-            except TypeSafeError as err:
-                raise JevError(str(err)) from err
-        response, _ = self._stdlib_request("GET", "/v1/models", None, max_attempts=2)
-        return response
+        try:
+            return self._sdk_client().models.list().raw_http_response.json()
+        except TypeSafeAPIError as err:
+            raise JevError(_error_message(err.status, err.body), status=err.status, body=err.body) from err
+        except TypeSafeAPIConnectionError as err:
+            raise JevError("Could not reach TypeSafe: %s" % err) from err
+        except TypeSafeError as err:
+            raise JevError(str(err)) from err
 
-    # --- transports -------------------------------------------------------------------------
+    # --- SDK transport ----------------------------------------------------------------------
 
     def _sdk_client(self):
         with self._lock:
@@ -378,72 +371,22 @@ class JevClient:
     def _post_system_one(self, payload: dict) -> dict:
         assets = payload.get("assets") or {}
         headers = {images.IMAGES_HEADER: "true"} if images.needs_images_header(payload["questions"], assets) else None
-        if TypeSafeClient is not None:
-            try:
-                # The SDK uploads each image as a multipart file part, the transport TypeSafe recommends.
-                response = self._sdk_client().system_one(
-                    payload["state"],
-                    payload["questions"],
-                    model=payload["model"],
-                    assets={ref: Image(entry["data"]) for ref, entry in assets.items()} or None,
-                    extra_headers=headers,
-                )
-                return response.raw_http_response.json()
-            except TypeSafeAPIError as err:
-                raise JevError(_error_message(err.status, err.body), status=err.status, body=err.body) from err
-            except TypeSafeAPIConnectionError as err:
-                raise JevError("Could not reach TypeSafe: %s" % err) from err
-            except TypeSafeError as err:
-                raise JevError(str(err)) from err
-        body = dict(payload)
-        if assets:
-            body["assets"] = {ref: images.wire_asset(entry) for ref, entry in assets.items()}
-        response, _ = self._stdlib_request("POST", "/v1/systemone", body, headers=headers)
-        return response
-
-    def _stdlib_request(
-        self,
-        method: str,
-        path: str,
-        body: Optional[dict],
-        max_attempts: int = 4,
-        headers: Optional[Dict[str, str]] = None,
-    ):
-        data = json.dumps(body).encode() if body is not None else None
-        attempt = 0
-        while True:
-            attempt += 1
-            req = urllib.request.Request(
-                self.base_url + path,
-                data=data,
-                method=method,
-                headers={
-                    "Authorization": "Bearer " + (self.api_key or ""),
-                    "Content-Type": "application/json",
-                    "User-Agent": "jev-lab/1.0 (stdlib)",
-                    **(headers or {}),
-                },
+        try:
+            # The SDK uploads each image as a multipart file part, the transport TypeSafe recommends.
+            response = self._sdk_client().system_one(
+                payload["state"],
+                payload["questions"],
+                model=payload["model"],
+                assets={ref: Image(entry["data"]) for ref, entry in assets.items()} or None,
+                extra_headers=headers,
             )
-            try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    return json.loads(resp.read().decode()), attempt
-            except urllib.error.HTTPError as err:
-                raw = err.read().decode(errors="replace")
-                try:
-                    parsed = json.loads(raw)
-                except ValueError:
-                    parsed = raw
-                if err.code in RETRYABLE_STATUSES and attempt < max_attempts:
-                    retry_after = err.headers.get("retry-after")
-                    delay = float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit() else None
-                    time.sleep(delay if delay is not None else (0.4 * 2 ** (attempt - 1)) + random.random() * 0.2)
-                    continue
-                raise JevError(_error_message(err.code, parsed), status=err.code, body=parsed) from err
-            except urllib.error.URLError as err:
-                if attempt < max_attempts:
-                    time.sleep(0.4 * 2 ** (attempt - 1))
-                    continue
-                raise JevError("Could not reach TypeSafe: %s" % err.reason) from err
+            return response.raw_http_response.json()
+        except TypeSafeAPIError as err:
+            raise JevError(_error_message(err.status, err.body), status=err.status, body=err.body) from err
+        except TypeSafeAPIConnectionError as err:
+            raise JevError("Could not reach TypeSafe: %s" % err) from err
+        except TypeSafeError as err:
+            raise JevError(str(err)) from err
 
 
 def _error_message(status: int, body: Any) -> str:

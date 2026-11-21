@@ -60,10 +60,6 @@ checkPack(
       check: (ctx) => {
         assert.deepEqual(toasts(ctx), [{ message: "Backend: typesafe-sdk (the official TypeSafe SDK).", kind: "" }]);
         assert.equal(
-          toasts(runOn("show_backend", STATUS.memory))[0].message,
-          "Backend: stdlib (the built-in standard-library client).",
-        );
-        assert.equal(
           toasts(runOn("show_backend", { ...STATUS.connected, backend: "custom-client" }))[0].message,
           "Backend: custom-client.",
         );
@@ -71,10 +67,6 @@ checkPack(
         assert.equal(
           toasts(runOn("show_backend", { ...STATUS.connected, backend: "typesafe-sdk 0.4.1" }))[0].message,
           "Backend: typesafe-sdk 0.4.1 (the official TypeSafe SDK).",
-        );
-        assert.equal(
-          toasts(runOn("show_backend", { ...STATUS.connected, backend: "stdlib fallback" }))[0].message,
-          "Backend: stdlib fallback (the built-in standard-library client).",
         );
       },
     },

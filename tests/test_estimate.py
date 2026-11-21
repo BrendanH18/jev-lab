@@ -194,7 +194,7 @@ class EstimateTests(unittest.TestCase):
         with (
             patch.object(client, "_post_system_one", side_effect=boom),
             patch.object(client, "models", side_effect=boom),
-            patch.object(client, "_stdlib_request", side_effect=boom),
+            patch.object(client, "_sdk_client", side_effect=boom),
             patch.object(client, "system_one", side_effect=boom),
             patch.object(client.guard, "check", side_effect=boom),
             patch.object(client.guard, "record", side_effect=boom),
