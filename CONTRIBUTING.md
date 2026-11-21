@@ -53,20 +53,20 @@ npm run lint
 To apply formatting and safe fixes, run `uv run --locked ruff format && npm run format`.
 
 For JavaScript edits, Node.js 22 is used in CI to check module syntax and to run the tests for the
-browser modules that need no DOM:
+browser modules that need no DOM. Run the tests through uv so Python subprocesses use the locked SDK:
 
 ```sh
 for file in $(find static/js -name '*.js' | sort); do
   node --input-type=module --check < "$file" || exit 1
 done
-node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
+uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 ```
 
 ### Checks on Boat
 
 The maintainer's agents run these checks on [Boat](https://docs.boat.dev) sandboxes rather than on their
 own machines. `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests,
-the locked-SDK suite on Python 3.12 only, the Python 3.9 fallback and the sample pictures) in one
+the locked-SDK suite on Python 3.12 only, and the sample pictures) in one
 long-lived sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs.
 CI still runs the locked-SDK suite on every supported Python version:
 
@@ -105,21 +105,21 @@ Offline tests verify composition and policy logic; they cannot establish the qua
 judgments. If you have API access, evaluate affected scenarios in the app or run:
 
 ```sh
-uv run --locked scripts/validate.py --out report.json
+uv run --locked scripts/validate.py --strict --out report.json
 ```
 
 This makes paid requests. Set a specific `TYPESAFE_DEFAULT_MODEL` for comparisons and include the
-model name, observed behavior, and relevant results in your PR. The script prints mismatches but
-does not fail solely because a model disagreed with a scenario expectation. If you cannot run
-live evaluation, state that in your PR; documentation and offline fixes do not require a key.
+model name, observed behavior, and relevant results in your PR. Strict mode exits nonzero on
+missed expectations or incomplete scenarios and waits when it reaches the local rate limit.
+If you cannot run live evaluation, state that in your PR. Documentation and offline fixes
+do not require a key.
 
 ### Changes to dependencies
 
 Keep the application small: Python standard library, vanilla JavaScript, and the official TypeSafe
 SDK. Explain why an added dependency is needed. Update `pyproject.toml` and regenerate `uv.lock`
 with `uv lock`, then verify with `uv sync --locked` and the offline suite. Commit both files when
-the dependency specification changes. CI checks the lockfile on Python 3.10–3.14, separately
-exercises the Python 3.9 fallback without installing the SDK, and audits `uv.lock` for known
+the dependency specification changes. CI checks the lockfile on Python 3.10–3.14 and audits `uv.lock` for known
 vulnerabilities (`uv audit --frozen --preview-features audit-command`).
 
 ## Implementation guidelines

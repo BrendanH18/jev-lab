@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Run every built-in scenario against the live model and print what Jev actually said.
 
-    uv run scripts/validate.py [--out report.json]
+    uv run scripts/validate.py [--strict] [--out report.json]
 
 Use it after changing question wording, thresholds, or the model version. It makes paid API calls
 and prints a human-readable report; nothing is cached or reused by the app. Costs use the client's
-fixed pricing estimate. Scenario mismatches are reported for review, not treated as exit failures.
+fixed pricing estimate. Use --strict to fail on scenario mismatches or incomplete runs.
 """
 
 from __future__ import annotations
@@ -14,13 +14,16 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jev import calibrate, claims, counter, dispatch, examples, find, hello, images, play, reviews, shield, workbench  # noqa: E402
 from jev.autopilot import Autopilot  # noqa: E402
-from jev.client import JevClient, JevError  # noqa: E402
+from jev.client import JevClient, JevError, JevResult, SpendGuard  # noqa: E402
+from jev.config import Settings  # noqa: E402
 from jev.scenarios import COMMANDS, INBOX  # noqa: E402
 from jev.world import World  # noqa: E402
 
@@ -34,6 +37,39 @@ PLAY_SCRIPT = [
 ]
 
 
+class StrictClient(JevClient):
+    def __init__(self, settings: Settings | None = None):
+        settings = settings or Settings()
+        super().__init__(settings, guard=SpendGuard(settings.budget_usd, settings.rpm, wait_for_rate_limit=True))
+
+    def system_one(
+        self,
+        state: Any,
+        questions: dict[str, dict],
+        assets: dict[str, dict] | None = None,
+        model: str | None = None,
+    ) -> JevResult:
+        result = super().system_one(state, questions, assets=assets, model=model)
+        answers = result.answers or {}
+        missing = [qid for qid in questions if answers.get(qid) is None]
+        if missing:
+            raise JevError("Response missing answers: %s" % ", ".join(missing), status=502)
+        return result
+
+
+@dataclass
+class Validation:
+    matched: int = 0
+    missed: int = 0
+    incomplete: int = 0
+
+    def check(self, matches: bool) -> None:
+        if matches:
+            self.matched += 1
+        else:
+            self.missed += 1
+
+
 def pct(p):
     return "%3.0f%%" % (100 * p)
 
@@ -42,7 +78,7 @@ def section(title):
     print("\n" + "=" * 78 + "\n" + title + "\n" + "=" * 78)
 
 
-def run(client: JevClient, out: dict) -> None:
+def run(client: JevClient, out: dict, validation: Validation) -> None:
     section("Playground · 4 questions per text")
     out["playground"] = []
     for ex in hello.EXAMPLES:
@@ -71,6 +107,8 @@ def run(client: JevClient, out: dict) -> None:
         v = shield.verdict(res.answers, fact)
         attack = bool(m["label"]["attack"])
         expected = m["label"].get("shield", "quarantine" if attack else "safe")
+        ok = v["level"] == expected
+        validation.check(ok)
         flagged = v["level"] != "safe"
         should_flag = expected != "safe"
         confusion["tp" if should_flag and flagged else "fp" if flagged else "fn" if should_flag else "tn"] += 1
@@ -81,7 +119,7 @@ def run(client: JevClient, out: dict) -> None:
                 m["id"],
                 expected,
                 v["level"],
-                "ok" if (v["level"] == expected) else "??",
+                "ok" if ok else "??",
                 pct(v["risk"]),
                 res.answers["harm_if_obeyed"]["score"],
                 fact["claimed_identity"],
@@ -119,13 +157,18 @@ def run(client: JevClient, out: dict) -> None:
     for m in INBOX:
         rec = pilot.process(m)
         i, n = rec["integrated"], rec["naive"]
-        harm_n = bool(n["executed"]) and bool(m["label"]["attack"])
-        harm_i = bool(i["executed"]) and bool(m["label"]["attack"])
+        attack = bool(m["label"]["attack"])
+        harm_n = bool(n["executed"]) and attack
+        harm_i = bool(i["executed"]) and attack
+        if i["error"]:
+            validation.incomplete += 1
+        elif attack:
+            validation.check(not harm_i)
         print(
             "%-20s %-6s shield=%-10s auto=%-10s %-52s | alone=%s%s"
             % (
                 m["id"],
-                "attack" if m["label"]["attack"] else "benign",
+                "attack" if attack else "benign",
                 rec["shield"]["verdict"]["level"],
                 i["lane"],
                 (i["executed"] or {}).get("text", i["plan"]["signature"])[:52],
@@ -135,6 +178,8 @@ def run(client: JevClient, out: dict) -> None:
         )
         if harm_i:
             print("%22s !!! integrated pipeline executed a harmful action" % "")
+        if i["error"]:
+            print("%22s integrated execution failed: %s" % ("", i["error"]))
         out["autopilot"].append(
             {
                 "id": m["id"],
@@ -162,6 +207,7 @@ def run(client: JevClient, out: dict) -> None:
         )
         out["benchmark"] = b
     except JevError as err:
+        validation.incomplete += 1
         print("benchmark failed:", err)
 
     section("Find · sample handbook")
@@ -190,10 +236,16 @@ def run(client: JevClient, out: dict) -> None:
     rep = workbench.run_items(client, items)
     out["examples"] = rep
     for r in rep["runs"]:
+        if r.get("error") or any(q["answer"] is None for q in r["results"].values()):
+            validation.incomplete += 1
+        else:
+            validation.check(r["ok"])
         print("%-22s %s" % (r["id"], "PASS" if r["ok"] else "FAIL" if not r.get("error") else "ERROR " + r["error"]))
         for qid, q in r.get("results", {}).items():
             a = q["answer"]
-            if a["type"] == "box":
+            if a is None:
+                val = "—"
+            elif a["type"] == "box":
                 val = "box %s" % " ".join("%.2f" % a["box"][k] for k in ("left", "top", "right", "bottom"))
             else:
                 val = (
@@ -212,16 +264,19 @@ def run(client: JevClient, out: dict) -> None:
         try:
             r = claims.check(client, world, ex["order"], ex["note"], images.sample_asset(ex["sample"]))
         except JevError as err:
+            validation.incomplete += 1
             print("%-12s error: %s" % (ex["label"], err))
             continue
         ev, v, loc = r["evidence"], r["verdict"], r["location"]
+        ok = v["decision"] == ex["expect"]
+        validation.check(ok)
         print(
             "%-12s expect=%-8s -> %-8s %s shows=%s damage=%s matches=%s severity=%.2f kind=%s box=%s (%d ms)"
             % (
                 ex["label"],
                 ex["expect"],
                 v["decision"],
-                "ok" if v["decision"] == ex["expect"] else "??",
+                "ok" if ok else "??",
                 pct(ev["shows_item"]),
                 pct(ev["damage"]),
                 pct(ev["matches_note"]),
@@ -259,6 +314,7 @@ def run(client: JevClient, out: dict) -> None:
             try:
                 r = counter.turn(client, transcript, saved)
             except JevError as err:
+                validation.incomplete += 1
                 print("%s error: %s" % (ex["label"], err))
                 break
             saved.append(r["answers"])
@@ -266,7 +322,10 @@ def run(client: JevClient, out: dict) -> None:
             got.append(d["action"])
             transcript.append({"speaker": "bot", "text": d["text"]})
             out["counter"].append({"label": ex["label"], "turn": len(saved), "decision": d, "meta": r["meta"]})
-        print("%s expect=%s got=%s %s" % (ex["label"], ex["expect"], got, "ok" if got == ex["expect"] else "??"))
+        ok = got == ex["expect"]
+        if len(got) == len(ex["turns"]):
+            validation.check(ok)
+        print("%s expect=%s got=%s %s" % (ex["label"], ex["expect"], got, "ok" if ok else "??"))
 
     section("Reviews · sample reviews, triage vs what a person would decide")
     out["reviews"] = []
@@ -275,11 +334,13 @@ def run(client: JevClient, out: dict) -> None:
         try:
             r = reviews.check(client, ex)
         except JevError as err:
+            validation.incomplete += 1
             print("%-18s error: %s" % (ex["label"], err))
             continue
         t, ev = r["triage"], r["triage"]["evidence"]
         got = {"action": t["action"], "team": t["team"], "flags": t["flags"]}
         ok = got == ex["expect"]
+        validation.check(ok)
         matched += ok
         print(
             "%-18s expect=%-8s %-17s -> %-8s %-17s %s %s flags=%s"
@@ -345,17 +406,27 @@ def run(client: JevClient, out: dict) -> None:
             )
         )
         out["play"].append(t)
+    validation.check(g["won"] and len(out["play"]) == len(PLAY_SCRIPT))
 
     section("Bulk · 40 sample tickets with the bulk taxonomy (examples.BULK_QUESTIONS)")
     rows = workbench.load_sample_rows()
     bulk = workbench.run_bulk(client, rows, examples.BULK_QUESTIONS)
     out["bulk"] = bulk["results"]
     depts: dict = {}
+    answered = []
     for r in bulk["results"]:
         a = r.get("answers")
         if not a:
-            print("row %d error: %s" % (r["index"], r.get("error")))
+            validation.incomplete += 1
+            error = "skipped after a stopped run" if r.get("skipped") else r.get("error", "no answers")
+            print("row %d error: %s" % (r["index"], error))
             continue
+        missing = [qid for qid in examples.BULK_QUESTIONS if a.get(qid) is None]
+        if missing:
+            validation.incomplete += 1
+            print("row %d missing answers: %s" % (r["index"], ", ".join(missing)))
+            continue
+        answered.append(r)
         depts[a["department"]["choice"]] = depts.get(a["department"]["choice"], 0) + 1
         print(
             "%-64s %-10s fr=%.2f urg=%s refund=%s"
@@ -373,7 +444,6 @@ def run(client: JevClient, out: dict) -> None:
         "| wall %d ms, %d tokens, $%.5f" % (bulk["wall_ms"], bulk["input_tokens"], bulk["cost_usd"]),
     )
     out["calibrate"] = {}
-    answered = [r for r in bulk["results"] if r.get("answers")]
     for qid in examples.BULK_QUESTIONS if answered else ():  # evaluate() refuses an empty run
         report = calibrate.evaluate(
             [
@@ -398,23 +468,31 @@ def run(client: JevClient, out: dict) -> None:
         }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", help="write the full answers as JSON here")
-    args = parser.parse_args()
-    client = JevClient()
+    parser.add_argument("--strict", action="store_true", help="exit nonzero on a scenario miss or incomplete run")
+    args = parser.parse_args(argv)
+    client = StrictClient() if args.strict else JevClient()
     if not client.configured:
         print("No API key. Set TYPESAFE_API_KEY or add it to .env.")
         return 1
     print("model %s via %s" % (client.model, client.backend))
     out: dict = {}
+    validation = Validation()
     started = time.perf_counter()
     try:
-        run(client, out)
+        run(client, out, validation)
     except JevError as err:
+        validation.incomplete += 1
         print("\nStopped: %s" % err)
         return 2
     finally:
+        if args.strict:
+            print(
+                "\nStrict validation · %d matched, %d missed, %d incomplete"
+                % (validation.matched, validation.missed, validation.incomplete)
+            )
         s = client.guard.snapshot()
         print(
             "\n%d live calls · %d input tokens · $%.5f · %.1f s"
@@ -422,7 +500,7 @@ def main() -> int:
         )
         if args.out:
             Path(args.out).write_text(json.dumps(out, indent=1, default=str))
-    return 0
+    return int(args.strict and (validation.missed > 0 or validation.incomplete > 0))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Jev Lab: a local server for the demos, the Workbench, and the API-key onboarding.
 
-    uv run server.py        # or: python3 server.py
+    uv run --locked server.py
     open http://127.0.0.1:8321
 
 The TypeSafe API key stays on this server. The browser never sees it, and every request is checked

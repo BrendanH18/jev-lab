@@ -1,9 +1,7 @@
-import base64
 import json
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -126,47 +124,6 @@ class JevClientTests(unittest.TestCase):
         self.assertIn("omitted", shown["data_base64"])
         self.assertLess(len(json.dumps(result.trace())), 2000)
 
-    def test_stdlib_fallback_sends_base64_images_with_the_header(self):
-        c = JevClient(settings(JEV_LAB_BUDGET_USD="2"))
-        seen = {}
-
-        class Response:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_exc):
-                return False
-
-            def read(self):
-                return json.dumps(RESPONSE).encode()
-
-        def urlopen(request, timeout=None):
-            seen["headers"] = {k.lower(): v for k, v in request.header_items()}
-            seen["body"] = json.loads(request.data)
-            return Response()
-
-        photo = images.sample_asset("intact-bag")
-        ref = images.new_ref(photo["data"], "photo")
-        with (
-            patch.object(client_mod, "TypeSafeClient", None),
-            patch.object(client_mod.urllib.request, "urlopen", urlopen),
-        ):
-            result = c.system_one({"photo": ref}, QUESTIONS, assets={ref: photo})
-            plain = c.system_one("no pictures", QUESTIONS)
-        self.assertEqual(seen["headers"].get(images.IMAGES_HEADER.lower()), None, "plain calls skip the header")
-        self.assertEqual(result.answers["q"]["noul"], 0.9)
-        self.assertEqual(plain.backend, "stdlib fallback")
-
-        with (
-            patch.object(client_mod, "TypeSafeClient", None),
-            patch.object(client_mod.urllib.request, "urlopen", urlopen),
-        ):
-            c.system_one({"photo": ref}, QUESTIONS, assets={ref: photo})
-        self.assertEqual(seen["headers"][images.IMAGES_HEADER.lower()], "true")
-        sent = seen["body"]["assets"][ref]
-        self.assertEqual((sent["type"], sent["format"]), ("image", "png"))
-        self.assertEqual(base64.b64decode(sent["data_base64"]), photo["data"])
-
     def test_unreferenced_image_is_refused_before_spending(self):
         c = JevClient(settings(JEV_LAB_BUDGET_USD="2"))
         c._post_system_one = lambda payload: self.fail("no call should be made")
@@ -221,7 +178,6 @@ class JevClientTests(unittest.TestCase):
         self.assertIn("422", client_mod._error_message(422, {"detail": [{"loc": "x"}]}))
 
 
-@unittest.skipIf(client_mod.TypeSafeClient is None, "typesafe-sdk not installed (Python < 3.10)")
 class SdkTransportTests(unittest.TestCase):
     """Drive the real SDK client through an in-memory transport: no network, no key needed."""
 

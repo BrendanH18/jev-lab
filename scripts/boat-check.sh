@@ -311,7 +311,6 @@ if [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" !=
     tar -xJf "$tmp/$file" --strip-components=1 -C "$HOME/.local/node"
     rm -rf "$tmp"
 fi
-uv python install 3.9 --quiet # the stdlib-fallback tests (AGENTS.md)
 cd "$run"
 uv sync --locked --quiet
 # .installed is written only after npm ci succeeds, so a failed install is never reused.
@@ -342,9 +341,8 @@ check() {
 check "Ruff" 'uv run --locked ruff check && uv run --locked ruff format --check'
 check "Biome" 'npm run --silent lint -- --colors=off --diagnostic-level=error'
 check "JavaScript syntax" 'for file in $(find static/js -name "*.js" | sort); do node --input-type=module --check <"$file" || exit 1; done'
-check "JavaScript tests" 'node --test --test-reporter=dot tests/js/*.test.mjs tests/js/lab/*.test.mjs'
+check "JavaScript tests" 'uv run --locked node --test --test-reporter=dot tests/js/*.test.mjs tests/js/lab/*.test.mjs'
 check "Python tests (locked SDK)" 'uv run --locked python -m unittest discover tests'
-check "Python 3.9 (stdlib fallback)" 'uv run --no-project --python 3.9 python -m unittest discover tests'
 check "Sample pictures" 'python3 scripts/draw_samples.py && git add --intent-to-add static/img/samples && git diff --exit-code --stat static/img/samples'
 if [ ${#failed[@]} -gt 0 ]; then
     printf 'boat-check: FAILED: %s\n' "${failed[@]}" >&2
@@ -355,7 +353,7 @@ EOF
 }
 
 # Refresh the warm snapshot from this sandbox once the checks passed: drop the checkouts so it
-# keeps only the toolchain, uv's caches and Python 3.9, the venv and Biome, then wait for this
+# keeps only the toolchain, uv's caches, the venv and Biome, then wait for this
 # save (a new snapshotId under the name) to read ready.
 save_snapshot() {
     local old state="" deadline=$((SECONDS + 600))

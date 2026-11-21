@@ -12,7 +12,7 @@ flowchart LR
     Server --> Checks[Host and POST request checks]
     Checks --> Logic[Demo or Workbench logic]
     Logic -->|state and typed questions| Client[JevClient and SpendGuard]
-    Client --> SDK[TypeSafe SDK or stdlib fallback]
+    Client --> SDK[TypeSafe SDK]
     SDK --> API[Configured TypeSafe API]
     API -->|typed answers and usage| Logic
     Logic -->|composed result and trace| Browser
@@ -35,12 +35,9 @@ loads them as ES modules; there is no build step.
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,
-estimates cost, and checks the local budget and rate window. It uses the official SDK when available
-and a standard-library transport otherwise. Requests with images or Box questions carry TypeSafe's
-images header; the SDK uploads pictures as multipart file parts, and the fallback sends them as
-base64 JSON. Request traces replace image bytes with a short description. Python 3.10+ with locked
-dependencies is the primary setup; Python 3.9's dependency-free fallback is retained for
-compatibility.
+estimates cost, and checks the local budget and rate window. It uses the official SDK on Python 3.10+.
+Requests with images or Box questions carry TypeSafe's images header, and the SDK uploads pictures
+as multipart file parts. Request traces replace image bytes with a short description.
 
 ## Judgments and policy
 
@@ -150,8 +147,8 @@ through an in-memory transport, and checks the HTTP handler over loopback. It ve
 behavior without depending on live model judgments.
 
 [`scripts/validate.py`](../scripts/validate.py) exercises the bundled scenarios using real API
-calls. It reports observations and mismatches for human review; it is not an automated quality
-gate. Its exit status indicates execution errors. Workbench saved expectations provide another
+calls and reports observations and mismatches for human review. With `--strict`, it exits nonzero
+when an expectation is missed or a scenario fails to finish. Workbench saved expectations provide another
 way to compare actual model results over time. [`scripts/check.py`](../scripts/check.py) is a
 gate: it reruns the checks saved with Workbench datasets and exits nonzero when one misses its
 targets, but only on the rows and labels its datasets hold. Its `--drift` mode compares unlabeled rows

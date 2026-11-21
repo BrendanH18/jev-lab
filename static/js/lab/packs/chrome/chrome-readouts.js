@@ -60,7 +60,6 @@ export function spendCsv(spend) {
 
 function backendName(backend) {
   if (backend.startsWith("typesafe-sdk")) return `${backend} (the official TypeSafe SDK)`;
-  if (backend.startsWith("stdlib")) return `${backend} (the built-in standard-library client)`;
   return backend;
 }
 
