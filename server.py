@@ -1196,7 +1196,7 @@ for _route, _handler in lab.routes().items():
 
 CSP = (
     "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
+    "style-src 'self' 'unsafe-inline'; font-src 'none'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
 

@@ -419,3 +419,43 @@ test("tb-sample-sizes: the stratified allocations always add up to the total", (
 
 test("tb-sample-sizes: a design effect of 1 changes nothing", () =>
   near(pack.features.find((f) => f.id === "design_effect").compute({ rows: 100, perGroup: 1, icc: 0.4 })[0][1], 1));
+
+test("tb-sample-sizes: the minimum Neyman total meets the margin when a stratum fills", () => {
+  const strata = "high,250,0.5\nlow,1000,0.01";
+  const planner = pack.features.find((feature) => feature.id === "stratified_total");
+  const allocator = pack.features.find((feature) => feature.id === "stratified_allocation");
+  const [[, total]] = planner.compute({ strata, margin: 0.002, level: 0.95 });
+  const allocation = (total) => allocator.compute({ strata, total }).table.rows.map((row) => row[4]);
+  const margin = ([high, low]) =>
+    1.959963984540054 * Math.sqrt(0.2 ** 2 * 0.25 * (1 / high - 1 / 250) + 0.8 ** 2 * 0.0099 * (1 / low - 1 / 1000));
+
+  assert.equal(total, 1109);
+  assert.deepEqual(allocation(total), [250, 859]);
+  assert.ok(margin(allocation(total)) <= 0.002);
+  assert.ok(margin(allocation(total - 1)) > 0.002);
+});
+
+test("tb-sample-sizes: Neyman allocation samples a small stratum with nonzero spread", () => {
+  const strata = "large,1000,0.5\nsmall,1,0.01";
+  const planner = pack.features.find((feature) => feature.id === "stratified_total");
+  const allocator = pack.features.find((feature) => feature.id === "stratified_allocation");
+  const [[, total]] = planner.compute({ strata, margin: 0.5, level: 0.95 });
+  // The one-row stratum is fully sampled. In the large stratum, 4 rows give a margin of 0.489 and 3 give 0.564.
+  assert.equal(total, 5);
+  assert.deepEqual(
+    allocator.compute({ strata, total }).table.rows.map((row) => row[4]),
+    [4, 1],
+  );
+});
+
+test("tb-sample-sizes: large quotas round without exceeding stratum capacity", () => {
+  const allocator = pack.features.find((feature) => feature.id === "stratified_allocation");
+  const rows = allocator.compute({
+    strata: "small,2251799813685246,0\nlarge,6755399441055744,0",
+    total: 9007199254740990,
+  }).table.rows;
+  for (const [, size, , proportional, neyman] of rows) {
+    assert.equal(proportional, size);
+    assert.equal(neyman, size);
+  }
+});

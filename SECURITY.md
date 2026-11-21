@@ -49,14 +49,14 @@ The server binds to `127.0.0.1`. [`jev/security.py`](jev/security.py) and
 3. A random per-process `X-Jev-Token` required for POST requests, embedded in served pages.
 4. JSON content-type checks on nonempty POST bodies and a 12 MiB request-body limit, which leaves
    room for a few base64-encoded photos.
-5. A Content Security Policy restricting scripts and API connections to the application's origin,
-   plus `nosniff`, `no-store`, and a no-referrer policy.
+5. A Content Security Policy restricting scripts, external stylesheets, and API connections to the
+   application's origin. The UI uses system fonts, so the policy blocks font downloads. Responses
+   also use `nosniff`, `no-store`, and a no-referrer policy.
 6. Static-file resolution confined to the `static/` directory, including resolved symlink targets.
 
 GET requests require an allowed Host but do not require a session token. The server does not send
 CORS permission headers. Its request checks are intended to reduce cross-site request and DNS
-rebinding risks; they are not user authentication. The UI loads fonts from Google Fonts, which
-is allowed by the style and font CSP directives.
+rebinding risks; they are not user authentication.
 
 Do not expose the server through a tunnel, reverse proxy, or network-facing bind. Reload browser
 tabs after restarting so their session tokens match the new process.
