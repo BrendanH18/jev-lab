@@ -19,6 +19,7 @@ def score_rows(rows: Any, option_keys: Any) -> Any:
     if (
         not isinstance(option_keys, list)
         or any(not isinstance(key, str) for key in option_keys)
+        or len(set(option_keys)) != len(option_keys)
         or not isinstance(rows, list)
         or len(rows) > calibrate.MAX_ROWS
     ):
@@ -37,6 +38,8 @@ def score_rows(rows: Any, option_keys: Any) -> Any:
             probabilities = {key(index): value for index, value in entries}
         except (TypeError, ValueError) as err:
             raise WorkbenchError("Invalid compact Compare answer") from err
+        if len(probabilities) != len(entries):
+            raise WorkbenchError("Duplicate option in compact Compare answer")
         return {"type": "choice", "choice": key(choice), "probabilities": probabilities, "confidence": confidence}
 
     return [

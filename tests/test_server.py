@@ -1382,6 +1382,12 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(json.loads(actual), json.loads(expected))
                 status, _, raw = self.request("POST", path, full, headers)
                 self.assertEqual(status, 400, raw)
+            for invalid in (
+                {"rows": compact, "option_keys": [a, a]},
+                {"rows": [{"answers": [[0, [[0, 0.75], [0, 0.25]], None], None]}], "option_keys": option_keys},
+            ):
+                status, _, raw = self.request("POST", path, json.dumps(invalid), headers)
+                self.assertEqual(status, 400, raw)
 
     def test_model_choice_is_checked_against_the_key(self):
         self.addCleanup(server.client.set_model, None)

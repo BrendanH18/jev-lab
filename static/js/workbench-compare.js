@@ -391,8 +391,7 @@ const compareVariants = () =>
   }));
 
 function compareEditorKey() {
-  const variants = W.compare.variants.map((v) => [v.text, v.model.trim(), v.perturb, v.average]);
-  return JSON.stringify([variants, variants.some((v) => !v[1]) ? currentStatus()?.model : null]);
+  return JSON.stringify(W.compare.variants.map((v) => [v.text, v.model.trim(), v.perturb, v.average]));
 }
 
 function compareDraftMatches(request) {
@@ -421,16 +420,10 @@ function updateCompareRetry() {
   $("#compare-retry-reason", host).textContent = changed ? compareRetryChanged : "";
 }
 
-let compareRetryListening = false;
-
 function compareRetryControls() {
   const c = W.compare;
   const count = c.result.retry?.models.filter((model) => model === null).length;
   if (!count) return null;
-  if (!compareRetryListening) {
-    window.addEventListener("jev:status", updateCompareRetry);
-    compareRetryListening = true;
-  }
   const changed = !compareDraftMatches(c.runRequest);
   return h(
     "div",
@@ -475,12 +468,18 @@ async function runCompare() {
     return toast(e.message, "error");
   }
   const previous = c.result;
+  const usesDefault = request.body.variants.some((variant) => !variant.model);
+  const defaultModel = currentStatus()?.model;
   c.running = "compare";
   render();
   let done = false;
   try {
     if (!(await confirmSpend(api, "compare", request.body))) return;
-    if (c.result !== previous || !compareDraftMatches(request))
+    if (
+      c.result !== previous ||
+      !compareDraftMatches(request) ||
+      (usesDefault && currentStatus()?.model !== defaultModel)
+    )
       return toast("The comparison changed. Run both variants again.", "error");
     const result = await api("/api/workbench/compare", request.body);
     if (c.result !== previous) return toast("The earlier comparison finished. Its calls counted toward the budget.");

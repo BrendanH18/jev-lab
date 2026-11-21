@@ -264,7 +264,10 @@ test("Compare blocks a stale retry before spend and serializes paid clicks", asy
   assert.match(x.errors[0], /comparison changed/);
   x.W.compare.variants[1].average = true;
   x.statuses.model = "jev-1.15.0";
-  assert.equal(x.compareRetryBody(), null, "the earlier comparison used a different default model");
+  assert.deepEqual(
+    x.compareRetryBody().variants.map((v) => v.model),
+    ["jev-latest", "jev-latest"],
+  );
 });
 
 test("Compare preserves the previous report if retry fails", async () => {
