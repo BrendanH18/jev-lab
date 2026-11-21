@@ -95,7 +95,9 @@ one long-lived sandbox instead.
   `--status` shows it without starting anything.
 - When the next start would cost money (Boat's `nextStartDollars`), none are left, or `boat limits` can't be read, the
   script stops (exit 3) rather than start a sandbox; say what still needs a Boat run instead of retrying.
-  `JEV_BOAT_PAID_START=1` allows a paid start, only when the owner says so. It creates with `--fail-fast` and retries for about a minute when no machine is ready.
+  `JEV_BOAT_PAID_START=1` allows a paid start, only when the owner says so. It creates and resumes with `--fail-fast`
+  and retries for about a minute when no machine is ready, or when a resume finds Boat still finishing an earlier
+  resume ("resume already in progress") or a stop.
 - `scripts/boat-check.sh --save` runs the checks and then saves the sandbox as `jev-lab-warm`, without the checkouts.
   Refresh it after `uv.lock`, `package-lock.json` or the Node or Python toolchain changes.
 - Check sandboxes carry no credentials (owner decision, 2026-11-21): the script creates them with `--no-env`, so they

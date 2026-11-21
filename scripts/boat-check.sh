@@ -119,6 +119,7 @@ fi
 ensure_sandbox
 ran=1
 boat extend "$id" --ttl "$max_run" --json >/dev/null
+wait_hydrated "$id"
 # Keep pushing the auto-stop deadline while the check runs, however long it takes; cleanup
 # stops this and sets the idle timer.
 (
@@ -160,12 +161,15 @@ set -e
 save_snapshot
 }
 
-# Prints the sandbox's API state (ready, idle, running, archiving, archived, provisioning, ...),
-# or "gone" when Boat no longer has it. Fails on any other error.
+# Prints the sandbox's state under the CLI's names (provisioning, starting, cloning, ready, idle,
+# running, stopping, stopped, error), or "gone" when Boat no longer has it. Fails on any other
+# error. `boat info` prints the CLI names; the API's (provisioned, archiving, archived) are
+# mapped to them in case a Boat version prints those instead.
 sandbox_state() {
     local out code
     if out=$(boat info "$1" --json 2>&1); then
-        printf '%s\n' "$out" | jq -r '(.sandbox // .) | .state // "unknown"' 2>/dev/null || echo unknown
+        printf '%s\n' "$out" | jq -r '(.sandbox // .) | .state // "unknown" |
+            {provisioned: "starting", archiving: "stopping", archived: "stopped"}[.] // .' 2>/dev/null || echo unknown
         return 0
     fi
     code=$(error_code "$out")
@@ -186,7 +190,7 @@ need_start() {
     limits=$(boat limits --json 2>/dev/null) &&
         # Boat reports the next start's price, or null when it isn't billed; anything else, or
         # no such field, is an answer the script doesn't understand.
-        price=$(printf '%s\n' "$limits" | jq -er 'select(has("nextStartDollars")) | .nextStartDollars | if . == null then 0 else numbers end') &&
+        price=$(printf '%s\n' "$limits" | jq -er 'select(has("nextStartDollars")) | .nextStartDollars | if . == null then 0 else numbers end' 2>/dev/null) &&
         full=$(printf '%s\n' "$limits" | jq -r '.startWindowFull.short // .startWindowFull.message // (if .startWindowFull then "The included starts are used up." else "" end)') || {
         echo "boat-check: couldn't read boat limits, so $1 isn't started; try again" >&2
         exit 3
@@ -211,26 +215,56 @@ wait_state() { # wait_state ID: until the sandbox leaves a transitional state; p
     local s deadline=$((SECONDS + 300))
     while :; do
         s=$(sandbox_state "$1") || return 1
-        case "$s" in provisioning | provisioned | cloning | archiving) ;; *) echo "$s"; return 0 ;; esac
+        case "$s" in provisioning | starting | cloning | stopping) ;; *) echo "$s"; return 0 ;; esac
         [ "$SECONDS" -lt "$deadline" ] || { echo "$s"; return 0; }
         sleep 5
     done
 }
 
+# After a create from a snapshot or a resume, Boat downloads the disk in the background, and when
+# that ends it replaces the directories written before then: a check already running in its fresh
+# checkout loses its working directory ("Current directory does not exist"). So nothing is pushed
+# until the sandbox reports hydrated (a sandbox that started from nothing has nothing to download).
+wait_hydrated() {
+    local h deadline=$((SECONDS + 600)) said=""
+    while :; do
+        h=$(boat info "$1" --json 2>/dev/null | jq -r '(.sandbox // .) | .hydrated != false' 2>/dev/null) || h=""
+        [ "$h" != true ] || return 0
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "boat-check: $1 is still downloading its disk after 10 minutes; try again later" >&2
+            exit 1
+        fi
+        [ -n "$said" ] || { echo "boat-check: waiting for $1 to finish downloading its disk" >&2; said=1; }
+        sleep 3
+    done
+}
+
 # boat_start CMD...: a sandbox start (new or resume) with --fail-fast, retried for about a minute
-# while Boat has no ready machine; a start refused that way doesn't count against the limits.
+# while Boat has no ready machine; a start refused that way creates nothing and doesn't count
+# against the limits. A resume refused that way can stay half-done for a moment, and Boat answers
+# the next attempt with "resume already in progress" (or sandbox_stopping while a stop finishes),
+# which a retry waits out too. A create that finds no machine leaves nothing behind, so only
+# resumes get those answers.
 boat_start() {
-    local out attempt=1
+    local out attempt=1 why
     while :; do
         if out=$("$@" --fail-fast --json 2>&1); then
             printf '%s\n' "$out"
             return 0
         fi
-        if [ "$(error_code "$out")" != no_ready_machine ] || [ "$attempt" -ge 6 ]; then
+        case "$(error_code "$out")" in
+            no_ready_machine) why="Boat has no ready machine" ;;
+            sandbox_stopping) why="the sandbox is still stopping" ;;
+            *) case "$out" in
+                *"already in progress"*) why="Boat is still finishing an earlier resume" ;;
+                *) why="" ;;
+            esac ;;
+        esac
+        if [ -z "$why" ] || [ "$attempt" -ge 6 ]; then
             printf '%s\n' "$out"
             return 1
         fi
-        echo "boat-check: Boat has no ready machine; retrying in 10 s ($attempt/5)" >&2
+        echo "boat-check: $why; retrying in 10 s ($attempt/5)" >&2
         attempt=$((attempt + 1))
         sleep 10
     done
@@ -242,15 +276,19 @@ ensure_sandbox() {
         s=$(wait_state "$id") || exit 1
         case "$s" in
             ready | idle | running) return 0 ;;
-            archived | error)
+            stopped | error)
                 need_start "resuming $id"
                 echo "boat-check: resuming $id" >&2
-                out=$(boat_start boat resume "$id" --ttl "$((idle + max_run))") || {
-                    echo "boat-check: resuming $id failed:" >&2
-                    printf '%s\n' "$out" | tail -n 5 >&2
-                    exit 1
-                }
-                return 0 ;;
+                out=$(boat_start boat resume "$id" --ttl "$((idle + max_run))") && return 0
+                # The half-done resume behind "already in progress" may have finished after all.
+                s=$(wait_state "$id") || exit 1
+                case "$s" in ready | idle | running)
+                    echo "boat-check: $id is $s after all" >&2
+                    return 0 ;;
+                esac
+                echo "boat-check: resuming $id failed ($s):" >&2
+                printf '%s\n' "$out" | tail -n 5 >&2
+                exit 1 ;;
             gone)
                 echo "boat-check: $id is gone; creating a new sandbox" >&2
                 rm -f "$statefile"
