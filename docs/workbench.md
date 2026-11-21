@@ -1567,7 +1567,8 @@ uses that version. Compare keeps incompatible answers out of the report and coun
 attempts.
 
 When a row has answers from both variants, the paired report and its slice scores include it on
-the same terms as the original run. Retry results live in the current Workbench session.
+the same terms as the original run. Retries use the current server session and its remaining budget.
+A server restart starts a new session.
 
 ### Order check
 
@@ -1869,7 +1870,7 @@ labeling panel or its CSV/draft handoff uses the full eligible snapshot rather t
 | `POST /api/workbench/dataset-edits/apply` | Same preview request plus `token` | Edited rows for the browser, never saved |
 | `POST /api/workbench/datasets/agreement/session/export` | `id`, `context`, sampled `rows`, `seed`, human `items`, `settlements` | Portable human-edit session |
 | `POST /api/workbench/datasets/agreement/session/import` | `id`, `session` | Blind sample, validated human edits and preview counts |
-| `POST /api/workbench/compare/retry` | Original `rows` and `variants` with each model set to the report's requested model, the prior `retry` receipt, optional `field` | Updated call outcomes and a fresh receipt if calls are still missing. Use the same body with `kind: "compare_retry"` at `/api/workbench/estimate` for an upper bound. |
+| `POST /api/workbench/compare/retry` | Original `rows` and `variants` with each model set to the report's requested model, the prior `retry` receipt, and the original `field` if it differs from `text` | Updated call outcomes and a fresh receipt if calls are still missing. Use the same body with `kind: "compare_retry"` at `/api/workbench/estimate` for an upper bound. |
 | `POST /api/workbench/compare/slices` | Answer `rows` with original inputs, optional `field`, `signal`, `first`, `bound` | Successful-pair scores by input value |
 | `POST /api/workbench/compare/labeling` | Original `rows`, A's `questions`, disagreement `indices`, `qid` | Blank prelabel queue at original row positions |
 

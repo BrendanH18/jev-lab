@@ -468,18 +468,16 @@ async function runCompare() {
     return toast(e.message, "error");
   }
   const previous = c.result;
-  const usesDefault = request.body.variants.some((variant) => !variant.model);
-  const defaultModel = currentStatus()?.model;
   c.running = "compare";
   render();
   let done = false;
   try {
+    if (request.body.variants.some((variant) => !variant.model)) {
+      const model = currentStatus()?.model || (await api("/api/status")).model;
+      request.body.variants = request.body.variants.map((variant) => ({ ...variant, model: variant.model || model }));
+    }
     if (!(await confirmSpend(api, "compare", request.body))) return;
-    if (
-      c.result !== previous ||
-      !compareDraftMatches(request) ||
-      (usesDefault && currentStatus()?.model !== defaultModel)
-    )
+    if (c.result !== previous || !compareDraftMatches(request))
       return toast("The comparison changed. Run both variants again.", "error");
     const result = await api("/api/workbench/compare", request.body);
     if (c.result !== previous) return toast("The earlier comparison finished. Its calls counted toward the budget.");

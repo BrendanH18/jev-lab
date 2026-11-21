@@ -115,6 +115,12 @@ function retryHarness({ confirmSpend = async () => true, retry, wide = false } =
 test("Compare retries the frozen request and rescoring keeps the current question and slice", async () => {
   const x = retryHarness();
   await x.runCompare();
+  const [initialPreview, initialPaid] = x.requests;
+  assert.equal(initialPreview.data, initialPaid.data);
+  assert.deepEqual(
+    initialPaid.data.variants.map((v) => v.model),
+    ["jev-latest", "jev-latest"],
+  );
   x.W.compare.sliceField = "channel";
   x.W.compare.qid = "other"; // This question has no labels, while q does.
   await x.retryCompare();
