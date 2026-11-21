@@ -60,18 +60,29 @@ if [ "$mode" = status ]; then
     exit 0
 fi
 
-# One boat-check at a time per worktree: they share its sandbox.
-lock="$gitdir/jev-lab-boat.lock"
-if ! mkdir "$lock" 2>/dev/null; then
-    other=$(cat "$lock/pid" 2>/dev/null || true)
-    if [ -n "$other" ] && kill -0 "$other" 2>/dev/null; then
-        echo "boat-check: another boat-check (pid $other) is using this worktree's sandbox; wait for it" >&2
-        exit 2
+# One boat-check at a time per worktree: they share its sandbox. The lock is a symlink whose
+# target is the holder's pid, so it is created with its owner in one atomic step.
+lock="$gitdir/jev-lab-boat-lock"
+busy() {
+    echo "boat-check: another boat-check${1:+ (pid $1)} is using this worktree's sandbox; wait for it" >&2
+    exit 2
+}
+if ! ln -s "$$" "$lock" 2>/dev/null; then
+    other=$(readlink "$lock" 2>/dev/null || true)
+    case "$other" in '' | *[!0-9]*) busy ;; esac
+    ! kill -0 "$other" 2>/dev/null || busy "$other"
+    # Its holder is gone. Take the lock over by renaming it, which only one process can do,
+    # and only if the link renamed is still that stale one; put back a link that isn't.
+    stale="$lock.stale.$$"
+    mv "$lock" "$stale" 2>/dev/null || busy
+    if [ "$(readlink "$stale" 2>/dev/null || true)" != "$other" ]; then
+        ln -s "$(readlink "$stale")" "$lock" 2>/dev/null || true
+        rm -f "$stale"
+        busy
     fi
-    rm -rf "$lock"
-    mkdir "$lock"
+    rm -f "$stale"
+    ln -s "$$" "$lock" 2>/dev/null || busy
 fi
-echo $$ >"$lock/pid"
 id=$(cat "$statefile" 2>/dev/null || true)
 ran=0
 cleanup() {
@@ -82,7 +93,7 @@ cleanup() {
         boat extend "$id" --ttl "$idle" --json >/dev/null 2>&1 ||
             echo "boat-check: couldn't reset the auto-stop timer of $id: boat extend $id --ttl $idle" >&2
     fi
-    rm -rf "$lock"
+    [ "$(readlink "$lock" 2>/dev/null || true)" != "$$" ] || rm -f "$lock"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -99,12 +110,13 @@ case "$mode" in
         exit 0 ;;
 esac
 
-# Saved Workbench tests and pictures are pushed when untracked and may hold real inputs
-# (AGENTS.md). Committed ones are already public.
-untracked=$(git ls-files --others --exclude-standard -- data/workbench)
-if [ -n "$untracked" ]; then
-    echo "boat-check: untracked files under data/workbench/ would be copied to Boat:" >&2
-    echo "$untracked" | sed 's/^/  /' >&2
+# Saved Workbench tests and pictures are pushed as they are in the worktree and may hold real
+# inputs (AGENTS.md), so anything there that isn't committed (untracked, staged or modified)
+# stops the run. Committed ones are meant to be public.
+uncommitted=$(git status --porcelain --untracked-files=all -- data/workbench)
+if [ -n "$uncommitted" ]; then
+    echo "boat-check: uncommitted files under data/workbench/ would be copied to Boat:" >&2
+    echo "$uncommitted" | sed 's/^/  /' >&2
     echo "boat-check: commit them if they are fictional fixtures, or move them out of the worktree" >&2
     exit 2
 fi
@@ -237,10 +249,11 @@ ensure_sandbox() {
     # --no-env: no GitHub token, agent logins or API keys (the offline checks need none, and so can
     # make no paid call), so the sandbox can also become the shared snapshot.
     out=$(boat_start boat new --no-env --type "$type" --ttl "$((idle + max_run))" --name "$name" ${from[@]+"${from[@]}"}) || true
-    id=$(printf '%s\n' "$out" | jq -r 'select(.event == "ready") | .id // empty' 2>/dev/null | head -n 1)
+    # || true: output that isn't JSON (an auth or network error) must still reach the report below.
+    id=$(printf '%s\n' "$out" | jq -r 'select(.event == "ready") | .id // empty' 2>/dev/null | head -n 1) || true
     if [ -z "$id" ]; then
         local any
-        any=$(printf '%s\n' "$out" | jq -r '.id // empty' 2>/dev/null | head -n 1)
+        any=$(printf '%s\n' "$out" | jq -r '.id // empty' 2>/dev/null | head -n 1) || true
         [ -z "$any" ] || echo "$any" >"$statefile"
         echo "boat-check: creating the sandbox failed:" >&2
         printf '%s\n' "$out" | tail -n 5 >&2
