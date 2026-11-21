@@ -239,15 +239,18 @@ wait_hydrated() {
     done
 }
 
-# boat_start CMD...: a sandbox start (new or resume) with --fail-fast, retried for about a minute
+# boat_start WHAT CMD...: a sandbox start (new or resume) with --fail-fast, retried for about a minute
 # while Boat has no ready machine; a start refused that way creates nothing and doesn't count
 # against the limits. A resume refused that way can stay half-done for a moment, and Boat answers
 # the next attempt with "resume already in progress" (or sandbox_stopping while a stop finishes),
 # which a retry waits out too. A create that finds no machine leaves nothing behind, so only
-# resumes get those answers.
+# resumes get those answers. Each retry checks the limits again (another project may have used the
+# last included start meanwhile) and exits 3 when need_start refuses.
 boat_start() {
-    local out attempt=1 why
+    local what=$1 out attempt=1 why
+    shift
     while :; do
+        [ "$attempt" = 1 ] || need_start "$what"
         if out=$("$@" --fail-fast --json 2>&1); then
             printf '%s\n' "$out"
             return 0
@@ -256,7 +259,7 @@ boat_start() {
             no_ready_machine) why="Boat has no ready machine" ;;
             sandbox_stopping) why="the sandbox is still stopping" ;;
             *) case "$out" in
-                *"already in progress"*) why="Boat is still finishing an earlier resume" ;;
+                *"resume already in progress"*) why="Boat is still finishing an earlier resume" ;;
                 *) why="" ;;
             esac ;;
         esac
@@ -279,7 +282,8 @@ ensure_sandbox() {
             stopped | error)
                 need_start "resuming $id"
                 echo "boat-check: resuming $id" >&2
-                out=$(boat_start boat resume "$id" --ttl "$((idle + max_run))") && return 0
+                out=$(boat_start "resuming $id" boat resume "$id" --ttl "$((idle + max_run))") && return 0
+                [ "$?" != 3 ] || exit 3
                 # The half-done resume behind "already in progress" may have finished after all.
                 s=$(wait_state "$id") || exit 1
                 case "$s" in ready | idle | running)
@@ -307,8 +311,9 @@ ensure_sandbox() {
     fi
     # --no-env: no GitHub token, agent logins or API keys (the offline checks need none, and so can
     # make no paid call), so the sandbox can also become the shared snapshot.
-    out=$(boat_start boat new --no-env --type "$type" --ttl "$((idle + max_run))" --name "$name" ${from[@]+"${from[@]}"}) || true
-    # || true: output that isn't JSON (an auth or network error) must still reach the report below.
+    out=$(boat_start "creating this worktree's sandbox" boat new --no-env --type "$type" --ttl "$((idle + max_run))" --name "$name" ${from[@]+"${from[@]}"}) ||
+        { [ "$?" != 3 ] || exit 3; }
+    # Any other failure goes on: output that isn't JSON (an auth or network error) must reach the report below.
     id=$(printf '%s\n' "$out" | jq -r 'select(.event == "ready") | .id // empty' 2>/dev/null | head -n 1) || true
     if [ -z "$id" ]; then
         local any
