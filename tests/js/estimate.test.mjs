@@ -136,6 +136,34 @@ test("a second paid click while a preview is on its way does not start a second 
   );
 });
 
+test("Compare retry previews retain only the latest selection and confirm on a fresh estimate", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const requests = [];
+  const api = async (_path, body) => {
+    requests.push(body.positions);
+    return est();
+  };
+  let el;
+  const preview = (position) => {
+    if (el) el.isConnected = false;
+    el = estimateLine(
+      () => ({ isConnected: true, style: {} }),
+      api,
+      "compare_retry",
+      () => ({ positions: [position] }),
+    );
+    t.mock.timers.tick(400);
+  };
+  preview(1);
+  preview(2);
+  preview(2);
+  preview(1);
+  assert.deepEqual(requests, [[1], [2], [1]]);
+  await confirmSpend(api, "compare_retry", { positions: [1] });
+  assert.deepEqual(requests, [[1], [2], [1], [1]]);
+  el.isConnected = false;
+});
+
 test("estimateLine builds a quiet line and tolerates inputs that are not ready", () => {
   const h = (tag, attrs, ...children) => ({ tag, attrs, children, style: {}, textContent: "", title: "" });
   const el = estimateLine(

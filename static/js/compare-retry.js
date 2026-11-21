@@ -3,6 +3,33 @@ import { median } from "./lab/lib/math.js";
 
 const usage = ["input_tokens", "output_tokens", "cost_usd"];
 
+function callWidths(variants) {
+  return variants.map((v) => (v.average_orders ? 2 : 1));
+}
+
+export function comparePendingCalls(result) {
+  if (!result?.retry) return [];
+  const [a, b] = callWidths(result.variants);
+  const width = a + b;
+  return result.retry.models.flatMap((model, position) => {
+    if (model !== null) return [];
+    const row = Math.floor(position / width);
+    const offset = position % width;
+    const variant = offset < a ? 0 : 1;
+    const pass = variant ? offset - a : offset;
+    const order = pass ? "reversed" : result.variants[variant].average_orders ? "listed" : null;
+    return [
+      {
+        position,
+        rowNumber: result.source_row_numbers?.[row] ?? row + 1,
+        variant,
+        order,
+        error: result.calls[position].error,
+      },
+    ];
+  });
+}
+
 // Share Choice option names across the two variants and all rows sent for scoring.
 export function compareScorePayload(rows) {
   const keys = new Map();
@@ -123,7 +150,7 @@ function updateAgreement(entries, touched, variants) {
 
 export function mergeCompareRetry(previous, attempt) {
   const calls = previous.calls.slice();
-  const [a, b] = previous.variants.map((v) => (v.average_orders ? 2 : 1));
+  const [a, b] = callWidths(previous.variants);
   const width = a + b;
   const touched = new Set();
   const updated = new Set();
