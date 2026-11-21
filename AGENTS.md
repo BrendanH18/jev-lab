@@ -60,7 +60,7 @@ out of Biome.
 
 `tests/test_server.py` binds a loopback port, so inside a restricted agent sandbox (not Boat) the
 server tests fail with `PermissionError`. To exercise CI's stdlib-fallback path (Python 3.9 without
-the SDK), use the 3.9 command in the Boat section below.
+the SDK), use the 3.9 command in the Boat section below (`scripts/boat-check.sh` runs it).
 
 Needs a `TYPESAFE_API_KEY` (get one at console.typesafe.ai) to make live calls; the offline test
 suite does not need one. The official `typesafe-sdk` is used on Python ≥3.10; a hand-rolled stdlib
@@ -76,20 +76,71 @@ test job to its `needs`.
 ## Cloud sandboxes (Boat)
 
 Use a Boat sandbox for builds, tests, untrusted code, Docker, and long jobs. Never run them on this computer.
-Docs: https://docs.boat.dev/llms.txt. Prices and limits: run `boat limits`; never quote prices from memory.
+Docs: https://docs.boat.dev/llms.txt. Prices and limits: run `boat limits` before any Boat command that starts a
+sandbox; never quote prices from memory.
 
-- Create: `id=$(boat new --json | jq -r 'select(.event=="ready") | .id')`
-- One-shot job: `boat run --push . -- npm test` (new sandbox, run, cost, delete; exits with the test exit code)
-- Run: `boat exec "$id" --cwd my-app "npm test"` (30 s timeout; `--timeout 0` = no limit)
-- Server: `boat exec "$id" --detach "npm run dev"`, then `boat exec "$id" --status <pid>`
-- Copy files: `boat push "$id" ./my-app` (git-tracked files, to /home/user/my-app) or clone the repo inside the sandbox
-- Public URL for a port: `boat ssh "$id" "host 3000 --private"`
-- Always pass the sandbox id. `current` does not work in a non-interactive shell.
-- When done: `boat stop "$id"` (keeps the disk for at least 14 days) or `boat delete "$id" --yes` (erases it)
+**Hand-off checks: `scripts/boat-check.sh`.** Owner decision, 2026-11-21: the account's sandbox starts (200 a day,
+shared by all the owner's projects) ran out when every check used its own `boat run` sandbox, so each worktree reuses
+one long-lived sandbox instead.
+
+- `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests, the locked-SDK
+  suite, the Python 3.9 stdlib fallback, the sample pictures), all of them even when one fails, and exits nonzero
+  if any failed. It runs the locked-SDK suite on the sandbox's Python 3.12 only; CI's 3.10–3.14 matrix stays the
+  authority for version-specific failures. `scripts/boat-check.sh -- CMD` runs one command instead, e.g.
+  `scripts/boat-check.sh -- uv run --locked python -m unittest tests.test_workbench`.
+- The first run in a worktree creates its sandbox from the saved snapshot `jev-lab-warm` (uv, Node 22, uv's
+  Python 3.9, the locked venv and Biome preinstalled), or cold when that isn't ready. Later runs reuse it: each
+  pushes the worktree into a fresh directory and runs there with `boat exec --timeout 0`, at no start.
+- The sandbox's id lives in this worktree's git directory. Never share a sandbox between agents or worktrees, and
+  never pass its id to another agent.
+- It stops by itself 45 minutes after the last check (`JEV_BOAT_IDLE`), and a check keeps it running however long
+  the check takes; the next check resumes it, which costs one
+  start. Run `scripts/boat-check.sh --done` when your work in the worktree ends: it deletes the sandbox.
+  `--status` shows it without starting anything.
+- When the next start would cost money (Boat's `nextStartDollars`), none are left, or `boat limits` can't be read, the
+  script stops (exit 3) rather than start a sandbox; say what still needs a Boat run instead of retrying.
+  `JEV_BOAT_PAID_START=1` allows a paid start, only when the owner says so. It creates with `--fail-fast` and retries for about a minute when no machine is ready.
+- `scripts/boat-check.sh --save` runs the checks and then saves the sandbox as `jev-lab-warm`, without the checkouts.
+  Refresh it after `uv.lock`, `package-lock.json` or the Node or Python toolchain changes.
+- Check sandboxes carry no credentials (owner decision, 2026-11-21): the script creates them with `--no-env`, so they
+  get no GitHub token, agent logins or API keys, and the offline suite can make no paid call.
+- Use plain `boat run --no-env --from jev-lab-warm --push . -- CMD` only for a genuine one-off that shouldn't touch
+  your worktree's sandbox; it costs a start. It pushes the worktree without the script's guard, so first make sure
+  `git status --porcelain --untracked-files=all -- data/workbench` prints nothing.
+
+**Live runs** (`scripts/validate.py`, `scripts/check.py` making model calls). Owner decision, 2026-11-21: a live run
+gets its own sandbox from the Boat environment `jev-lab-live`, which injects only its own variables
+(`TYPESAFE_API_KEY`) and no GitHub, agent or Boat credentials. Create one only when the owner asks for a live run,
+never reuse the check sandbox, and delete it afterwards. Push only committed files, so no uncommitted Workbench
+inputs go along, and let a trap delete the sandbox even when the run fails or is interrupted:
+
+```sh
+(
+  set -eu
+  src=$(mktemp -d) id=""
+  trap 'if [ -n "$id" ]; then boat delete "$id" --yes; fi; rm -rf "$src"' EXIT
+  trap 'exit 130' INT TERM
+  git archive HEAD | tar -x -C "$src"
+  id=$(boat new --environment jev-lab-live --name jev-lab-live-validate --fail-fast --json | jq -r '.id // empty' | head -n 1)
+  boat push "$id" "$src" --to /home/user/jev-lab
+  boat exec "$id" --timeout 0 "cd /home/user/jev-lab && uv run --locked scripts/validate.py"
+)
+```
+
+Agents never read key values from `.env` or pass them on the command line, and never copy `.env` into a sandbox
+(`boat push` skips it because it's gitignored).
+
+Other Boat rules:
+
+- Name every sandbox you create by hand `jev-lab-<purpose>` (owner decision, 2026-11-21): the owner's projects share
+  one Boat account, and Boat's default "Box <date>" names can't be traced to a project. Pass `--name` to `boat new`;
+  `boat run` has no `--name`, so rename a `boat run --keep` sandbox right away with `boat rename <id> jev-lab-<purpose>`.
+  Never leave one unnamed. `scripts/boat-check.sh` already names its sandboxes `jev-lab-check-<worktree>`.
+- Run: `boat exec "$id" "CMD"` (30 s timeout; `--timeout 0` = no limit). Server: `boat exec "$id" --detach "CMD"`,
+  then `boat exec "$id" --status <pid>`. Always pass the sandbox id; `current` does not work in a non-interactive shell.
 - `server.py` binds 127.0.0.1 and accepts only loopback Host names (`jev/security.py`). To see the UI, run it in the sandbox and use the sandbox's desktop Chrome, or `boat forward` the port to the same port on this Mac. Never expose it with `boat host` or the in-sandbox `host`, and never widen the allow-list or the bind address.
-- Saved Workbench datasets (`data/workbench/datasets/`, with their `.history/` revisions) are gitignored, so `boat push` leaves them out. Saved tests (`data/workbench/*.json`) and pictures (`data/workbench/images/`) are not, so `boat push` copies them even when untracked; when they hold real inputs, clone the repo inside the sandbox instead. Don't copy real input rows, labels or pictures into a sandbox; give live checks there only synthetic or approved datasets.
-- Live runs (`scripts/validate.py`, `scripts/check.py`) need `TYPESAFE_API_KEY`: pass only that key, with `boat new -e` or `boat run -e`, and never copy `.env` into a sandbox. `boat push` already skips it because it's gitignored.
-- Boat's `python3` is 3.12, not 3.9. Exercise the stdlib fallback with `uv run --no-project --python 3.9 python -m unittest discover tests`.
+- Saved Workbench datasets (`data/workbench/datasets/`, with their `.history/` revisions) are gitignored, so `boat push` leaves them out. Saved tests (`data/workbench/*.json`) and pictures (`data/workbench/images/`) are not, so `boat push` copies them even when untracked; `scripts/boat-check.sh` refuses to push uncommitted ones (untracked, staged or modified). When they hold real inputs, clone the repo inside the sandbox instead. Don't copy real input rows, labels or pictures into a sandbox; give live checks there only synthetic or approved datasets.
+- Boat's `python3` is 3.12, not 3.9. The hand-off checks exercise the stdlib fallback with `uv run --no-project --python 3.9 python -m unittest discover tests`.
 
 ## Architecture
 
@@ -268,7 +319,8 @@ and download, Paste to import, Commands, Tools, panels), the Workbench's Toolbox
   packs or features; fixes and deletions only. The Python 3.9 stdlib fallback is being removed, so
   don't extend it.
 - Never store `TYPESAFE_API_KEY` (or any model key) as a GitHub secret, and never make live model calls
-  in CI. Live checks (`scripts/validate.py`, `scripts/check.py`) run by hand on Boat.
+  in CI. Live checks (`scripts/validate.py`, `scripts/check.py`) run by hand on Boat, in a `jev-lab-live` sandbox
+  (see the Boat section).
 - Use system fonts. Add no web fonts, CDNs or other third-party requests to the app (the Google Fonts
   import is being removed).
 - Python: no type-checker is configured, but signatures are typed; `from __future__ import

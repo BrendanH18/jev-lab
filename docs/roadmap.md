@@ -141,7 +141,7 @@ bug #91 and Dependabot PR #86.
   If the survivors fit naturally in their panels, fold them in and retire the Lab layer altogether.
 - **Live checks stay manual (D3).** There is no API key in GitHub and no live job in CI. Any PR that
   changes demo wording, thresholds, examples or the model runs `scripts/validate.py --strict` on Boat,
-  passing only `TYPESAFE_API_KEY` with `boat run -e`. The PR description records the revision, the
+  in its own sandbox from the `jev-lab-live` environment (D7). The PR description records the revision, the
   version that answered, pass and miss counts, and spend. The same run compares `GET /v1/models` with
   `ALIASES` and the price table in `jev/client.py`, and fails when a Jev version appears that the code
   doesn't know about.
@@ -232,3 +232,12 @@ Made by the maintainer on 2026-11-21.
   (December).
 - **D5. Prune Lab really hard.** Keep at most about 10% of packs, or fold the survivors into their
   panels (January, with a second pass in April).
+- **D6. One reused Boat sandbox per worktree.** Hand-off checks run through `scripts/boat-check.sh`, which
+  creates one long-lived sandbox per worktree from the `jev-lab-warm` snapshot and reuses it, instead of a
+  new `boat run` sandbox per check. The account's 200 daily starts are shared by every project and ran out
+  on 2026-11-21. Check sandboxes carry no credentials (`--no-env`).
+- **D7. Live runs use the `jev-lab-live` Boat environment.** It injects only `TYPESAFE_API_KEY`, with no
+  GitHub, agent or Boat credentials. A live run gets its own sandbox, only when the maintainer asks, and it
+  is deleted afterwards. Agents never read keys from `.env` or pass them on the command line.
+- **D8. Name every hand-made Boat sandbox `jev-lab-<purpose>`.** `boat new` gets `--name`, and a kept `boat run`
+  sandbox is renamed at once, so sandboxes on the shared account can be traced to this project.
