@@ -2,7 +2,8 @@
 
 Written 2026-11-20 at `d857cba` (#94). It combines three independent audits of the repository: Claude
 Opus 5.5 (author), GPT-6.2 Sol and Gemini 4 Neon. Each reviewer measured the code on its own and none
-saw the others' conclusions. Every number below was rechecked against this checkout.
+saw the others' conclusions. Every number below was rechecked against this checkout. The maintainer's
+decisions of 2026-11-21 (see [Decisions](#decisions)) are folded into the plan.
 
 ## In one paragraph
 
@@ -84,9 +85,10 @@ bug #91 and Dependabot PR #86.
 | Topic | Sol | Neon | Resolution in this plan |
 | --- | --- | --- | --- |
 | New demos | Stop entirely | Add 1–2 in March | None until the live gate exists; at most one in May, and only if it's green |
-| Browser tests | Smoke paths in Boat | Playwright in CI | Needs your approval for a dev-only dependency (decision D1) |
-| Lab | Freeze; retire controls based on observed friction | Freeze, lazy-load, prune to ~20–30% | Freeze now, lazy-load in Jan, prune by stated criteria in Apr |
-| Python 3.9 fallback | Keep | Drop (3.9 is EOL; `pyproject.toml` already needs ≥3.10) | Your call (D2) |
+| Browser tests | Smoke paths in Boat | Playwright in CI | Playwright in CI, approved (D1) |
+| Lab | Freeze; retire controls based on observed friction | Freeze, lazy-load, prune to ~20–30% | Freeze now and prune harder than either in January: keep ≤10% (D5) |
+| Python 3.9 fallback | Keep | Drop (3.9 is EOL; `pyproject.toml` already needs ≥3.10) | Drop in December (D2) |
+| Live checks in CI | Strict mode, run on Boat | Scheduled CI job | No key in GitHub: strict runs stay manual on Boat (D3) |
 | Main measure of success | 4 of 5 newcomers finish unaided | Load size, AGENTS.md size, browser coverage | Both. The newcomer test is run informally, since there is no user panel |
 
 ## Principles for this cycle
@@ -112,32 +114,51 @@ bug #91 and Dependabot PR #86.
 - Add `scripts/validate.py --strict`: exit non-zero when a scenario misses its expectation or doesn't
   finish.
 - Merge or close #86. Fix the stale dataset wording in `docs/architecture.md` and `docs/workbench.md`.
+- **Drop the Python 3.9 stdlib fallback (D2).** Delete the `urllib` backend in `jev/client.py` so the
+  official SDK is the only client, remove the 3.9 CI job from `test.yml` and from `All tests passed`'s
+  `needs`, and update AGENTS.md, README and CONTRIBUTING.
+- **Use system fonts (D4).** Remove the Google Fonts `@import` from `static/css/app.css`, switch to a
+  system font stack, take both font hosts out of the CSP (`server.py:1199`) and update `SECURITY.md:58`.
+  The local app then makes no third-party requests.
 - **Restructure `AGENTS.md`.** Reduce the 233 lines of Workbench boundaries to about ten general
   invariants: never persist or replay answers; labels and `_test` markers never reach the model; held-out
   rows never leak; preview before any write; a paid run and its estimate use the same explicit selection;
   filters change presentation only; duplicate inputs share one identity. Move the per-feature detail into
   a tracked `docs/workbench-invariants.md` that AGENTS.md links to. Target: under 250 lines.
 
-### January: a live release check and a fast load (P0)
+### January: prune Lab hard, a manual live check and a fast load (P0)
 
-- Add a `workflow_dispatch` job (plus a weekly schedule if you approve, D3) on a Namespace runner. It
-  runs `validate.py --strict` against the synthetic scenarios and publishes a job summary with the
-  revision, the answering model version, pass and miss counts, and spend. Raw answers stay in the run's
-  artifacts and never go into the repo. Each run costs well under $0.01.
-- Check alias freshness: compare `GET /v1/models` with `ALIASES` and the price table in
-  `jev/client.py`, and fail the job when a new Jev version appears that the code doesn't know about.
+- **Prune Lab hard (D5).** Lab is isolated behind its kit (packs reach a page only through `ctx`), so
+  deleting packs can't break the core workflows. A pack survives only if it does all of these:
+  - serves a step on the newcomer path or a documented Workbench workflow (calibrate, Policy, checks,
+    review, drift, upgrade);
+  - doesn't repeat a panel's own control or another pack as a min, max or sort variant;
+  - has reference-value tests when it computes a number.
+
+  Apply the same rules to the 36 Python packs and the `scripts/lab.py` commands. Target: keep at most
+  20 of the 198 JavaScript packs and under 15,000 Lab lines in total. Delete the numbered inventory in
+  `docs/lab/` and the rule of one test per numbered improvement, because the count is no longer a goal.
+  If the survivors fit naturally in their panels, fold them in and retire the Lab layer altogether.
+- **Live checks stay manual (D3).** There is no API key in GitHub and no live job in CI. Any PR that
+  changes demo wording, thresholds, examples or the model runs `scripts/validate.py --strict` on Boat,
+  passing only `TYPESAFE_API_KEY` with `boat run -e`. The PR description records the revision, the
+  version that answered, pass and miss counts, and spend. The same run compares `GET /v1/models` with
+  `ALIASES` and the price table in `jev/client.py`, and fails when a Jev version appears that the code
+  doesn't know about.
 - Set `protocol_version = "HTTP/1.1"`. Serve static files with ETag revalidation, and keep `no-store`
   on HTML (which carries the CSRF token) and `/api/*`.
-- **Lazy-load Lab packs** when a Lab disclosure, the Toolbox or the command palette is first opened.
-  Generate the page index as a manifest of dynamic `import()` calls. Target: Workbench boot loads at
-  most 25 modules and under 500 KB.
+- If the Workbench boot still loads more than 25 modules or 500 KB after pruning, lazy-load the
+  remaining packs the first time a Lab disclosure, the Toolbox or the command palette opens.
 
 ### February: browser smoke tests and Workbench structure (P1)
 
 - Write four browser smoke paths: a demo → Inspect → Open in Workbench → run; a Bulk run with a
   simulated partial failure, then a retry; dataset replace → history restore; Review session download
-  → restore. Each checks for no console errors and that labels and drafts survive. They run in CI
-  under Playwright if you approve D1, otherwise in Boat's desktop Chrome from a checked-in script.
+  → restore. Each checks for no console errors and that labels and drafts survive. They use
+  Playwright (D1): `@playwright/test` pinned in `package.json` as a dev dependency next to Biome. A new
+  CI job on `namespace-profile-gitrunner` installs Chromium, starts `server.py` on loopback with a
+  temporary data directory and a fake model backend, and joins `All tests passed`'s `needs`. Agents
+  run it on Boat. The app keeps its zero runtime dependencies on the frontend and no build step.
 - Split `workbench-build.js`, `workbench-datasets.js` and `workbench-compare.js` along their existing
   seams (editor, catalog, retries). Replace cross-module reads of `W` with a few named actions in
   `workbench-state.js`. Target: no module over 1,200 lines, and the cycle count falling.
@@ -151,16 +172,13 @@ bug #91 and Dependabot PR #86.
   with **Advanced** revealing the rest. Visibility only; no data or behavior changes.
 - Rewrite the README's Workbench section as five short steps. Fold the 16 `docs/*-improvements*.md`
   files into one `CHANGELOG.md`. Restructure `docs/workbench.md` into a short tutorial plus a reference.
-- Swap the Google Fonts for a system font stack, and drop the two font hosts from the CSP (D4).
 - Measure: walk three or four people (or fresh agents playing newcomers) through the path. Aim for
   most of them to finish unaided in under 10 minutes, and record where they get stuck.
 
-### April: prune Lab and harden the route to production (P2)
+### April: a second pruning pass and the route to production (P2)
 
-- Prune Lab against written criteria. A control stays if it serves a step in a documented workflow,
-  isn't a min/max/sort permutation of another control, and has a reference-checked result when it's
-  quantitative. Remove the rest and regenerate the inventory. Stop presenting the numbered total as a
-  headline metric.
+- Prune again using the March walkthroughs: delete surviving Lab packs and Workbench controls that no
+  tester used and no documented workflow needs.
 - Make the exported gate the documented way to graduate: `scripts/check.py --format json|github` for
   users' own CI, and one worked example in the docs from synthetic `.example` data to a passing check.
 
@@ -177,8 +195,11 @@ bug #91 and Dependabot PR #86.
 | Measure | Now | May 2027 target |
 | --- | --- | --- |
 | Open correctness bugs in quantitative tools | ≥1 (#91) | 0, each tool with a reference-value test |
-| Live validation | Manual; exits 0 on misses | `--strict` run recorded for every model or wording change |
+| Live validation | Manual; exits 0 on misses | Manual `--strict` run on Boat recorded in every PR that changes wording, thresholds or the model |
+| Lab | 198 JS + 36 Python packs, 134,510 lines | ≤20 JS packs, <15,000 lines (or folded into panels) |
 | Workbench boot | 168 modules, 4.28 MB | ≤25 modules, ≤500 KB |
+| Client backends | SDK + Python 3.9 `urllib` fallback | SDK only |
+| Third-party requests from the app | Google Fonts | None |
 | Largest Workbench module | 2,855 lines | ≤1,200 lines |
 | Browser-tested flows | 0 | 4 |
 | `AGENTS.md` | 524 lines | ≤250 lines, invariants intact |
@@ -188,21 +209,26 @@ bug #91 and Dependabot PR #86.
 ## Top risks
 
 1. **Silent model regressions.** A new Jev version or alias move changes answers with no code change.
-   *Mitigation:* the January live job, the alias-freshness check and recording which version answered.
+   Live checks run only when someone changes wording or the model (D3), so an alias that moves between
+   PRs goes unnoticed until the next one. *Mitigation:* the manual strict run with its alias check,
+   recording which version answered, and a manual run before each release.
 2. **Misleading numbers.** A plausible but wrong statistic drives a bad audit-size or automation
    decision. *Mitigation:* the December audit, reference-value tests, and removing tools nobody can
    verify.
-3. **Simplification breaks advanced workflows.** Lazy loading, module splits and pruning touch shared
-   state around paid retries, drafts and blind review. *Mitigation:* the February smoke paths come
-   before the March and April simplifications, and each change keeps the AGENTS.md invariants.
+3. **Simplification breaks advanced workflows.** Module splits and the Basic view touch shared state
+   around paid retries, drafts and blind review. *Mitigation:* January's pruning removes only isolated
+   Lab packs; the February smoke paths come before the March and April changes to the panels, and each
+   change keeps the AGENTS.md invariants.
 
-## Decisions for the maintainer
+## Decisions
 
-- **D1.** Approve Playwright as a dev-only test dependency (no runtime or frontend-build change), or keep
-  browser checks manual in Boat.
-- **D2.** Keep or drop the Python 3.9 stdlib fallback (`jev/client.py` urllib client and its CI job).
-- **D3.** Add a `TYPESAFE_API_KEY` repository secret and allow a weekly scheduled live run (spend well
-  under $0.01 per run).
-- **D4.** Replace Google Fonts with a system font stack, so the local app makes no third-party requests.
-- **D5.** How hard to prune Lab in April: by the stated criteria only, or to a target share such as Neon's
-  20–30%.
+Made by the maintainer on 2026-11-21.
+
+- **D1. Playwright: approved** as a dev-only test dependency for browser smoke tests in CI (February).
+- **D2. Python 3.9 fallback: dropped.** The official SDK becomes the only client (December).
+- **D3. No API key in GitHub.** No `TYPESAFE_API_KEY` repository secret and no live job in CI; strict
+  live runs stay manual on Boat (January onward).
+- **D4. System fonts: approved.** Google Fonts are removed and the app makes no third-party requests
+  (December).
+- **D5. Prune Lab really hard.** Keep at most about 10% of packs, or fold the survivors into their
+  panels (January, with a second pass in April).
