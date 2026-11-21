@@ -312,7 +312,8 @@ fi
 uv python install 3.9 --quiet # the stdlib-fallback tests (AGENTS.md)
 cd "$run"
 uv sync --locked --quiet
-if [ ! -d "$deps/node/node_modules" ] || ! cmp -s package-lock.json "$deps/node/package-lock.json"; then
+if [ ! -d "$deps/node/node_modules" ] || ! cmp -s package.json "$deps/node/package.json" ||
+    ! cmp -s package-lock.json "$deps/node/package-lock.json"; then
     rm -rf "$deps/node" && mkdir -p "$deps/node"
     cp package.json package-lock.json "$deps/node/"
     (cd "$deps/node" && npm ci --no-audit --no-fund --loglevel=error)
