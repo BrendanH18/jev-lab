@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the hand-off checks on this worktree's own Boat sandbox instead of this computer.
 #
-#   scripts/boat-check.sh            the hand-off checks (what CI's test.yml runs; no key, no live calls)
+#   scripts/boat-check.sh            the hand-off checks (CI's test.yml jobs, the locked-SDK suite on
+#                                    one Python version; no key, no live calls)
 #   scripts/boat-check.sh -- CMD...  run CMD in a fresh copy of the worktree instead
 #   scripts/boat-check.sh --save     the hand-off checks, then save the sandbox as the warm
 #                                    snapshot (jev-lab-warm) that new sandboxes start from
@@ -24,7 +25,7 @@ export BOAT_NO_UPDATE=1
 snapshot=${JEV_BOAT_SNAPSHOT:-jev-lab-warm}
 type=${JEV_BOAT_TYPE:-default}
 idle=${JEV_BOAT_IDLE:-2700}
-max_run=1800 # the auto-stop deadline during a check is idle + this, so a slow check isn't cut off
+max_run=1800 # during a check the auto-stop deadline is kept at least this far ahead
 mode=checks cmd=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -84,9 +85,10 @@ if ! ln -s "$$" "$lock" 2>/dev/null; then
     ln -s "$$" "$lock" 2>/dev/null || busy
 fi
 id=$(cat "$statefile" 2>/dev/null || true)
-ran=0
+ran=0 keepalive=""
 cleanup() {
     set +e
+    [ -z "$keepalive" ] || kill "$keepalive" 2>/dev/null
     # Restart the idle timer from now, so the sandbox stops JEV_BOAT_IDLE seconds after the
     # last check rather than in the middle of the next one.
     if [ "$ran" = 1 ] && [ -n "$id" ]; then
@@ -123,7 +125,20 @@ fi
 
 ensure_sandbox
 ran=1
-boat extend "$id" --ttl "$((idle + max_run))" --json >/dev/null
+boat extend "$id" --ttl "$max_run" --json >/dev/null
+# Keep pushing the auto-stop deadline while the check runs, however long it takes; cleanup
+# stops this and sets the idle timer.
+(
+    trap - EXIT
+    trap 'kill "$nap" 2>/dev/null; exit 0' TERM
+    while :; do
+        sleep 600 &
+        nap=$!
+        wait "$nap"
+        boat extend "$id" --ttl "$max_run" --json >/dev/null 2>&1 || true
+    done
+) &
+keepalive=$!
 
 run="/home/user/jev-lab-runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 echo "boat-check: pushing $(basename "$root") to $id:$run" >&2
@@ -173,15 +188,26 @@ error_code() { printf '%s\n' "$1" | tail -n 1 | jq -r '.code // empty' 2>/dev/nu
 # Creating or resuming a sandbox uses one of the account's starts, shared by every project. Once
 # the included ones are used up, Boat either refuses or (with extra starts on) bills each start.
 need_start() {
-    local full
-    full=$(boat limits --json 2>/dev/null | jq -r '.startWindowFull.short // empty' 2>/dev/null || true)
-    [ -n "$full" ] || return 0
-    if [ "${JEV_BOAT_PAID_START:-0}" = 1 ]; then
-        echo "boat-check: no included starts are left; $1 uses a paid extra start (JEV_BOAT_PAID_START=1)" >&2
+    local limits price full
+    # Fail closed: without a readable answer there is no telling whether the start is free.
+    limits=$(boat limits --json 2>/dev/null) &&
+        price=$(printf '%s\n' "$limits" | jq -er '.nextStartDollars // 0 | numbers') &&
+        full=$(printf '%s\n' "$limits" | jq -r '.startWindowFull.short // .startWindowFull.message // (if .startWindowFull then "The included starts are used up." else "" end)') || {
+        echo "boat-check: couldn't read boat limits, so $1 isn't started; try again" >&2
+        exit 3
+    }
+    if [ "$(printf '%s\n' "$limits" | jq '(.nextStartDollars // 0) > 0')" = true ]; then
+        if [ "${JEV_BOAT_PAID_START:-0}" = 1 ]; then
+            echo "boat-check: $1 uses a paid extra start (\$$price; JEV_BOAT_PAID_START=1)" >&2
+            return 0
+        fi
+        echo "boat-check: $1 needs a sandbox start, and the next one costs \$$price:" >&2
+    elif [ -n "$full" ]; then
+        echo "boat-check: $1 needs a sandbox start, and none are left:" >&2
+    else
         return 0
     fi
-    echo "boat-check: $1 needs a sandbox start, and the included ones are used up:" >&2
-    printf '%s\n' "$full" | sed 's/^/  /' >&2
+    [ -z "$full" ] || printf '%s\n' "$full" | sed 's/^/  /' >&2
     echo "boat-check: try again later; JEV_BOAT_PAID_START=1 pays for an extra start if the account allows them" >&2
     exit 3
 }

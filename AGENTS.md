@@ -83,37 +83,48 @@ sandbox; never quote prices from memory.
 shared by all the owner's projects) ran out when every check used its own `boat run` sandbox, so each worktree reuses
 one long-lived sandbox instead.
 
-- `scripts/boat-check.sh` runs what CI's `test.yml` runs (Ruff, Biome, JavaScript syntax and tests, the locked-SDK
+- `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests, the locked-SDK
   suite, the Python 3.9 stdlib fallback, the sample pictures), all of them even when one fails, and exits nonzero
-  if any failed. `scripts/boat-check.sh -- CMD` runs one command instead, e.g.
+  if any failed. It runs the locked-SDK suite on the sandbox's Python 3.12 only; CI's 3.10–3.14 matrix stays the
+  authority for version-specific failures. `scripts/boat-check.sh -- CMD` runs one command instead, e.g.
   `scripts/boat-check.sh -- uv run --locked python -m unittest tests.test_workbench`.
 - The first run in a worktree creates its sandbox from the saved snapshot `jev-lab-warm` (uv, Node 22, uv's
   Python 3.9, the locked venv and Biome preinstalled), or cold when that isn't ready. Later runs reuse it: each
   pushes the worktree into a fresh directory and runs there with `boat exec --timeout 0`, at no start.
 - The sandbox's id lives in this worktree's git directory. Never share a sandbox between agents or worktrees, and
   never pass its id to another agent.
-- It stops by itself 45 minutes after the last check (`JEV_BOAT_IDLE`); the next check resumes it, which costs one
+- It stops by itself 45 minutes after the last check (`JEV_BOAT_IDLE`), and a check keeps it running however long
+  the check takes; the next check resumes it, which costs one
   start. Run `scripts/boat-check.sh --done` when your work in the worktree ends: it deletes the sandbox.
   `--status` shows it without starting anything.
-- With no included starts left the script stops (exit 3) rather than pay for an extra start; say what still needs a
-  Boat run instead of retrying. It creates with `--fail-fast` and retries for about a minute when no machine is ready.
+- When the next start would cost money (Boat's `nextStartDollars`), none are left, or `boat limits` can't be read, the
+  script stops (exit 3) rather than start a sandbox; say what still needs a Boat run instead of retrying.
+  `JEV_BOAT_PAID_START=1` allows a paid start, only when the owner says so. It creates with `--fail-fast` and retries for about a minute when no machine is ready.
 - `scripts/boat-check.sh --save` runs the checks and then saves the sandbox as `jev-lab-warm`, without the checkouts.
   Refresh it after `uv.lock`, `package-lock.json` or the Node or Python toolchain changes.
 - Check sandboxes carry no credentials (owner decision, 2026-11-21): the script creates them with `--no-env`, so they
   get no GitHub token, agent logins or API keys, and the offline suite can make no paid call.
 - Use plain `boat run --no-env --from jev-lab-warm --push . -- CMD` only for a genuine one-off that shouldn't touch
-  your worktree's sandbox; it costs a start.
+  your worktree's sandbox; it costs a start. It pushes the worktree without the script's guard, so first make sure
+  `git status --porcelain --untracked-files=all -- data/workbench` prints nothing.
 
 **Live runs** (`scripts/validate.py`, `scripts/check.py` making model calls). Owner decision, 2026-11-21: a live run
 gets its own sandbox from the Boat environment `jev-lab-live`, which injects only its own variables
 (`TYPESAFE_API_KEY`) and no GitHub, agent or Boat credentials. Create one only when the owner asks for a live run,
-never reuse the check sandbox, and delete it afterwards:
+never reuse the check sandbox, and delete it afterwards. Push only committed files, so no uncommitted Workbench
+inputs go along, and let a trap delete the sandbox even when the run fails or is interrupted:
 
 ```sh
-id=$(boat new --environment jev-lab-live --json | jq -r 'select(.event=="ready") | .id')
-boat push "$id" . --to /home/user/jev-lab
-boat exec "$id" --timeout 0 "cd /home/user/jev-lab && uv run --locked scripts/validate.py"
-boat delete "$id" --yes
+(
+  set -eu
+  src=$(mktemp -d) id=""
+  trap 'if [ -n "$id" ]; then boat delete "$id" --yes; fi; rm -rf "$src"' EXIT
+  trap 'exit 130' INT TERM
+  git archive HEAD | tar -x -C "$src"
+  id=$(boat new --environment jev-lab-live --fail-fast --json | jq -r '.id // empty' | head -n 1)
+  boat push "$id" "$src" --to /home/user/jev-lab
+  boat exec "$id" --timeout 0 "cd /home/user/jev-lab && uv run --locked scripts/validate.py"
+)
 ```
 
 Agents never read key values from `.env` or pass them on the command line, and never copy `.env` into a sandbox

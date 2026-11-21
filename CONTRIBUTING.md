@@ -65,9 +65,10 @@ node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 ### Checks on Boat
 
 The maintainer's agents run these checks on [Boat](https://docs.boat.dev) sandboxes rather than on their
-own machines. `scripts/boat-check.sh` runs everything CI's `test.yml` runs (Ruff, Biome, JavaScript syntax
-and tests, the locked-SDK suite, the Python 3.9 fallback and the sample pictures) in one long-lived
-sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs:
+own machines. `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests,
+the locked-SDK suite on Python 3.12 only, the Python 3.9 fallback and the sample pictures) in one
+long-lived sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs.
+CI still runs the locked-SDK suite on every supported Python version:
 
 ```sh
 scripts/boat-check.sh                    # all hand-off checks; exits nonzero if any failed
