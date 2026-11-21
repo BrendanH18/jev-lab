@@ -313,7 +313,7 @@ def delete_item(item_id: str) -> bool:
 
 # --- saved datasets ------------------------------------------------------------------------
 # A dataset is Bulk rows and their `_expect` labels, and optionally the question set the labels are for,
-# saved as data/workbench/datasets/<id>.json so labels outlast a reload and can be committed. It holds
+# saved as data/workbench/datasets/<id>.json (gitignored) so labels outlast a reload. It holds
 # inputs and labels only: answers are never saved, so every answer the Bulk tab shows comes from a run. A file that is
 # replaced or deleted is kept first as a local revision under datasets/.history/<id>/ (jev/history.py).
 

@@ -87,7 +87,7 @@ Docs: https://docs.boat.dev/llms.txt. Prices and limits: run `boat limits`; neve
 - Always pass the sandbox id. `current` does not work in a non-interactive shell.
 - When done: `boat stop "$id"` (keeps the disk for at least 14 days) or `boat delete "$id" --yes` (erases it)
 - `server.py` binds 127.0.0.1 and accepts only loopback Host names (`jev/security.py`). To see the UI, run it in the sandbox and use the sandbox's desktop Chrome, or `boat forward` the port to the same port on this Mac. Never expose it with `boat host` or the in-sandbox `host`, and never widen the allow-list or the bind address.
-- Saved Workbench datasets (`data/workbench/datasets/`, with their `.history/` revisions) are gitignored, so `boat push` leaves them out. Don't copy real input rows or labels into a sandbox; give live checks there only synthetic or approved datasets.
+- Saved Workbench datasets (`data/workbench/datasets/`, with their `.history/` revisions) are gitignored, so `boat push` leaves them out. Saved tests (`data/workbench/*.json`) and pictures (`data/workbench/images/`) are not, so `boat push` copies them even when untracked; when they hold real inputs, clone the repo inside the sandbox instead. Don't copy real input rows, labels or pictures into a sandbox; give live checks there only synthetic or approved datasets.
 - Live runs (`scripts/validate.py`, `scripts/check.py`) need `TYPESAFE_API_KEY`: pass only that key, with `boat new -e` or `boat run -e`, and never copy `.env` into a sandbox. `boat push` already skips it because it's gitignored.
 - Boat's `python3` is 3.12, not 3.9. Exercise the stdlib fallback with `uv run --no-project --python 3.9 python -m unittest discover tests`.
 
