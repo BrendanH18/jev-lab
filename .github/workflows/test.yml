@@ -34,10 +34,16 @@ jobs:
       - name: Run tests (no API key needed)
         run: uv run --locked python -m unittest discover -v tests
 
-  lint:
-    name: Lint and format
+  # The check the main ruleset requires. A job that a failed job `needs` is skipped, and a skipped
+  # required check counts as passing, so this runs always() and passes only if every job it needs
+  # passed. The checks that take seconds (lint, JavaScript, sample pictures) run here as steps rather
+  # than on runners of their own, so a push starts six runners instead of nine.
+  tests-passed:
+    name: All tests passed
+    needs: [test]
+    if: always()
     runs-on: namespace-profile-gitrunner
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -46,70 +52,46 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-      - name: Install Ruff (dev group only; the lint needs no SDK)
-        run: uv sync --locked --only-group dev
-      - name: Lint Python
-        run: uv run --locked --only-group dev ruff check
-      - name: Check Python formatting
-        run: uv run --locked --only-group dev ruff format --check
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: "22"
           cache: npm
+      - name: Install locked dependencies
+        run: uv sync --locked
       - name: Install Biome from package-lock.json
+        id: setup
         run: npm ci
+      # Each check runs even when an earlier one failed, so one push reports every failure.
+      - name: Lint Python
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: uv run --locked ruff check
+      - name: Check Python formatting
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: uv run --locked ruff format --check
       - name: Lint and check formatting of JavaScript
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: npm run lint
-
-  javascript:
-    name: JavaScript modules and tests
-    runs-on: namespace-profile-gitrunner
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
-        with:
-          node-version: "22"
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
-        with:
-          python-version: "3.12"
-          enable-cache: true
       - name: Check browser modules
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: |
           for file in $(find static/js -name '*.js' | sort); do
             node --input-type=module --check < "$file" || exit 1
           done
       - name: Test browser modules
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         # Some tests compare JS calculations to the Python implementation.
         run: uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
-
-  samples:
-    name: Sample pictures match the script
-    runs-on: namespace-profile-gitrunner
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
       - name: Redraw the sample pictures
+        id: samples
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: python3 scripts/draw_samples.py
       - name: Fail if the committed pictures are stale
+        if: ${{ !cancelled() && steps.samples.conclusion == 'success' }}
         run: |
           git add --intent-to-add static/img/samples
           git diff --exit-code --stat static/img/samples
-
-  # The check the main ruleset requires. A job that a failed job `needs` is skipped, and a skipped
-  # required check counts as passing, so this runs always() and passes only if every job above passed.
-  tests-passed:
-    name: All tests passed
-    needs: [test, lint, javascript, samples]
-    if: always()
-    runs-on: namespace-profile-gitrunner
-    timeout-minutes: 5
-    steps:
-      - name: Every job passed
+      - name: Every job it needs passed
+        if: always()
         run: |
           echo "Results: $RESULTS"
           test "$(echo "$RESULTS" | tr ' ' '\n' | sort -u)" = success
