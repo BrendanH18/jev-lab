@@ -274,7 +274,7 @@ boat_start() {
 }
 
 ensure_sandbox() {
-    local s out from=()
+    local s out rc from=()
     if [ -n "$id" ]; then
         s=$(wait_state "$id") || exit 1
         case "$s" in
@@ -283,13 +283,14 @@ ensure_sandbox() {
                 need_start "resuming $id"
                 echo "boat-check: resuming $id" >&2
                 out=$(boat_start "resuming $id" boat resume "$id" --ttl "$((idle + max_run))") && return 0
-                [ "$?" != 3 ] || exit 3
+                rc=$?
                 # The half-done resume behind "already in progress" may have finished after all.
                 s=$(wait_state "$id") || exit 1
                 case "$s" in ready | idle | running)
                     echo "boat-check: $id is $s after all" >&2
                     return 0 ;;
                 esac
+                [ "$rc" != 3 ] || exit 3 # need_start refused a retry
                 echo "boat-check: resuming $id failed ($s):" >&2
                 printf '%s\n' "$out" | tail -n 5 >&2
                 exit 1 ;;
