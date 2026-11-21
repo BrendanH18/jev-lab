@@ -184,7 +184,9 @@ need_start() {
     local limits price full
     # Fail closed: without a readable answer there is no telling whether the start is free.
     limits=$(boat limits --json 2>/dev/null) &&
-        price=$(printf '%s\n' "$limits" | jq -er '.nextStartDollars // 0 | numbers') &&
+        # Boat reports the next start's price, or null when it isn't billed; anything else, or
+        # no such field, is an answer the script doesn't understand.
+        price=$(printf '%s\n' "$limits" | jq -er 'select(has("nextStartDollars")) | .nextStartDollars | if . == null then 0 else numbers end') &&
         full=$(printf '%s\n' "$limits" | jq -r '.startWindowFull.short // .startWindowFull.message // (if .startWindowFull then "The included starts are used up." else "" end)') || {
         echo "boat-check: couldn't read boat limits, so $1 isn't started; try again" >&2
         exit 3
