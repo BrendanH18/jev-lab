@@ -72,17 +72,10 @@ if ! ln -s "$$" "$lock" 2>/dev/null; then
     other=$(readlink "$lock" 2>/dev/null || true)
     case "$other" in '' | *[!0-9]*) busy ;; esac
     ! kill -0 "$other" 2>/dev/null || busy "$other"
-    # Its holder is gone. Take the lock over by renaming it, which only one process can do,
-    # and only if the link renamed is still that stale one; put back a link that isn't.
-    stale="$lock.stale.$$"
-    mv "$lock" "$stale" 2>/dev/null || busy
-    if [ "$(readlink "$stale" 2>/dev/null || true)" != "$other" ]; then
-        ln -s "$(readlink "$stale")" "$lock" 2>/dev/null || true
-        rm -f "$stale"
-        busy
-    fi
-    rm -f "$stale"
-    ln -s "$$" "$lock" 2>/dev/null || busy
+    # Its holder is gone (killed before its exit trap ran). Taking a lock over can't be made
+    # safe against a third invocation without flock, which macOS lacks, so leave that to a person.
+    echo "boat-check: pid $other, which held this worktree's lock, is gone; check that no boat-check is running here, then: rm $lock" >&2
+    exit 2
 fi
 id=$(cat "$statefile" 2>/dev/null || true)
 ran=0 keepalive=""
