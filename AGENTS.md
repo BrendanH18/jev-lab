@@ -426,6 +426,10 @@ and held-out exclusions. Pin retries to the resolved version where a requested m
 sharing the pin across variants that asked the same model. Keep incompatible answers out of paired
 scores and count spend across attempts. Bind the retry receipt to the original ordered request and
 call completion state. Retry requests carry no prior answers; merge new outcomes in the current tab.
+Compare retry selections are page-session only and indexed into the original call array. Reject
+explicit empty, repeated or answered positions. Spend previews and paid retries use the same
+selection; changing it during confirmation requires another deliberate retry. Unselected calls
+remain pending in the receipt and the report.
 
 Drift labeling draft recovery carries original weak-support inputs, ordered question schema and human
 draft labels only, bound to the unchanged saved dataset/check snapshot. Restore previews before explicit

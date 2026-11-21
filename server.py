@@ -91,7 +91,7 @@ PAGES = {
     "/workbench": "workbench.html",
 }
 MAX_BODY_BYTES = 12 * 1024 * 1024  # room for a few base64 photos
-COMPARE_RETRY_OVERHEAD = 128 * 1024  # receipt for up to four calls on each of 200 rows
+COMPARE_RETRY_OVERHEAD = 128 * 1024  # receipt and selection for up to four calls on each of 200 rows
 COMPARE_SCORE_OVERHEAD = 4 * 1024 * 1024  # up to two vectors of 255 indexed Choice probabilities per row
 
 settings = Settings()
@@ -693,6 +693,7 @@ def api_wb_compare_retry(body):
         body.get("retry"),
         str(body.get("field") or "text"),
         check_model,
+        positions=body.get("positions", workbench.ALL_COMPARE_RETRY_POSITIONS),
     )
 
 
@@ -916,7 +917,14 @@ def api_wb_estimate(body):
     if kind == "compare":
         return estimate.for_compare(client, bulk_rows(body), body.get("variants"), field)
     if kind == "compare_retry":
-        return estimate.for_compare_retry(client, bulk_rows(body), body.get("variants"), body.get("retry"), field)
+        return estimate.for_compare_retry(
+            client,
+            bulk_rows(body),
+            body.get("variants"),
+            body.get("retry"),
+            field,
+            positions=body.get("positions", workbench.ALL_COMPARE_RETRY_POSITIONS),
+        )
     if kind == "check":
         return estimate.for_check(client, str(body.get("id", "")), model)
     if kind == "drift":

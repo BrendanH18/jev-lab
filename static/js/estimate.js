@@ -82,6 +82,7 @@ export async function confirmSpend(api, kind, body, ask = (m) => globalThis.conf
   if (confirming) return false;
   confirming = true;
   cache.clear(); // the run changes what is left; every line asks again
+  compareRetryCache.clear();
   try {
     let est;
     try {
@@ -98,8 +99,13 @@ export async function confirmSpend(api, kind, body, ask = (m) => globalThis.conf
 // ---------- live lines ----------
 const lines = new Set();
 const cache = new Map(); // request key -> { at, promise }
+const compareRetryCache = new Map(); // one selection at a time, since the key includes the full request
 let listening = false;
 let timer = null;
+
+function previewCache(kind) {
+  return kind === "compare_retry" ? compareRetryCache : cache;
+}
 
 function requestOf(line) {
   try {
@@ -125,17 +131,19 @@ async function refresh(line) {
   }
   const key = JSON.stringify(request);
   line.key = key;
-  let hit = cache.get(key);
+  const previews = previewCache(line.kind);
+  let hit = previews.get(key);
   if (!hit || Date.now() - hit.at > FRESH_MS) {
     hit = { at: Date.now(), promise: line.api(ENDPOINT, request) };
-    cache.set(key, hit);
+    if (previews === compareRetryCache) previews.clear();
+    previews.set(key, hit);
   }
   try {
     const est = await hit.promise;
     if (line.key !== key) return; // the inputs changed while it was on its way
     show(line, estimateText(est), needsConfirm(est), estimateDetail(est));
   } catch (e) {
-    if (cache.get(key) === hit) cache.delete(key);
+    if (previews.get(key) === hit) previews.delete(key);
     if (line.key === key) show(line, "", false, `No spend preview: ${e.message || e}`);
   }
 }
@@ -166,7 +174,7 @@ export function estimateLine(h, api, kind, getBody) {
     document.addEventListener("change", schedule, true);
   }
   const request = requestOf(line);
-  if (request && cache.has(JSON.stringify(request)))
+  if (request && previewCache(kind).has(JSON.stringify(request)))
     refresh(line); // a render: show the preview it already has
   else schedule();
   return el;

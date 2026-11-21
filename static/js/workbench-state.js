@@ -127,6 +127,7 @@ export const W = {
     running: false,
     result: null,
     runRequest: null,
+    retrySelection: null,
     qid: null,
     signal: "confidence",
     bound: "estimate",

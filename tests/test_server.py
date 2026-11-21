@@ -1351,6 +1351,67 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(len(result["updates"]), 1)
             self.assertEqual(len(fake.calls), 40)
 
+    def test_compare_retry_selects_pending_calls_and_preserves_the_rest(self):
+        q = {"dept": {"type": "choice", "instructions": "Which team?", "criteria": {"sales": "orders", "ops": "stock"}}}
+        model = "jev-1.14.0"
+        variants = [
+            {"questions": q, "model": model},
+            {"questions": q, "model": model, "perturb": "lowercase", "average_orders": True},
+        ]
+        rows = ["First", {"text": "Held out", "_test": True}, None, "Second"]
+        fake = FakeClient()
+        fake.model = model
+        stop = True
+
+        def complete(state, questions, assets=None, model=None):
+            if stop and fake.calls:
+                raise JevError("Temporary stop", status=402)
+            return fake.system_one(state, questions, assets=assets, model=model)
+
+        def post(path, body, expected_status=200):
+            status, _, raw = self.request("POST", path, json.dumps(body), self.post_headers())
+            self.assertEqual(status, expected_status, raw)
+            return json.loads(raw)
+
+        compare_path = "/api/workbench/compare"
+        retry_path = compare_path + "/retry"
+        estimate_path = "/api/workbench/estimate"
+        with (
+            patch.object(server.workbench, "BULK_CONCURRENCY", 1),
+            patch.object(server.client, "system_one", side_effect=complete) as system_one,
+            patch.object(server.client, "models", side_effect=AssertionError("No model list call")),
+        ):
+            original = post(compare_path, {"variants": variants, "rows": rows})
+            self.assertEqual(original["source_row_numbers"], [1, 4])
+            self.assertEqual(original["retry"]["models"], [model, None, None, None, None, None])
+            self.assertIn("error", original["calls"][1])
+            self.assertTrue(original["calls"][2]["skipped"])
+            stop = False
+            body = {"variants": variants, "rows": rows, "retry": original["retry"]}
+            before = system_one.call_count
+            for positions in (None, [], "2", [True], [2.0], [-1], [6], [2, 2], [0, 2]):
+                with self.subTest(positions=positions):
+                    selected = dict(body, positions=positions)
+                    preview_error = post(estimate_path, dict(selected, kind="compare_retry"), expected_status=400)
+                    self.assertEqual(post(retry_path, selected, expected_status=400), preview_error)
+            selected = dict(body, positions=[5, 2])
+            spend = post(estimate_path, dict(selected, kind="compare_retry"))
+            self.assertEqual((spend["calls"], spend["rows"], spend["held_out"]), (2, 2, 1))
+            self.assertEqual([part["calls"] for part in spend["parts"]], [0, 2])
+            self.assertEqual(system_one.call_count, before)
+
+            retried = post(retry_path, selected)
+            self.assertEqual([position for position, _ in retried["updates"]], [2, 5])
+            self.assertEqual(retried["retry"]["models"], [model, None, model, None, None, model])
+            self.assertEqual(
+                [(state["text"], list(qs["dept"]["criteria"])) for state, qs in fake.calls[1:]],
+                [("first", ["ops", "sales"]), ("second", ["ops", "sales"])],
+            )
+
+            remaining = post(retry_path, dict(body, retry=retried["retry"]))
+            self.assertEqual([position for position, _ in remaining["updates"]], [1, 3, 4])
+            self.assertIsNone(remaining["retry"])
+
     def test_compact_compare_scores_and_slices_match_the_legacy_payload(self):
         option_keys = ["a" + "x" * 200, "b" + "y" * 200]
         a, b = option_keys

@@ -287,8 +287,9 @@ conditions.
   variant B asks A's questions twice, once with each Choice question's options reversed, and averages
   the answers in code, so the report shows what the second call per row buys. A cascade shows what asking one
   variant first, and the other only when it is unsure, would cost and how accurate it would be.
-  After a partial run, **Retry unanswered calls** previews the spend for the missing calls and updates the paired
-  report as rows complete. Successful calls, including either order of an averaged variant, are reused.
+  After a partial run, inspect failed and skipped calls by row, variant, and Choice order. Select which
+  calls to retry, preview their upper-bound spend, and update the paired report as rows complete.
+  Successful calls, including either order of an averaged variant, are reused.
   **Compare by slice** scores successful pairs by an input field using this run's answers. **Label missing
   disagreement inputs** opens blank human controls for disputed inputs, retaining the original rows,
   existing labels, pictures, and held-out markers. Apply and Save remain explicit. Reopening the general

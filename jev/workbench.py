@@ -20,6 +20,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextlib import contextmanager
+from itertools import islice
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
@@ -774,12 +775,16 @@ def _need_pictures(split: List[tuple], questions: Dict[str, dict], indices: Opti
             )
 
 
+def _indexed_bulk_rows(rows: List[Any]) -> Iterator[tuple]:
+    """The first MAX_BULK_ROWS nonempty rows with their one-based input positions."""
+    return islice(((i, row) for i, row in enumerate(rows, 1) if row not in (None, "")), MAX_BULK_ROWS)
+
+
 def _split_rows(rows: List[Any]) -> List[tuple]:
     """(state row, labels or None) for the first MAX_BULK_ROWS nonempty rows."""
-    rows = [r for r in rows if r not in (None, "")][:MAX_BULK_ROWS]
-    if not rows:
+    split = [split_labels(row, i) for i, (_, row) in enumerate(_indexed_bulk_rows(rows), 1)]
+    if not split:
         raise WorkbenchError("No rows to run")
-    split = [split_labels(row, i + 1) for i, row in enumerate(rows)]
     for i, (row, _) in enumerate(split):
         try:
             row_test(row)
@@ -926,6 +931,7 @@ def run_bulk(
 # Sign compact retry receipts without keeping calls on the server. The signing key stays
 # separate from the request token made available to the browser.
 _COMPARE_RETRY_KEY = secrets.token_bytes(32)
+ALL_COMPARE_RETRY_POSITIONS = object()
 
 
 def validate_variants(variants: Any) -> List[dict]:
@@ -1012,7 +1018,12 @@ def run_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     report = _compare_report(prepared, flat, stopped, (time.perf_counter() - started) * 1000)
     versions = [_compare_answer_model(call) if "answers" in call else None for call in flat]
     receipt = _compare_receipt(rows, prepared, field, versions)
-    return dict(report, retry=receipt, calls=[_compare_call(call) for call in flat] if receipt else [])
+    return dict(
+        report,
+        source_row_numbers=[i for i, row in _indexed_bulk_rows(rows) if not row_test(row)],
+        retry=receipt,
+        calls=[_compare_call(call) for call in flat] if receipt else [],
+    )
 
 
 def _run_compare_jobs(client: JevClient, split: List[tuple], jobs: List[tuple], field: str) -> tuple:
@@ -1133,8 +1144,15 @@ def _compare_answer_model(call: dict) -> str:
     return model if isinstance(model, str) else ""
 
 
-def prepare_compare_retry(client: JevClient, rows: List[Any], variants: Any, receipt: Any, field: str) -> tuple:
-    """Select missing calls and freeze their models to the versions the completed calls used."""
+def prepare_compare_retry(
+    client: JevClient,
+    rows: List[Any],
+    variants: Any,
+    receipt: Any,
+    field: str,
+    positions: Any = ALL_COMPARE_RETRY_POSITIONS,
+) -> tuple:
+    """Select pending calls and freeze their models to the versions the completed calls used."""
     prepared = prepare_compare(client, rows, variants)
     specs, _, _, _, _, jobs = prepared
     if any(v["model"] is None for v in specs):
@@ -1147,6 +1165,18 @@ def prepare_compare_retry(client: JevClient, rows: List[Any], variants: Any, rec
             missing.append(position)
         else:
             seen[job[3]].add(version)
+    if positions is not ALL_COMPARE_RETRY_POSITIONS:
+        if (
+            not isinstance(positions, list)
+            or not positions
+            or any(type(p) is not int or not 0 <= p < len(jobs) for p in positions)
+        ):
+            raise WorkbenchError("positions must be a non-empty list of Compare call positions (starting at 0)")
+        if len(set(positions)) != len(positions):
+            raise WorkbenchError("positions must not repeat a Compare call position")
+        if any(versions[p] is not None for p in positions):
+            raise WorkbenchError("Retry positions must identify unanswered Compare calls")
+        missing = sorted(positions)
     if not missing:
         raise WorkbenchError("Every Compare call already answered")
 
@@ -1174,9 +1204,11 @@ def retry_compare(
     receipt: Any,
     field: str = "text",
     check_model: Optional[Callable[[str], None]] = None,
+    *,
+    positions: Any = ALL_COMPARE_RETRY_POSITIONS,
 ) -> dict:
-    """Run only pending calls and return their updates and a receipt for any that remain pending."""
-    prepared, attempts, prior_versions = prepare_compare_retry(client, rows, variants, receipt, field)
+    """Run selected pending calls and return their updates and a receipt for any that remain pending."""
+    prepared, attempts, prior_versions = prepare_compare_retry(client, rows, variants, receipt, field, positions)
     _, _, _, split, _, _ = prepared
     if check_model is not None:
         for model in dict.fromkeys(job[3] for job in attempts.values()):

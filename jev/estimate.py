@@ -112,9 +112,17 @@ def for_compare(client: JevClient, rows: List[Any], variants: Any, field: str = 
     return _compare_cost(client, rows, prepared, prepared[5], field, "compare")
 
 
-def for_compare_retry(client: JevClient, rows: List[Any], variants: Any, receipt: Any, field: str = "text") -> dict:
-    """Price only the missing calls, using the same version pins as retry_compare."""
-    prepared, attempts, _ = workbench.prepare_compare_retry(client, rows, variants, receipt, field)
+def for_compare_retry(
+    client: JevClient,
+    rows: List[Any],
+    variants: Any,
+    receipt: Any,
+    field: str = "text",
+    *,
+    positions: Any = workbench.ALL_COMPARE_RETRY_POSITIONS,
+) -> dict:
+    """Price the selected pending calls using the same version pins as retry_compare."""
+    prepared, attempts, _ = workbench.prepare_compare_retry(client, rows, variants, receipt, field, positions)
     return _compare_cost(client, rows, prepared, list(attempts.values()), field, "compare_retry")
 
 

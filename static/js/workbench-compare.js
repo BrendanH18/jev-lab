@@ -16,7 +16,7 @@ import {
   toast,
   usd,
 } from "./common.js";
-import { compareScorePayload, mergeCompareRetry } from "./compare-retry.js";
+import { comparePendingCalls, compareScorePayload, mergeCompareRetry } from "./compare-retry.js";
 import { parseVariantText, reverseOptions } from "./variants.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W, canon } from "./workbench-state.js";
@@ -398,59 +398,121 @@ function compareDraftMatches(request) {
   return request?.sourceText === W.bulk.rowsText && request.editorKey === compareEditorKey();
 }
 
+function compareRetryPositions() {
+  const { result, retrySelection } = W.compare;
+  return [...(retrySelection?.selected ?? [])]
+    .filter((position) => result?.retry?.models[position] === null)
+    .sort((a, b) => a - b);
+}
+
 function compareRetryBody() {
   const c = W.compare;
   if (!compareDraftMatches(c.runRequest) || !c.result?.retry) return null;
+  const positions = compareRetryPositions();
+  if (!positions.length) return null;
   const { rows, variants } = c.runRequest.body;
   return {
     rows,
     variants: variants.map((v, i) => ({ ...v, model: c.result.variants[i].model })),
     retry: c.result.retry,
+    positions,
   };
 }
 
 const compareRetryChanged = "Rows or variant settings changed. Restore the original inputs or run both variants again.";
 
-function updateCompareRetry() {
-  const host = $("#compare-retry");
+function updateCompareRetry(host = $("#compare-retry")) {
   if (!host) return;
-  const changed = !compareDraftMatches(W.compare.runRequest);
-  $("#compare-retry-run", host).disabled = changed || !!W.compare.running;
-  $("#compare-retry-estimate", host).hidden = changed;
+  const c = W.compare;
+  const changed = !compareDraftMatches(c.runRequest);
+  const count = compareRetryPositions().length;
+  const button = $("#compare-retry-run", host);
+  button.disabled = changed || !count || !!c.running;
+  button.textContent =
+    c.running === "retry" ? "Retrying selected calls…" : `Retry ${count} selected call${count === 1 ? "" : "s"}`;
+  const estimate = $("#compare-retry-estimate", host);
+  estimate.hidden = changed || !count;
+  mount(estimate, estimate.hidden ? null : estimateLine(h, api, "compare_retry", compareRetryBody));
   $("#compare-retry-reason", host).textContent = changed ? compareRetryChanged : "";
 }
 
 function compareRetryControls() {
   const c = W.compare;
-  const count = c.result.retry?.models.filter((model) => model === null).length;
-  if (!count) return null;
-  const changed = !compareDraftMatches(c.runRequest);
-  return h(
+  const pending = comparePendingCalls(c.result);
+  if (!pending.length) return null;
+  const selection = c.retrySelection;
+  const list = h(
+    "div",
+    { class: "grid", style: { gap: "6px", maxHeight: "260px", overflow: "auto" } },
+    pending.map(({ position, rowNumber, variant, order, error }) => {
+      const orderLabel =
+        order === "reversed" ? " · Choice options reversed" : order ? " · Choice options as listed" : "";
+      return h(
+        "label",
+        { style: { display: "flex", gap: "8px", alignItems: "start", overflowWrap: "anywhere" } },
+        h("input", {
+          type: "checkbox",
+          checked: selection.selected.has(position),
+          disabled: c.running,
+          onchange: (event) => {
+            if (event.target.checked) selection.selected.add(position);
+            else selection.selected.delete(position);
+            updateCompareRetry();
+          },
+        }),
+        h(
+          "span",
+          {},
+          `Row ${rowNumber} · Variant ${VARIANTS[variant]}${orderLabel} · `,
+          error === undefined ? "Skipped" : `Failed · ${error}`,
+        ),
+      );
+    }),
+  );
+  const selectAll = (checked) => {
+    selection.selected = new Set(checked ? pending.map(({ position }) => position) : []);
+    for (const input of list.querySelectorAll("input")) input.checked = checked;
+    updateCompareRetry();
+  };
+  const host = h(
     "div",
     { id: "compare-retry", class: "grid", style: { gap: "4px", fontSize: "12.5px" } },
     h(
       "div",
       {},
-      h(
-        "button",
-        { class: "btn sm", id: "compare-retry-run", disabled: changed || !!c.running, onclick: retryCompare },
-        c.running === "retry"
-          ? "Retrying unanswered calls…"
-          : `Retry ${count} unanswered call${count === 1 ? "" : "s"}`,
-      ),
+      h("button", { class: "btn sm", id: "compare-retry-run", onclick: retryCompare }),
       " ",
-      h(
-        "span",
-        { id: "compare-retry-estimate", hidden: changed },
-        estimateLine(h, api, "compare_retry", compareRetryBody),
-      ),
+      h("span", { id: "compare-retry-estimate" }),
     ),
+    h("span", { id: "compare-retry-reason", class: "muted", "aria-live": "polite" }),
     h(
-      "span",
-      { id: "compare-retry-reason", class: "muted", "aria-live": "polite" },
-      changed ? compareRetryChanged : "",
+      "details",
+      {
+        open: selection.open,
+        ontoggle: (event) => {
+          if (event.target.isConnected) selection.open = event.target.open;
+        },
+      },
+      h("summary", {}, `Choose from ${pending.length} unanswered call${pending.length === 1 ? "" : "s"}`),
+      h(
+        "div",
+        { class: "grid", style: { gap: "8px", paddingTop: "8px" } },
+        h(
+          "div",
+          { class: "chips" },
+          h("button", { class: "btn sm ghost", disabled: c.running, onclick: () => selectAll(true) }, "Select all"),
+          h(
+            "button",
+            { class: "btn sm ghost", disabled: c.running, onclick: () => selectAll(false) },
+            "Clear selection",
+          ),
+        ),
+        list,
+      ),
     ),
   );
+  updateCompareRetry(host);
+  return host;
 }
 
 async function runCompare() {
@@ -483,6 +545,7 @@ async function runCompare() {
     if (c.result !== previous) return toast("The earlier comparison finished. Its calls counted toward the budget.");
     c.result = result;
     c.runRequest = request;
+    c.retrySelection = { selected: new Set(comparePendingCalls(result).map(({ position }) => position)), open: false };
     c.sourceText = sourceText;
     c.sliceField = null;
     c.qid = chooseCmpQuestion();
@@ -509,7 +572,13 @@ async function retryCompare() {
   render();
   try {
     if (!(await confirmSpend(api, "compare_retry", body))) return;
-    if (c.result !== previous || c.runRequest !== request || !compareDraftMatches(request))
+    const ready = compareRetryBody();
+    if (
+      c.result !== previous ||
+      c.runRequest !== request ||
+      !ready ||
+      JSON.stringify(ready.positions) !== JSON.stringify(body.positions)
+    )
       return toast("The comparison changed. Check the report before retrying.", "error");
     const attempt = await api("/api/workbench/compare/retry", body);
     if (c.result !== previous || c.runRequest !== request)
@@ -792,20 +861,8 @@ function renderCompareReport() {
   const rep = c.report;
   const hasLabels = rep && rep.variants.some((v) => v.labeled);
   const use = (i) => h("button", { class: "btn sm", onclick: () => cmpUseInBuild(i) }, `Use ${VARIANTS[i]} in Build`);
-  const failures = res.results.flatMap((r) =>
-    r.runs.map((run, v) => (run.error ? `row ${r.index + 1} (${VARIANTS[v]}): ${run.error}` : null)).filter(Boolean),
-  );
   const notes = [
     res.retry_error ? h("p", { style: { color: "var(--critical-text)" } }, res.retry_error) : null,
-    failures.length
-      ? h(
-          "p",
-          { style: { color: "var(--critical-text)" } },
-          "Failed variant runs · ",
-          failures.slice(0, 3).join("; "),
-          failures.length > 3 ? "…" : "",
-        )
-      : null,
     rep
       ? rep.variants.map((v, i) =>
           v.invalid.length

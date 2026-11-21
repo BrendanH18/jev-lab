@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compareScorePayload, mergeCompareRetry } from "../../static/js/compare-retry.js";
+import { comparePendingCalls, compareScorePayload, mergeCompareRetry } from "../../static/js/compare-retry.js";
 import { workbenchSource } from "./workbench-source.mjs";
 
 const body = (name) =>
@@ -96,12 +96,14 @@ function retryHarness({ confirmSpend = async () => true, retry, wide = false } =
     chooseCmpQuestion: () => "q",
     rescoreCompare: () => scored.push(W.compare.result),
     handleError: (e) => errors.push(e.message),
+    comparePendingCalls,
     mergeCompareRetry,
     toast: (message) => errors.push(message),
   };
   const methods = [
     "compareEditorKey",
     "compareDraftMatches",
+    "compareRetryPositions",
     "compareRetryBody",
     "runCompare",
     "retryCompare",
@@ -138,6 +140,7 @@ test("Compare retries the frozen request and rescoring keeps the current questio
       average_orders,
     })),
     retry: x.initial.retry,
+    positions: [2],
   });
   const result = x.W.compare.result;
   assert.deepEqual(x.scored, [x.initial, result]);
@@ -167,6 +170,99 @@ test("Compare retries the frozen request and rescoring keeps the current questio
   assert.equal(averaged.answers.q.choice, "yes");
   assert.ok(Math.abs(averaged.answers.q.probabilities.yes - 0.6) < 1e-12);
   assert.ok(Math.abs(averaged.answers.q.confidence - 0.2) < 1e-12);
+});
+
+test("Compare shows all unanswered call details with their original input row numbers and Choice orders", () => {
+  const h = (tag, attrs, ...children) => ({ tag, attrs, children: children.flat(Infinity) });
+  const result = {
+    source_row_numbers: [1, 4],
+    variants: [{ average_orders: false }, { average_orders: true }],
+    retry: { models: ["jev-1.14.0", null, "jev-1.14.0", null, "jev-1.14.0", null] },
+    calls: [{}, { error: "<b>Timed out</b>" }, {}, { skipped: true }, {}, { skipped: true }],
+  };
+  const compare = { result, retrySelection: { selected: new Set([1, 3, 5]) } };
+  const controls = new Function(
+    "W",
+    "h",
+    "VARIANTS",
+    "comparePendingCalls",
+    "retryCompare",
+    "updateCompareRetry",
+    `${body("compareRetryControls")} return compareRetryControls();`,
+  )(
+    { compare },
+    h,
+    ["A", "B"],
+    comparePendingCalls,
+    () => {},
+    () => {},
+  );
+  function childrenOf(node, tag) {
+    if (!node?.children) return [];
+    return node.tag === tag ? [node] : node.children.flatMap((child) => childrenOf(child, tag));
+  }
+  const labels = childrenOf(controls, "label");
+  assert.deepEqual(
+    labels.map((label) => [label.children[0].attrs.checked, label.children[1].children.join("")]),
+    [
+      [true, "Row 1 · Variant B · Choice options as listed · Failed · <b>Timed out</b>"],
+      [true, "Row 4 · Variant A · Skipped"],
+      [true, "Row 4 · Variant B · Choice options reversed · Skipped"],
+    ],
+  );
+});
+
+function failFirstCompareCall(initial) {
+  const failure = { error: "Timed out" };
+  initial.calls[0] = failure;
+  initial.retry.models[0] = null;
+  initial.results[0].runs[0] = failure;
+  initial.variants[0].cost_usd = 0;
+  initial.variants[0].input_tokens = 0;
+}
+
+test("Compare retries only the selected calls and retains the unanswered calls left out", async () => {
+  const x = retryHarness({
+    retry: (attempt) => ({ ...attempt, retry: { models: [null, "jev-1.14.0", "jev-1.14.0"], token: "next" } }),
+  });
+  failFirstCompareCall(x.initial);
+  await x.runCompare();
+  assert.deepEqual(x.compareRetryBody().positions, [0, 2]);
+  x.W.compare.retrySelection.selected.delete(0);
+  await x.retryCompare();
+  const [preview, paid] = x.requests.slice(-2);
+  assert.deepEqual(paid.data.positions, [2]);
+  assert.equal(preview.data, paid.data);
+  assert.equal(x.W.compare.result.calls[0], x.initial.calls[0]);
+  assert.deepEqual(
+    comparePendingCalls(x.W.compare.result).map((call) => call.position),
+    [0],
+  );
+  assert.equal(x.compareRetryBody(), null, "a selection with no pending positions cannot run");
+  x.W.compare.retrySelection.selected.add(0);
+  assert.deepEqual(x.compareRetryBody().positions, [0]);
+});
+
+test("Compare requires another retry when selection changes during spend preview", async () => {
+  let finish;
+  const x = retryHarness({
+    confirmSpend: (kind) =>
+      kind === "compare"
+        ? true
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+  });
+  failFirstCompareCall(x.initial);
+  await x.runCompare();
+  const pending = x.retryCompare();
+  x.W.compare.retrySelection.selected.delete(0);
+  finish(true);
+  await pending;
+  assert.equal(x.requests.length, 3);
+  assert.deepEqual(x.requests.at(-1).data.positions, [0, 2]);
+  assert.deepEqual(x.compareRetryBody().positions, [2]);
+  assert.match(x.errors[0], /comparison changed/);
 });
 
 test("Compare can retry a partial report larger than the server request limit", async () => {
