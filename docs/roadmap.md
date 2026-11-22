@@ -100,7 +100,7 @@ bug #91 and Dependabot PR #86.
 - **Live evidence for live claims.** Changes to a demo, wording or model need a recorded live run.
 - **One path, taught well.** Choose the newcomer path first, then simplify everything else around it.
 - The hard constraints don't change: loopback-only stdlib server, no canned answers, no frontend build,
-  Namespace CI, no new dependencies without approval.
+  GitHub-hosted CI, no new dependencies without approval.
 
 ## Month by month
 
@@ -156,7 +156,7 @@ bug #91 and Dependabot PR #86.
   simulated partial failure, then a retry; dataset replace → history restore; Review session download
   → restore. Each checks for no console errors and that labels and drafts survive. They use
   Playwright (D1): `@playwright/test` pinned in `package.json` as a dev dependency next to Biome. A new
-  CI job on `namespace-profile-gitrunner` installs Chromium, starts `server.py` on loopback with a
+  CI job on `ubuntu-24.04` installs Chromium, starts `server.py` on loopback with a
   temporary data directory and a fake model backend, and joins `All tests passed`'s `needs`. Agents
   run it on Boat. The app keeps its zero runtime dependencies on the frontend and no build step.
 - Split `workbench-build.js`, `workbench-datasets.js` and `workbench-compare.js` along their existing

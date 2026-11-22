@@ -69,11 +69,11 @@ suite does not need one. The app requires Python 3.10+ and the official `typesaf
 their own, then the lint-and-format, JavaScript and sample-picture checks as steps of its `All tests passed` job.
 `.github/workflows/audit.yml` audits
 `uv.lock` (`uv audit`) on PRs and weekly, and `.github/workflows/codeql.yml` runs CodeQL (Actions, JavaScript,
-Python) on PRs, `main` and weekly; GitHub's CodeQL default setup must stay off. Every job runs on Namespace runners
-(`namespace-profile-gitrunner`, Ubuntu 24.04), never GitHub-hosted ones. The main ruleset requires
+Python) on PRs, `main` and weekly; GitHub's CodeQL default setup must stay off. Every job runs on GitHub-hosted runners
+(`ubuntu-24.04`), which are free for public repositories; don't use paid larger runners. The main ruleset requires
 the `All tests passed` job, which passes only when its own checks and every other job in `test.yml` passed: add
 any new test job to its `needs`. Add a check that takes seconds as a step of that job rather than as a job of its
-own: Namespace starts concurrent runners in waves, so each extra runner can delay every queued job.
+own: each runner takes time to start and counts toward the account's concurrent-job limit.
 
 ## Cloud sandboxes (Boat)
 
