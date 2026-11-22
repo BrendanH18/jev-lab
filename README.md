@@ -371,7 +371,8 @@ No API key or external API access is needed for the tests. SDK tests use an in-m
 HTTP tests start a temporary loopback server. CI tests the locked dependencies on Python
 3.10–3.14. CI also runs JavaScript syntax and module tests
 (`uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs`), and checks that the committed
-sample pictures match their script.
+sample pictures match their script, and browser tests (`npx playwright test`) drive the real pages in headless
+Chromium against a model stub on loopback.
 After adding or changing a Lab pack, regenerate its page index and the inventory with `node scripts/lab_inventory.mjs`. A
 separate workflow audits `uv.lock` for known vulnerabilities on pull requests and weekly.
 

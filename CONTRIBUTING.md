@@ -42,7 +42,7 @@ uv run --locked python -m unittest discover -v tests -p 'test_security.py'
 ```
 
 Run the same lint and format checks CI runs. Ruff (Python) is a uv dev dependency and Biome
-(JavaScript) is the only npm package; neither is imported by the app:
+(JavaScript) an npm dev dependency; neither is imported by the app:
 
 ```sh
 npm ci                                                              # once: install Biome
@@ -62,11 +62,20 @@ done
 uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 ```
 
+The browser tests in `tests/browser/` drive the real pages in headless Chromium with Playwright, an npm dev
+dependency. `tests/browser/serve.py` starts `server.py` on loopback with a temporary data directory and a fake key,
+and every model call goes to a stub on loopback, so they need no key and make no paid call:
+
+```sh
+npm ci && npx playwright install --with-deps chromium   # once
+npx playwright test
+```
+
 ### Checks on Boat
 
 The maintainer's agents run these checks on [Boat](https://docs.boat.dev) sandboxes rather than on their
 own machines. `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests,
-the locked-SDK suite on Python 3.12 only, and the sample pictures) in one
+the locked-SDK suite on Python 3.12 only, the browser tests and the sample pictures) in one
 long-lived sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs.
 CI still runs the locked-SDK suite on every supported Python version:
 

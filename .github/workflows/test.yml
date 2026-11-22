@@ -34,13 +34,39 @@ jobs:
       - name: Run tests (no API key needed)
         run: uv run --locked python -m unittest discover -v tests
 
+  # Its own job: installing Chromium takes longer than the steps of the required job below.
+  browser:
+    name: Browser tests
+    runs-on: namespace-profile-gitrunner
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Install Playwright from package-lock.json
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser tests (loopback server and model stub, no key)
+        run: npx playwright test
+
   # The check the main ruleset requires. A job that a failed job `needs` is skipped, and a skipped
   # required check counts as passing, so this runs always() and passes only if every job it needs
   # passed. The checks that take seconds (lint, JavaScript, sample pictures) run here as steps rather
-  # than on runners of their own, so a push starts six runners instead of nine.
+  # than on runners of their own.
   tests-passed:
     name: All tests passed
-    needs: [test]
+    needs: [test, browser]
     if: always()
     runs-on: namespace-profile-gitrunner
     timeout-minutes: 10

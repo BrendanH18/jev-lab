@@ -365,6 +365,11 @@ if [ ! -f "$deps/node/.installed" ] || ! cmp -s package.json "$deps/node/package
     (cd "$deps/node" && npm ci --no-audit --no-fund --loglevel=error)
     touch "$deps/node/.installed"
 fi
+# Chromium for the browser tests, once per Playwright version (npm ci above clears the marker).
+if [ ! -f "$deps/node/.chromium" ]; then
+    npx playwright install --with-deps chromium >/dev/null
+    touch "$deps/node/.chromium"
+fi
 # Biome reads .gitignore through git, and the sample-picture check diffs against the index.
 git -c init.defaultBranch=main init -q && git add -A
 ln -sfn "$deps/node/node_modules" node_modules
@@ -387,6 +392,7 @@ check "Biome" 'npm run --silent lint -- --colors=off --diagnostic-level=error'
 check "JavaScript syntax" 'for file in $(find static/js -name "*.js" | sort); do node --input-type=module --check <"$file" || exit 1; done'
 check "JavaScript tests" 'uv run --locked node --test --test-reporter=dot tests/js/*.test.mjs tests/js/lab/*.test.mjs'
 check "Python tests (locked SDK)" 'uv run --locked python -m unittest discover tests'
+check "Browser tests" 'npx playwright test --reporter=line'
 check "Sample pictures" 'python3 scripts/draw_samples.py && git add --intent-to-add static/img/samples && git diff --exit-code --stat static/img/samples'
 if [ ${#failed[@]} -gt 0 ]; then
     printf 'boat-check: FAILED: %s\n' "${failed[@]}" >&2
@@ -397,7 +403,7 @@ EOF
 }
 
 # Refresh the warm snapshot from this sandbox once the checks passed: drop the checkouts so it
-# keeps only the toolchain, uv's caches, the venv and Biome, then wait for this
+# keeps only the toolchain, uv's caches, the venv, Biome and Chromium, then wait for this
 # save (a new snapshotId under the name) to read ready.
 save_snapshot() {
     local old state="" deadline=$((SECONDS + 600))
