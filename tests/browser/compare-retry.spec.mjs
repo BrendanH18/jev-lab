@@ -1,83 +1,33 @@
-// Compare's retry confirmation in a real browser. server.py runs on loopback with a temporary data directory
-// (tests/browser/serve.py), and every model call goes to the stub below, which records each one. No key, no
-// network beyond 127.0.0.1, no paid call.
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import http from "node:http";
-import { createInterface } from "node:readline";
-import zlib from "node:zlib";
 import { expect, test } from "@playwright/test";
+import { startBrowserApp } from "./app.mjs";
 
 const question = (variant) => ({
   urgent: { type: "noul", instructions: `Does the message need a reply today? (variant ${variant})` },
 });
 
-// A stand-in for the TypeSafe API: answers every call, except calls for the rows in `failing`, which get a 422 so
-// they stay unanswered (the SDK does not retry a 422). `calls` holds each request as { row, variant }.
-async function startStub() {
-  const stub = { calls: [], failing: new Set() };
-  stub.server = http.createServer(async (req, res) => {
-    const send = (status, body) => {
-      res.writeHead(status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(body));
-    };
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    let raw = Buffer.concat(chunks);
-    if (req.headers["content-encoding"] === "zstd") raw = zlib.zstdDecompressSync(raw); // the SDK on Python 3.14
-    if (req.method === "GET" && req.url.endsWith("/v1/models"))
-      return send(200, { models: [{ name: "jev-1.14.0", description: "stub", release_date: "2026-10-14" }] });
-    if (req.method !== "POST" || !req.url.endsWith("/v1/systemone")) return send(404, { detail: { message: "stub" } });
-    const body = JSON.parse(raw);
+const stub = { calls: [], failing: new Set() };
+let app;
+
+test.beforeAll(async () => {
+  // Rows in `failing` stay unanswered: the SDK does not retry a 422.
+  app = await startBrowserApp((body) => {
     const row = body.state.text;
     const variant = body.questions.urgent.instructions.includes("variant B") ? "B" : "A";
     stub.calls.push({ row, variant });
-    if (stub.failing.has(row)) return send(422, { detail: { message: "stub: this row fails" } });
-    send(200, {
-      model: "jev-1.14.0",
-      answers: { urgent: { type: "noul", noul: 0.8 } },
-      usage: { input_tokens: 100, output_tokens: 1 },
-    });
+    if (stub.failing.has(row)) return [422, { detail: { message: "stub: this row fails" } }];
+    return [
+      200,
+      {
+        model: "jev-1.14.0",
+        answers: { urgent: { type: "noul", noul: 0.8 } },
+        usage: { input_tokens: 100, output_tokens: 1 },
+      },
+    ];
   });
-  stub.server.listen(0, "127.0.0.1");
-  await once(stub.server, "listening");
-  stub.url = `http://127.0.0.1:${stub.server.address().port}`;
-  return stub;
-}
-
-let stub;
-let app;
-let base;
-
-// --offline: the locked environment must already be installed (uv sync --locked), so the run reaches nothing but
-// loopback; NO_PROXY keeps the SDK's calls to the stub off any configured proxy.
-async function startApp(stubUrl) {
-  const noProxy = ["127.0.0.1", "localhost", process.env.NO_PROXY].filter(Boolean).join(",");
-  app = spawn("uv", ["run", "--offline", "--locked", "python", "tests/browser/serve.py", stubUrl], {
-    stdio: ["ignore", "pipe", "inherit"],
-    env: { ...process.env, NO_PROXY: noProxy, no_proxy: noProxy },
-  });
-  const failed = new Promise((_, reject) => {
-    app.once("error", reject);
-    app.once("exit", (code) => reject(new Error(`tests/browser/serve.py exited (${code}) before it started`)));
-  });
-  const [line] = await Promise.race([once(createInterface({ input: app.stdout }), "line"), failed]);
-  failed.catch(() => {}); // a later exit is teardown's business
-  return `http://127.0.0.1:${JSON.parse(line).port}`;
-}
-
-test.beforeAll(async () => {
-  stub = await startStub();
-  base = await startApp(stub.url);
 });
 
 test.afterAll(async () => {
-  if (app && app.exitCode === null && app.signalCode === null) {
-    const exited = once(app, "exit");
-    app.kill();
-    await exited; // serve.py deletes its temporary directory on the way out
-  }
-  stub?.server.close();
+  await app?.close();
 });
 
 test("a retry selection changed while Compare's spend confirmation is pending sends no paid call", async ({ page }) => {
@@ -103,7 +53,7 @@ test("a retry selection changed while Compare's spend confirmation is pending se
     await route.fulfill({ response, json: { ...(await response.json()), fits: false, remaining_usd: 0 } });
   });
 
-  await page.goto(`${base}/workbench#compare`);
+  await page.goto(`${app.base}/workbench#compare`);
   await page.getByLabel("Variant A questions as JSON").fill(JSON.stringify(question("A")));
   await page.getByLabel("Variant B questions as JSON").fill(JSON.stringify(question("B")));
   await page.getByLabel("Rows, shared with the Bulk tab").fill("row one\nrow two\nrow three");

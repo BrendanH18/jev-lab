@@ -1174,14 +1174,10 @@ uv run --locked scripts/check.py --list              # show the checks, and any 
 It makes paid calls with the configured key and prints one report per check. It exits 0 when every
 check passed, 1 when any failed, and 2 when a check could not be judged or none was found. `--out
 report.json` writes the reports, which include rows and answers, so review the file before sharing
-it. Because committed datasets carry their checks, a CI job with a key can rerun them after a
-change, for example in GitHub Actions:
-
-```yaml
-- run: uv run --locked scripts/check.py
-  env:
-    TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-```
+it. Saved checks live in their datasets under the gitignored `data/workbench/datasets/` directory.
+Jev Lab maintainers run live checks manually on Boat using the `jev-lab-live` environment and
+synthetic or approved datasets. Jev Lab's GitHub Actions runs offline tests with stubbed model
+responses. See [the live-run instructions](../AGENTS.md#cloud-sandboxes-boat).
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |

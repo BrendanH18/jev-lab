@@ -110,8 +110,8 @@ code compares them with the tone Jev reads from the words.
 - Workbench pictures are saved in `data/workbench/images/`, named by a hash of their bytes: a saved test's
   images, and the pictures **Add pictures** stores for Bulk rows, which name them under `_image`.
 - Workbench datasets are written to `data/workbench/datasets/<id>.json`: Bulk rows, their `_expect`
-  labels, optionally the question set, consistency rules, and a check: gates, a model, targets, and rules. They hold
-  no answers, and are also meant for version control.
+  labels, optionally the question set, consistency rules, and a saved check. The directory and its
+  `.history/` revisions are gitignored. Dataset files hold inputs, human labels, and configuration.
 - Bundled sample documents and rows live in `data/samples/`; the Bulk tickets in `tickets.jsonl`
   carry `_expect` labels for Calibrate. Sample pictures live in `static/img/samples/` and are drawn
   by [`scripts/draw_samples.py`](../scripts/draw_samples.py). Screenshots live in `docs/screenshots/`.
