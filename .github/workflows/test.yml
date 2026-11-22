@@ -97,6 +97,10 @@ jobs:
         run: |
           git add --intent-to-add static/img/samples
           git diff --exit-code --stat static/img/samples
+      # A cancelled run skips the checks left above, so it must not end green.
+      - name: Fail when the run was cancelled
+        if: cancelled()
+        run: exit 1
       - name: Every job it needs passed
         if: always()
         run: |
