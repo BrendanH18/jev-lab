@@ -63,20 +63,17 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - name: Install locked dependencies
-        id: python
-        if: ${{ !cancelled() && steps.uv.conclusion == 'success' }}
-        run: uv sync --locked
       - name: Install Biome from package-lock.json
         id: biome
         if: ${{ !cancelled() && steps.node.conclusion == 'success' }}
         run: npm ci
+      # Ruff installs the dev group only, so a failed SDK install cannot hide the lint.
       - name: Lint Python
-        if: ${{ !cancelled() && steps.python.conclusion == 'success' }}
-        run: uv run --locked ruff check
+        if: ${{ !cancelled() && steps.uv.conclusion == 'success' }}
+        run: uv run --locked --only-group dev ruff check
       - name: Check Python formatting
-        if: ${{ !cancelled() && steps.python.conclusion == 'success' }}
-        run: uv run --locked ruff format --check
+        if: ${{ !cancelled() && steps.uv.conclusion == 'success' }}
+        run: uv run --locked --only-group dev ruff format --check
       - name: Lint and check formatting of JavaScript
         if: ${{ !cancelled() && steps.biome.conclusion == 'success' }}
         run: npm run lint
@@ -87,8 +84,8 @@ jobs:
             node --input-type=module --check < "$file" || exit 1
           done
       - name: Test browser modules
-        if: ${{ !cancelled() && steps.node.conclusion == 'success' && steps.python.conclusion == 'success' }}
-        # Some tests compare JS calculations to the Python implementation.
+        if: ${{ !cancelled() && steps.node.conclusion == 'success' && steps.uv.conclusion == 'success' }}
+        # Some tests compare JS calculations to the Python implementation; uv run installs the locked SDK.
         run: uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
       - name: Redraw the sample pictures
         id: samples
