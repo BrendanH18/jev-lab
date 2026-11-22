@@ -3,8 +3,10 @@
 .env.*
 !.env.example
 
-# Node (Biome is the only package; see package.json)
+# Node (Biome and Playwright; see package.json)
 node_modules/
+# Playwright traces and screenshots of failed browser tests
+/test-results/
 
 # Python
 __pycache__/
