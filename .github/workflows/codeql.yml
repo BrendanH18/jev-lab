@@ -1,7 +1,7 @@
 name: codeql
 
-# Advanced setup so CodeQL runs on Namespace runners; GitHub's default setup only offers
-# GitHub-hosted runners. Default setup must be off, or the upload step is rejected.
+# Advanced setup, so the languages, triggers and runner are set in this file. Default setup must be
+# off, or the upload step is rejected.
 on:
   push:
     branches: [main]
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: namespace-profile-gitrunner
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       actions: read
