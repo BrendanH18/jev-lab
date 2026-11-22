@@ -85,8 +85,9 @@ jobs:
           done
       - name: Test browser modules
         if: ${{ !cancelled() && steps.node.conclusion == 'success' && steps.uv.conclusion == 'success' }}
-        # Some tests compare JS calculations to the Python implementation; uv run installs the locked SDK.
-        run: uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
+        # Some tests compare JS calculations to the Python implementation; uv run installs the locked SDK
+        # without the dev group, so a failed Ruff install cannot hide them.
+        run: uv run --locked --no-dev node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
       - name: Redraw the sample pictures
         id: samples
         if: ${{ !cancelled() && steps.checkout.conclusion == 'success' }}
