@@ -67,7 +67,7 @@ dependency. `tests/browser/serve.py` starts `server.py` on loopback with a tempo
 and every model call goes to a stub on loopback, so they need no key and make no paid call:
 
 ```sh
-npm ci && npx playwright install --with-deps chromium   # once
+uv sync --locked && npm ci && npx playwright install --with-deps chromium   # once
 npx playwright test
 ```
 

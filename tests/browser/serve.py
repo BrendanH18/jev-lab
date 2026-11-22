@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import signal
 import sys
 import tempfile
 from http.server import ThreadingHTTPServer
@@ -60,6 +61,8 @@ def main() -> int:
             def log_message(self, *_args):
                 pass
 
+        # The test stops this process with SIGTERM: exit through the finally below, which deletes the directory.
+        signal.signal(signal.SIGTERM, lambda *_args: sys.exit(0))
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         Handler.port = httpd.server_address[1]
         print(json.dumps({"port": Handler.port}), flush=True)

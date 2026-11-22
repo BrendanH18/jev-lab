@@ -23,7 +23,8 @@ uv run --locked python -m unittest tests.test_workbench.ItemTests.test_save_list
 uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs  # browser and Lab modules (Node 22, no DOM)
 npx playwright test                           # browser tests (tests/browser): real pages in headless Chromium
                                                # against server.py and a model stub, both on loopback; no key.
-                                               # Once: npm ci && npx playwright install --with-deps chromium
+                                               # Once: uv sync --locked && npm ci &&
+                                               #   npx playwright install --with-deps chromium
 node scripts/lab_inventory.mjs                # regenerate Lab page indexes and docs/lab/ after changing packs
                                                # (--check: exit 1 when they are out of date; the JS tests run it)
 uv run --locked scripts/lab.py --help         # offline commands from the Python Lab packs (no key, no network)

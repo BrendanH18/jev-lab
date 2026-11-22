@@ -45,29 +45,42 @@ async function startStub() {
   return stub;
 }
 
-async function startApp(stubUrl) {
-  const app = spawn("uv", ["run", "--locked", "python", "tests/browser/serve.py", stubUrl], {
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  const [line] = await once(createInterface({ input: app.stdout }), "line");
-  return { app, url: `http://127.0.0.1:${JSON.parse(line).port}` };
-}
-
 let stub;
 let app;
 let base;
 
+// --offline: the locked environment must already be installed (uv sync --locked), so the run reaches nothing but
+// loopback; NO_PROXY keeps the SDK's calls to the stub off any configured proxy.
+async function startApp(stubUrl) {
+  const noProxy = ["127.0.0.1", "localhost", process.env.NO_PROXY].filter(Boolean).join(",");
+  app = spawn("uv", ["run", "--offline", "--locked", "python", "tests/browser/serve.py", stubUrl], {
+    stdio: ["ignore", "pipe", "inherit"],
+    env: { ...process.env, NO_PROXY: noProxy, no_proxy: noProxy },
+  });
+  const failed = new Promise((_, reject) => {
+    app.once("error", reject);
+    app.once("exit", (code) => reject(new Error(`tests/browser/serve.py exited (${code}) before it started`)));
+  });
+  const [line] = await Promise.race([once(createInterface({ input: app.stdout }), "line"), failed]);
+  failed.catch(() => {}); // a later exit is teardown's business
+  return `http://127.0.0.1:${JSON.parse(line).port}`;
+}
+
 test.beforeAll(async () => {
   stub = await startStub();
-  ({ app, url: base } = await startApp(stub.url));
+  base = await startApp(stub.url);
 });
 
 test.afterAll(async () => {
-  app?.kill();
+  if (app && app.exitCode === null && app.signalCode === null) {
+    const exited = once(app, "exit");
+    app.kill();
+    await exited; // serve.py deletes its temporary directory on the way out
+  }
   stub?.server.close();
 });
 
-test("a retry selection changed while Compare's spend confirmation is open sends no paid call", async ({ page }) => {
+test("a retry selection changed while Compare's spend confirmation is pending sends no paid call", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const dialogs = [];
@@ -76,7 +89,7 @@ test("a retry selection changed while Compare's spend confirmation is open sends
     dialog.accept();
   });
   // Retry spend previews report a bound above the budget left, so a retry asks for the explicit confirm. While
-  // `holding`, they wait for release(): the confirmation stays open.
+  // `holding`, they wait for release(): the confirmation stays pending.
   let holding = false;
   const held = [];
   const release = () => {
@@ -116,12 +129,12 @@ test("a retry selection changed while Compare's spend confirmation is open sends
   await call(2, "B").check();
   await expect(retry).toHaveText("Retry 2 selected calls");
 
-  // Open the confirmation and keep it open.
+  // Start the confirmation and keep it pending.
   holding = true;
   await retry.click();
   await expect(retry).toHaveText("Retrying selected calls…");
   await expect.poll(() => held.length).toBeGreaterThan(0);
-  // The selection controls are locked while it is open...
+  // The selection controls are locked while it is pending...
   await expect(call(3, "A")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Select all" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Clear selection" })).toBeDisabled();
@@ -133,7 +146,9 @@ test("a retry selection changed while Compare's spend confirmation is open sends
   release();
 
   await expect(retry).not.toHaveText("Retrying selected calls…");
-  expect(dialogs).toHaveLength(1); // the confirmation was shown and accepted,
+  // The confirmation showed the spend preview for the two calls selected at the click, and was accepted,
+  expect(dialogs).toHaveLength(1);
+  expect(dialogs[0]).toContain("up to 2 live calls");
   expect(stub.calls).toEqual([]); // yet no paid call went out for either selection
   await expect(page.getByRole("alert").filter({ hasText: "The comparison changed." })).toBeVisible();
 
@@ -142,6 +157,7 @@ test("a retry selection changed while Compare's spend confirmation is open sends
   await retry.click();
   await expect(page.getByText("Choose from 1 unanswered call", { exact: true })).toBeVisible();
   expect(dialogs).toHaveLength(2);
+  expect(dialogs[1]).toContain("up to 3 live calls");
   const sent = stub.calls.map(({ row, variant }) => `${row} ${variant}`).sort();
   expect(sent).toEqual(["row three A", "row two A", "row two B"]);
   expect(errors).toEqual([]);
