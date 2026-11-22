@@ -222,14 +222,9 @@ function renderToolbox() {
       h(
         "p",
         { class: "muted" },
-        "Local calculators and converters for planning a gate: intervals around a measured accuracy, how many rows to label, what a run costs and how long it takes under the rate limit, probabilities and odds, and picture boxes and sizes. Everything is computed in this browser from what you type: nothing is sent anywhere, no model is called and nothing is saved.",
+        "Calculate confidence intervals and plan audit sample sizes from the values you enter. Nothing is sent anywhere.",
       ),
-      section ||
-        h(
-          "p",
-          { class: "empty", role: "status" },
-          "No tools are loaded on this page yet. Tools come from Lab packs for the Toolbox (static/js/lab/packs/workbench).",
-        ),
+      section || h("p", { class: "empty", role: "status" }, "No tools are loaded on this page yet."),
     ),
   );
 }

@@ -93,13 +93,11 @@ For interface changes, also inspect the affected pages in a browser at desktop a
 Check keyboard navigation, empty and error states, and the request inspector where relevant.
 Syntax checks do not replace browser testing.
 
-### Adding a Lab pack
+### Maintaining Lab packs
 
-Most small improvements belong in a Lab pack rather than in a page's own code. A pack is one new
-module under `static/js/lab/packs/<page>/` (or `jev/lab/packs/` for question checks, dataset health
-findings and offline `scripts/lab.py` commands) with its own test that runs the shared harness. Read
-the contract in `static/js/lab/kit.js` or `jev/lab/kit.py`, and the header of the surface you extend
-in `static/js/lab/surfaces/`. Then regenerate the page indexes and the numbered inventory:
+Lab is frozen for fixes and deletions. Read the pack contract in `static/js/lab/kit.js` or
+`jev/lab/kit.py`, and the surface header in `static/js/lab/surfaces/` when changing browser behavior.
+Regenerate the page indexes after removing a JavaScript pack or moving a surface module:
 
 ```sh
 node scripts/lab_inventory.mjs

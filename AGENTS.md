@@ -26,7 +26,7 @@ uv run --locked python -m unittest tests.test_workbench -v
 uv run --locked python -m unittest tests.test_workbench.ItemTests.test_save_list_run_delete
 uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 npx playwright test                      # headless Chromium, real app and loopback model stub
-node scripts/lab_inventory.mjs           # regenerate Lab indexes and docs/lab/
+node scripts/lab_inventory.mjs           # regenerate JavaScript Lab page indexes
 uv run --locked scripts/lab.py --help     # offline Lab commands
 uv run --locked ruff check && uv run --locked ruff format --check
 npm run lint                             # Biome
@@ -184,12 +184,10 @@ changing these workflows.
 - Lab never calls the model or spends budget, including indirectly through page commands. Pure
   rescoring and replanning are allowed. Its filters, sorts, drafts, previews and tools stay in the
   page session. Chrome stores only the theme preference. Exports follow the Workbench boundaries.
-- Keep a harness test per pack with independently computed expectations and a handwritten case
-  for each declared feature. `tests/js/lab/registry.test.mjs` and
+- Verify retained quantitative tools with independent reference values. `tests/js/lab/registry.test.mjs` and
   `tests/js/lab/surface-no-model-calls.test.mjs` enforce pack and surface isolation.
-- Run `node scripts/lab_inventory.mjs` after changing pack declarations. Never edit generated
-  `static/js/lab/pages/*.js`. Biome skips these files and the JS tests check the generated indexes
-  and numbered docs in `docs/lab/` with `--check`.
+- Run `node scripts/lab_inventory.mjs` after changing JavaScript packs or surfaces. Never edit generated
+  `static/js/lab/pages/*.js`. Biome skips these files and the JS tests check the generated indexes.
 
 ## Conventions
 

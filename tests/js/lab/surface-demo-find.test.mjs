@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { applyTransform, improvementsOf, previewTransform, undoTransform } from "../../../static/js/lab/kit.js";
 import { createLab } from "../../../static/js/lab/host.js";
 import {
   FIND_RULES,
@@ -13,8 +12,6 @@ import {
   findLineItems,
   findResultsCtx,
 } from "../../../static/js/lab/surfaces/find.js";
-import resultsPack from "../../../static/js/lab/packs/find/find-results-insights.js";
-import documentPack from "../../../static/js/lab/packs/find/find-document-tools.js";
 import { fakeEnv, find, fire, textOf } from "./harness.mjs";
 import {
   DOC_LINES,
@@ -406,33 +403,6 @@ test("replaceItems writes canonical lines back as the document, with every guard
   assert.equal(sampleFindDocumentCtx().actions.replaceItems(exact, {}), 1, "exactly 60,000 characters is allowed");
 });
 
-test("a previewed edit applies through replaceItems and its Undo restores the document", () => {
-  const ctx = sampleFindDocumentCtx({
-    text: "Section A: Hours\nThe cafe opens at 6:30 am.\nthe cafe opens at  6:30 am.\nSection B: Pay",
-    result: null,
-  });
-  const transform = documentPack.features.find((feature) => feature.id === "remove_duplicates");
-  const before = ctx.items();
-  const preview = previewTransform(
-    "find-document-tools/remove_duplicates",
-    transform,
-    before,
-    new Set(before.map((_, index) => index)),
-    {},
-    ctx,
-  );
-  const applied = applyTransform(preview, ctx.items());
-  ctx.actions.replaceItems(applied.items, { label: preview.label });
-  assert.equal(ctx.state.text, "Section A: Hours\nThe cafe opens at 6:30 am.\nSection B: Pay");
-  const restored = undoTransform(applied.undo, ctx.items());
-  ctx.actions.replaceItems(restored, { label: "Undo" });
-  assert.equal(
-    ctx.state.text,
-    "Section A: Hours\nThe cafe opens at 6:30 am.\nthe cafe opens at  6:30 am.\nSection B: Pay",
-  );
-  assert.deepEqual(ctx.items(), before);
-});
-
 test("importItems appends text lines with the same guards", () => {
   const ctx = sampleFindDocumentCtx({ text: "Section A: Hours\nPayday is Friday.", result: null });
   assert.equal(
@@ -531,9 +501,9 @@ const ctxDecl = (name, builder) => {
   return match[0];
 };
 
-// The page's functions over a fake screen. packs: the Lab packs loaded; state: S overrides.
-function pageWith({ packs = [], ...state } = {}) {
-  const LAB = createLab(packs);
+// The page's functions over a fake screen, using the state overrides supplied by the caller.
+function pageWith(state = {}) {
+  const LAB = createLab([]);
   const S = {
     text: DOCS.short,
     queries: [...QUERIES],
@@ -603,9 +573,9 @@ function pageWith({ packs = [], ...state } = {}) {
   return { ...page, before, S, LAB, held, log, elements };
 }
 
-test("with no Lab setting active the document and the result cards render exactly as before", () => {
+test("the document and results render normally without packs", () => {
   for (const state of [{}, { focus: 2 }, { text: DOCS.long, result: null }, { result: null }, { editing: true }]) {
-    const page = pageWith({ packs: [resultsPack, documentPack], ...state });
+    const page = pageWith(state);
     page.before.renderDoc();
     const docBefore = plain(page.held.get("#doc"));
     const countBefore = page.elements["#doc-count"].textContent;
@@ -638,100 +608,32 @@ test("without packs on a surface the page adds nothing", () => {
   assert.deepEqual(page.held.get("#doc-lab"), []);
 });
 
-test("result cards: Lab filters hide cards, a Lab sort reorders them, clicks keep each card's own question", () => {
-  const page = pageWith({ packs: [resultsPack, documentPack] });
+test("result cards and their highlighted hits navigate to their own question and line", () => {
+  const page = pageWith();
   page.renderResults();
   const cards = () => page.held.get("#results")[1].children;
   const queries = () =>
     cards()
       .filter((node) => node.attrs.class?.startsWith("result"))
       .map((node) => textOf(find(node, (entry) => entry.attrs.class === "q")));
-  const view = page.LAB.view("find.results");
-  view.filters = [{ key: "find-results-insights/verdict", op: "is", value: "answered" }];
-  page.renderResultCards();
-  assert.deepEqual(queries(), [`“${QUERIES[0]}”`, `“${QUERIES[1]}”`]);
-  assert.match(textOf(cards()[0]), /2 of 4 questions shown · 1 Lab setting active/);
-  assert.equal(cards()[0].attrs.role, "status");
-  view.filters = [];
-  view.sort = { key: "find-results-insights/top_prob", dir: "asc" };
-  page.renderResultCards();
-  // .38 wifi, .41 parental, .64 notice, .71 dog
-  assert.deepEqual(
-    queries(),
-    [3, 2, 1, 0].map((index) => `“${QUERIES[index]}”`),
-  );
-  const dogCard = cards().at(-1);
-  assert.equal(dogCard.attrs.style.background, "var(--panel-2)", "question 1 is still the focused one");
-  fire(cards()[2], "click"); // the parental-leave card, after the status note and the wifi card
-  assert.equal(page.S.focus, 2);
-  fire(
-    find(cards()[2], (node) => node.attrs.class === "hit top"),
-    "click",
-    { stopPropagation: () => page.log.push(["stop"]) },
-  );
-  assert.deepEqual(page.log.slice(-2), [["stop"], ["scroll", "ln-6"]], "the top line of the parental question is L006");
-  view.filters = [{ key: "find-results-insights/top_prob", op: "min", value: "0.99" }];
-  page.renderResultCards();
-  assert.equal(textOf(cards()[1]), "No question matches the Lab filters.");
-  fire(
-    find(cards()[0], (node) => node.tag === "button"),
-    "click",
-  );
-  assert.equal(page.LAB.active("find.results"), 0);
-  assert.equal(queries().length, 4);
+
   assert.deepEqual(
     queries(),
     QUERIES.map((query) => `“${query}”`),
   );
-});
-
-test("document lines: Lab filters and sort keep line IDs and highlights, with a note and a reset", () => {
-  const page = pageWith({ packs: [resultsPack, documentPack] });
-  const view = page.LAB.view("find.document");
-  view.filters = [{ key: "find-document-tools/heading", op: "with" }];
-  page.renderDoc();
-  let [note, doc] = page.held.get("#doc");
-  assert.match(textOf(note), /5 of 13 lines shown · 1 Lab setting active/);
-  assert.deepEqual(
-    doc.children.map((node) => node.attrs.id),
-    ["ln-1", "ln-4", "ln-7", "ln-9", "ln-11"],
-  );
-  // Question 1 is focused: L010 is its top line (not shown), L009 at 20% is highlighted, L011 at 4% is not.
-  assert.equal(doc.children[3].attrs.class, "ln head hit2");
-  assert.equal(doc.children[4].attrs.class, "ln head ");
-  view.filters = [];
-  view.sort = { key: "find-document-tools/focused_p", dir: "desc" };
-  page.renderDoc();
-  [note, doc] = page.held.get("#doc");
-  assert.deepEqual(
-    doc.children.slice(0, 3).map((node) => textOf(node.children[0])),
-    ["L010", "L009", "L011"],
-  );
-  assert.equal(doc.children[0].attrs.class, "ln  hit");
-  view.filters = [{ key: "find-document-tools/words", op: "min", value: "99" }];
-  page.renderDoc();
-  assert.equal(textOf(page.held.get("#doc")[1]), "No line matches the Lab filters.");
+  const parental = cards()[2];
+  fire(parental, "click");
+  assert.equal(page.S.focus, 2);
   fire(
-    find(page.held.get("#doc")[0], (node) => node.tag === "button"),
+    find(parental, (node) => node.attrs.class === "hit top"),
     "click",
+    { stopPropagation: () => page.log.push(["stop"]) },
   );
-  assert.equal(page.LAB.active("find.document"), 0);
-  assert.equal(page.held.get("#doc").length, 1);
-  assert.equal(page.held.get("#doc")[0].children.length, 13);
-  assert.equal(page.elements["#doc-lab"].hidden, false, "the reset also redraws the Lab section");
+  assert.deepEqual(page.log.slice(-2), [["stop"], ["scroll", "ln-6"]], "the top line of the parental question is L006");
 });
 
-test("the Lab sections render beside both lists, and a document edit drops the results like Done", () => {
-  const page = pageWith({ packs: [resultsPack, documentPack] });
-  page.renderResults();
-  const lab = page.held.get("#results").at(-1);
-  assert.equal(lab.attrs.id, "results-lab");
-  assert.equal(find(lab, (node) => node.attrs?.["data-lab-surface"])?.attrs["data-lab-surface"], "find.results");
-  page.renderDocLab();
-  assert.equal(page.elements["#doc-lab"].hidden, false);
-  assert.equal(page.held.get("#doc-lab")[0].attrs["data-lab-surface"], "find.document");
-  assert.deepEqual(page.LAB.mountedIds().sort(), ["find.document", "find.results"]);
-  // A previewed Lab edit applied through the document's replaceItems.
+test("a document edit drops the results like Done", () => {
+  const page = pageWith();
   page.docCtx.actions.replaceItems(findLineItems(DOC_LINES.slice(0, 4)), { label: "Keep the start" });
   assert.equal(page.S.text, DOC_LINES.slice(0, 4).join("\n"));
   assert.equal(page.S.result, null);
@@ -748,7 +650,7 @@ test("the Lab sections render beside both lists, and a document edit drops the r
   assert.equal(page.held.has("#doc"), false, "refresh leaves the open text box alone");
   assert.throws(() => page.docCtx.actions.replaceItems(findLineItems(["One line"]), {}), /Press Done first/);
   // The results surface's addQuery adds a box through the page and never searches.
-  const fresh = pageWith({ packs: [resultsPack] });
+  const fresh = pageWith();
   fresh.resultsCtx.actions.addQuery("is there a staff discount?");
   assert.deepEqual(fresh.S.queries.at(-1), "is there a staff discount?");
   assert.deepEqual(fresh.log, [["renderQueries", true]]);
@@ -824,42 +726,4 @@ test("the page installs Lab once after the top bar and wires both surfaces", () 
   assert.match(body("resultsLab"), /LAB\.section\(labEnv, RESULTS, resultsCtx\)/);
   assert.match(body("renderDocLab"), /LAB\.section\(labEnv, DOC, docCtx\)/);
   assert.match(HTML, /<div id="doc"><\/div>\s*<div id="doc-lab" class="panel-body hidden"><\/div>/);
-});
-
-test("both starter packs render with the real ctx and every block open", () => {
-  const LAB = createLab([resultsPack, documentPack]);
-  for (const [id, ctx] of [
-    ["find.results", sampleFindResultsCtx()],
-    ["find.document", sampleFindDocumentCtx()],
-  ]) {
-    const view = LAB.view(id);
-    for (const name of ["section", "refine", "checks", "transforms", "metrics", "exports", "imports", "commands"])
-      view.open[name] = true;
-    const tree = LAB.section(fakeEnv(), id, ctx);
-    assert.match(textOf(tree), /Lab tools · \d+/);
-    const editable = id === "find.document";
-    assert.equal(
-      !!find(tree, (node) => node.attrs?.["data-lab-block"] === "transforms"),
-      editable,
-      `${id}: edits only on the document`,
-    );
-    assert.equal(
-      !!find(tree, (node) => node.attrs?.["data-lab-block"] === "imports"),
-      editable,
-      `${id}: imports only on the document`,
-    );
-  }
-  const improvements = (id) =>
-    [resultsPack, documentPack]
-      .filter((pack) => pack.surface === id)
-      .reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
-  assert.ok(improvements("find.results") > 0 && improvements("find.document") > 0);
-  assert.equal(LAB.count("find.results"), improvements("find.results"));
-  assert.equal(LAB.count("find.document"), improvements("find.document"));
-  // Commands reach the page through the mounted ctx.
-  const ctx = sampleFindResultsCtx();
-  LAB.mount("find.results", ctx);
-  const key = LAB.handleKey({ key: "N", altKey: true, shiftKey: true, target: { tagName: "INPUT" } }); // Alt+Shift+N, even while typing
-  assert.equal(key, "find-results-insights/next_question");
-  assert.deepEqual(ctx.log, [["focusResult", 1]]);
 });

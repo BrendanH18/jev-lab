@@ -7,10 +7,8 @@ import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
 import { calibrateCtx, costsCtx, policyCtx } from "../../../static/js/lab/surfaces/workbench-analysis.js";
-import calibratePack from "../../../static/js/lab/packs/workbench/wb-calibrate-rows.js";
-import policyPack from "../../../static/js/lab/packs/workbench/wb-policy-rows.js";
-import costsPack from "../../../static/js/lab/packs/workbench/wb-costs-mistakes.js";
 import { workbenchSource } from "../workbench-source.mjs";
+import { probePack } from "./fixture-pack.mjs";
 import { fakeEnv, textOf, findAll } from "./harness.mjs";
 import {
   CAL_REPORTS,
@@ -27,6 +25,18 @@ import {
 
 const body = (name) => workbenchSource.match(new RegExp(`function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const calibratePack = probePack("calibrate-probe", "workbench.calibrate", {
+  result: ["category", (item) => (item.correct ? "right" : "wrong")],
+  signal: ["number", (item) => item.signal],
+  label_outside_set: ["flag", (item) => item.set?.covered === false],
+});
+const policyPack = probePack("policy-probe", "workbench.policy", {
+  picture: ["flag", (item) => item.image !== null],
+  outcome: ["category", (item) => item.outcome],
+});
+const costsPack = probePack("costs-probe", "workbench.costs", {
+  price: ["number", (item) => Number(item.cost)],
+});
 
 // ---------- workbench.calibrate ----------
 
@@ -468,8 +478,8 @@ test("hook: a Lab filter on Calibrate reaches its row list and the answer-set sh
   const W = calibrateW(lab);
   const hooks = calibrateHooks(W);
   const view = lab.view("workbench.calibrate");
-  view.filters = [{ key: "wb-calibrate-rows/result", op: "is", value: "wrong" }];
-  view.sort = { key: "wb-calibrate-rows/signal", dir: "desc" };
+  view.filters = [{ key: "calibrate-probe/result", op: "is", value: "wrong" }];
+  view.sort = { key: "calibrate-probe/signal", dir: "desc" };
   const rows = SETS_REPORT.rows.filter((r) => r.size >= 2);
   // Wrong rows are #2 (signal .12) and #6 (.20); sorted by signal, highest first.
   assert.deepEqual(
@@ -484,7 +494,7 @@ test("hook: a Lab filter on Calibrate reaches its row list and the answer-set sh
       .map((tr) => textOf(tr.children[0])),
     ["6", "2"],
   );
-  view.filters = [{ key: "wb-calibrate-rows/label_outside_set", op: "with" }];
+  view.filters = [{ key: "calibrate-probe/label_outside_set", op: "with" }];
   assert.deepEqual(hooks.calLabSetsRows(rows), [], "every short list holds its row's label");
   // Row #2's list now misses its label: the answer-set fact reads the fit the page holds, and the short list follows.
   W.bulk.sets.report = {
@@ -586,7 +596,7 @@ test("hook: Policy's 'Automated but wrong' keeps its meaning and counts Lab filt
     "with no Lab setting active nothing changes",
   );
   // Only row #2 carries a picture, so the automated-but-wrong row #4 is hidden.
-  lab.view("workbench.policy").filters = [{ key: "wb-policy-rows/picture", op: "with" }];
+  lab.view("workbench.policy").filters = [{ key: "policy-probe/picture", op: "with" }];
   const filtered = hooks.policyMistakes(POLICY_REPORT);
   assert.match(textOf(filtered), /Automated but wrong · 0 of 1/);
   assert.match(textOf(filtered), /No automated-but-wrong row matches Policy's Lab filters/);
@@ -599,7 +609,7 @@ test("hook: Policy's 'Automated but wrong' keeps its meaning and counts Lab filt
       .map((tr) => textOf(tr.children[0])),
     ["2"],
   );
-  lab.view("workbench.policy").filters = [{ key: "wb-policy-rows/outcome", op: "is", value: "automated, wrong" }];
+  lab.view("workbench.policy").filters = [{ key: "policy-probe/outcome", op: "is", value: "wrong" }];
   assert.match(textOf(hooks.policyMistakes(POLICY_REPORT)), /Automated but wrong · 1 of 1/);
 });
 
@@ -647,8 +657,8 @@ test("hook: the priced-mistake rows keep their own index under Lab filters and s
   W.labEnv = fakeEnv();
   const hooks = costsHooks(W);
   assert.equal(hooks.costsLabRows(rows), rows);
-  lab.view("workbench.costs").filters = [{ key: "wb-costs-mistakes/price", op: "min", value: "40" }];
-  lab.view("workbench.costs").sort = { key: "wb-costs-mistakes/price", dir: "desc" };
+  lab.view("workbench.costs").filters = [{ key: "costs-probe/price", op: "min", value: "40" }];
+  lab.view("workbench.costs").sort = { key: "costs-probe/price", dir: "desc" };
   assert.deepEqual(
     hooks.costsLabRows(rows),
     ["row 1", "row 0"],

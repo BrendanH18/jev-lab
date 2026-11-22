@@ -10,8 +10,6 @@ import {
   autopilotInboxCtx,
   autopilotRecordsCtx,
 } from "../../../static/js/lab/surfaces/autopilot.js";
-import outcomes from "../../../static/js/lab/packs/autopilot/autopilot-outcomes.js";
-import waiting from "../../../static/js/lab/packs/autopilot/autopilot-waiting.js";
 import {
   emptyBenchmarkCtx,
   sampleBenchRuns,
@@ -285,8 +283,8 @@ test("inbox: the waiting emails with active and next flags; the email in flight 
   assert.equal(sampleInboxCtx({ records: {} }).items().length, 10);
 });
 
-test("shown() honors Lab filters and Lab's sort through the real host", () => {
-  const LAB = createLab([outcomes, waiting]);
+test("records and waiting emails keep their order without packs", () => {
+  const LAB = createLab([]);
   const S = pageState();
   const records = autopilotRecordsCtx({
     ...sourceOf(S).source,
@@ -300,41 +298,6 @@ test("shown() honors Lab filters and Lab's sort through the real host", () => {
   });
   assert.deepEqual(records.shown(), records.items(), "no Lab setting: shown is items");
   assert.deepEqual(inbox.shown(), inbox.items());
-  LAB.view("autopilot.records").filters.push({ key: "autopilot-outcomes/scenario_attack", op: "with" });
-  assert.deepEqual(
-    records.shown().map((item) => item.id),
-    ["vendor-redirect", "sampler-refund"],
-  );
-  LAB.view("autopilot.records").filters.length = 0;
-  LAB.view("autopilot.records").sort = { key: "autopilot-outcomes/risk", dir: "desc" };
-  assert.deepEqual(
-    records.shown().map((item) => item.id),
-    [
-      "vendor-redirect",
-      "tasting-move",
-      "supplier-invoice",
-      "weekly-digest",
-      "sampler-refund",
-      "dana-damaged",
-      "fan-repair",
-    ],
-  );
-  assert.equal(LAB.active("autopilot.records"), 1);
-  LAB.view("autopilot.inbox").filters.push({ key: "autopilot-waiting/attachment", op: "without" });
-  assert.deepEqual(
-    inbox.shown().map((item) => item.id),
-    ["admin-reset", "blank-note"],
-  );
-  S.activeId = "grinder-crack";
-  assert.deepEqual(
-    inbox.shown().map((item) => item.id),
-    ["grinder-crack", "admin-reset", "blank-note"],
-    "the email in flight stays shown",
-  );
-  LAB.reset("autopilot.records");
-  LAB.reset("autopilot.inbox");
-  assert.deepEqual(records.shown(), records.items());
-  assert.equal(LAB.active("autopilot.records") + LAB.active("autopilot.inbox"), 0);
 });
 
 test("actions: every guard refuses before reaching the page", () => {
@@ -500,12 +463,4 @@ test("hook: Run and Next keep their scope, the scoreboard reads the shared tally
   assert.ok(!/id="rows"[^>]*>\s*<div id="/.test(html), "nothing Lab lives inside #rows");
   assert.match(fn("benchmark"), /S\.benchRuns\.push\(\{ run: .*model, id: "bec-invoice", \.\.\.S\.bench \}\);/);
   assert.match(fn("benchmark"), /if \(S\.benchBusy\) return;/);
-});
-
-test("the starter packs attach to the surface ids the page mounts", () => {
-  const LAB = createLab([outcomes, waiting]);
-  assert.ok(LAB.count("autopilot.records") >= 25 && LAB.count("autopilot.inbox") >= 25);
-  assert.deepEqual(LAB.surfaceIds().sort(), ["autopilot.inbox", "autopilot.records"]);
-  for (const id of LAB.surfaceIds()) assert.ok(page.includes(`"${id}"`), `${id} is a surface id of the page`);
-  assert.ok(page.includes('"autopilot.benchmark"'));
 });

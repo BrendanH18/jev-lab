@@ -309,28 +309,22 @@ can be committed deliberately as fixtures; review their input data before sharin
 
 See the [Workbench guide](docs/workbench.md) for a complete request, expectation format, and limits.
 
-## Lab tools on every page
+## Lab tools
 
-Every page also carries **Lab tools**: local tools from small, separately tested packs. None calls the model or saves
-anything by itself; each works on what the page already holds, including the answers of calls you made in it.
-
-- **Lab tools** sits beside a list or a result. *Refine* filters and sorts by derived facts (a word count, a
-  confidence margin, whether a row is labeled), *Checks* runs advisory checks on the shown items, *Edits* previews a
-  change and applies it only on request, with one guarded Undo, *Metrics* computes from the page's own data, and
-  *Copy and download* states what each file holds.
-- **Toolbox**, a Workbench tab, holds calculators and converters for building typed-answer gates: intervals and
-  sample sizes, hypothesis tests, labeler agreement, classification, calibration and ranking metrics, costs and rate
-  limits, Box geometry, and row and question format converters.
-- **Commands** in the top bar, or Ctrl/Cmd+K, searches every action the current page offers and shows its keyboard
-  shortcut. The key and safety settings also choose a light, dark or system theme for this browser.
+- **Build** has in-session question checkpoints. Compare edits and preview a restore before applying it.
+- **Policy** reports which consistency rules sent rows to review and what those rules caught. **Review** flags
+  repeated inputs and conflicting human labels while keeping blind audit answers hidden.
+- **Toolbox** plans finite-batch and stratified audits and computes confidence intervals from counts you enter.
+- **Commands** in the top bar, or Ctrl/Cmd+K, opens app navigation and keyboard help. Workbench also has commands
+  for its tabs and guide.
 - Offline commands for saved datasets, tests, question files and statistics run from a terminal with no key:
 
   ```sh
   uv run --locked scripts/lab.py --help
   ```
 
-Python packs also add question checks, dataset health findings and Bulk input notes, shown apart from the built-in
-ones. The numbered [Lab inventory](docs/lab/README.md) lists every improvement and the test that proves it.
+Python packs also add question checks, dataset health findings and Bulk input notes. Lab tools run locally and make
+no model calls.
 
 ## Configuration
 
@@ -373,8 +367,8 @@ HTTP tests start a temporary loopback server. CI tests the locked dependencies o
 (`uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs`), and checks that the committed
 sample pictures match their script, and browser tests (`npx playwright test`) drive the real pages in headless
 Chromium against a model stub on loopback.
-After adding or changing a Lab pack, regenerate its page index and the inventory with `node scripts/lab_inventory.mjs`. A
-separate workflow audits `uv.lock` for known vulnerabilities on pull requests and weekly.
+Regenerate the Lab page indexes with `node scripts/lab_inventory.mjs` after removing a JavaScript pack or moving a
+surface module. A separate workflow audits `uv.lock` for known vulnerabilities on pull requests and weekly.
 
 The sample pictures in `static/img/samples/` are drawn by a standard-library script. After changing
 a scene, regenerate them and commit the PNGs with the script:

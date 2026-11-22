@@ -1,6 +1,6 @@
 // Checks that hold for every Lab pack together (static/js/lab/packs/<page>/*.js): each is a valid pack named after
 // its file, lives with its page, has its own checkPack test, reaches the page only through ctx, and the generated
-// page indexes and inventory (scripts/lab_inventory.mjs) match the packs. Run with: node --test tests/js/lab/
+// page indexes (scripts/lab_inventory.mjs) match the packs. Run with: node --test tests/js/lab/
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -185,8 +185,8 @@ test("each page's packs load together: no pack twice, and no two commands share 
   }
 });
 
-test("the generated page indexes and inventory match the packs", async () => {
-  const { files } = await generate();
+test("the generated page indexes match the packs", async () => {
+  const files = await generate();
   assert.deepEqual(staleFiles(files), [], "run: node scripts/lab_inventory.mjs");
 });
 

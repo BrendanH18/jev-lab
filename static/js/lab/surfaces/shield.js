@@ -1,7 +1,7 @@
 // Lab surfaces of the Shield page (static/shield.html, static/js/shield.js): the inbox and the opened message's verdict.
 // Pure code: it imports only the kit, touches no DOM, storage or network, and is tested in Node
 // (tests/js/lab/surface-demo-shield.test.mjs). Fixtures for pack tests: tests/js/lab/fixtures/shield.mjs
-// (sampleShieldInboxCtx, sampleShieldResultCtx); starter packs: static/js/lab/packs/shield/. This header is the
+// (sampleShieldInboxCtx, sampleShieldResultCtx). This header is the
 // CONTRACT for packs on these two surfaces.
 //
 // Both ctx objects are { items(), shown(), data, actions, refresh(), itemName(item, index) } and are built ONCE per page

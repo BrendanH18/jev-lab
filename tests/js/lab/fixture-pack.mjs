@@ -2,6 +2,19 @@
 // under static/js/lab/packs, so no page loads it and it is not counted in the inventory.
 import { csvText, definePack } from "../../../static/js/lab/kit.js";
 
+// Supply only the features a surface test needs, independently of the packs a page loads.
+export function probePack(id, surface, facts, features = []) {
+  return definePack({
+    id,
+    surface,
+    title: "Surface probe",
+    features: [
+      ...Object.entries(facts).map(([id, [type, value]]) => ({ id, kind: "fact", type, label: id, value })),
+      ...features,
+    ],
+  });
+}
+
 export const fixtureItems = () => [
   { id: "a", text: "Refund the order", words: 3, tag: "billing", urgent: true },
   { id: "b", text: "Where is my parcel today", words: 5, tag: "shipping", urgent: false },

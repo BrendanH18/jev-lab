@@ -1,7 +1,7 @@
 // Lab surfaces of the Overview page (static/index.html, static/js/index.js): the four-question playground and the
 // app cards. Pure code: it imports only the kit, touches no DOM, storage or network, and is tested in Node
 // (tests/js/lab/surface-demo-index.test.mjs). Fixtures for pack tests: tests/js/lab/fixtures/index.mjs
-// (sampleIndexPlaygroundCtx, sampleIndexAppsCtx; starter packs: static/js/lab/packs/index/). This header is the
+// (sampleIndexPlaygroundCtx, sampleIndexAppsCtx). This header is the
 // CONTRACT for packs on these two surfaces.
 //
 // Both ctx objects are { items(), shown(), data, actions, refresh(), itemName(item, index) } and are built once per

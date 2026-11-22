@@ -1,8 +1,7 @@
 // Lab surfaces of the Claims page (static/claims.html, static/js/claims.js): the orders a claim can be filed against,
 // the example chips, and the result of the user's own latest check. Pure code: it imports only the kit, touches no DOM,
 // storage or network, and is tested in Node (tests/js/lab/surface-demo-claims.test.mjs). Fixtures for pack tests:
-// tests/js/lab/fixtures/claims.mjs (sampleClaimsOrdersCtx, sampleClaimsExamplesCtx, sampleClaimsResultCtx; starter
-// packs: static/js/lab/packs/claims/). This header is the CONTRACT for packs on these three surfaces.
+// tests/js/lab/fixtures/claims.mjs (sampleClaimsOrdersCtx, sampleClaimsExamplesCtx, sampleClaimsResultCtx). This header is the CONTRACT for packs on these three surfaces.
 //
 // All three ctx objects are { items(), shown(), data, actions, refresh(), itemName(item, index) } and are built ONCE
 // per page load. items(), shown() and every data field are read at call time, so a ctx never goes stale; read a data
