@@ -58,9 +58,12 @@ The owner's daily starts are shared across projects. [Boat documentation](https:
 - The script uses `--no-env`. Check sandboxes receive no GitHub, agent or model credentials. The
   full check runs all jobs even when one fails and exits nonzero on any failure. Its SDK suite
   runs on Python 3.12. Use CI for version-specific failures.
-- The running sandbox stays up throughout a check and stops after 45 minutes idle
-  (`JEV_BOAT_IDLE`). Resuming costs a start. `--save` saves `jev-lab-warm` without the checkouts.
-  Refresh it after changing `uv.lock`, `package-lock.json`, Node or Python.
+- The sandbox runs only during a check and stops when it ends, pass or fail. A stopped sandbox
+  bills nothing. A check within 10 minutes of the stop usually takes the kept machine back without a
+  start, and a later one resumes for one start. Never keep a sandbox running to save a start.
+  `JEV_BOAT_IDLE` (seconds, default 0) keeps it running and billed after a check. Set it only when
+  the owner asks. `--save` saves `jev-lab-warm` without the checkouts. Refresh it after changing
+  `uv.lock`, `package-lock.json`, Node or Python.
 - If `scripts/boat-check.sh` exits 3 because starts are exhausted, limits cannot be read, or
   `nextStartDollars` is positive, report what still needs a Boat run and stop retrying.
   Set `JEV_BOAT_PAID_START=1` only when the owner approves a paid start. The script already

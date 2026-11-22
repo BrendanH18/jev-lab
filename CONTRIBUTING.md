@@ -76,7 +76,7 @@ npx playwright test
 The maintainer's agents run these checks on [Boat](https://docs.boat.dev) sandboxes rather than on their
 own machines. `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests,
 the locked-SDK suite on Python 3.12 only, the browser tests and the sample pictures) in one
-long-lived sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs.
+sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs.
 CI still runs the locked-SDK suite on every supported Python version:
 
 ```sh
@@ -86,8 +86,9 @@ scripts/boat-check.sh --done             # delete the worktree's sandbox when th
 scripts/boat-check.sh --save             # checks, then refresh the jev-lab-warm snapshot
 ```
 
-The sandbox carries no credentials and stops 45 minutes after the last check. It never runs a live model
-call: live runs get a separate sandbox (see `AGENTS.md`). `--help` lists the options.
+The sandbox carries no credentials and is stopped as soon as each check ends, since a stopped sandbox
+costs nothing and a check within 10 minutes usually takes its machine back without a new start. It never
+runs a live model call: live runs get a separate sandbox (see `AGENTS.md`). `--help` lists the options.
 
 For interface changes, also inspect the affected pages in a browser at desktop and narrow widths.
 Check keyboard navigation, empty and error states, and the request inspector where relevant.

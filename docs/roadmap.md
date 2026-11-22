@@ -222,7 +222,7 @@ bug #91 and Dependabot PR #86.
 
 ## Decisions
 
-Made by the maintainer on 2026-11-21.
+Made by the maintainer on 2026-11-21, except D9 (2026-11-22).
 
 - **D1. Playwright: approved** as a dev-only test dependency for browser smoke tests in CI (February).
 - **D2. Python 3.9 fallback: dropped.** The official SDK becomes the only client (December).
@@ -241,3 +241,10 @@ Made by the maintainer on 2026-11-21.
   is deleted afterwards. Agents never read keys from `.env` or pass them on the command line.
 - **D8. Name every hand-made Boat sandbox `jev-lab-<purpose>`.** `boat new` gets `--name`, and a kept `boat run`
   sandbox is renamed at once, so sandboxes on the shared account can be traced to this project.
+- **D9. Stop check sandboxes as soon as each check ends** (2026-11-22). This replaces the 45-minute idle
+  window that kept D6's sandbox running, and billed, between checks to save a start. The account used
+  about 194 plan-hours in a day against the roughly 89 a day the plan sustains. A stopped sandbox bills
+  nothing, and Boat keeps its machine for 10 minutes after the stop, so a check within that time takes it
+  back without a start. `JEV_BOAT_IDLE` keeps it running only when the owner asks. The keepalive that renews
+  auto-stop during a check exits, and stops the sandbox, once `scripts/boat-check.sh` is gone, and the exit
+  trap is armed before the sandbox is created or resumed.
