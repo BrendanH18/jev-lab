@@ -1,126 +1,98 @@
 # Agent instructions
 
-## What this is
+Jev Lab is a public repository (`BrendanH18/jev-lab`) with eight demos and a Workbench for TypeSafe's
+Jev model. It uses a stdlib Python HTTP server, the official SDK on Python 3.10+, and vanilla
+JavaScript and CSS with no build step. All demos use the fictional Harbor Coffee Co. Keep secrets,
+private data and personal notes out of the repository. [CONTRIBUTING.md](CONTRIBUTING.md)
 
-Jev Lab: eight small demo apps (Shield, Dispatch, Autopilot, Claims, Reviews, Find, Play, Counter) plus a
-Workbench for building your own, all showing what TypeSafe's Jev model (a "System One" model —
-typed questions in, typed answers + calibrated probabilities out, no generated prose) can do
-inside ordinary software. A stdlib Python HTTP server (`server.py`) serves vanilla JS/CSS pages
-and a JSON API; there is no build step and no frontend framework. Every app runs against one
-fictional business, **Harbor Coffee Co.**
+## Commands and CI
 
-This is a public repo (`BrendanH18/jev-lab`); keep keys, private data and personal notes out of
-it. See CONTRIBUTING.md.
-
-## Commands
-
-```bash
-uv run --locked server.py                     # start the app: http://127.0.0.1:8321
-
-uv run --locked python -m unittest discover tests      # run all tests (no key/network needed)
-uv run --locked python -m unittest tests.test_workbench -v  # run one test module
-uv run --locked python -m unittest tests.test_workbench.ItemTests.test_save_list_run_delete  # run one test
-uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs  # browser and Lab modules (Node 22, no DOM)
-npx playwright test                           # browser tests (tests/browser): real pages in headless Chromium
-                                               # against server.py and a model stub, both on loopback; no key.
-                                               # Once: uv sync --locked && npm ci &&
-                                               #   npx playwright install --with-deps chromium
-node scripts/lab_inventory.mjs                # regenerate Lab page indexes and docs/lab/ after changing packs
-                                               # (--check: exit 1 when they are out of date; the JS tests run it)
-uv run --locked scripts/lab.py --help         # offline commands from the Python Lab packs (no key, no network)
-
-uv run --locked scripts/validate.py --strict  # run the built-in scenarios against the LIVE model
-                                               # and fail on a miss or incomplete scenario.
-                                               # Needs TYPESAFE_API_KEY. Use after changing question
-                                               # wording, thresholds, or the model version — the
-                                               # unit tests use fake answers and cannot tell you
-                                               # whether Jev's real answers still make sense.
-uv run scripts/check.py                       # rerun the checks saved in Workbench datasets against the
-                                               # LIVE model (one call per row); exits 1 when a gate misses
-                                               # its targets. Needs TYPESAFE_API_KEY. --list makes no calls.
-                                               # <id> --drift rows.jsonl compares unlabeled rows with that
-                                               # dataset through its gate (jev/drift.py); exits 1 on a shift.
-                                               # --upgrade-to <version> asks each check's tuned-on version and
-                                               # <version> every row (jev/upgrade.py); exits 1 if one should stay.
-                                               # --estimate prints the calls and an upper-bound cost instead of
-                                               # running (with --model/--drift/--upgrade-to); no calls, no key.
-```
-
-Lint and format checks (CI runs both; fix everything they report):
+Run builds, tests, untrusted code, Docker and long jobs on Boat. See the sandbox rules below.
 
 ```sh
-npm ci                                                              # once: install Biome from package-lock.json
-uv run --locked ruff check && uv run --locked ruff format --check   # Python (config in pyproject.toml)
-npm run lint                                                        # JavaScript: biome ci . (config in biome.jsonc)
-uv run --locked ruff format && npm run format                       # apply formatting and safe fixes
+scripts/boat-check.sh                    # all hand-off checks
+scripts/boat-check.sh -- CMD             # one command
+scripts/boat-check.sh --status            # inspect without starting a sandbox
+scripts/boat-check.sh --done              # delete the sandbox when work in the worktree ends
+scripts/boat-check.sh --save              # check and refresh the warm snapshot
 ```
 
-Biome and Playwright are the only npm packages (`package.json`, pinned dev dependencies that Dependabot updates);
-there is no frontend build. When its version changes, bump the version in `biome.jsonc`'s `$schema` to match (Biome only
-prints an info when they differ). `static/js/lab/pages/` is generated by `scripts/lab_inventory.mjs` and is left
-out of Biome.
+Use these commands inside the sandbox. The offline tests need no key or external API calls.
 
-`tests/test_server.py` binds a loopback port, so inside a restricted agent sandbox (not Boat) the
-server tests can fail with `PermissionError`.
+```sh
+uv run --locked server.py                # http://127.0.0.1:8321
+uv run --locked python -m unittest discover tests
+uv run --locked python -m unittest tests.test_workbench -v
+uv run --locked python -m unittest tests.test_workbench.ItemTests.test_save_list_run_delete
+uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
+npx playwright test                      # headless Chromium, real app and loopback model stub
+node scripts/lab_inventory.mjs           # regenerate JavaScript Lab page indexes
+uv run --locked scripts/lab.py --help     # offline Lab commands
+uv run --locked ruff check && uv run --locked ruff format --check
+npm run lint                             # Biome
+uv run --locked ruff format && npm run format
+```
 
-Needs a `TYPESAFE_API_KEY` (get one at console.typesafe.ai) to make live calls; the offline test
-suite does not need one. The app requires Python 3.10+ and the official `typesafe-sdk`. CI
-(`.github/workflows/test.yml`) runs the locked-SDK suite on 3.10–3.14 in a matrix and the browser tests in a job of
-their own, then the lint-and-format, JavaScript and sample-picture checks as steps of its `All tests passed` job.
-`.github/workflows/audit.yml` audits
-`uv.lock` (`uv audit`) on PRs and weekly, and `.github/workflows/codeql.yml` runs CodeQL (Actions, JavaScript,
-Python) on PRs, `main` and weekly; GitHub's CodeQL default setup must stay off. Every job runs on GitHub-hosted runners
-(`ubuntu-24.04`), which are free for public repositories; don't use paid larger runners. The main ruleset requires
-the `All tests passed` job, which passes only when its own checks and every other job in `test.yml` passed: add
-any new test job to its `needs`. Add a check that takes seconds as a step of that job rather than as a job of its
-own: each runner takes time to start and counts toward the account's concurrent-job limit.
+For a cold sandbox, use `uv sync --locked && npm ci && npx playwright install --with-deps chromium`.
+Biome and Playwright are the only npm dependencies and are pinned for development. Match Biome's
+version in `biome.jsonc`'s `$schema`. Fix all lint and format findings.
+
+- Use standard GitHub-hosted `ubuntu-24.04` runners for this public repository. Paid larger runners
+  are prohibited. The locked-SDK suite runs on Python 3.10–3.14. The browser suite has its own job.
+- The required **All tests passed** job depends on every other job in `test.yml` and runs lint,
+  format, Node 22 syntax and tests, and sample-picture checks. Add any new test job to its
+  `needs`. Put checks that take seconds in that job as steps to save runner starts.
+- Keep the `uv.lock` audit and CodeQL workflows. Both run on PRs and weekly. CodeQL also runs on
+  `main` and covers Actions, JavaScript and Python. Leave GitHub's CodeQL default setup off.
+  Never put a model key in GitHub secrets or call the live model from CI.
 
 ## Cloud sandboxes (Boat)
 
-Use a Boat sandbox for builds, tests, untrusted code, Docker, and long jobs. Never run them on this computer.
-Docs: https://docs.boat.dev/llms.txt. Prices and limits: run `boat limits` before any Boat command that starts a
-sandbox; never quote prices from memory.
+Run `boat limits` before any command that starts a sandbox and get prices from the current output.
+The owner's daily starts are shared across projects. [Boat documentation](https://docs.boat.dev/llms.txt)
 
-**Hand-off checks: `scripts/boat-check.sh`.** Owner decision, 2026-11-21: the account's sandbox starts (200 a day,
-shared by all the owner's projects) ran out when every check used its own `boat run` sandbox, so each worktree reuses
-one long-lived sandbox instead.
-
-- `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests, the locked-SDK
-  suite, the browser tests and the sample pictures), all of them even when one fails, and exits nonzero
-  if any failed. It runs the locked-SDK suite on the sandbox's Python 3.12 only; CI's 3.10–3.14 matrix stays the
-  authority for version-specific failures. `scripts/boat-check.sh -- CMD` runs one command instead, e.g.
-  `scripts/boat-check.sh -- uv run --locked python -m unittest tests.test_workbench`.
-- The first run in a worktree creates its sandbox from the saved snapshot `jev-lab-warm` (uv, Node 22,
-  the locked venv, Biome, Playwright and Chromium preinstalled), or cold when that isn't ready. Later runs reuse it: each
-  pushes the worktree into a fresh directory and runs there with `boat exec --timeout 0`, at no start.
-- The sandbox's id lives in this worktree's git directory. Never share a sandbox between agents or worktrees, and
-  never pass its id to another agent.
-- It stops by itself 45 minutes after the last check (`JEV_BOAT_IDLE`), and a check keeps it running however long
-  the check takes; the next check resumes it, which costs one
-  start. Run `scripts/boat-check.sh --done` when your work in the worktree ends: it deletes the sandbox.
-  `--status` shows it without starting anything.
-- When the next start would cost money (Boat's `nextStartDollars`), none are left, or `boat limits` can't be read, the
-  script stops (exit 3) rather than start a sandbox; say what still needs a Boat run instead of retrying.
-  `JEV_BOAT_PAID_START=1` allows a paid start, only when the owner says so. It creates and resumes with `--fail-fast`
-  and retries for about a minute when no machine is ready, or when a resume finds Boat still finishing an earlier
-  resume ("resume already in progress") or a stop.
-- `scripts/boat-check.sh --save` runs the checks and then saves the sandbox as `jev-lab-warm`, without the checkouts.
-  Refresh it after `uv.lock`, `package-lock.json` or the Node or Python toolchain changes.
-- Check sandboxes carry no credentials (owner decision, 2026-11-21): the script creates them with `--no-env`, so they
-  get no GitHub token, agent logins or API keys, and the offline suite can make no paid call.
-- Use plain `boat run --no-env --from jev-lab-warm --push . -- CMD` only for a genuine one-off that shouldn't touch
-  your worktree's sandbox; it costs a start. It pushes the worktree without the script's guard, so first make sure
+- Reuse one sandbox per worktree with `scripts/boat-check.sh`. Its ID lives in the worktree's Git
+  directory and must never be shared with another agent or worktree. The first check starts from
+  `jev-lab-warm` (uv, Node 22, locked venv, Biome, Playwright and Chromium) or starts cold. Each
+  later check pushes to a fresh directory and runs with `boat exec --timeout 0`.
+- The script uses `--no-env`. Check sandboxes receive no GitHub, agent or model credentials. The
+  full check runs all jobs even when one fails and exits nonzero on any failure. Its SDK suite
+  runs on Python 3.12. Use CI for version-specific failures.
+- The running sandbox stays up throughout a check and stops after 45 minutes idle
+  (`JEV_BOAT_IDLE`). Resuming costs a start. `--save` saves `jev-lab-warm` without the checkouts.
+  Refresh it after changing `uv.lock`, `package-lock.json`, Node or Python.
+- If `scripts/boat-check.sh` exits 3 because starts are exhausted, limits cannot be read, or
+  `nextStartDollars` is positive, report what still needs a Boat run and stop retrying.
+  Set `JEV_BOAT_PAID_START=1` only when the owner approves a paid start. The script already
+  retries transient capacity and in-progress resume/stop errors using `--fail-fast`.
+- Reserve `boat run --no-env --from jev-lab-warm --push . -- CMD` for a genuine one-off. It costs
+  a start and bypasses the guarded push. First verify that
   `git status --porcelain --untracked-files=all -- data/workbench` prints nothing.
+- Name every hand-created sandbox `jev-lab-<purpose>` using `boat new --name`. Immediately rename
+  any sandbox kept by `boat run --keep` with `boat rename <id> jev-lab-<purpose>`.
+  The check script already names its sandboxes `jev-lab-check-<worktree>`.
+- Pass the sandbox ID explicitly. `boat exec "$id" "CMD"` has a 30-second default timeout.
+  Use `--timeout 0` to lift it. Start the server with `boat exec "$id" --detach "CMD"` and
+  inspect it with `boat exec "$id" --status <pid>`.
+- View the UI in the sandbox's Chrome or use `boat forward` to the same port on the Mac.
+  Never use `boat host` or the in-sandbox `host` for this server.
+- `boat push` skips gitignored `.env`, datasets and dataset revisions. It copies saved tests
+  (`data/workbench/*.json`) and uploaded pictures (`data/workbench/images/`) even when untracked.
+  The check script rejects staged, modified or untracked files under `data/workbench`. Use a
+  clone in Boat when local files hold real inputs. Never copy real rows, labels or pictures to Boat.
+  Use synthetic or approved datasets for live checks.
 
-**Live runs** (`scripts/validate.py`, `scripts/check.py` making model calls). Owner decision, 2026-11-21: a live run
-gets its own sandbox from the Boat environment `jev-lab-live`, which injects only its own variables
-(`TYPESAFE_API_KEY`) and no GitHub, agent or Boat credentials. Create one only when the owner asks for a live run,
-never reuse the check sandbox, and delete it afterwards. Push only committed files, so no uncommitted Workbench
-inputs go along, and let a trap delete the sandbox even when the run fails or is interrupted:
+### Live model runs
+
+Run live checks only at the owner's request in a separate sandbox from `jev-lab-live`. This
+environment injects only its own variables (`TYPESAFE_API_KEY`). Push only committed files and
+always delete the sandbox afterwards. Never reuse the check sandbox, read key values from `.env`,
+pass them on the command line, or copy `.env` to a sandbox.
 
 ```sh
 (
   set -eu
+  boat limits
   src=$(mktemp -d) id=""
   trap 'if [ -n "$id" ]; then boat delete "$id" --yes; fi; rm -rf "$src"' EXIT
   trap 'exit 130' INT TERM
@@ -131,455 +103,102 @@ inputs go along, and let a trap delete the sandbox even when the run fails or is
 )
 ```
 
-Agents never read key values from `.env` or pass them on the command line, and never copy `.env` into a sandbox
-(`boat push` skips it because it's gitignored).
+Use `scripts/validate.py --strict` after changing demo questions, thresholds, examples or the
+model version. Every built-in scenario must pass on the live model. Strict mode fails on a miss or
+an incomplete scenario. Unit tests exercise logic with fake answers and cannot verify model judgments.
 
-Other Boat rules:
+`uv run scripts/check.py` reruns saved Workbench checks with one live call per row and exits nonzero
+on a missed target. `<id> --drift rows.jsonl` exits nonzero on a shift in unlabeled traffic.
+`--upgrade-to <version>` reruns the tuned-on and candidate models and exits nonzero when a check
+should stay on its tuned-on version. `--list` and `--estimate` make no calls and require no key.
+Estimates support `--model`, `--drift` and `--upgrade-to`.
 
-- Name every sandbox you create by hand `jev-lab-<purpose>` (owner decision, 2026-11-21): the owner's projects share
-  one Boat account, and Boat's default "Box <date>" names can't be traced to a project. Pass `--name` to `boat new`;
-  `boat run` has no `--name`, so rename a `boat run --keep` sandbox right away with `boat rename <id> jev-lab-<purpose>`.
-  Never leave one unnamed. `scripts/boat-check.sh` already names its sandboxes `jev-lab-check-<worktree>`.
-- Run: `boat exec "$id" "CMD"` (30 s timeout; `--timeout 0` = no limit). Server: `boat exec "$id" --detach "CMD"`,
-  then `boat exec "$id" --status <pid>`. Always pass the sandbox id; `current` does not work in a non-interactive shell.
-- `server.py` binds 127.0.0.1 and accepts only loopback Host names (`jev/security.py`). To see the UI, run it in the sandbox and use the sandbox's desktop Chrome, or `boat forward` the port to the same port on this Mac. Never expose it with `boat host` or the in-sandbox `host`, and never widen the allow-list or the bind address.
-- Saved Workbench datasets (`data/workbench/datasets/`, with their `.history/` revisions) are gitignored, so `boat push` leaves them out. Saved tests (`data/workbench/*.json`) and pictures (`data/workbench/images/`) are not, so `boat push` copies them even when untracked; `scripts/boat-check.sh` refuses to push uncommitted ones (untracked, staged or modified). When they hold real inputs, clone the repo inside the sandbox instead. Don't copy real input rows, labels or pictures into a sandbox; give live checks there only synthetic or approved datasets.
+## Architecture and security
 
-## Architecture
+- Route all TypeSafe access through `jev/client.py`'s `JevClient`. Every live call goes through
+  `SpendGuard.check()` and `record()`. `JevResult.meta()` reports usage and `trace()` feeds
+  **Inspect JSON**.
+- Build `state` and `noul`/`choice`/`score`/`box` questions, ask for judgments in one
+  `system_one()` call, then turn answers into decisions in pure code. Keep calculations, dates,
+  extraction and business rules in code so users can reevaluate saved answers without another call.
+  Workbench saved-test runs make fresh calls.
+- Autopilot merges prefixed Shield and Dispatch questions into one call and evaluates integrated
+  and Dispatch-only pipelines in independent `World` instances. They must stay separate from the
+  server's shared `dispatch_world`. The benchmark deliberately makes fresh calls.
+- Add JSON handlers to `server.py`'s `ROUTES`. `BadRequest`, `WorkbenchError` and `EnvFileError`
+  produce 400s. `JevError` carries the model error status. Use the existing `static/*.html` and
+  `static/js/*.js` entries and the shared helpers in `static/js/common.js`.
+- Workbench panel modules share `W` from `workbench-state.js`. Their cyclic imports permit
+  only declarations of functions and constants at load time. `tests/js/workbench-modules.test.mjs`
+  checks this. **Open in Workbench** transfers state, ordered questions and pictures through
+  `localStorage`, with no answers or server route. Keep demo requests compatible with
+  `tests/test_handoff.py`.
+- Keep the bind address at `127.0.0.1` and the existing loopback Host allow-list on the configured
+  port. Keep the `jev/security.py` checks before route handling, including Origin, Fetch Metadata,
+  the per-process `X-Jev-Token` and the JSON body requirement. [SECURITY.md](SECURITY.md)
+- Only `jev/envfile.py` may persist secrets. Its preflight checks that `.env` is ignored and
+  untracked, and it writes atomically with `0600` permissions. Always redirect
+  `server.PROJECT_ROOT`, `Settings(env_file=...)` and `jev.config.WORKBENCH_DIR` to temporary
+  paths before constructing a test or development server. See `tests/test_envfile.py`.
 
-**Everything talks to TypeSafe through exactly one place: `jev/client.py`'s `JevClient`.** It
-uses the official SDK, holds the per-process `SpendGuard` (budget + rate limit — every
-live call goes through `guard.check()`/`guard.record()`), and wraps every response in a
-`JevResult` that carries `meta()` (model, latency, tokens, cost) and `trace()` (exact request +
-response) for the UI's "Inspect JSON" drawer. No other module should reach the network directly.
+Module responsibilities and request flow are in the [architecture guide](docs/architecture.md).
 
-**Pattern used by every app: build `state` + a `questions` dict of `noul`/`choice`/`score`/`box`
-primitives (helpers in `jev/client.py`), send them in one `system_one()` call, then let plain
-Python turn the typed answers into a decision.** Math, dates, regex extraction, and business rules
-always stay in code — Jev is only ever asked for a judgment. Each app's module
-(`jev/shield.py`, `jev/dispatch.py`, `jev/claims.py`, `jev/reviews.py`, `jev/counter.py`, `jev/find.py`, `jev/play.py`; Claims
-also uses the `box` primitive) follows this same shape:
-`questions(...)` builds the request, then a separate pure function (e.g. `shield.verdict()`,
-`dispatch.plan()`, `reviews.triage()`) turns already-fetched answers into the decision — that separation is what lets
-`/api/shield/rescore` re-score saved answers with new weights/thresholds without spending another
-API call. Workbench test runs (`/api/workbench/items/run`) are different: they send each saved item
-to the model again and spend API budget.
+## Workbench invariants
 
-**`jev/autopilot.py` is the integration story**: `merged_questions()` concatenates Shield's and
-Dispatch's questions with `shield.`/`dispatch.` key prefixes into a *single* request, `split()`
-un-prefixes the answers, and the resulting `Autopilot` class runs the same answers through two
-parallel `World` instances — an "integrated" pipeline where Shield's verdict gates Dispatch's
-action and Shield's sender-identity facts feed Dispatch's authorization checks, and a "naive"
-pipeline that runs Dispatch alone with no Shield gate. The UI shows both side by side so the
-value of composing the two is visible, not just claimed. `Autopilot.benchmark()` re-runs the same
-questions as sequential/parallel/merged calls to measure the token and latency savings of merging.
+Read the relevant sections of the [Workbench invariants](docs/workbench-invariants.md) before
+changing these workflows.
 
-**`jev/world.py`'s `World` class is the mutable "business" the apps act on** (orders, vendor
-invoices, a calendar, a bank balance, an activity log). It's deliberately dumb: `execute(tool,
-args, context)` dispatches to `_do_<tool>` methods that mutate state and log an activity entry.
-`server.py` holds one shared `dispatch_world` (used by Shield/Dispatch demos) and `Autopilot` owns
-its own pair of `World`s — don't let those get confused with each other.
-
-**`server.py` is a flat `ROUTES: dict[(method, path), handler]` dispatched from one
-`BaseHTTPRequestHandler`.** Handlers are plain `def api_foo(body: dict) -> dict` functions —
-raise `BadRequest`/`jev.workbench.WorkbenchError`/`jev.envfile.EnvFileError` for 400s, `JevError`
-(from `jev/client.py`) carries its own HTTP status through to the response. To add an endpoint:
-write the handler, add it to `ROUTES`, and (if the response should ever come back non-JSON or the
-page needs new markup) update the relevant `static/*.html`+`static/js/*.js` pair — each demo page
-has one JS file with no shared framework, only the helpers in `static/js/common.js` (DOM builder
-`h()`, `api()` fetch wrapper, the JSON "Inspect" drawer, toasts, the key/settings modal). The Workbench
-page loads one entry, `static/js/workbench.js` (boot, tabs, `render()`), which imports panel modules
-`static/js/workbench-*.js` (build, tests, bulk, import, labeling, datasets, checks, drift, review, calibrate,
-costs, policy, compare, guide) that share page state through `W` in `workbench-state.js`; their imports form cycles, so
-a module may only declare functions and constants at load time (`tests/js/workbench-modules.test.mjs`). The drawer's
-**Open in Workbench** button (`static/js/handoff.js`) hands the inspected request — state, questions,
-pictures, never answers — to the Workbench's Build tab through `localStorage`, with no server route;
-`tests/test_handoff.py` checks that every demo's request passes Workbench validation, so a demo that
-changes its request shape must keep it acceptable there.
-
-**Security is centralized in `jev/security.py`**, called once per request in
-`server.py:Handler._handle` before any route runs: Host-header allow-list (blocks DNS rebinding —
-only `127.0.0.1`/`localhost`/`[::1]` on the configured port are served), `Sec-Fetch-Site`/`Origin`
-checks, a random per-process `SESSION_TOKEN` that every state-changing request must echo back in
-`X-Jev-Token` (embedded into served HTML via a `<meta name="jev-csrf">` tag), and a
-`Content-Type: application/json`-only rule for bodies. **Never weaken these checks or make the
-server bind to anything but 127.0.0.1** — see SECURITY.md for the full threat model.
-
-**`jev/envfile.py` is the only code path allowed to write `.env`.** Before writing a key it
-verifies `.env` is gitignored and not already `git`-tracked (`preflight()`), then writes
-atomically with `0600` permissions. Do not add another way to persist secrets to disk, and never
-construct a test/dev server pointed at the real project's `.env` — always redirect
-`server.PROJECT_ROOT` / `Settings(env_file=...)` / `jev.config.WORKBENCH_DIR` to a temp directory
-first (see `tests/test_envfile.py` for the pattern). A prior session accidentally overwrote and
-then deleted the real `.env` this way; do not repeat it.
-
-**`jev/workbench.py`** is the generic layer the whole thing is trying to demonstrate: it
-validates arbitrary `state`/`questions` from the UI (`validate_questions`/`validate_state`), runs
-them, checks probability answers against user-authored `expect` ranges, persists runs as JSON
-files under `data/workbench/` (one file per saved test — these are meant to be committed), saves
-Bulk rows and their `_expect` labels as datasets under `data/workbench/datasets/` (inputs and labels
-only — never answers, per the no-replay rule below), keeps a tuned Policy gate with a dataset as a *check*
-(`jev/checks.py`: gates, model, the versioned id that answered the tuning run as `tuned_on`, and
-user-chosen targets, never measured results) that the Datasets panel and `scripts/check.py` rerun live,
-compares unlabeled new rows with a check's dataset through its gate (`jev/drift.py`, both sides run live), asks a
-check's tuned-on version and a newer one the same rows and retunes the gate on the newer one's answers
-(`jev/upgrade.py`, both sides run live; moving the check saves thresholds and the version, never answers),
-measures how often a second person's blind labels agree with a dataset's and writes the settled ones back
-(`jev/agreement.py`, no model calls), holds a random share of a dataset's labeled rows out of tuning as `"_test": true` test rows, scored only on request and
-counted (`jev/testsplit.py`; the marker never reaches the model, and checks, drift and upgrade rerun only the other
-rows), fits a conformal cut that turns one question's answers into the shortest list that holds the right answer
-at a chosen rate, so review chooses among a few options (`jev/answersets.py`), checks consistency rules over a row's answers (`jev/rules.py`: "if A = x then B in y, z", plain code; Policy,
-Tune, cost, cross-validation, checks, drift and the exported gate send rows that break one to review),
-fits monotone probability maps checked on unseen folds (`jev/recalibrate.py`, without changing routing), retunes a
-Policy gate with each question's threshold off and with the question dropped, and lists the request's questions no gate
-or rule reads (`jev/prune.py`, no model calls; a live Compare confirms a shorter request), runs a
-question set over many rows in parallel (`run_bulk`, capped and rate-limited by the same
-`SpendGuard`; a row's `_image` picture travels as an asset named `photo` in its state, so Box questions run
-too), exports the exact request as runnable Python/JavaScript/curl, and exports a tuned gate as a
-Python or JavaScript module whose `decide(state)` routes a row (`jev/gate.py`). Run as a script, that module prints
-each decision with its `row`; the Review queue (`jev/decisions.py`) reads those lines back, so a person labels the rows
-it sent to review and a random audit sample of the rows it automated, and appends them to the check's dataset.
-The queue shows answers read from the user's own decisions file, which their own gate produced; that is their data,
-not a canned answer, so never bundle a sample decisions file for the UI to show.
-Answer-set cuts can be attached to Policy and saved with checks as `answer_sets` (question IDs to cut/coverage),
-then exported as typed `candidates` in gate decisions. They only assist review: thresholds and rules still decide
-automation. Review keeps all labels available and hides shortlists on blind audit rows. Model-upgrade proposals
-drop fitted cuts so they are refitted on the new model. Persist configuration and human labels, never candidates.
-Exported gates accept Bulk's `_image` names, load pictures from a caller-selected directory (the working directory
-by default), and send the same `photo` asset reference as Bulk. Samples load as `<name>.png`; uploaded hash filenames
-stay unchanged. Pictures stay separate from exported source. Box questions return coordinates but cannot be gated
-or shortlisted; Review labels only Choice/Noul/Score and accepts accompanying Box output. Labels and `_test` markers
-never reach the model, including direct calls to an exported gate's `decide` function.
-Portable dataset bundles (`jev/bundles.py`) contain only dataset inputs, human labels, question and gate
-configuration, test-split history, and referenced pictures. Never include model answers, measured check
-results, or application credentials. Preview imports before saving and require explicit replacement of
-an existing dataset. Bundled sample pictures become content-addressed uploads so their exact bytes travel
-without replacing built-in sample files.
-Drift's **Label new traffic** queue carries the full weak-support inputs and their picture names from
-the comparison run, with blank human-label controls. Its append endpoint saves inputs and human labels
-only, deduplicates against all saved rows (including test rows), and preserves the check and test history.
-These targeted rows are not a random audit and must never produce audit-accuracy statistics. Adding
-labels makes no model call; rerunning the check is explicit. Saved held-out row identities are excluded
-from new-traffic comparisons even when pasted without their `_test` marker.
-
-Spend previews (`jev/estimate.py`, `POST /api/workbench/estimate`, `static/js/estimate.js`, `scripts/check.py
---estimate`) count the calls a paid Workbench run would make and add up `client.request_reserve_usd` for the exact
-requests it would send, built through the run's own helpers (`workbench.prepare_bulk`/`prepare_compare`/`job_state`,
-`checks.load`, `drift.prepare`, `upgrade.prepare`) so counts, test-row exclusion, the 200-row cap and image uses match
-the run. Estimates make no model call (not even the model-list check) and never reserve or record budget; they only
-read the guard's snapshot. They are upper bounds: always show them as "≤"/"at most"/"upper bound", rounded up, and
-never as measured spend. A run whose bound exceeds the budget left needs an explicit confirm before it starts.
-
-Dataset health (`jev/health.py`, Bulk's **Check dataset health**) inspects current inputs and human labels
-without model calls or writes. It reports duplicates, conflicting or invalid labels, missing labels, and
-identical inputs across tuning/test rows using row numbers only; never reveal held-out label values
-in health reports. Findings are advisory and fixes stay manual. Reports must match the current rows
-and selected questions; hide them when either changes.
-
-New test splits keep exact-input groups together, including unlabeled copies, using the same identity as
-dataset health and Review (labels and test markers ignored, picture names retained). Select the closest
-feasible labeled-row count to the requested share, with at least two labeled rows on each side, and show
-the actual share. Existing splits are never regrouped automatically; impossible splits must leave files unchanged.
+- Show only model answers from calls the current user triggered, or from their own gate decisions
+  file in Review. Keep answers and derived results ephemeral. Never add replay data or a cache.
+- Persist inputs, human labels, configuration and documented bookkeeping. Keep answers, measured
+  results, shortlists and application credentials out of saved datasets, tests, bundles and drafts.
+- Strip human labels, `_test` markers and labeling guidelines at each model boundary, including
+  exported gates. Keep pictures out of source exports.
+- Keep held-out rows outside tuning, audit samples and label handoffs. Reveal held-out metrics
+  only on explicit scoring and record each look. Keep held-out label values out of reports and previews.
+- Use the shared exact-input identity for health, splits, cross-validation and Review. Ignore labels,
+  test markers and JSON field order and retain picture names. Keep identical inputs in the same
+  fold or split group and preserve duplicate positions elsewhere.
+- Bind previews to validated current inputs, ordered questions and saved revisions where applicable.
+  Confirm replacements explicitly. Use the dataset update lock and history-aware write helpers.
+- Build spend previews from the same requests and explicit selection the run will use. Show an
+  upper bound rounded up and require explicit confirmation when it exceeds the budget left.
+- Retry only explicitly selected unanswered calls against compatible requests and model versions.
+  Preserve successful answers in the current session. A changed selection needs a new preview.
+- Filters, sorting and navigation change presentation only. Preserve edits, hidden selections and
+  audit membership. Guard unsaved work before a queue or its saved configuration changes.
+- Keep imports and handoffs within their documented field allowlists. Preserve independent blind
+  audits and reveal only audit measures supported by the sample.
 
 ## Lab packs
 
-Lab (`static/js/lab/`, `jev/lab/`) is the extension layer that holds most small improvements. A pack is one module
-that declares features; pages show them through one set of generic controls (Refine, Checks, Edits, Metrics, Copy
-and download, Paste to import, Commands, Tools, panels), the Workbench's Toolbox tab and the command palette
-(Ctrl/Cmd+K), and `scripts/lab.py` runs the Python ones.
-
-- JavaScript packs live in `static/js/lab/packs/<page>/<pack-id>.js` and default-export `definePack(...)` from
-  `static/js/lab/kit.js` (its header is the contract). They import only the kit and `static/js/lab/lib/*.js` and
-  reach the page only through the `ctx` of their surface: the builders in `static/js/lab/surfaces/*.js`, whose header
-  comments define each surface's items, data, actions and content boundaries. Never the DOM, storage, the network
-  or the model; `tests/js/lab/registry.test.mjs` enforces this. Page code reaches Lab through `W.lab` (Workbench)
-  or the page's `LAB` from `static/js/lab/pages/<page>.js`; with no Lab filter or sort active a list behaves as before.
-- Python packs live in `jev/lab/packs/<module>.py` and define `PACK = kit.define_pack(...)` from `jev/lab/kit.py`:
-  question checks (reported under the lint report's `lab` key), dataset health findings (health report `lab`), Bulk
-  preflight notes (preflight report `lab`, which never triggers the run confirm), offline `scripts/lab.py` commands
-  and row formats. They never import `jev.client` or reach the network; commands read data only through the app's
-  loaders, which honor `--data-dir`.
-- Every pack has its own test that runs the harness (`checkPack` in `tests/js/lab/harness.mjs`, `pack_tests` in
-  `tests/labkit.py`); the harness registers one test per numbered improvement and refuses a feature without a
-  hand-written case. Expected values are worked out independently of the feature's code.
-- After adding, removing or renaming a pack or a feature, run `node scripts/lab_inventory.mjs`: it regenerates the
-  page indexes (`static/js/lab/pages/*.js`, never edit them) and the numbered inventory in `docs/lab/`.
-- No Lab path calls the model or spends budget, not even by pressing a page's own Run, Ask, Check or Compare
-  button: surface builders never expose such an action (`tests/js/lab/surface-no-model-calls.test.mjs` builds every
-  fixture context and checks), and a pack never reaches a paid endpoint. Plain-code re-decisions (rescore, decide,
-  replan) are fine.
-- Lab state (filters, sorts, drafts, previews, tool inputs) is page-session only. Packs show only what the page holds
-  from the current user's own calls; exports state their content and keep every boundary in this file (held-out
-  label values, labels and `_test` markers never leave their place, and nothing is sent to the model). The only
-  browser storage the chrome uses is the theme preference under one key.
+- Lab is frozen under the [roadmap](docs/roadmap.md). Fix or delete existing packs and features.
+  Adding packs or features is outside the freeze.
+- JavaScript packs default-export `definePack` from `static/js/lab/kit.js`. The kit and Lab
+  libraries are their only imports. Packs reach the page solely through the `ctx` described by
+  `static/js/lab/surfaces/`. Do not expose the DOM, storage, network or paid actions through it.
+  Pages use `W.lab` or their generated `LAB`. An unrefined list must retain its baseline behavior.
+- Python packs use `jev/lab/kit.py` and never import `jev.client` or use the network. CLI packs
+  load through the app's loaders and honor `--data-dir`. Keep findings in the report's `lab`
+  field. Lab preflight notes never trigger a run confirmation.
+- Lab never calls the model or spends budget, including indirectly through page commands. Pure
+  rescoring and replanning are allowed. Its filters, sorts, drafts, previews and tools stay in the
+  page session. Chrome stores only the theme preference. Exports follow the Workbench boundaries.
+- Verify retained quantitative tools with independent reference values. `tests/js/lab/registry.test.mjs` and
+  `tests/js/lab/surface-no-model-calls.test.mjs` enforce pack and surface isolation.
+- Run `node scripts/lab_inventory.mjs` after changing JavaScript packs or surfaces. Never edit generated
+  `static/js/lab/pages/*.js`. Biome skips these files and the JS tests check the generated indexes.
 
 ## Conventions
 
-- Ask before adding any dependency, tool or service; propose the trade-off and a recommended
-  option. Already approved: Playwright (`@playwright/test`), as a dev-only dependency for browser
-  smoke tests.
-- `docs/roadmap.md` sets priorities through May 2027. Lab is frozen and being pruned hard: add no
-  packs or features; fixes and deletions only.
-- Never store `TYPESAFE_API_KEY` (or any model key) as a GitHub secret, and never make live model calls
-  in CI. Live checks (`scripts/validate.py`, `scripts/check.py`) run by hand on Boat, in a `jev-lab-live` sandbox
-  (see the Boat section).
-- Use system fonts. Add no web fonts, CDNs or other third-party requests to the app.
-- Python: no type-checker is configured, but signatures are typed; `from __future__ import
-  annotations` at the top of every `jev/*.py` module; f-strings/`%`-formatting mixed, follow
-  the surrounding function. Ruff and Biome own layout; don't hand-format.
-- JS tests that read page source with regexes must tolerate the formatter's line breaks (`\s*`
-  between arguments, an optional trailing comma).
-- No real domains or emails in fictional data (sample data, scenarios, tests): Harbor Coffee Co. and
-  all vendors/customers use the reserved `.example` TLD. Official service endpoints and docs links
-  such as `api.typesafe.ai` are fine. This is enforced by nothing but review;
-  keep it that way if you add scenario data.
-- Every built-in scenario/example must run against the live model cleanly (`scripts/validate.py`)
-  before it's considered correct — the offline `tests/` only check that composition code (weights,
-  thresholds, gating) behaves correctly given some answers, not that the wording elicits good
-  answers from Jev.
-- Nothing in the UI may show a canned/replayed answer; every number the app displays must come
-  from a call the current user actually triggered (there is no cache — an earlier version had
-  one and it was deliberately removed).
-
-## Context maintenance
-
-- Keep project rules and durable project knowledge in tracked `AGENTS.md` and
-  repository docs; do not store them in agent auto-memory or machine-local notes.
-- `CLAUDE.md` contains only `@AGENTS.md`. Shared hooks, scripts and settings
-  belong in tracked files. Do not ignore instruction files or shared settings;
-  ignore only machine-local settings and agent worktrees.
-
-## Workbench data boundaries
-
-Cross-validation keeps exact-input groups together across threshold/cost tuning, answer sets,
-recalibration, and model upgrades. Use the dataset-health/Review identity (labels and test markers
-ignored, JSON field order ignored, picture names retained). Assign larger groups first to the
-least populated fold, breaking ties by input hash. Require at least one distinct labeled input
-per fold as well as the total labeled-row minimum; report why unseen evaluation is unavailable.
-Do not silently fall back to splitting duplicate copies between tuning and evaluation.
-
-Saved checks may require `slice_targets` (top-level input field/value plus minimum accuracy and
-coverage), using By slice's full normalized value identity and the check's shared confidence basis.
-Every required slice must pass; missing or unevaluable slices prevent a pass. Score the current
-run's tuning answers only, with no extra calls or held-out rows. Preserve slice configuration in
-bundles and model upgrades, and enforce it on upgrade proposals. Persist no measured slice results.
-Slice targets evaluate batches; exported per-row gates still route by thresholds and rules.
-
-Exported gate decisions carry versioned configuration provenance (questions including Choice option order,
-requested model, thresholds, signal, rules, and answer-set cuts). Review rejects mismatches both when
-reading and appending. Legacy review rows without provenance require manual labels and supply no
-shortlists; legacy automated rows are excluded from audit sampling and scoring. Provenance identifies
-configuration, not file authenticity or an alias's resolved model version. Save only inputs and human
-labels in datasets, never provenance, model answers, or measured audit results.
-
-Review queue CSV handoff exports inputs and blank human-label columns only, never model answers,
-shortlists, or decision metadata. Import matches the current queue's row and gate configuration,
-validates labels before applying them, and preserves review/audit membership. Preview and apply
-make no dataset write or model call; normal append saves inputs and human labels only.
-
-Review audit slices describe completed, verified blind audits in the submitted batch, grouped by
-the existing full normalized input-value identity. Show counts, accuracy and 95% intervals only;
-never infer automation coverage or saved slice-target passes from an automated-only sample.
-Reports are ephemeral and make no model calls. Queue filters and navigation change presentation
-only: preserve labels, audit membership, CSV handoff, and the set of ready rows eligible to append.
-
-Dataset health by slice reports row and distinct-input counts and per-question valid/missing/invalid
-label counts separately for tuning and held-out rows, without label values. Slice values appear only
-after a field is selected, using By slice's full normalized value identity and display-only truncation.
-Labels and test markers cannot be slice fields. Reports are ephemeral, make no model calls or writes,
-and are hidden when rows, questions, labels, or the selected field change.
-
-Pre-run labeling (`jev/prelabel.py`) fills only missing Choice/Noul/Score human labels on tuning
-rows, with blank controls and no model calls or file writes. Preserve existing labels (including
-invalid ones), duplicate positions, input data, pictures, and held-out markers. Held-out rows and
-array states never enter the editable queue. Slice filtering uses full normalized input values;
-drafts survive filters but belong to the current rows/questions snapshot. Apply changes the rows
-editor only, invalidates old Bulk results and health reports, and requires explicit dataset saving.
-
-Pre-run labeling CSV handoff exports eligible tuning inputs, a missing-question list, and blank
-human-label columns for the current slice. Imports match the full rows/question snapshot including
-Choice order and duplicate positions, validate all labels, and preview before merging into drafts.
-Never export existing labels or held-out inputs. Blank cells preserve drafts; Apply and dataset
-Save remain explicit, with no model calls or file writes from export/import. Labeling filters and
-next-row navigation change presentation only and preserve drafts across slices. The Workbench
-guide only navigates existing panels; it never runs, labels, saves, or changes configuration.
-
-Pre-run labeling draft downloads carry eligible tuning inputs, the question schema, and human draft
-labels across all slices; exclude existing labels, held-out inputs, and model answers. A hash binds
-restores to the full original rows/questions snapshot, including labels, held-out markers, duplicate
-positions, and Choice order. Preview and accept only merge validated drafts; Apply and Save remain
-explicit. Pictures travel separately. Warn before unload when current unapplied drafts exist.
-Labeling keyboard shortcuts act only inside that panel, preserve native editing behavior, and only
-navigate incomplete rows within the current slice; they never apply, save, or call the model.
-
-Labeling guidelines (`jev/guidelines.py`, `static/js/guidelines.js`) are a dataset's optional `guidelines`:
-question id -> note and generic examples with valid Choice/Noul/Score labels (Box takes a note only). They are
-human-only: never send them to the model (Bulk, checks, drift, upgrade, Compare, request export) and never make
-them gate configuration, so exported gates and decision provenance must not change with them. Show them collapsed
-beside label controls; on blind audit and agreement rows hide examples matching the row. Bundles carry them, check
-saves and upgrades preserve them, a save without them keeps the saved ones, and guidelines for removed questions
-are dropped with a warning naming the question. Replacement previews and warnings report question ids and counts,
-never notes, examples, or label values. The labeling CSV handoffs do not include them.
-
-Dataset replacement previews use the same candidate validation as saving, show counts and configuration
-changes without label values, and make no writes or model calls. Match exact input occurrences in order
-so duplicates remain distinct, with picture names included. Saving a previewed replacement verifies the
-saved file revision under the dataset update lock; changed files require another preview. Preserve the
-existing explicit replacement, check compatibility, and test-history semantics.
-
-Dataset revision history (`jev/history.py`) is the undo for dataset files. Every write that replaces or
-deletes a dataset goes through `workbench.write_dataset`/`delete_dataset`, which first copy the current file
-byte for byte to `data/workbench/datasets/.history/<id>/<timestamp>-<hash>.json` under the dataset update
-lock; a new dataset writer must go through them too. Revisions contain only what dataset files contain
-(inputs, human labels, configuration), never model answers or measured results. Keep the newest 20 per
-dataset, skip unchanged writes and identical consecutive copies, write atomically, and validate ids and
-revision names. Deleting keeps history so the delete can be undone. `.history` is gitignored local state:
-never list it as a dataset, bundle it, or accept it as an id. Listings and restore previews show counts and
-configuration changes only, never label values. Restore validates the revision with `prepare_dataset`,
-reports the `dataset_changes` summary, and requires the preview's file token (a changed file needs another
-preview). It restores the revision's own check and labeling guidelines where they fit (drops are reported,
-never written), keeps every test look recorded since (looks
-never shrink), and snapshots the current file first, so a restore is itself undoable.
-
-Review session recovery downloads human edits only, never suggested model labels, answers, or shortlists.
-Restore requires the original decisions text and the same dataset/check snapshot, validates before preview,
-and preserves the original random audit membership and blind labeling behavior. Download/restore make
-no model calls or dataset writes; accepting a restore changes the queue only, and Add stays explicit.
-Review input-slice filters, per-question progress and keyboard navigation change presentation only;
-full normalized slice identities preserve labels across filters. Warn before leaving or replacing a
-queue with unsaved human edits, including check saves/removal/upgrades, bundle replacement, dataset
-deletion and history restore; cancel before any saved configuration changes. Pictures travel
-separately from session files.
-
-Workbench input repairs (`jev/dataset_edits.py`) are separate explicit editor actions: prepare,
-preview, then apply invalid/conflicting Choice/Noul/Score tuning-label corrections or redundant-copy
-cleanup. They make no model calls or dataset writes. Exclude entire input groups containing a
-held-out copy. Cleanup requires identical input identity and identical full label maps; never choose
-between conflicting labels automatically. Preview binds rows, labels, markers, pictures and ordered
-questions; Apply verifies the preview and clears stale Bulk results. Saving remains explicit.
-Bulk preflight (`jev/preflight.py`) reads the same capped request states and picture references as
-Bulk, reports row numbers/paths without label values, and makes no calls or writes. Findings are
-advisory and require a deliberate continue before paid Bulk runs.
-Build drafts contain request inputs, ordered questions and pictures only; validate and preview
-before explicit replacement. Reject duplicate question IDs/Choice keys before serialization, and
-mark answers from changed requests as outdated, including edits during in-flight requests.
-Agreement session recovery contains human second labels and explicit settlements only, bound to
-the saved dataset/schema and original blind sample. Restore does not reveal saved labels until
-Compare. Guard unsaved agreement edits before leaving or replacing their saved configuration.
-Compare slices reuse successful paired tuning answers and the selected confidence basis. Disagreement
-handoffs carry original inputs and blank label controls, never model suggestions; preserve existing
-labels, duplicate positions, pictures and held-out markers. General labeling CSV/draft/apply retains
-the full source snapshot. Saved-item search/filtering changes presentation only, preserving edits.
-
-Bulk retries are explicit paid runs of unanswered original row indices only, with matching spend
-previews. Preserve successful session answers, human labels, duplicate positions, pictures and test
-markers; combine only an unchanged request and compatible model version. Freeze the requested model
-for every batch, refresh derived evaluation after retries, and count spend across attempts. Never
-persist answers for retry recovery or let an empty selection fall back to running the full batch.
-
-Bulk retry selection uses original unanswered row indices only. Failed/skipped filters change
-presentation, preserving selections across filters; estimates and paid requests use the same explicit
-selection. Selection changes during spend preview require another deliberate retry.
-
-Compare retries preview and send only unanswered calls from the original request, including
-individual calls in an order-averaged variant. Preserve successful calls, original row positions,
-and held-out exclusions. Pin retries to the resolved version where a requested model has answered,
-sharing the pin across variants that asked the same model. Keep incompatible answers out of paired
-scores and count spend across attempts. Bind the retry receipt to the original ordered request and
-call completion state. Retry requests carry no prior answers; merge new outcomes in the current tab.
-Compare retry selections are page-session only and indexed into the original call array. Reject
-explicit empty, repeated or answered positions. Spend previews and paid retries use the same
-selection; changing it during confirmation requires another deliberate retry. Unselected calls
-remain pending in the receipt and the report.
-
-Drift labeling draft recovery carries original weak-support inputs, ordered question schema and human
-draft labels only, bound to the unchanged saved dataset/check snapshot. Restore previews before explicit
-acceptance, works without a paid comparison, and never restores model answers, shortlists or measured
-drift results. Pictures travel separately. Download/restore make no model calls or dataset writes;
-Add remains explicit. Guard unsaved traffic labels before leaving or replacing queues or their saved
-configuration, including check changes, dataset replacement/deletion and history restore.
-
-Build editor operations preserve question IDs and ordered criteria. Duplicates get independent criteria
-and a unique ID, without copied expectations. Deletion undo must not overwrite a reused ID or changed
-expectation. Collapse state is presentation only. Valid JSON state with duplicate keys is rejected
-before outbound actions rather than silently losing input; plain text remains supported.
-
-Saved-test selections and results are session-only. Filters never change selection or Run all's scope.
-Every paid test run and its spend preview use the same explicit nonempty IDs; an empty list must never
-reach the API, whose legacy semantics mean all tests. Guard duplicate runs and changed selections or
-requests during preview. Partial batches preserve other current results, invalidate results for changed
-or deleted tests, and accumulate spend and wall time across completed batches.
-
-Dataset catalog filters/sorts use summary metadata and preserve open queues and edits. Catalog CSV
-exports names/IDs/counts/timestamps only, with spreadsheet formula escaping, never inputs, label values,
-notes, answers or check configuration. Load as copy is an unsaved editor action, with a unique name,
-dirty-editor guards and stale-result invalidation; checks/guidelines stay with the original. Copies
-with held-out rows or evaluation history use bundles so their test history is preserved.
-
-Build's explicit rename action migrates human expectations with the question and rejects ID or
-expectation collisions. Inserting questions and duplicating criteria preserve the surrounding
-order; moving or duplicating Score levels changes their numeric meaning. Clipboard helpers copy
-only authored instructions or criteria. Saved-test cost/latency sorts use current session results
-only, with unknown values last; request-size summaries are counts, never spend estimates. Catalog
-date/label-share filters, workflow presets and pins are presentation-only; pins stay in the page
-session. Catalog JSON uses the same metadata-only boundary as CSV.
-
-Build presence filters preserve the full request; Duplicate shown creates independent questions
-with unique IDs and no copied expectations. Criterion insertion preserves Choice key/description
-pairs and warns that Score ordinals change. Saved-test metadata downloads contain counts, IDs,
-names and current session status/cost/latency only, never inputs, instructions, notes or answers.
-Catalog scoped search, exclusion and count bounds keep queues mounted; row-label progress is
-metadata and does not establish valid labels or evaluation readiness.
-
-Build question sharing exports only the explicitly shown authored questions, with no state, pictures,
-expectations or answers; unapplied Raw JSON edits block sharing. Question outlines contain ids, types,
-positions and authored counts only. Choice sorting keeps key/description pairs together; reversing Score
-levels requires confirmation because numeric meanings change. Catalog guideline-count bounds and sorts
-use summary metadata; saved-test count bounds and selected-ID copying preserve hidden selections.
-
-Build subset moves keep shown and hidden question order stable within each group and preserve
-expectations. Authored Markdown and instruction handoffs include shown questions only, never
-state, pictures, expectations or answers; unapplied Raw JSON blocks handoffs. Blank-criterion
-cleanup removes only empty placeholders. Saved-test state-byte controls count UTF-8 authored
-state only; selected metadata downloads include hidden selections and keep the existing allowlist
-and spreadsheet escaping. Catalog tuning-row counts exclude held-out rows; evaluation-count
-filters describe recorded test looks, never evaluation quality or label validity.
-
-Example discovery filters/sorts and compact cards are session-only presentation. Request previews
-show authored state, ordered questions and picture names only, never expectations or model answers.
-Example metadata downloads contain IDs, titles, counts, types and input shapes only. Opening an
-example in Build stays explicit; gallery browsing never runs a model or changes editor data.
-
-Build authoring diagnostics inspect active authored fields only. Duplicate-ID/Choice-key filters
-use outbound validation's trimmed, case-sensitive identity. Outline CSV contains positions, IDs,
-types and counts with spreadsheet escaping. Single-question handoffs block pending Raw JSON;
-Choice description sorting preserves key pairs and never sorts Score levels.
-
-Saved-test authored counts describe uncovered question IDs and Choice keys, not expectation
-validity. Observation filters and summaries use latest current session measurements with unknowns
-explicit; summed latency is not wall time. One-step selection Undo is session-only, drops deleted
-IDs and preserves hidden selections except when Replace selection with visible is explicit.
-
-Catalog split counts use summary metadata only; shares include unlabeled inputs and establish
-no label validity. Undefined shares sort last and cannot satisfy numeric share filters. Pin shown
-and Unpin shown preserve hidden pins; pinned handoffs include hidden pins with the metadata-only
-allowlist and spreadsheet escaping. Filters and pin actions keep existing queue nodes mounted.
-
-Build content cleanup is an explicit preview/Apply/Undo workflow bound to the full ordered
-questions and human expectations. Trim only selected active fields, preserve criteria order and
-expectations, reject ID/key collisions, and block pending Raw JSON. Diagnostics export identifiers,
-types, counts and flags only. Undo must refuse to overwrite newer question/expectation edits.
-
-Saved-suite question inventories are separately named schema handoffs containing question IDs,
-types and occurrence/expectation-presence counts only, never authored text, inputs, label values or
-answers. Pasted-ID selection previews use exact case-sensitive IDs and invalidate when edited or
-matched saved IDs change. Selection actions remain local and preserve existing paid-run guards.
-
-Catalog missing-label and split-label shares use summary counts of rows with any human label,
-never label validity. Empty-split shares stay unavailable. Active filter chips and one-step filter
-Undo change presentation only, preserve current pins and keep human queues mounted.
-
-Example search inspects authored descriptions, never state/expectations/answers. Pins are session
-state and hidden pins survive shown-only actions and filter reset. Metadata exports retain their
-allowlist; separately labeled request handoffs contain only authored state, ordered questions and
-picture references. Gallery size counts are UTF-8 authored input sizes, never spend estimates.
+- Ask before adding a dependency, tool or service and explain the trade-off and preferred option.
+  Playwright is approved as a dev-only browser test dependency.
+- Use system fonts and keep web fonts, CDNs and other third-party asset requests out of the app.
+- Type Python signatures and add `from __future__ import annotations` to every `jev/*.py` module.
+  Follow the surrounding string formatting style. Ruff and Biome own layout. Source regex tests
+  must tolerate formatter line breaks and optional trailing commas.
+- Use reserved `.example` domains and emails in fictional data, scenarios and tests.
+  Official service endpoints and documentation links may use real domains.
+- Keep project rules and durable knowledge in tracked files, with no agent memory or local notes.
+  `CLAUDE.md` contains only `@AGENTS.md`. Track instruction files, shared settings, hooks and
+  scripts. Ignore machine-local settings and worktrees.

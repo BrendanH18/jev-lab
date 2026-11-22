@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import pack from "../../../static/js/lab/packs/workbench/policy-rules-routing.js";
-import { checkPack, fakeCtx } from "./harness.mjs";
-import { POLICY_REPORT, samplePolicyCtx } from "./fixtures/workbench-analysis.mjs";
+import { checkPack } from "./harness.mjs";
+import { POLICY_COST, POLICY_REPORT, samplePolicyCtx } from "./fixtures/workbench-analysis.mjs";
 
 const base = samplePolicyCtx();
 const rows = base.items();
@@ -22,44 +22,16 @@ const empty = () => samplePolicyCtx({ report: null });
 const report = JSON.parse(JSON.stringify(POLICY_REPORT));
 report.rows[4].correct = false;
 report.rows[4].wrong = ["urgent"];
+report.rows[4].answers.urgent.label = "yes";
 const caught = samplePolicyCtx({ report });
+const customPrice = samplePolicyCtx({
+  report,
+  cost: { ...POLICY_COST, mistakes: [{ question: "urgent", label: "yes", answer: "no", cost: 30 }] },
+});
 
 checkPack(
   pack,
   {
-    input_length: { items: [{ text: "abc" }, { text: "Do you ship to Norway?" }, { text: "" }], values: [3, 22, null] },
-    signal_spread: { items: rows, values: [0, 0.28, 0.03, 0.53, 0, 0.2, 0.02], ctx: base, tolerance: 1e-9 },
-    wrong_margin: { items: rows, values: [null, -0.38, null, 0.1, null, -0.3, null], ctx: base, tolerance: 1e-9 },
-    rule_lines: { items: rows, values: ["none", "line 1", "none", "none", "line 1", "none", "none"], ctx: base },
-    input_kind: { items: [r0, r1, r4], values: ["plain text", "picture", "fields"], ctx: base },
-    label_combo: { items: [r0, r1, r3], values: ["billing · yes", "shipping · no", "billing · no"], ctx: base },
-    answer_combo: { items: [r0, r1, r3], values: ["billing · yes", "wholesale · no", "billing · yes"], ctx: base },
-    outcome_detail: {
-      items: rows,
-      ctx: base,
-      values: [
-        "automated, right",
-        "reviewed, a mistake caught",
-        "automated, right",
-        "automated, wrong",
-        "reviewed, nothing wrong",
-        "reviewed, a mistake caught",
-        "automated, right",
-      ],
-    },
-    // At $2 a review and $20 a mistake: rows with a wrong gated answer (1, 3, 5) are cheaper reviewed.
-    cheaper_route: {
-      items: rows,
-      values: ["automate", "review", "automate", "review", "automate", "review", "automate"],
-      ctx: base,
-    },
-
-    split_routes: {
-      hitList: [r0, { ...r1, row: r0.row, text: r0.text, number: 9 }],
-      missList: rows,
-      ctx: base,
-      message: /^Rows #1, #9 share one input, yet 1 automate and 1 go to review/,
-    },
     rule_catches_mistake: {
       hit: { ...r4, correct: false, wrong: ["urgent"] },
       miss: [r4, r1, r0],
@@ -90,6 +62,7 @@ checkPack(
     rules_cost_per_1000: [
       { ctx: base, expect: 2000 / 7, tolerance: 1e-12, empty: empty() },
       { ctx: caught, expect: -18000 / 7, tolerance: 1e-12 },
+      { ctx: customPrice, expect: -28000 / 7, tolerance: 1e-12 },
     ],
 
     rule_hits_csv: {
@@ -98,19 +71,6 @@ checkPack(
       text:
         '"rule line","rule","shown rows it holds","with a wrong gated answer","held by this rule alone","alone, with a wrong gated answer"\r\n' +
         '"1","if department = wholesale then urgent = yes","2","1","1","0"\r\n',
-    },
-    routing_by_label_csv: {
-      ctx: base,
-      filename: "policy-routing-by-label.csv",
-      text:
-        '"question","label","shown rows","automated","automated, this answer wrong","reviewed","reviewed, this answer wrong"\r\n' +
-        '"department","billing","2","2","0","0","0"\r\n' +
-        '"department","other","1","1","0","0","0"\r\n' +
-        '"department","shipping","3","1","0","2","2"\r\n' +
-        '"department","wholesale","1","0","0","1","0"\r\n' +
-        '"urgent","no","4","2","1","2","0"\r\n' +
-        '"urgent","yes","3","2","0","1","0"\r\n',
-      excludes: ["espresso", "0.76"],
     },
   },
   { ctx: () => samplePolicyCtx() },
@@ -129,11 +89,4 @@ test("policy-rules-routing: rule lines are numbered as jev/rules.py numbers them
     never.check(rows, samplePolicyCtx({ rules: { text: "", applied: "", report: null, error: null, hold: false } })),
     null,
   );
-});
-
-test("policy-rules-routing: facts never throw on an odd item", () => {
-  for (const feature of pack.features.filter((f) => f.kind === "fact")) {
-    feature.value({}, fakeCtx({}));
-    feature.value({ answers: null, wrong: "x", rules: null }, base);
-  }
 });

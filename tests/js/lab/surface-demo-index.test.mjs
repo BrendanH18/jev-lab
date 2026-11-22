@@ -6,9 +6,6 @@ import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
 import { indexAppsCtx, indexPlaygroundCtx } from "../../../static/js/lab/surfaces/index.js";
-import playPack from "../../../static/js/lab/packs/index/index-playground-insights.js";
-import appsPack from "../../../static/js/lab/packs/index/index-apps-explorer.js";
-import { fakeEnv, find, fire, textOf } from "./harness.mjs";
 import {
   APP_CARDS,
   APPS_PAGE,
@@ -425,8 +422,8 @@ test("apps actions: open and focus guard unknown and hidden cards", () => {
 
 // ---------- the page hooks (static/js/index.js) ----------
 
-function pageWithPacks() {
-  const LAB = createLab([playPack, appsPack]);
+function pageWithoutPacks() {
+  const LAB = createLab([]);
   const play = {
     result: PLAYGROUND_RESULTS.refund,
     pending: false,
@@ -481,8 +478,8 @@ function renderAppsFrom(page, dom, calls = []) {
   return make(page.appsCtx, page.LAB, "index.apps", dom.mount, h, page.appCards, () => calls.push("renderAppsLab"));
 }
 
-test("renderAnswers: with no Lab setting active it shows every answer card in order, exactly as before", () => {
-  const page = pageWithPacks();
+test("every answer card appears in response order without packs", () => {
+  const page = pageWithoutPacks();
   const dom = screen();
   renderAnswersFrom(page, dom)();
   const shown = dom.held.get("#play-answers");
@@ -498,61 +495,16 @@ test("renderAnswers: with no Lab setting active it shows every answer card in or
   );
 });
 
-test("renderAnswers: Lab filters hide cards, a Lab sort reorders them, and the note's reset restores everything", () => {
-  const page = pageWithPacks();
-  const dom = screen();
-  const calls = [];
-  const renderAnswers = renderAnswersFrom(page, dom, calls);
-  const view = page.LAB.view("index.playground");
-  view.filters = [{ key: "index-playground-insights/type", op: "is", value: "noul" }];
-  renderAnswers();
-  let shown = dom.held.get("#play-answers");
-  assert.deepEqual(
-    shown.filter((node) => node.card).map((node) => node.card),
-    ["wants_money_back", "talks_to_ai"],
-  );
-  const note = shown.at(-1);
-  assert.equal(note.attrs.role, "status");
-  assert.match(textOf(note), /2 of 4 answers shown · 1 Lab setting active/);
-  view.filters = [];
-  view.sort = { key: "index-playground-insights/top_p", dir: "asc" };
-  renderAnswers();
-  shown = dom.held.get("#play-answers");
-  assert.equal(page.LAB.active("index.playground"), 1);
-  // Descending top probability: .97 and .97 (a tie keeps page order), then .66 and .62.
-  view.sort = { key: "index-playground-insights/top_p", dir: "desc" };
-  renderAnswers();
-  shown = dom.held.get("#play-answers");
-  assert.deepEqual(
-    shown.filter((node) => node.card).map((node) => node.card),
-    ["wants_money_back", "talks_to_ai", "urgency", "intent"],
-  );
-  view.filters = [{ key: "index-playground-insights/type", op: "is", value: "box" }];
-  renderAnswers();
-  shown = dom.held.get("#play-answers");
-  assert.equal(textOf(shown[0]), "No answer matches the Lab filters.");
-  fire(
-    find(shown.at(-1), (node) => node.tag === "button"),
-    "click",
-  );
-  assert.equal(page.LAB.active("index.playground"), 0);
-  assert.deepEqual(
-    dom.held.get("#play-answers").map((node) => node.card),
-    ["intent", "urgency", "wants_money_back", "talks_to_ai"],
-  );
-  assert.deepEqual(calls, ["renderPlayLab"]);
-});
-
 test("renderAnswers does nothing before the first answer", () => {
-  const page = pageWithPacks();
+  const page = pageWithoutPacks();
   page.play.result = null;
   const dom = screen();
   renderAnswersFrom(page, dom)();
   assert.equal(dom.held.size, 0);
 });
 
-test("renderApps: page order with no Lab setting, Lab filters and sort otherwise, with a count note and reset", () => {
-  const page = pageWithPacks();
+test("the original app cards appear in page order without packs", () => {
+  const page = pageWithoutPacks();
   const dom = screen();
   const calls = [];
   const renderApps = renderAppsFrom(page, dom, calls);
@@ -563,30 +515,6 @@ test("renderApps: page order with no Lab setting, Lab filters and sort otherwise
     "the page's own card nodes, in page order",
   );
   assert.deepEqual(dom.held.get("#apps-note"), []);
-  const view = page.LAB.view("index.apps");
-  view.filters = [{ key: "index-apps-explorer/tag", op: "is", value: "untagged" }];
-  view.sort = { key: "index-apps-explorer/app_number", dir: "desc" };
-  renderApps();
-  // Untagged cards by app number, highest first; Counter (8) before Play (7).
-  assert.deepEqual(
-    dom.held.get(".grid.apps").map((node) => node.card),
-    ["/counter", "/play", "/find", "/reviews", "/dispatch", "/shield"],
-  );
-  const note = dom.held.get("#apps-note")[0];
-  assert.match(textOf(note), /6 of 9 apps shown · 2 Lab settings active/);
-  view.filters = [{ key: "index-apps-explorer/bullets", op: "min", value: "9" }];
-  renderApps();
-  assert.equal(textOf(dom.held.get(".grid.apps")[0]), "No app matches the Lab filters.");
-  fire(
-    find(dom.held.get("#apps-note")[0], (node) => node.tag === "button"),
-    "click",
-  );
-  assert.equal(page.LAB.active("index.apps"), 0);
-  assert.deepEqual(
-    dom.held.get(".grid.apps"),
-    page.appCards.map((card) => card.node),
-  );
-  assert.deepEqual(calls, ["renderAppsLab"]);
 });
 
 test("ask(): the Lab section re-renders after pending is cleared, on success and on failure", async () => {
@@ -673,24 +601,4 @@ test("the page installs Lab once after the top bar, hooks both surfaces, and has
     HTML,
     /<div id="apps-lab" class="hidden"[^>]*><\/div>\s*<div id="apps-note"><\/div>\s*<div class="grid apps">/,
   );
-});
-
-test("both sections render with the starter packs and every block open", () => {
-  const page = pageWithPacks();
-  for (const [id, ctx] of [
-    ["index.playground", page.playCtx],
-    ["index.apps", page.appsCtx],
-  ]) {
-    const view = page.LAB.view(id);
-    for (const name of ["section", "refine", "checks", "metrics", "exports", "commands"]) view.open[name] = true;
-    const tree = page.LAB.section(fakeEnv(), id, ctx);
-    assert.ok(tree, id);
-    assert.ok(
-      !find(tree, (node) => node.attrs?.["data-lab-block"] === "transforms"),
-      "no edits on a read-only surface",
-    );
-    assert.ok(!find(tree, (node) => node.attrs?.["data-lab-block"] === "imports"), "no imports on a read-only surface");
-    assert.match(textOf(tree), /Lab tools · \d+/);
-  }
-  assert.deepEqual(page.LAB.mountedIds().sort(), ["index.apps", "index.playground"]);
 });

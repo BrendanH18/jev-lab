@@ -5,11 +5,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
-import { improvementsOf } from "../../../static/js/lab/kit.js";
 import { counterExamplesCtx, counterTurnsCtx } from "../../../static/js/lab/surfaces/counter.js";
-import turnPack from "../../../static/js/lab/packs/counter/counter-turn-insights.js";
-import examplePack from "../../../static/js/lab/packs/counter/counter-example-guide.js";
-import { fakeEnv, find, fire, textOf } from "./harness.mjs";
+import { fakeEnv } from "./harness.mjs";
 import {
   COUNTER_POLICY,
   INTENT_KEYS,
@@ -531,8 +528,8 @@ const h = (tag, attrs = {}, ...children) => ({
 const callStats = (meta) => ({ stats: meta });
 const plain = (node) => JSON.parse(JSON.stringify(node, (key, value) => (typeof value === "function" ? "fn" : value)));
 
-function page({ packs = [turnPack, examplePack], chat = "frustration" } = {}) {
-  const LAB = createLab(packs);
+function page({ chat = "frustration" } = {}) {
+  const LAB = createLab([]);
   const setup = sampleCounterSetup();
   setup.examples = setup.examples.filter((example) => example && example.label); // the real setup: four examples
   const picked = sampleCounterChats()[chat];
@@ -657,7 +654,7 @@ const oldSamples = (S) =>
     h("button", { class: "chip", disabled: S.running, onclick: () => {} }, "New chat"),
   ].flat();
 
-test("with no Lab setting active the chat and the chips render exactly as before", () => {
+test("the chat and sample chips render normally without packs", () => {
   for (const chat of ["frustration", "shipping", "typed", "long", "empty"]) {
     const p = page({ chat });
     p.renderChat();
@@ -668,88 +665,15 @@ test("with no Lab setting active the chat and the chips render exactly as before
     assert.equal(p.classes.get("#samples-note"), true, "the note box stays hidden");
   }
   const running = page();
+  running.renderSamples();
+  running.samples()[2].attrs.onclick();
+  running.samples().at(-1).attrs.onclick();
+  assert.deepEqual(running.resets, [running.S.setup.examples[2], null]);
   running.S.running = true;
   running.renderSamples();
   assert.deepEqual(plain(running.samples()), plain(oldSamples(running.S)));
-  // Without any Lab pack nothing changes either, and the Lab boxes stay hidden.
-  const bare = page({ packs: [] });
-  bare.renderChat();
-  bare.renderLab();
-  assert.deepEqual(plain(bare.chat()), plain(oldChat(bare.S)));
-  assert.deepEqual([bare.classes.get("#samples-lab"), bare.classes.get("#turns-lab")], [true, true]);
-});
-
-test("Lab filters hide chat turns, a Lab sort reorders them, and the note's reset restores everything", () => {
-  const p = page();
-  const view = p.LAB.view("counter.turns");
-  view.filters = [{ key: "counter-turn-insights/action_now", op: "is", value: "handoff" }];
-  p.renderChat();
-  let shown = p.chat();
-  assert.equal(shown[0].attrs.role, "status");
-  assert.match(textOf(shown[0]), /^1 of 3 turns shown · 1 Lab setting active/);
-  assert.deepEqual(
-    shown.slice(1).map((node) => textOf(node.children[0])),
-    ["Customer · turn 3"],
-  );
-  view.filters = [];
-  view.sort = { key: "counter-turn-insights/frustration", dir: "desc" };
-  p.renderChat();
-  shown = p.chat();
-  assert.deepEqual(
-    shown.slice(1).map((node) => textOf(node.children[0])),
-    ["Customer · turn 3", "Customer · turn 2", "Customer · turn 1"],
-  );
-  view.filters = [{ key: "counter-turn-insights/intent", op: "is", value: "brewing guide" }];
-  p.renderChat();
-  shown = p.chat();
-  assert.equal(shown.length, 1);
-  assert.match(textOf(shown[0]), /^No turn matches the Lab filters\./);
-  fire(
-    find(shown[0], (node) => node.tag === "button"),
-    "click",
-  );
-  assert.equal(p.LAB.active("counter.turns"), 0);
-  assert.deepEqual(plain(p.chat()), plain(oldChat(p.S)));
-  assert.deepEqual(
-    p.held.get("#turns-lab")[0].attrs["data-lab-surface"],
-    "counter.turns",
-    "the Lab sections are drawn again",
-  );
-  assert.equal(p.classes.get("#turns-lab"), false);
-});
-
-test("Lab filters hide example chips but never the New chat chip", () => {
-  const p = page();
-  const view = p.LAB.view("counter.examples");
-  view.filters = [{ key: "counter-example-guide/expects_close", op: "without" }];
-  p.renderSamples();
-  assert.deepEqual(p.samples().map(textOf), [
-    "Frustration builds",
-    "A person, please",
-    "Missing the point",
-    "New chat",
-  ]);
-  assert.equal(p.classes.get("#samples-note"), false);
-  assert.match(textOf(p.note()[0]), /^3 of 4 examples shown · 1 Lab setting active/);
-  fire(p.samples()[1], "click");
-  assert.deepEqual(p.resets, [p.S.setup.examples[2]], "a chip still loads its own example");
-  view.filters = [{ key: "counter-example-guide/turn_count", op: "min", value: "9" }];
-  p.renderSamples();
-  assert.deepEqual(p.samples().map(textOf), ["New chat"]);
-  assert.match(textOf(p.note()[0]), /^No example matches the Lab filters\./);
-  fire(
-    find(p.note()[0], (node) => node.tag === "button"),
-    "click",
-  );
-  assert.deepEqual(p.samples().map(textOf), [
-    "Shipping, then sorted",
-    "Frustration builds",
-    "A person, please",
-    "Missing the point",
-    "New chat",
-  ]);
-  assert.equal(p.classes.get("#samples-note"), true);
-  assert.equal(p.held.get("#samples-lab")[0].attrs["data-lab-surface"], "counter.examples");
+  running.renderLab();
+  assert.deepEqual([running.classes.get("#samples-lab"), running.classes.get("#turns-lab")], [true, true]);
 });
 
 test("the page installs Lab once after the top bar, hooks both surfaces and adds the Lab boxes", () => {
@@ -808,30 +732,4 @@ test("Reset policy and Lab's policy actions share one path, and every decision r
   assert.deepEqual([T.decisions, T.decidedWith, T.note], [["d"], relaxed, "Re-decided in 0.2 ms · no Jev call"]);
   assert.match(body("run"), /S\.decisions = r\.decisions;\n\s*S\.decidedWith = r\.policy;/);
   assert.match(body("reset"), /decidedWith: null/);
-});
-
-test("both sections render with the starter packs", () => {
-  for (const [id, ctx] of [
-    ["counter.turns", turns()],
-    ["counter.examples", examples()],
-    ["counter.turns", turns({ chat: "empty" })],
-    ["counter.examples", examples({ setup: null })],
-  ]) {
-    const LAB = createLab([turnPack, examplePack]);
-    const view = LAB.view(id);
-    for (const name of ["section", "refine", "checks", "metrics", "exports", "commands"]) view.open[name] = true;
-    const tree = LAB.section(fakeEnv(), id, ctx);
-    assert.equal(tree.attrs["data-lab-surface"], id);
-    assert.ok(!textOf(tree).includes("could not be shown"));
-  }
-  const LAB = createLab([turnPack, examplePack]);
-  const improvements = (id) =>
-    [turnPack, examplePack]
-      .filter((pack) => pack.surface === id)
-      .reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
-  assert.ok(improvements("counter.turns") > 0 && improvements("counter.examples") > 0);
-  assert.deepEqual(
-    [LAB.count("counter.turns"), LAB.count("counter.examples")],
-    [improvements("counter.turns"), improvements("counter.examples")],
-  );
 });

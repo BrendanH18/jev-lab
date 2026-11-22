@@ -11,9 +11,9 @@ import { createLab } from "../../../static/js/lab/host.js";
 import { improvementsOf } from "../../../static/js/lab/kit.js";
 import { exampleBrowserDefaults, renderExamplesBrowser, visibleExamples } from "../../../static/js/examples-browser.js";
 import { renderWorkbenchGuide, tabForKey, workflowSteps } from "../../../static/js/workbench-guide.js";
-import examplesPack from "../../../static/js/lab/packs/workbench/workbench-examples-starter.js";
 import shellPack from "../../../static/js/lab/packs/workbench/workbench-shell-starter.js";
 import toolboxPack from "../../../static/js/lab/packs/workbench/workbench-toolbox-starter.js";
+import { probePack } from "./fixture-pack.mjs";
 import { fakeEnv, find, findAll, textOf } from "./harness.mjs";
 import {
   SHELL_TABS,
@@ -26,6 +26,27 @@ import { moduleSources } from "../workbench-source.mjs";
 
 const GALLERY = "workbench.examples.gallery";
 const ids = (list) => list.map((item) => item.id);
+const examplesPack = probePack(
+  "examples-probe",
+  GALLERY,
+  {
+    yes_no_count: ["number", (item) => item.questions.filter((question) => question.type === "noul").length],
+    instruction_words: [
+      "number",
+      (item) => item.questions.reduce((sum, question) => sum + question.instructions.split(/\s+/).length, 0),
+    ],
+    has_pictures: ["flag", (item) => item.pictures.length > 0],
+  },
+  [
+    {
+      id: "open_first",
+      kind: "command",
+      title: "Open the first shown example",
+      when: (ctx) => ctx.shown().length > 0,
+      run: (ctx) => ctx.actions.open(ctx.shown()[0].id),
+    },
+  ],
+);
 
 // ---------- workbench.shell ----------
 
@@ -302,9 +323,9 @@ test("gallery shown(): the page's filters and sort, then Lab's filter and sort; 
     expanded: ["bag-photo"],
   });
   assert.equal(ctx.shown()[0], ctx.items()[0], "shown() returns the item objects of items()");
-  lab.view(GALLERY).filters = [{ key: "workbench-examples-starter/yes_no_count", op: "min", value: "1" }];
+  lab.view(GALLERY).filters = [{ key: "examples-probe/yes_no_count", op: "min", value: "1" }];
   assert.deepEqual(ids(ctx.shown()), ["order-triage", "wholesale-lead", "late-delivery", "bag-photo"]);
-  lab.view(GALLERY).sort = { key: "workbench-examples-starter/instruction_words", dir: "desc" };
+  lab.view(GALLERY).sort = { key: "examples-probe/instruction_words", dir: "desc" };
   assert.deepEqual(
     ids(ctx.shown()),
     ["wholesale-lead", "order-triage", "late-delivery", "bag-photo"],
@@ -461,10 +482,10 @@ test("renderExamplesBrowser: the Lab section renders beside the controls and Lab
   assert.equal(host.mountedIds().includes(GALLERY), true);
   // A Lab filter, as the Refine block sets it, then the surface's refresh().
   host.view(GALLERY).filters = [
-    { key: "workbench-examples-starter/picture_source", op: "is", value: "no pictures" },
-    { key: "workbench-examples-starter/yes_no_count", op: "min", value: "1" },
+    { key: "examples-probe/has_pictures", op: "without" },
+    { key: "examples-probe/yes_no_count", op: "min", value: "1" },
   ];
-  const labCtx = host.commandEntries().find(([key]) => key.startsWith("workbench-examples-starter/"))[2];
+  const labCtx = host.commandEntries().find(([key]) => key.startsWith("examples-probe/"))[2];
   assert.equal(labCtx.data.loaded, "bag-photo");
   labCtx.refresh();
   assert.deepEqual(cardIds(root), ["order-triage", "wholesale-lead", "late-delivery"]);
@@ -620,7 +641,7 @@ test("renderToolbox: an empty state without tools, and the flat Toolbox section 
   const args = (W) => [W, fakeH, () => null, "workbench.toolbox", SHELL_TABS, (tab) => opened.push(tab), () => {}];
   const bare = make(...args({ bulk: { costs: {} } }))();
   assert.match(textOf(bare), /Toolbox/);
-  assert.match(textOf(bare), /nothing is sent anywhere/);
+  assert.match(textOf(bare), /Nothing is sent anywhere/);
   assert.ok(find(bare, (n) => n.attrs?.class === "empty" && /No tools are loaded/.test(textOf(n))));
   const lab = createLab([toolboxPack], builders);
   const W = {
@@ -633,7 +654,7 @@ test("renderToolbox: an empty state without tools, and the flat Toolbox section 
   const section = find(view, (n) => n.attrs?.["data-lab-surface"] === "workbench.toolbox");
   assert.ok(section && /\bflat\b/.test(section.attrs.class), "the Toolbox section renders flat, without a disclosure");
   assert.ok(!find(view, (n) => n.attrs?.class === "empty"));
-  assert.ok(findAll(view, (n) => n.attrs?.role === "listitem").length >= 25, "every starter tool is listed");
+  assert.equal(findAll(view, (n) => n.attrs?.role === "listitem").length, 7, "every retained tool is listed");
   const mounted = lab.commandEntries();
   assert.equal(mounted.length, 0);
   assert.deepEqual(lab.mountedIds(), ["workbench.toolbox"]);

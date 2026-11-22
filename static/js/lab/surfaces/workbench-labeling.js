@@ -3,7 +3,7 @@
 // label controls (static/js/guidelines.js, jev/guidelines.py). Pure code: it imports only the kit, a lib helper and
 // the page's own pure modules prelabel.js and guidelines.js, touches no DOM, storage or network, and is tested in
 // Node (tests/js/lab/surface-wb-labeling.test.mjs). Fixture for pack tests: tests/js/lab/fixtures/workbench-labeling.mjs
-// (sampleLabelingQueueCtx). Starter pack: static/js/lab/packs/workbench/labeling-queue-essentials.js.
+// (sampleLabelingQueueCtx).
 // This header is the CONTRACT for packs on this surface.
 //
 // ---------------------------------------------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 // Lab surface of the Workbench Tests tab (static/js/workbench-tests.js): the saved tests, each joined with the latest
 // result of the user's own run in this page session. Pure code: it imports only the kit and the page's own pure
 // selection module, touches no DOM, storage or network, and is tested in Node (tests/js/lab/surface-wb-tests.test.mjs).
-// Fixture for pack tests: tests/js/lab/fixtures/workbench-tests.mjs (sampleTestsItemsCtx). Starter pack:
-// static/js/lab/packs/workbench/tests-triage.js. This header is the CONTRACT for packs on this surface.
+// Fixture for pack tests: tests/js/lab/fixtures/workbench-tests.mjs (sampleTestsItemsCtx).
+// This header is the CONTRACT for packs on this surface.
 //
 // ---------------------------------------------------------------------------------------------------------------
 // SURFACE "workbench.tests.items"  —  builder testsItemsCtx(source)  —  "Saved tests · data/workbench/"

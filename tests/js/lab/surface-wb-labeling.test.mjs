@@ -9,7 +9,6 @@ import { createLab } from "../../../static/js/lab/host.js";
 import { labelingQueueCtx } from "../../../static/js/lab/surfaces/workbench-labeling.js";
 import { createGuidelines } from "../../../static/js/guidelines.js";
 import { labelProgress, labelShortcut, nextLabel, visibleLabels } from "../../../static/js/prelabel.js";
-import essentials from "../../../static/js/lab/packs/workbench/labeling-queue-essentials.js";
 import { fakeEnv, find, findAll, textOf } from "./harness.mjs";
 import { workbenchSource } from "../workbench-source.mjs";
 import {
@@ -23,7 +22,7 @@ const rows = (list) => list.map((item) => item.row_number);
 const byRow = (ctx) => Object.fromEntries(ctx.items().map((item) => [item.row_number, item]));
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-// A small pack whose facts drive Lab's filters and sort in these tests.
+// A small pack to exercise the Lab filters, sort, and edit paths.
 const probe = definePack({
   id: "labeling-probe",
   surface: ID,
@@ -31,6 +30,21 @@ const probe = definePack({
   features: [
     { id: "picture", kind: "fact", type: "flag", label: "picture", value: (item) => item.image !== null },
     { id: "blank", kind: "fact", type: "number", label: "blank", value: (item) => item.blank },
+    {
+      id: "clear_drafts",
+      kind: "transform",
+      label: "Clear drafts",
+      each: (item) => ({ ...item, draft: {} }),
+    },
+    {
+      id: "draft_urgent",
+      kind: "transform",
+      label: "Draft the urgent label",
+      each: (item) =>
+        item.missing.includes("urgent") && item.draft.urgent === undefined
+          ? { ...item, draft: { ...item.draft, urgent: true } }
+          : null,
+    },
   ],
 });
 const labWith = (filters = [], sort = null) => {
@@ -328,9 +342,9 @@ test("replaceItems writes only changed drafts and rejects any list the page's ru
 
 test("a Lab edit previews, applies through replaceItems and undoes exactly; drafts outside the slice survive", () => {
   const ctx = sampleLabelingQueueCtx({ slice: "chat" });
-  const clear = essentials.features.find((feature) => feature.id === "clear_drafts");
+  const clear = probe.features.find((feature) => feature.id === "clear_drafts");
   const items = ctx.items();
-  const preview = previewTransform("labeling-queue-essentials/clear_drafts", clear, items, new Set([0, 1, 2]), {}, ctx);
+  const preview = previewTransform("labeling-probe/clear_drafts", clear, items, new Set([0, 1, 2]), {}, ctx);
   assert.deepEqual(preview.changed, [2, 3]);
   const applied = applyTransform(preview, items);
   ctx.actions.replaceItems(applied.items, { label: clear.label });
@@ -344,17 +358,10 @@ test("a Lab edit previews, applies through replaceItems and undoes exactly; draf
   assert.deepEqual(plain(ctx.items().map((item) => item.draft)), [{}, { topic: "billing" }, { urgent: false }]);
   // An edit that appends a key out of question order still undoes: items() keep the order the edit gave.
   const all = sampleLabelingQueueCtx();
-  const set = essentials.features.find((feature) => feature.id === "set_label");
+  const set = probe.features.find((feature) => feature.id === "draft_urgent");
   const before = all.items();
   const shownIndexes = new Set(before.map((_, index) => index));
-  const setPreview = previewTransform(
-    "labeling-queue-essentials/set_label",
-    set,
-    before,
-    shownIndexes,
-    { question: "urgent", label: "yes" },
-    all,
-  );
+  const setPreview = previewTransform("labeling-probe/draft_urgent", set, before, shownIndexes, {}, all);
   assert.deepEqual(
     setPreview.changed,
     [2, 6],

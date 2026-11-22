@@ -3,15 +3,7 @@
 // ctx builders of its surfaces, which page code reaches as LAB.builders.
 import { createLab } from "../host.js";
 import * as s0 from "../surfaces/shield.js";
-import p0 from "../packs/shield/shield-inbox-more.js";
-import p1 from "../packs/shield/shield-inbox-triage.js";
-import p2 from "../packs/shield/shield-panels.js";
-import p3 from "../packs/shield/shield-result-more.js";
-import p4 from "../packs/shield/shield-signal-insights.js";
-import p5 from "../packs/chrome/chrome-essentials.js";
-import p6 from "../packs/chrome/chrome-keymap.js";
-import p7 from "../packs/chrome/chrome-navigation.js";
-import p8 from "../packs/chrome/chrome-readouts.js";
+import p0 from "../packs/chrome/chrome-essentials.js";
 
-export const PACKS = [p0, p1, p2, p3, p4, p5, p6, p7, p8];
+export const PACKS = [p0];
 export const LAB = createLab(PACKS, { ...s0 });

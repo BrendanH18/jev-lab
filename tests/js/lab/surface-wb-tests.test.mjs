@@ -8,7 +8,7 @@ import { test } from "node:test";
 import * as tools from "../../../static/js/test-selection.js";
 import { createLab } from "../../../static/js/lab/host.js";
 import { testsItemsCtx } from "../../../static/js/lab/surfaces/workbench-tests.js";
-import pack from "../../../static/js/lab/packs/workbench/tests-triage.js";
+import { probePack } from "./fixture-pack.mjs";
 import { fakeEnv } from "./harness.mjs";
 import {
   TESTS_SURFACE as ID,
@@ -20,6 +20,11 @@ import {
 
 const ids = (list) => list.map((item) => item.id);
 const byId = (ctx) => Object.fromEntries(ctx.items().map((item) => [item.id, item]));
+const pack = probePack("tests-probe", ID, {
+  failed_checks: ["number", (item) => item.result?.checks?.filter((check) => check.ok === false).length ?? null],
+  input_tokens: ["number", (item) => item.result?.meta?.input_tokens ?? null],
+  noul_questions: ["number", (item) => item.questions.filter((question) => question.type === "noul").length],
+});
 const ALL = [
   "refund-routing",
   "bean-quality",
@@ -222,12 +227,12 @@ test("shown() applies Lab filters like any other filter and Lab's sort after the
   const lab = createLab([pack]);
   const ctx = sampleTestsItemsCtx({ lab, filters: {} });
   assert.deepEqual(ids(ctx.shown()), ALL, "no Lab setting: nothing changes");
-  lab.view(ID).filters = [{ key: "tests-triage/failed_checks", op: "min", value: "1" }];
+  lab.view(ID).filters = [{ key: "tests-probe/failed_checks", op: "min", value: "1" }];
   assert.deepEqual(ids(ctx.shown()), ["bean-quality", "latte-art-feedback"]);
   const paged = sampleTestsItemsCtx({ lab, filters: { status: "fail", exclude: "archived" } });
   assert.deepEqual(ids(paged.shown()), ["bean-quality"], "page and Lab filters combine");
   lab.view(ID).filters = [];
-  lab.view(ID).sort = { key: "tests-triage/input_tokens", dir: "desc" };
+  lab.view(ID).sort = { key: "tests-probe/input_tokens", dir: "desc" };
   assert.deepEqual(ids(ctx.shown()), [
     "latte-art-feedback",
     "refund-routing",
@@ -237,7 +242,7 @@ test("shown() applies Lab filters like any other filter and Lab's sort after the
     "unnamed-draft",
   ]);
   // Lab's sort applies last: ties (one yes/no question each) keep the page's ID order, in either page direction.
-  lab.view(ID).sort = { key: "tests-triage/noul_questions", dir: "asc" };
+  lab.view(ID).sort = { key: "tests-probe/noul_questions", dir: "asc" };
   const ordered = (sort) => ids(sampleTestsItemsCtx({ lab, filters: { sort, exclude: "draft" } }).shown());
   assert.deepEqual(ordered("id"), [
     "bean-quality",
@@ -499,7 +504,7 @@ test("hook: with no Lab setting the page shows, counts and orders exactly as bef
 test("hook: Lab filters hide rows, count as active, scope the visible selection tools, and Reset clears them", () => {
   const ui = page();
   ui.renderTests();
-  ui.W.lab.view(ID).filters = [{ key: "tests-triage/failed_checks", op: "min", value: "1" }];
+  ui.W.lab.view(ID).filters = [{ key: "tests-probe/failed_checks", op: "min", value: "1" }];
   assert.deepEqual(ids(ui.shownTests()), ["bean-quality", "latte-art-feedback"]);
   assert.equal(
     ui.testCountText(),
@@ -527,7 +532,7 @@ test("hook: Lab filters hide rows, count as active, scope the visible selection 
 
 test("hook: Lab's sort reorders the rendered rows after the page's sort, hidden rows included", () => {
   const ui = page();
-  ui.W.lab.view(ID).sort = { key: "tests-triage/input_tokens", dir: "desc" };
+  ui.W.lab.view(ID).sort = { key: "tests-probe/input_tokens", dir: "desc" };
   const order = ["latte-art-feedback", "refund-routing", "bean-quality", "damaged-bag-photo", "wholesale-inquiry"];
   assert.deepEqual(ids(ui.shownTests()), order);
   assert.deepEqual(

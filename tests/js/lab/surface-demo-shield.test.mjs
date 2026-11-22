@@ -6,8 +6,6 @@ import { test } from "node:test";
 import { createLab } from "../../../static/js/lab/host.js";
 import { shieldInboxCtx, shieldResultCtx } from "../../../static/js/lab/surfaces/shield.js";
 import * as surfaceModule from "../../../static/js/lab/surfaces/shield.js";
-import inboxPack from "../../../static/js/lab/packs/shield/shield-inbox-triage.js";
-import resultPack from "../../../static/js/lab/packs/shield/shield-signal-insights.js";
 import { fakeDom, textOf } from "./harness.mjs";
 import {
   CATEGORY_LABELS,
@@ -30,7 +28,6 @@ const PAGE = readFileSync(new URL("../../../static/js/shield.js", import.meta.ur
 const HTML = readFileSync(new URL("../../../static/shield.html", import.meta.url), "utf8");
 const PYTHON = readFileSync(new URL("../../../jev/shield.py", import.meta.url), "utf8");
 const body = (name) => PAGE.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0];
-const ids = (messages) => messages.map((m) => m.id || "(no id)");
 const throwsMessage = (fn, pattern) =>
   assert.throws(fn, (error) => error instanceof Error && pattern.test(error.message));
 const literal = (name) => new Function(`return ${PAGE.match(new RegExp(`const ${name} = (\\{[^]*?\\});`))[1]}`)();
@@ -560,7 +557,7 @@ test("data.rules mirrors the cut-offs in jev/shield.py verdict()", () => {
 // ---------- the hooks in static/js/shield.js ----------
 
 // The page's Lab block and list helpers, rebuilt from source around a fake DOM and the fixture's page state.
-function page({ lab = createLab([inboxPack, resultPack]), batch = null } = {}) {
+function page({ lab = createLab([]), batch = null } = {}) {
   const dom = fakeDom();
   const nodes = { "#inbox-count": { textContent: "" }, "#inbox": { children: [] } };
   const mount = (target, ...children) => {
@@ -646,7 +643,7 @@ function page({ lab = createLab([inboxPack, resultPack]), batch = null } = {}) {
   return { ...new Function(...names, code)(...values), S, lab, nodes, calls };
 }
 
-test("with no Lab setting the page lists exactly what it listed before", () => {
+test("the inbox, batch and signals keep their order without packs", () => {
   const p = page();
   assert.deepEqual(p.shownMessages(), p.S.inbox, "every message, in inbox order");
   const res = p.S.results["bec-invoice"];
@@ -666,73 +663,6 @@ test("with no Lab setting the page lists exactly what it listed before", () => {
     textOf(buttons[9]),
     "✎ Write your ownquarantineTry to sneak something past it",
     "with the badge of its own result",
-  );
-});
-
-test("Lab filters and sorts reach the inbox, the batch table and the signal rows", () => {
-  const p = page();
-  const inboxView = p.lab.view(p.INBOX_ID);
-  inboxView.filters = [{ key: "shield-inbox-triage/level", op: "is", value: "quarantine" }];
-  assert.equal(p.lab.active(p.INBOX_ID), 1);
-  assert.deepEqual(ids(p.shownMessages()), ["bec-invoice", "admin-phish"]);
-  assert.deepEqual(
-    p.shownBatchResults(SHIELD_BATCH).map((r) => r.id),
-    ["bec-invoice", "admin-phish"],
-  );
-  p.renderInbox();
-  assert.equal(p.nodes["#inbox-count"].textContent, "2 of 9 messages");
-  const [note, ...rest] = p.nodes["#inbox"].children;
-  assert.equal(textOf(note), "1 Lab setting active. Clear Lab filters and sort");
-  assert.equal(rest.length, 3, "two messages and Write your own, which no filter hides");
-  inboxView.filters = [];
-  inboxView.sort = { key: "shield-inbox-triage/risk", dir: "desc" };
-  assert.deepEqual(
-    ids(p.shownMessages()),
-    [
-      "bec-invoice",
-      "admin-phish",
-      "packright-proof",
-      "(no id)",
-      "stranger-refund",
-      "maya-damaged",
-      "northside-reschedule",
-      "newsletter",
-      "jess-fan",
-    ],
-    "highest risk first, messages without a risk last in inbox order",
-  );
-  inboxView.filters = [{ key: "shield-inbox-triage/differs", op: "with" }];
-  p.renderInbox();
-  assert.equal(textOf(p.nodes["#inbox"].children[0]), "2 Lab settings active. Clear Lab filters and sort");
-  inboxView.filters = [{ key: "shield-inbox-triage/domain", op: "contains", value: "no message has this" }];
-  p.renderInbox();
-  assert.match(textOf(p.nodes["#inbox"].children[0]), /: no message matches\./);
-  p.lab.reset(p.INBOX_ID);
-  assert.equal(p.lab.active(p.INBOX_ID), 0);
-  assert.deepEqual(p.shownMessages(), p.S.inbox);
-
-  const res = p.S.results["bec-invoice"];
-  const resultView = p.lab.view(p.RESULT_ID);
-  resultView.filters = [{ key: "shield-signal-insights/hard_rule", op: "with" }];
-  assert.deepEqual(
-    p.shownSignals(res).map((s) => s.id),
-    ["ai_instructions", "identity_mismatch", "payment_change"],
-  );
-  assert.equal(
-    textOf(p.signalsNote(res, 3)),
-    "3 of 8 signals shown · 1 Lab setting active. Clear Lab filters and sort",
-  );
-  const other = p.S.results["admin-phish"];
-  assert.equal(p.shownSignals(other).length, 8, "a result that is not the opened one keeps the page's order");
-  assert.equal(p.signalsNote(other, 8), null);
-  resultView.filters = [];
-  resultView.sort = { key: "shield-signal-insights/weight", dir: "asc" };
-  assert.deepEqual(
-    p
-      .shownSignals(res)
-      .map((s) => s.id)
-      .slice(0, 3),
-    ["pressure", "unexpected_reward", "secrecy_or_bypass"],
   );
 });
 

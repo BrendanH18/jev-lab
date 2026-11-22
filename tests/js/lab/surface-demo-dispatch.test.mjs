@@ -14,14 +14,8 @@ import {
   dispatchPlanCtx,
   dispatchValueLabel,
 } from "../../../static/js/lab/surfaces/dispatch.js";
-import activityPack from "../../../static/js/lab/packs/dispatch/dispatch-activity-log.js";
-import invoicePack from "../../../static/js/lab/packs/dispatch/dispatch-invoice-desk.js";
-import orderPack from "../../../static/js/lab/packs/dispatch/dispatch-order-desk.js";
-import planPack from "../../../static/js/lab/packs/dispatch/dispatch-plan-review.js";
-import weekPack from "../../../static/js/lab/packs/dispatch/dispatch-week-planner.js";
 import {
   fixtureClarifyLast,
-  fixtureHistory,
   fixtureLast,
   fixtureMissingLast,
   fixtureWorld,
@@ -31,7 +25,7 @@ import {
   sampleDispatchOrdersCtx,
   sampleDispatchPlanCtx,
 } from "./fixtures/dispatch.mjs";
-import { fakeEnv, find, findAll, textOf } from "./harness.mjs";
+import { fakeEnv, findAll, textOf } from "./harness.mjs";
 
 const ALL = [
   sampleDispatchOrdersCtx,
@@ -282,35 +276,6 @@ test("shown() keeps the calendar's own weekday filter, then Lab filters, then La
   );
   const broken = sampleDispatchActivityCtx({ arrange: () => "not a list" });
   assert.equal(broken.shown().length, 7, "a bad arrange result falls back to the filtered list");
-});
-
-test("Lab filters and sorts from real packs reach shown() through LAB.matches and LAB.arrange", () => {
-  const lab = createLab([orderPack, invoicePack, weekPack, activityPack, planPack]);
-  const hooks = {
-    matches: (id, item, ctx) => lab.matches(id, item, ctx),
-    arrange: (id, items, ctx) => lab.arrange(id, items, ctx),
-  };
-  const orders = sampleDispatchOrdersCtx(hooks);
-  assert.equal(orders.shown().length, 6, "no Lab filter: everything");
-  lab.view("dispatch.orders").filters = [{ key: "dispatch-order-desk/total", op: "min", value: "60" }];
-  lab.view("dispatch.orders").sort = { key: "dispatch-order-desk/total", dir: "desc" };
-  assert.deepEqual(
-    orders.shown().map((item) => item.id),
-    ["A-1045", "A-1042", "A-1044"],
-  );
-  assert.equal(lab.active("dispatch.orders"), 2);
-  lab.reset("dispatch.orders");
-  assert.deepEqual(
-    orders.shown().map((item) => item.id),
-    ["A-1041", "A-1042", "A-1043", "A-1044", "A-1045", "A-1046"],
-  );
-  const calendar = sampleDispatchCalendarCtx(hooks);
-  lab.view("dispatch.calendar").filters = [{ key: "dispatch-week-planner/internal", op: "with" }];
-  assert.deepEqual(
-    calendar.shown().map((item) => item.id),
-    ["team_sync"],
-    "the internal saturday meeting stays hidden by the page",
-  );
 });
 
 test("world data fields hold the snapshot's values and are empty before it loads", () => {
@@ -651,7 +616,7 @@ function loadPage({ world = pageWorld(), last = null } = {}) {
     dom[target] = { tag: "mounted", attrs: {}, children: children.flat(Infinity).filter(Boolean) };
     return dom[target];
   };
-  const LAB = createLab([orderPack, invoicePack, weekPack, activityPack, planPack]);
+  const LAB = createLab([]);
   const env = fakeEnv();
   const stubs = {
     S,
@@ -709,7 +674,7 @@ function loadPage({ world = pageWorld(), last = null } = {}) {
 
 const rowsText = (node) => findAll(node, (n) => n.tag === "tr").map(textOf);
 
-test("the world lists render the page's rows in world order when no Lab setting is active", () => {
+test("the world lists render in world order without packs", () => {
   const page = loadPage();
   page.renderWorld();
   assert.deepEqual(rowsText(page.dom["#orders-list"]), [
@@ -747,90 +712,26 @@ test("the world lists render the page's rows in world order when no Lab setting 
   assert.equal(textOf(entries[0]), "Paid $500.00 to Coastline Freight (no invoice)");
   for (const id of ["#orders-note", "#invoices-note", "#calendar-note", "#activity-note"])
     assert.deepEqual(page.dom[id].children, [], `${id} is empty with no Lab setting`);
-  // Each Lab section sits after its list, inside the same block.
+  // The list stays in place without a Lab section.
   const world_ = page.dom["#world"];
   const ordersBlock = world_.children.find((child) => textOf(child).startsWith("Orders"));
   assert.deepEqual(
     ordersBlock.children.map((child) => child.attrs.id || child.attrs["data-lab-surface"] || child.tag),
-    ["h3", "orders-note", "orders-list", "dispatch.orders"],
+    ["h3", "orders-note", "orders-list"],
   );
 });
 
-test("a Lab filter and sort reach each world list, with a count note and a reset that restores page order", () => {
-  const page = loadPage();
-  page.renderWorld();
-  page.LAB.view("dispatch.orders").filters = [{ key: "dispatch-order-desk/refunded", op: "without" }];
-  page.LAB.view("dispatch.orders").sort = { key: "dispatch-order-desk/total", dir: "desc" };
-  page.LAB_SOURCE.refresh("dispatch.orders");
-  assert.deepEqual(
-    rowsText(page.dom["#orders-list"]).map((row) => row.slice(0, 6)),
-    ["A-1045", "A-1044", "A-1043", "A-1041"],
-  );
-  assert.equal(
-    textOf(page.dom["#orders-note"]),
-    "4 of 5 orders shown · 2 Lab settings activeClear Lab filters and sort",
-  );
-  const reset = find(page.dom["#orders-note"], (n) => n.tag === "button");
-  reset.attrs.onclick();
-  assert.equal(page.LAB.active("dispatch.orders"), 0);
-  assert.deepEqual(
-    rowsText(page.dom["#orders-list"]).map((row) => row.slice(0, 6)),
-    ["A-1041", "A-1042", "A-1043", "A-1044", "A-1045"],
-  );
-  assert.deepEqual(page.dom["#orders-note"].children, []);
-  assert.equal(
-    page.replaced[0][0],
-    '[data-lab-surface="dispatch.orders"]',
-    "the Lab section is rebuilt so its chips clear too",
-  );
-
-  page.LAB.view("dispatch.invoices").filters = [{ key: "dispatch-invoice-desk/paid", op: "with" }];
-  page.renderInvoices();
-  assert.deepEqual(
-    rowsText(page.dom["#invoices-list"]),
-    ["Bean Brokers LtdINV-7790Paid$1200"],
-    "position maps back to the page's own invoice row",
-  );
-  page.LAB.view("dispatch.invoices").filters = [{ key: "dispatch-invoice-desk/amount", op: "min", value: "999999" }];
-  page.renderInvoices();
-  assert.equal(textOf(page.dom["#invoices-list"]), "No invoice matches the Lab filters.");
-
-  page.LAB.view("dispatch.calendar").filters = [{ key: "dispatch-week-planner/moved", op: "with" }];
-  page.renderCalendar();
-  assert.deepEqual(findAll(page.dom["#calendar-list"], (n) => n.attrs.class === "evt").map(textOf), [
-    "11:00Weekly team sync",
-  ]);
-  assert.equal(
-    textOf(page.dom["#calendar-note"]),
-    "1 of 6 meetings shown · 1 Lab setting activeClear Lab filters and sort",
-    "the total counts what the calendar can show",
-  );
-});
-
-test("activity flashes only the newest entry, and only when it is shown", () => {
+test("activity flashes only the newest entry and handles an empty log", () => {
   const page = loadPage();
   page.renderWorld("payment");
   const flashing = () => findAll(page.dom["#activity-list"], (n) => n.attrs.class === "a flash").map(textOf);
   assert.deepEqual(flashing(), ["Paid $500.00 to Coastline Freight (no invoice)"]);
-  page.LAB.view("dispatch.activity").sort = { key: "dispatch-activity-log/number", dir: "asc" };
-  page.renderActivity("payment");
-  assert.deepEqual(
-    flashing(),
-    ["Paid $500.00 to Coastline Freight (no invoice)"],
-    "the newest entry flashes wherever a sort puts it",
-  );
-  page.LAB.view("dispatch.activity").filters = [{ key: "dispatch-activity-log/kind", op: "is", value: "refund" }];
-  page.renderActivity("refund");
-  assert.deepEqual(flashing(), []);
-  page.LAB.view("dispatch.activity").filters = [{ key: "dispatch-activity-log/kind", op: "is", value: "nothing" }];
-  page.renderActivity();
-  assert.equal(textOf(page.dom["#activity-list"]), "No activity matches the Lab filters.");
   const fresh = loadPage({ world: { ...pageWorld(), activity: [] } });
   fresh.renderWorld();
   assert.equal(textOf(fresh.dom["#activity-list"]), "Nothing has run yet.");
 });
 
-test("the answer grid shows the shown plan rows with the page's own cards", () => {
+test("the answer grid shows the plan rows with the page's own cards", () => {
   const page = loadPage({ last: fixtureLast() });
   page.dom["#fanout"] = {};
   page.renderFanout();
@@ -846,20 +747,6 @@ test("the answer grid shows the shown plan rows with the page's own cards", () =
   );
   assert.deepEqual([cards[9].attrs.class, textOf(cards[9])], ["fq unused", "task.priorityscore 1.6267%"]);
   assert.deepEqual(page.dom["#fanout-note"].children, []);
-  page.LAB.view("dispatch.plan").filters = [{ key: "dispatch-plan-review/used", op: "with" }];
-  page.LAB.view("dispatch.plan").sort = { key: "dispatch-plan-review/p", dir: "asc" };
-  page.renderFanout();
-  assert.deepEqual(
-    page.dom["#fanout"].children.map((card) => card.children[0].children[0]),
-    ["refund.reason", "tool", "refund.order"],
-  );
-  assert.equal(
-    textOf(page.dom["#fanout-note"]),
-    "3 of 14 answers shown · 2 Lab settings activeClear Lab filters and sort",
-  );
-  page.LAB.view("dispatch.plan").filters = [{ key: "dispatch-plan-review/p", op: "min", value: "2" }];
-  page.renderFanout();
-  assert.equal(textOf(page.dom["#fanout"]), "No answer matches the Lab filters.");
 });
 
 test("the page's ctx source routes every action to the page's own functions", async () => {

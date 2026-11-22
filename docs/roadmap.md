@@ -44,8 +44,8 @@ bug #91 and Dependabot PR #86.
 ### Findings
 
 1. **Feature count is rewarded over value.** The Lab inventory counts "filter by min", "filter by max"
-   and "sort" as three improvements. The Overview has a pack that filters app cards by their bullet
-   count (`docs/lab/index.md`, #1313–#1342). The kit's isolation contract (packs can't touch the DOM,
+   and "sort" as three improvements. The Overview had a pack that filtered app cards by their bullet
+   count. The kit's isolation contract (packs can't touch the DOM,
    network or model) is sound and worth keeping. What should go is the per-item counting incentive.
 2. **Statistical correctness is at risk because of that scale.** Bug #91: the audit planner recommends
    681 rows where 1,109 are needed, because the unconstrained Neyman formula ignores a stratum that runs
@@ -108,9 +108,9 @@ bug #91 and Dependabot PR #86.
 
 - Fix #91 with one feasible-allocation function shared by the sample-total and allocation tools. Its
   regression test checks that the fixture's total meets the margin and that one row fewer misses it.
-- Audit the Toolbox's quantitative packs (`tb-sample-sizes`, `tb-intervals`, `tb-hypothesis-tests`,
-  `tb-calibration`, and `jev/lab/mathx.py` against `static/js/lab/lib/math.js`) using reference
-  values worked out independently. Fix whatever fails or remove the control.
+- Audit the retained Toolbox calculators (`tb-sample-sizes` and `workbench-toolbox-starter`)
+  and the shared math in `jev/lab/mathx.py` and `static/js/lab/lib/math.js` using independent
+  reference values. Fix whatever fails or remove the control.
 - Add `scripts/validate.py --strict`: exit non-zero when a scenario misses its expectation or doesn't
   finish.
 - Merge or close #86. Fix the stale dataset wording in `docs/architecture.md` and `docs/workbench.md`.

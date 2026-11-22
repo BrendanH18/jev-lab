@@ -4,8 +4,8 @@
 // (static/js/workbench-review.js, jev/decisions.py). Pure code: it imports only the kit and a lib helper, touches no
 // DOM, storage or network, and is tested in Node (tests/js/lab/surface-wb-checks-drift-review.test.mjs). Fixtures for
 // pack tests: tests/js/lab/fixtures/workbench-checks.mjs (sampleChecksListCtx, sampleDriftQueueCtx,
-// sampleReviewQueueCtx). Starter packs: static/js/lab/packs/workbench/checks-list-essentials.js,
-// drift-queue-essentials.js and review-queue-essentials.js. This header is the CONTRACT for packs on these surfaces.
+// sampleReviewQueueCtx).
+// This header is the CONTRACT for packs on these surfaces.
 //
 // Common rules for all three surfaces
 //   - items() returns deeply frozen plain JSON objects. While nothing they derive from changes, items() returns the SAME

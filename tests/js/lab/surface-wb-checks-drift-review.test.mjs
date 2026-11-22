@@ -7,10 +7,8 @@ import { test } from "node:test";
 import { catalogDefaults, matchesCatalog, sortedCatalog } from "../../../static/js/dataset-catalog.js";
 import { createLab } from "../../../static/js/lab/host.js";
 import { checksListCtx } from "../../../static/js/lab/surfaces/workbench-checks.js";
-import checksPack from "../../../static/js/lab/packs/workbench/checks-list-essentials.js";
-import driftPack from "../../../static/js/lab/packs/workbench/drift-queue-essentials.js";
-import reviewPack from "../../../static/js/lab/packs/workbench/review-queue-essentials.js";
 import { workbenchSource } from "../workbench-source.mjs";
+import { probePack } from "./fixture-pack.mjs";
 import { fakeEnv } from "./harness.mjs";
 import {
   CHECKS_SURFACE,
@@ -30,6 +28,21 @@ const lines = (list) => list.map((item) => item.line);
 const ids = (list) => list.map((item) => item.id);
 const frozenDeep = (value) =>
   !value || typeof value !== "object" || (Object.isFrozen(value) && Object.values(value).every(frozenDeep));
+const checksPack = probePack("checks-probe", CHECKS_SURFACE, {
+  last_status: ["category", (item) => item.report?.status ?? "not run"],
+  lowest_threshold: ["number", (item) => Math.min(...Object.values(item.gates))],
+});
+const driftPack = probePack("drift-probe", DRIFT_SURFACE, {
+  has_picture: ["flag", (item) => item.image !== null],
+  labels_chosen: ["number", (item) => item.labeled.length],
+  status: ["category", (item) => item.status],
+});
+const reviewPack = probePack("review-probe", REVIEW_SURFACE, {
+  verified: ["flag", (item) => item.verified],
+  human_edits: ["number", (item) => item.edited.length],
+  disagreements: ["number", (item) => item.disagree?.length ?? null],
+  queue_kind: ["category", (item) => item.kind],
+});
 
 // A stand-in for common.js h(): plain nodes that also take addEventListener, as the page's own tests use.
 function h(tag, attrs, ...children) {
@@ -167,7 +180,7 @@ test("checks: shown() honors the catalog's filters, then Lab's filters and sort;
     hidden_by_catalog: 1,
     session_spend_usd: 0.0042 + 0.0021 + 0.0011,
   });
-  lab.view(CHECKS_SURFACE).filters = [{ key: "checks-list-essentials/last_status", op: "is", value: "not run" }];
+  lab.view(CHECKS_SURFACE).filters = [{ key: "checks-probe/last_status", op: "is", value: "not run" }];
   assert.deepEqual(ids(ctx.shown()), ["bean-reviews"]);
   assert.equal(ctx.page.matches("harbor-support"), false);
   assert.equal(
@@ -183,7 +196,7 @@ test("checks: shown() honors the catalog's filters, then Lab's filters and sort;
   assert.deepEqual(ctx.page.rank("bean-reviews"), { position: 1, of: 1 });
   assert.equal(ctx.page.rank("harbor-support"), null);
   lab.view(CHECKS_SURFACE).filters = [];
-  lab.view(CHECKS_SURFACE).sort = { key: "checks-list-essentials/lowest_threshold", dir: "asc" };
+  lab.view(CHECKS_SURFACE).sort = { key: "checks-probe/lowest_threshold", dir: "asc" };
   assert.deepEqual(ids(ctx.shown()), ["wholesale-leads", "harbor-support", "bean-reviews"]);
   assert.deepEqual(
     ids(ctx.items()),
@@ -303,12 +316,12 @@ test("drift: shown() is empty while Label new traffic is closed and honors Lab's
   const lab = createLab([driftPack]);
   const ctx = sampleDriftQueueCtx({ lab });
   assert.deepEqual(lines(ctx.shown()), [3, 5, 8, 11, 12]);
-  lab.view(DRIFT_SURFACE).filters = [{ key: "drift-queue-essentials/has_picture", op: "with" }];
+  lab.view(DRIFT_SURFACE).filters = [{ key: "drift-probe/has_picture", op: "with" }];
   assert.deepEqual(lines(ctx.shown()), [8, 11]);
   assert.equal(ctx.page.matches(ctx.state.report.labeling.items[0]), false);
   assert.deepEqual(lines(ctx.page.visible().map((raw) => ({ line: raw.line }))), [8, 11]);
   lab.view(DRIFT_SURFACE).filters = [];
-  lab.view(DRIFT_SURFACE).sort = { key: "drift-queue-essentials/labels_chosen", dir: "desc" };
+  lab.view(DRIFT_SURFACE).sort = { key: "drift-probe/labels_chosen", dir: "desc" };
   assert.deepEqual(lines(ctx.shown()), [11, 3, 5, 12, 8]);
   assert.deepEqual(lines(sampleDriftQueueCtx({ lab, open: false }).shown()), []);
 });
@@ -507,14 +520,14 @@ test("review: shown() applies the page's kind, status and slice filters, then La
   const lab = createLab([reviewPack]);
   const ctx = sampleReviewQueueCtx({ lab, kind: "review" });
   assert.deepEqual(lines(ctx.shown()), [2, 4, 6]);
-  lab.view(REVIEW_SURFACE).filters = [{ key: "review-queue-essentials/verified", op: "with" }];
+  lab.view(REVIEW_SURFACE).filters = [{ key: "review-probe/verified", op: "with" }];
   assert.deepEqual(lines(ctx.shown()), [2, 4]);
-  lab.view(REVIEW_SURFACE).sort = { key: "review-queue-essentials/human_edits", dir: "desc" };
+  lab.view(REVIEW_SURFACE).sort = { key: "review-probe/human_edits", dir: "desc" };
   assert.deepEqual(lines(ctx.shown()), [4, 2]);
   assert.deepEqual(lines(ctx.items()), [2, 4, 6, 9, 13, 15], "filters and sorts never change the queue");
   // A Lab filter on a blind fact cannot pick out audit rows by their hidden answers: the fact is unknown there.
   lab.reset(REVIEW_SURFACE);
-  lab.view(REVIEW_SURFACE).filters = [{ key: "review-queue-essentials/disagreements", op: "min", value: "0" }];
+  lab.view(REVIEW_SURFACE).filters = [{ key: "review-probe/disagreements", op: "min", value: "0" }];
   assert.deepEqual(lines(sampleReviewQueueCtx({ lab, kind: "audit" }).shown()), [13]);
 });
 
@@ -642,8 +655,8 @@ test("hook: queueView shows exactly the page's rows without Lab, and Lab's filte
     "the Lab section renders beside the filters",
   );
   assert.doesNotMatch(textOf(hooked), /Lab setting/);
-  lab.view(REVIEW_SURFACE).filters = [{ key: "review-queue-essentials/queue_reason", op: "is", value: "audit sample" }];
-  lab.view(REVIEW_SURFACE).sort = { key: "review-queue-essentials/human_edits", dir: "desc" };
+  lab.view(REVIEW_SURFACE).filters = [{ key: "review-probe/queue_kind", op: "is", value: "audit" }];
+  lab.view(REVIEW_SURFACE).sort = { key: "review-probe/human_edits", dir: "desc" };
   const filtered = view(x, ctx.state, ctx);
   assert.deepEqual(cards(filtered, "queue-harbor-support-"), [13, 15, 9]);
   assert.match(textOf(filtered), /2 of 6 rows ready · 4 incomplete · showing 3/);
@@ -660,7 +673,7 @@ test("hook: queueView shows exactly the page's rows without Lab, and Lab's filte
   )[0];
   reset.attrs.onclick();
   assert.equal(lab.active(REVIEW_SURFACE), 0);
-  lab.view(REVIEW_SURFACE).filters = [{ key: "review-queue-essentials/verified", op: "without" }];
+  lab.view(REVIEW_SURFACE).filters = [{ key: "review-probe/verified", op: "without" }];
   ctx.state.kindFilter = "audit";
   const none = view(x, ctx.state, ctx);
   assert.deepEqual(cards(none, "queue-harbor-support-"), []);
@@ -691,7 +704,7 @@ test("hook: Next incomplete row skips the rows Lab hides, in queue order", () =>
   next("harbor-support");
   assert.equal(ctx.state.nextLine, 6, "without Lab: the next incomplete row after line 4");
   ctx.state.nextLine = 4;
-  lab.view(REVIEW_SURFACE).filters = [{ key: "review-queue-essentials/queue_reason", op: "is", value: "audit sample" }];
+  lab.view(REVIEW_SURFACE).filters = [{ key: "review-probe/queue_kind", op: "is", value: "audit" }];
   next("harbor-support");
   assert.equal(ctx.state.nextLine, 9, "with Lab: the first incomplete audit row");
   next("harbor-support");
@@ -733,7 +746,7 @@ test("hook: driftLabels draws Lab's rows and section while Add keeps counting ev
   const hooked = view(x, run, ctx);
   assert.deepEqual(cards(hooked, "drift-harbor-support-"), [3, 5, 8, 11, 12]);
   assert.equal(findAll(hooked, (node) => node.attrs?.["data-lab-surface"] === DRIFT_SURFACE).length, 1);
-  lab.view(DRIFT_SURFACE).filters = [{ key: "drift-queue-essentials/status", op: "is", value: "incomplete" }];
+  lab.view(DRIFT_SURFACE).filters = [{ key: "drift-probe/status", op: "is", value: "incomplete" }];
   const filtered = view(x, run, ctx);
   assert.deepEqual(cards(filtered, "drift-harbor-support-"), [5, 8, 12]);
   assert.match(textOf(filtered), /Showing 3 of 5 queued rows · 1 Lab setting active/);
@@ -829,7 +842,7 @@ test("hook: checkItem hides a check Lab filters out (kept mounted), numbers the 
   assert.equal(host[3].attrs.style.display, "");
   assert.equal(host[2].attrs.hidden, true, "no hidden-check note without a Lab filter");
   assert.equal(findAll(host[3], (node) => node.attrs?.id === "check-rank-harbor-support")[0].attrs.hidden, true);
-  lab.view(CHECKS_SURFACE).filters = [{ key: "checks-list-essentials/last_status", op: "is", value: "passed" }];
+  lab.view(CHECKS_SURFACE).filters = [{ key: "checks-probe/last_status", op: "is", value: "pass" }];
   host = view(harbor);
   other = view(wholesale);
   assert.equal(host[3].attrs.style.display, "none", "hidden, still mounted");

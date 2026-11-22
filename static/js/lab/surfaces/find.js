@@ -1,7 +1,7 @@
 // Lab surfaces of the Find page (static/find.html, static/js/find.js): the results of the user's own latest search,
 // and the document's lines. Pure code: it imports only the kit, touches no DOM, storage or network, and is tested in
 // Node (tests/js/lab/surface-demo-find.test.mjs). Fixtures for pack tests: tests/js/lab/fixtures/find.mjs
-// (sampleFindResultsCtx, sampleFindDocumentCtx; starter packs: static/js/lab/packs/find/). This header is the
+// (sampleFindResultsCtx, sampleFindDocumentCtx). This header is the
 // CONTRACT for packs on these two surfaces.
 //
 // How Find works (jev/find.py): the document is split into nonblank trimmed lines, the first 255 get IDs L000, L001,

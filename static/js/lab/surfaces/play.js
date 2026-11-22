@@ -9,7 +9,6 @@
 //   The list is READ-ONLY. There is no replaceItems and no importItems, so transforms and importers do not render
 //   here: a turn is the record of a call the user made, and an edited or pasted turn would be a made-up answer.
 //   Kinds this surface hosts: fact, diagnostic, metric, exporter, command, tool, panel (and behavior).
-//   Starter pack: static/js/lab/packs/play/play-history-insights.js (copy its tests: tests/js/lab/play-history-insights.test.mjs).
 //   Fixture games (tests/js/lab/fixtures/play.mjs GAMES): fresh, playing (default, 7 turns of every kind but win),
 //   won, gaveUp, outOfQuestions (20 turns, last-question note), repeats, odd (missing and malformed values); PAST holds
 //   a given-up and an abandoned earlier game; turnsByN(ctx) keys items by turn number.

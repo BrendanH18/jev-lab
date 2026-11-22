@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
-import { improvementsOf } from "../../../static/js/lab/kit.js";
 import {
   claimsExampleOf,
   claimsLabNote,
@@ -13,9 +12,6 @@ import {
   claimsPhotoOf,
   claimsResultCtx,
 } from "../../../static/js/lab/surfaces/claims.js";
-import orderDesk from "../../../static/js/lab/packs/claims/claims-order-desk.js";
-import exampleFacts from "../../../static/js/lab/packs/claims/claims-example-facts.js";
-import resultInsights from "../../../static/js/lab/packs/claims/claims-result-insights.js";
 import { fakeEnv, textOf } from "./harness.mjs";
 import {
   CLAIMS_KIND_LABELS,
@@ -498,61 +494,22 @@ test("slider limits, defaults and rules match the page and jev/", () => {
   );
 });
 
-// ---------- Lab filters and sorts reach every surface ----------
+// ---------- surfaces without packs ----------
 
-test("shown() applies Lab filters and sorts after the page's order", () => {
-  const lab = createLab([orderDesk, exampleFacts, resultInsights]);
+test("surfaces preserve their lists and omit Lab sections without packs", () => {
+  const lab = createLab([]);
   const hook = (id) => ({
     matches: (item, ctx) => lab.matches(id, item, ctx),
     arrange: (list, ctx) => lab.arrange(id, list, ctx),
   });
   const orders = sampleClaimsOrdersCtx(hook("claims.orders"));
-  assert.deepEqual(orders.shown(), orders.items(), "with no Lab setting, shown() is the page's list");
-  lab.view("claims.orders").filters = [{ key: "claims-order-desk/open_to_claim", op: "with" }];
-  lab.view("claims.orders").sort = { key: "claims-order-desk/total", dir: "desc" };
-  assert.deepEqual(
-    orders.shown().map((item) => item.id),
-    ["A-1042", "A-1044", "A-1041"],
-    "delivered and not refunded, largest total first",
-  );
-  assert.equal(lab.active("claims.orders"), 2);
-  lab.reset("claims.orders");
-  assert.deepEqual(
-    orders.shown().map((item) => item.id),
-    ["A-1041", "A-1042", "A-1043", "A-1044", "A-1045", "A-1046", "A-1047"],
-  );
-
-  const examples = sampleClaimsExamplesCtx(hook("claims.examples"));
-  lab.view("claims.examples").filters = [{ key: "claims-example-facts/order", op: "is", value: "A-1041" }];
-  assert.deepEqual(
-    examples.shown().map((item) => item.label),
-    ["Torn bag", "Intact bag"],
-  );
-
-  const result = sampleClaimsResultCtx(hook("claims.result"));
-  lab.view("claims.result").filters = [{ key: "claims-result-insights/cut_distance", op: "max", value: "0.1" }];
-  assert.deepEqual(
-    result.shown().map((item) => item.id),
-    ["matches_note", "damage_box"],
-  );
-  lab.view("claims.result").filters = [];
-  lab.view("claims.result").sort = { key: "claims-result-insights/top_probability", dir: "asc" };
-  assert.deepEqual(
-    result.shown().map((item) => item.id),
-    ["matches_note", "damage_kind", "severity", "damage_visible", "shows_item", "damage_box"],
-    "the box has no top probability and sorts last",
-  );
-  const improvements = (id) =>
-    lab.packs.filter((pack) => pack.surface === id).reduce((sum, pack) => sum + improvementsOf(pack).length, 0);
-  for (const [id, ctx, count] of [
-    ["claims.orders", orders, improvements("claims.orders")],
-    ["claims.examples", examples, improvements("claims.examples")],
-    ["claims.result", result, improvements("claims.result")],
+  for (const [id, ctx] of [
+    ["claims.orders", orders],
+    ["claims.examples", sampleClaimsExamplesCtx(hook("claims.examples"))],
+    ["claims.result", sampleClaimsResultCtx(hook("claims.result"))],
   ]) {
-    assert.ok(count > 0, `${id} holds improvements from the starter packs`);
-    const section = lab.section(fakeEnv(), id, ctx);
-    assert.match(textOf(section), new RegExp(`Lab tools · ${count}(?!\\d)`));
-    assert.equal(textOf(section).includes("Edits"), false, "read-only surfaces show no Edits block");
+    assert.deepEqual(ctx.shown(), ctx.items());
+    assert.equal(lab.section(fakeEnv(), id, ctx), null);
   }
 });
 
@@ -593,8 +550,8 @@ test("order picker helpers keep the selected order and the page's order", () => 
   assert.equal(claimsLabNote(0, 6, 1, "answer"), "No answer matches the Lab filters.");
 });
 
-test("the page's order picker renders shown(), keeps the selection, and notes Lab only while active", () => {
-  const lab = createLab([orderDesk]);
+test("the order picker keeps the page order and selected order without packs", () => {
+  const lab = createLab([]);
   const setup = sampleClaimsSetup();
   const S = { setup, order: "A-1044", running: false };
   const ORDERS = claimsOrdersCtx({
@@ -619,7 +576,7 @@ test("the page's order picker renders shown(), keeps the selection, and notes La
     resetLab: () => {},
     renderOrderPick: () => {},
   });
-  let [field, note] = orderPicker();
+  const [field, note] = orderPicker();
   const select = field.children[1];
   assert.equal(note, null, "no note without a Lab setting");
   assert.deepEqual(
@@ -630,22 +587,12 @@ test("the page's order picker renders shown(), keeps the selection, and notes La
   select.value = "A-1042";
   select.attrs.onchange();
   assert.deepEqual(chosen, ["A-1042"]);
-  lab.view("claims.orders").filters = [{ key: "claims-order-desk/status", op: "is", value: "in transit" }];
-  [field, note] = orderPicker();
-  assert.deepEqual(
-    field.children[1].children.map((option) => [option.attrs.value, option.attrs.selected, textOf(option)]),
-    [
-      ["A-1044", true, "A-1044 · Tom Becker · $64.00 · hidden by Lab filters"],
-      ["A-1043", false, "A-1043 · Priya Nair · $54.00"],
-    ],
-  );
-  assert.match(textOf(note), /^1 of 7 orders shown · 1 Lab setting active/);
   S.running = true;
   assert.equal(orderPicker()[0].children[1].attrs.disabled, true, "the picker stays disabled while a check runs");
 });
 
-test("the page's example chips and answer cards render shown(), with Lab's note only while active", () => {
-  const lab = createLab([exampleFacts, resultInsights]);
+test("example chips and answer cards use the page's data without packs", () => {
+  const lab = createLab([]);
   const setup = sampleClaimsSetup();
   const result = sampleClaimsResult();
   const S = { setup, result, running: false };
@@ -667,21 +614,12 @@ test("the page's example chips and answer cards render shown(), with Lab's note 
     resetLab: () => {},
     renderExamples: () => {},
   });
-  let [chips, note] = exampleNodes();
+  const [chips, note] = exampleNodes();
   assert.equal(note, null);
   assert.equal(chips.attrs.class, "chips");
   assert.deepEqual(chips.children.map(textOf), ["Torn bag", "Intact bag", "Crushed box", "Grinder", "Example 5"]);
   chips.children[3].attrs.onclick();
   assert.equal(loaded[0], setup.examples[3], "a chip loads its own example");
-  lab.view("claims.examples").filters = [{ key: "claims-example-facts/expectation", op: "is", value: "retake" }];
-  [chips, note] = exampleNodes();
-  assert.deepEqual(chips.children.map(textOf), ["Intact bag", "Grinder"]);
-  chips.children[0].attrs.onclick();
-  assert.equal(loaded[1], setup.examples[1]);
-  assert.match(textOf(note), /^2 of 5 examples shown · 1 Lab setting active/);
-  lab.view("claims.examples").filters = [{ key: "claims-example-facts/chars", op: "min", value: "999" }];
-  assert.match(textOf(exampleNodes()[1]), /^No example matches the Lab filters\./);
-
   const RESULT = claimsResultCtx({
     setup,
     result: () => S.result,
@@ -701,7 +639,7 @@ test("the page's example chips and answer cards render shown(), with Lab's note 
     resetLab: () => {},
     renderAnswerCards: () => {},
   });
-  let [cards, cardNote] = answerNodes();
+  const [cards, cardNote] = answerNodes();
   assert.deepEqual(
     cards.map((card) => card.attrs.qid),
     Object.keys(result.answers),
@@ -710,17 +648,6 @@ test("the page's example chips and answer cards render shown(), with Lab's note 
   assert.equal(cards[0].attrs.answer, result.answers.shows_item, "the card gets the page's own answer object");
   assert.equal(cards[5].attrs.question, result.trace.request.questions.damage_box);
   assert.equal(cardNote, null);
-  lab.view("claims.result").filters = [{ key: "claims-result-insights/type", op: "is", value: "noul" }];
-  [cards, cardNote] = answerNodes();
-  assert.deepEqual(
-    cards.map((card) => card.attrs.qid),
-    ["shows_item", "damage_visible", "matches_note"],
-  );
-  assert.match(textOf(cardNote), /^3 of 6 answers shown · 1 Lab setting active/);
-  lab.view("claims.result").filters = [{ key: "claims-result-insights/yes_probability", op: "min", value: "2" }];
-  [cards, cardNote] = answerNodes();
-  assert.equal(cards, null);
-  assert.match(textOf(cardNote), /^No answer matches the Lab filters\./);
 });
 
 test("the page wires Lab once and moves the policy, the order and the history only through its own paths", async () => {

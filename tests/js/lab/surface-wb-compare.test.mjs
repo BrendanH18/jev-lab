@@ -7,8 +7,7 @@ import { test } from "node:test";
 
 import { compareRowsCtx, compareVariantsCtx } from "../../../static/js/lab/surfaces/workbench-compare.js";
 import { createLab } from "../../../static/js/lab/host.js";
-import rowsPack from "../../../static/js/lab/packs/workbench/wb-compare-rows.js";
-import variantsPack from "../../../static/js/lab/packs/workbench/wb-compare-variants.js";
+import { probePack } from "./fixture-pack.mjs";
 import { fakeDom, fakeEnv, find, findAll, textOf } from "./harness.mjs";
 import {
   COMPARE_REPORTS,
@@ -22,6 +21,10 @@ import {
 
 const ROWS = "workbench.compare.rows";
 const VARIANTS = "workbench.compare.variants";
+const rowsPack = probePack("compare-probe", ROWS, {
+  signal_a: ["number", (item) => item.signals[0]],
+  labeled: ["flag", (item) => item.label !== null],
+});
 
 // ---------- workbench.compare.rows: builder ----------
 
@@ -643,14 +646,14 @@ test("hook: with packs but no Lab setting active, the table is unchanged and the
 test("hook: Lab filters and sort pick and order the listed rows, the count reads shown of all, and reset restores", () => {
   const lab = labWith([rowsPack]);
   const page = rowsPage(lab);
-  lab.view(ROWS).filters = [{ key: "wb-compare-rows/signal_a", op: "min", value: "0.5" }];
+  lab.view(ROWS).filters = [{ key: "compare-probe/signal_a", op: "min", value: "0.5" }];
   page.render();
   assert.deepEqual(page.listed(), ["1", "4"], "A's signal 0.60 and 0.85");
   assert.equal(textOf(page.byId("cmp-rows-title")), "Rows where A and B answer “department” differently · 2 of 4");
-  lab.view(ROWS).sort = { key: "wb-compare-rows/signal_a", dir: "desc" };
+  lab.view(ROWS).sort = { key: "compare-probe/signal_a", dir: "desc" };
   page.fns.refreshCmpRows();
   assert.deepEqual(page.listed(), ["4", "1"], "Lab's sort applies last");
-  lab.view(ROWS).filters = [{ key: "wb-compare-rows/signal_a", op: "min", value: "0.99" }];
+  lab.view(ROWS).filters = [{ key: "compare-probe/signal_a", op: "min", value: "0.99" }];
   page.fns.refreshCmpRows();
   assert.equal(textOf(page.byId("cmp-rows-list")), "No disagreement matches the Lab filters.");
   const reset = find(page.byId("cmp-rows-reset"), (node) => node.tag === "button");
@@ -665,7 +668,7 @@ test("hook: the labeling handoff still sends every disagreement, whatever Lab sh
   assert.match(body("handoffCompareDisagreements"), /indices: report\.disagreements\.map\(\(item\) => item\.index\)/);
   const lab = labWith([rowsPack]);
   const page = rowsPage(lab);
-  lab.view(ROWS).filters = [{ key: "wb-compare-rows/labeled", op: "without", value: "" }];
+  lab.view(ROWS).filters = [{ key: "compare-probe/labeled", op: "without", value: "" }];
   page.render();
   assert.deepEqual(page.listed(), ["4"]);
   const button = find(
@@ -691,7 +694,7 @@ test("hook: the rows ctx reaches the page's own operations", async () => {
 });
 
 test("hook: the variants ctx edits the editors' JSON and refreshes them, and never reaches runCompare", () => {
-  const page = rowsPage(labWith([variantsPack]));
+  const page = rowsPage(labWith([]));
   const ctx = page.fns.cmpLabVariants();
   assert.equal(ctx.items().length, 8);
   ctx.actions.replaceItems(ctx.items().filter((item) => item.qid !== "refund"));
@@ -703,7 +706,7 @@ test("hook: the variants ctx edits the editors' JSON and refreshes them, and nev
   assert.deepEqual(page.calls, ["refreshVariants", "copyA"]);
   page.W.compare.running = true;
   assert.throws(() => ctx.actions.copyAToB(), /Wait for the current Compare run/);
-  assert.equal(rowsPage(labWith([variantsPack], {})).fns.cmpLabVariants(), null);
+  assert.equal(rowsPage(labWith([], {})).fns.cmpLabVariants(), null);
   assert.equal(rowsPage(undefined).fns.cmpLabSection(VARIANTS, null), null);
 });
 

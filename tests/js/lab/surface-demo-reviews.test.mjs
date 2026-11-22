@@ -4,11 +4,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
-import { improvementsOf } from "../../../static/js/lab/kit.js";
 import { reviewsExamplesCtx, reviewsResultCtx } from "../../../static/js/lab/surfaces/reviews.js";
-import exampleFacts from "../../../static/js/lab/packs/reviews/review-example-facts.js";
-import resultInsights from "../../../static/js/lab/packs/reviews/review-result-insights.js";
-import { fakeEnv, textOf } from "./harness.mjs";
+import { textOf } from "./harness.mjs";
 import {
   REVIEWS_POLICY,
   sampleReviewsResult,
@@ -413,56 +410,7 @@ test("the slider limits match the page's sliders and the Python defaults", () =>
   }
 });
 
-// ---------- the hooks, with a real Lab ----------
-
-test("a Lab filter and sort reach shown(); active() counts them and reset() clears them", () => {
-  const lab = createLab([exampleFacts, resultInsights]);
-  const setup = sampleReviewsSetup();
-  const state = { review: { ...setup.examples[0], about: setup.examples[0].about } };
-  const examples = reviewsExamplesCtx({
-    setup,
-    draft: () => state.review,
-    matches: (item, ctx) => lab.matches("reviews.examples", item, ctx),
-    arrange: (list, ctx) => lab.arrange("reviews.examples", list, ctx),
-  });
-  assert.equal(examples.shown().length, 6, "no Lab setting: everything, in page order");
-  assert.equal(lab.active("reviews.examples"), 0);
-  const view = lab.view("reviews.examples");
-  view.filters = [{ key: "review-example-facts/stars", op: "min", value: "5" }];
-  view.sort = { key: "review-example-facts/words", dir: "desc" };
-  assert.deepEqual(
-    examples.shown().map((item) => item.label),
-    ["Warm welcome", "Five stars, angry", "Phone repair ad"],
-  );
-  assert.equal(lab.active("reviews.examples"), 2);
-  lab.reset("reviews.examples");
-  assert.deepEqual(
-    examples.shown().map((item) => item.label),
-    setup.examples.map((example, index) => example.label || `Example ${index + 1}`),
-  );
-
-  const result = sampleReviewsResultCtx({
-    matches: (item, ctx) => lab.matches("reviews.result", item, ctx),
-    arrange: (list, ctx) => lab.arrange("reviews.result", list, ctx),
-  });
-  // A minimum of 0 keeps exactly the answers a policy cut reads: the others have no distance and fail any bound.
-  lab.view("reviews.result").filters = [{ key: "review-result-insights/cut_distance", op: "min", value: "0" }];
-  lab.view("reviews.result").sort = { key: "review-result-insights/cut_distance", dir: "asc" };
-  // Distances: severity 0.38, tone 1.95, safety 0.48, wants_reply 0.33, about_us 0.48 (ties keep page order).
-  assert.deepEqual(
-    result.shown().map((item) => item.id),
-    ["wants_reply", "severity", "safety", "about_us", "tone"],
-  );
-  const section = lab.section(fakeEnv(), "reviews.result", result);
-  assert.equal(lab.active("reviews.result"), 2);
-  assert.match(textOf(section), new RegExp(`Lab tools · ${improvementsOf(resultInsights).length}(?!\\d)`));
-  lab.reset("reviews.result");
-  assert.deepEqual(
-    result.shown().map((item) => item.id),
-    result.items().map((item) => item.id),
-    "reset() gives back the page's list",
-  );
-});
+// ---------- the page's hooks without packs ----------
 
 // Rebuilds a page function from static/js/reviews.js with stand-ins for what it reads.
 function pageFunction(name, scope) {
@@ -470,8 +418,8 @@ function pageFunction(name, scope) {
   return new Function(...names, `${body(name)}\nreturn ${name};`)(...names.map((key) => scope[key]));
 }
 
-test("the page's example chips render shown(), and add Lab's note only while a Lab setting is active", () => {
-  const lab = createLab([exampleFacts]);
+test("the example chips keep their order and load their own example without packs", () => {
+  const lab = createLab([]);
   const setup = sampleReviewsSetup();
   const S = { setup, running: false };
   const EXAMPLES = reviewsExamplesCtx({
@@ -489,7 +437,7 @@ test("the page's example chips render shown(), and add Lab's note only while a L
     useExample: (ex) => loaded.push(ex),
     resetExamplesLab: () => {},
   });
-  let nodes = exampleNodes().filter(Boolean);
+  const nodes = exampleNodes().filter(Boolean);
   assert.equal(nodes.length, 1, "no note without a Lab setting");
   assert.equal(nodes[0].attrs.class, "chips");
   assert.deepEqual(nodes[0].children.map(textOf), [
@@ -502,24 +450,15 @@ test("the page's example chips render shown(), and add Lab's note only while a L
   ]);
   nodes[0].children[2].attrs.onclick();
   assert.equal(loaded[0], setup.examples[2], "a chip loads its own example");
-  lab.view("reviews.examples").filters = [{ key: "review-example-facts/channel", op: "is", value: "Map listing" }];
-  nodes = exampleNodes().filter(Boolean);
-  assert.deepEqual(nodes[0].children.map(textOf), ["Warm welcome", "Phone repair ad"]);
-  assert.match(textOf(nodes[1]), /^2 of 6 examples shown · 1 Lab setting active/);
-  nodes[0].children[1].attrs.onclick();
-  assert.equal(loaded[1], setup.examples[4], "a filtered chip still loads its own example");
-  lab.view("reviews.examples").filters = [{ key: "review-example-facts/stars", op: "min", value: "9" }];
-  assert.match(textOf(exampleNodes()[1]), /^No example matches the Lab filters\./);
   S.running = true;
-  lab.reset("reviews.examples");
   assert.ok(
     exampleNodes()[0].children.every((chip) => chip.attrs.disabled === true),
     "chips stay disabled while a check runs",
   );
 });
 
-test("the page's answer cards render shown(), with Lab's note only while a Lab setting is active", () => {
-  const lab = createLab([resultInsights]);
+test("answer cards use the original question and answer data without packs", () => {
+  const lab = createLab([]);
   const result = sampleReviewsResult();
   const S = { result };
   const RESULT = reviewsResultCtx({
@@ -538,22 +477,13 @@ test("the page's answer cards render shown(), with Lab's note only while a Lab s
     answerCard,
     resetResultLab: () => {},
   });
-  let nodes = answerNodes().flat().filter(Boolean);
+  const nodes = answerNodes().flat().filter(Boolean);
   assert.deepEqual(
     nodes.map((node) => node.attrs.qid),
     ["topic", "severity", "tone", "safety", "wants_reply", "about_us"],
   );
   assert.equal(nodes[0].attrs.answer, result.answers.topic, "the card gets the page's own answer object");
   assert.equal(nodes[0].attrs.question, result.trace.request.questions.topic);
-  lab.view("reviews.result").filters = [{ key: "review-result-insights/type", op: "is", value: "noul" }];
-  nodes = answerNodes().flat().filter(Boolean);
-  assert.deepEqual(
-    nodes.slice(0, 3).map((node) => node.attrs.qid),
-    ["safety", "wants_reply", "about_us"],
-  );
-  assert.match(textOf(nodes[3]), /^3 of 6 answers shown · 1 Lab setting active/);
-  lab.view("reviews.result").filters = [{ key: "review-result-insights/type", op: "is", value: "box" }];
-  assert.equal(textOf(answerNodes()[0]), "No answer matches the Lab filters.");
 });
 
 test("the page wires Lab once, mounts both sections, and moves the policy only through its own path", () => {

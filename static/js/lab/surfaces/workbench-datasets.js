@@ -2,9 +2,8 @@
 // static/js/dataset-catalog.js, static/js/history.js and static/js/agreement.js). Pure code: it imports only the kit and
 // those pure page modules, touches no DOM, storage or network, and is tested in Node
 // (tests/js/lab/surface-wb-datasets.test.mjs). Fixtures for pack tests: tests/js/lab/fixtures/workbench-datasets.mjs
-// (sampleDatasetsCatalogCtx, sampleDatasetsHistoryCtx, sampleDatasetsAgreementCtx). Starter packs:
-// static/js/lab/packs/workbench/datasets-catalog-essentials.js, datasets-history-essentials.js and
-// datasets-agreement-essentials.js. This header is the CONTRACT for packs on these three surfaces.
+// (sampleDatasetsCatalogCtx, sampleDatasetsHistoryCtx, sampleDatasetsAgreementCtx).
+// This header is the CONTRACT for packs on these three surfaces.
 //
 // Shared rules for all three surfaces
 //   - items() and data are FROZEN COPIES built at call time; the page's own objects are never handed out. Never keep

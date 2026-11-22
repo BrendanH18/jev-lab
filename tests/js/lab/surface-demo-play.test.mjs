@@ -6,15 +6,13 @@ import { test } from "node:test";
 
 import { createLab } from "../../../static/js/lab/host.js";
 import { playHistoryCtx } from "../../../static/js/lab/surfaces/play.js";
-import pack from "../../../static/js/lab/packs/play/play-history-insights.js";
-import { fakeEnv, find, fire, textOf } from "./harness.mjs";
+import { fakeEnv } from "./harness.mjs";
 import {
   ABANDONED,
   FOOD_TURNS,
   GAMES,
   PAST,
   SUGGESTIONS,
-  WIN_TURN,
   rawTurn,
   samplePlayHistoryCtx,
   turnsByN,
@@ -387,7 +385,7 @@ test("focusQuestion, newGame, giveUp and inspectTurn guards", async () => {
 const turnNode = (turn) => ({ turn: turn.n });
 
 function page(game = GAMES.playing) {
-  const LAB = createLab([pack]);
+  const LAB = createLab([]);
   const S = { game, busy: false, past: [] };
   const HISTORY = playHistoryCtx({
     game: () => S.game,
@@ -422,7 +420,7 @@ function page(game = GAMES.playing) {
   return { LAB, S, HISTORY, renderTurns, shown: () => held.get(box), replaced };
 }
 
-test("renderTurns: with no Lab setting active it lists every turn newest first, exactly as before", () => {
+test("renderTurns lists every turn newest first without packs", () => {
   const p = page();
   p.renderTurns();
   // Before Lab the page rendered [...g.turns].reverse().map(...) and nothing else.
@@ -432,46 +430,13 @@ test("renderTurns: with no Lab setting active it lists every turn newest first, 
   assert.deepEqual(p.shown(), []);
 });
 
-test("renderTurns: Lab filters hide turns, a Lab sort reorders them, and the note's reset restores everything", () => {
-  const p = page();
-  const view = p.LAB.view("play.history");
-  view.filters = [{ key: "play-history-insights/kind", op: "is", value: "answered question" }];
-  p.renderTurns();
-  let shown = p.shown();
-  assert.equal(shown[0].attrs.role, "status");
-  assert.match(textOf(shown[0]), /Showing 4 of 7 questions: 1 Lab filter or sort setting is active\./);
-  assert.deepEqual(shown.slice(1), [{ turn: 6 }, { turn: 4 }, { turn: 2 }, { turn: 1 }]);
-  view.sort = { key: "play-history-insights/yes_p", dir: "desc" };
-  p.renderTurns();
-  shown = p.shown();
-  assert.match(textOf(shown[0]), /2 Lab filter or sort settings are active/);
-  // P(yes): #4 0.88, #2 0.71, #6 0.58, #1 0.04.
-  assert.deepEqual(shown.slice(1), [{ turn: 4 }, { turn: 2 }, { turn: 6 }, { turn: 1 }]);
-  view.filters = [{ key: "play-history-insights/kind", op: "is", value: "winning guess" }];
-  p.renderTurns();
-  shown = p.shown();
-  assert.equal(textOf(shown[1]), "No question matches the Lab filters.");
-  assert.equal(shown.length, 2);
-  fire(
-    find(shown[0], (node) => node.tag === "button"),
-    "click",
-  );
-  assert.equal(p.LAB.active("play.history"), 0);
-  assert.deepEqual(p.shown(), [...GAMES.playing.turns].reverse().map(turnNode));
-  assert.equal(p.replaced.length, 1, "the Lab section is drawn again without the cleared settings");
-  assert.equal(p.replaced[0].attrs["data-lab-surface"], "play.history");
-});
-
-test("renderTurns: does nothing before the first game, and a new turn shows up under an active filter only if it matches", () => {
+test("renderTurns waits for the first game and shows a winning turn first", () => {
   const p = page(null);
   p.renderTurns();
   assert.equal(p.shown(), undefined);
-  p.S.game = GAMES.playing;
-  p.LAB.view("play.history").filters = [{ key: "play-history-insights/kind", op: "is", value: "winning guess" }];
   p.S.game = GAMES.won;
   p.renderTurns();
-  assert.deepEqual(p.shown().slice(1), [{ turn: 8 }]);
-  assert.match(textOf(p.shown()[0]), /Showing 1 of 8 questions/);
+  assert.deepEqual(p.shown(), [...GAMES.won.turns].reverse().map(turnNode));
 });
 
 test("newGame keeps the finished or played game in this session's past, and nothing else", async () => {
@@ -522,21 +487,4 @@ test("the page installs Lab once after the top bar, hooks the surface and render
   // No Lab callback can send a question: the source passes no ask().
   const source = PAGE.slice(PAGE.indexOf("const HISTORY = playHistoryCtx("), PAGE.indexOf("async function boot"));
   assert.doesNotMatch(source, /\bask\(|api\(/);
-});
-
-test("the section renders with the starter pack during and after a game", () => {
-  for (const game of [GAMES.playing, GAMES.won, null]) {
-    const LAB = createLab([pack]);
-    const c = samplePlayHistoryCtx({ game });
-    const view = LAB.view("play.history");
-    for (const name of ["section", "refine", "checks", "metrics", "exports", "commands"]) view.open[name] = true;
-    const env = fakeEnv();
-    const tree = LAB.section(env, "play.history", c);
-    assert.ok(tree);
-    assert.equal(tree.attrs["data-lab-surface"], "play.history");
-    if (game !== GAMES.won)
-      assert.ok(!textOf(tree).includes("espresso"), "nothing on screen names the secret during a game");
-    assert.equal(LAB.count("play.history"), 47);
-  }
-  assert.ok(WIN_TURN.kind === "win");
 });
