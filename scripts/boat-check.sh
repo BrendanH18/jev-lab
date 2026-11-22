@@ -9,29 +9,33 @@
 #   scripts/boat-check.sh --status   print this worktree's sandbox and its state (no start)
 #   scripts/boat-check.sh --done     delete this worktree's sandbox; run it when your work ends
 #
-# Each worktree gets one long-lived sandbox, created on first use from jev-lab-warm (or cold
-# when that snapshot isn't ready) and reused by every later check, so a check costs no
-# sandbox start. Its id is kept in this worktree's git directory and never shared: another
-# worktree or agent gets its own. Every check pushes the worktree (tracked and untracked,
-# non-ignored files) into a fresh directory and runs there with `boat exec --timeout 0`.
-# The sandbox stops by itself after JEV_BOAT_IDLE seconds without a check (default 2700);
-# the next check resumes it, which costs one start. When the account's included starts are
-# used up it stops instead of paying for an extra one (JEV_BOAT_PAID_START=1 allows that).
-# Overrides: JEV_BOAT_SNAPSHOT, JEV_BOAT_TYPE (default: default) and JEV_BOAT_IDLE.
+# Each worktree gets one sandbox, created on first use from jev-lab-warm (or cold when that
+# snapshot isn't ready) and reused by every later check. Its id is kept in this worktree's git
+# directory and never shared: another worktree or agent gets its own. Every check pushes the
+# worktree (tracked and untracked, non-ignored files) into a fresh directory and runs there with
+# `boat exec --timeout 0`. The sandbox is stopped as soon as the check ends, pass or fail: a
+# stopped sandbox bills nothing, and Boat keeps its machine for 10 minutes after the stop, so a
+# check within that time takes it back without using a start. A later check resumes it from its
+# snapshot for one start. If boat-check is killed outright, its keepalive notices within 30 s and
+# stops the sandbox; failing that, auto-stop stops it within 30 minutes. When the account's
+# included starts are used up it stops instead of paying for an extra one (JEV_BOAT_PAID_START=1
+# allows that). Overrides: JEV_BOAT_SNAPSHOT, JEV_BOAT_TYPE (default: default) and
+# JEV_BOAT_IDLE=SECONDS, which leaves the sandbox running (and billed) that long after a check
+# instead of stopping it (default 0).
 # See CONTRIBUTING.md#checks-on-boat.
 main() {
 set -euo pipefail
 export BOAT_NO_UPDATE=1
 snapshot=${JEV_BOAT_SNAPSHOT:-jev-lab-warm}
 type=${JEV_BOAT_TYPE:-default}
-idle=${JEV_BOAT_IDLE:-2700}
-max_run=1800 # during a check the auto-stop deadline is kept at least this far ahead
+idle=${JEV_BOAT_IDLE:-0} # 0: stop the sandbox when the check ends; else auto-stop this many seconds later
+max_run=1800 # during a check the auto-stop deadline is kept 20 to 30 minutes ahead
 mode=checks cmd=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --save) mode=save ;;
         --status) mode=status ;;
-        --done) mode=done ;;
+        --done) mode="done" ;;
         --) shift
             [ $# -gt 0 ] || { echo "boat-check: -- needs a command" >&2; exit 2; }
             if [ $# -eq 1 ]; then cmd=$1; else cmd=$(printf '%q ' "$@"); fi
@@ -78,16 +82,14 @@ if ! ln -s "$$" "$lock" 2>/dev/null; then
     exit 2
 fi
 id=$(cat "$statefile" 2>/dev/null || true)
-ran=0 keepalive=""
+armed=0 keepalive=""
+# shellcheck disable=SC2317 # run by the EXIT trap
 cleanup() {
     set +e
     [ -z "$keepalive" ] || kill "$keepalive" 2>/dev/null
-    # Restart the idle timer from now, so the sandbox stops JEV_BOAT_IDLE seconds after the
-    # last check rather than in the middle of the next one.
-    if [ "$ran" = 1 ] && [ -n "$id" ]; then
-        boat extend "$id" --ttl "$idle" --json >/dev/null 2>&1 ||
-            echo "boat-check: couldn't reset the auto-stop timer of $id: boat extend $id --ttl $idle" >&2
-    fi
+    # armed is set before the sandbox is created or resumed, so an interrupted start is stopped
+    # too. A create interrupted before Boat answered leaves no id here; auto-stop ends that one.
+    if [ "$armed" = 1 ] && [ -n "$id" ]; then release_sandbox; fi
     [ "$(readlink "$lock" 2>/dev/null || true)" != "$$" ] || rm -f "$lock"
 }
 trap cleanup EXIT
@@ -111,25 +113,45 @@ esac
 uncommitted=$(git status --porcelain --untracked-files=all -- data/workbench)
 if [ -n "$uncommitted" ]; then
     echo "boat-check: uncommitted files under data/workbench/ would be copied to Boat:" >&2
+    # shellcheck disable=SC2001 # indents every line
     echo "$uncommitted" | sed 's/^/  /' >&2
     echo "boat-check: commit them if they are fictional fixtures, or move them out of the worktree" >&2
     exit 2
 fi
 
+armed=1
 ensure_sandbox
-ran=1
 boat extend "$id" --ttl "$max_run" --json >/dev/null
 wait_hydrated "$id"
-# Keep pushing the auto-stop deadline while the check runs, however long it takes; cleanup
-# stops this and sets the idle timer.
+# Keep the auto-stop deadline 20 to 30 minutes ahead while the check runs, however long it takes;
+# cleanup kills this loop and stops the sandbox. If boat-check itself is killed (SIGKILL skips its
+# exit trap), the loop sees within 30 s that the script is gone and stops the sandbox and removes
+# the lock instead of renewing it. $$ is still the script's own pid inside this subshell.
 (
+    set +e
     trap - EXIT
     trap 'kill "$nap" 2>/dev/null; exit 0' TERM
+    waited=0
     while :; do
-        sleep 600 &
+        sleep 30 &
         nap=$!
         wait "$nap"
-        boat extend "$id" --ttl "$max_run" --json >/dev/null 2>&1 || true
+        if ! kill -0 "$$" 2>/dev/null; then
+            # Release only while the lock is still this run's: then no other boat-check can be
+            # using the sandbox, since none can take a lock its holder hasn't removed. Then drop
+            # the lock, which the killed run left behind.
+            if [ "$(readlink "$lock" 2>/dev/null)" = "$$" ]; then
+                echo "boat-check: pid $$ is gone; releasing $id" >&2
+                release_sandbox
+                rm -f "$lock"
+            fi
+            exit 0
+        fi
+        waited=$((waited + 30))
+        if [ "$waited" -ge 600 ]; then
+            waited=0
+            boat extend "$id" --ttl "$max_run" --json >/dev/null 2>&1
+        fi
     done
 ) &
 keepalive=$!
@@ -179,14 +201,37 @@ sandbox_state() {
     esac
 }
 
+# Ends a check's hold on the sandbox. By default (JEV_BOAT_IDLE=0) it stops the sandbox now: it
+# then bills nothing, and a check within 10 minutes takes the kept machine back without a start.
+# Otherwise it sets auto-stop JEV_BOAT_IDLE seconds from now, so the sandbox runs (billed) that
+# long. Tolerates a sandbox that is already stopping, stopped or gone.
+release_sandbox() {
+    local out
+    if [ "$idle" = 0 ]; then
+        out=$(boat stop "$id" --json 2>&1) && return 0
+        case "$(error_code "$out")" in not_found | snapshot_data_expired) return 0 ;; esac
+        echo "boat-check: couldn't stop $id (auto-stop ends it within 30 minutes): boat stop $id" >&2
+        printf '%s\n' "$out" | tail -n 2 | sed 's/^/  /' >&2
+    else
+        boat extend "$id" --ttl "$idle" --json >/dev/null 2>&1 ||
+            echo "boat-check: couldn't reset the auto-stop timer of $id: boat extend $id --ttl $idle" >&2
+    fi
+}
+
 # The `code` of the JSON error line a failed boat command prints last.
 error_code() { printf '%s\n' "$1" | tail -n 1 | jq -r '.code // empty' 2>/dev/null || true; }
 
-# Creating or resuming a sandbox uses one of the account's starts, shared by every project. Once
-# the included ones are used up, Boat either refuses or (with extra starts on) bills each start.
+# need_start WHAT [reclaim]: creating or resuming a sandbox uses one of the account's starts,
+# shared by every project. Once the included ones are used up, Boat either refuses or (with extra
+# starts on) bills each start. A resume that takes back the machine Boat keeps for 10 minutes after
+# a stop is free, but nothing tells beforehand whether Boat still has it. So with `reclaim`, a
+# resume is still tried when no included starts are left but the next start couldn't be billed
+# (nextStartDollars null): Boat then either takes the machine back or refuses with rate_limited.
+# A start that would be paid is always refused without JEV_BOAT_PAID_START=1.
 need_start() {
     local limits price full
     # Fail closed: without a readable answer there is no telling whether the start is free.
+    # shellcheck disable=SC2015 # the || block handles a failure anywhere in the chain
     limits=$(boat limits --json 2>/dev/null) &&
         # Boat reports the next start's price, or null when it isn't billed; anything else, or
         # no such field, is an answer the script doesn't understand.
@@ -201,6 +246,10 @@ need_start() {
             return 0
         fi
         echo "boat-check: $1 needs a sandbox start, and the next one costs \$$price:" >&2
+    elif [ -n "$full" ] && [ "${2:-}" = reclaim ] &&
+        [ "$(printf '%s\n' "$limits" | jq '.nextStartDollars == null')" = true ]; then
+        echo "boat-check: no included starts are left, but no start can be billed either, so trying $1: taking back its kept machine is free" >&2
+        return 0
     elif [ -n "$full" ]; then
         echo "boat-check: $1 needs a sandbox start, and none are left:" >&2
     else
@@ -211,11 +260,13 @@ need_start() {
     exit 3
 }
 
-wait_state() { # wait_state ID: until the sandbox leaves a transitional state; prints the state
+# wait_state ID: until the sandbox is no longer starting up; prints the state. It doesn't wait out
+# `stopping`: a resume then takes the machine back, which is quicker and uses no start.
+wait_state() {
     local s deadline=$((SECONDS + 300))
     while :; do
         s=$(sandbox_state "$1") || return 1
-        case "$s" in provisioning | starting | cloning | stopping) ;; *) echo "$s"; return 0 ;; esac
+        case "$s" in provisioning | starting | cloning) ;; *) echo "$s"; return 0 ;; esac
         [ "$SECONDS" -lt "$deadline" ] || { echo "$s"; return 0; }
         sleep 5
     done
@@ -245,17 +296,22 @@ wait_hydrated() {
 # the next attempt with "resume already in progress" (or sandbox_stopping while a stop finishes),
 # which a retry waits out too. A create that finds no machine leaves nothing behind, so only
 # resumes get those answers. Each retry checks the limits again (another project may have used the
-# last included start meanwhile) and exits 3 when need_start refuses.
+# last included start meanwhile) and exits 3 when need_start refuses. It returns 3 when Boat refuses
+# the start because a start limit is full (rate_limited), which need_start lets a resume risk.
 boat_start() {
     local what=$1 out attempt=1 why
     shift
     while :; do
-        [ "$attempt" = 1 ] || need_start "$what"
+        [ "$attempt" = 1 ] || need_start "$what" "$reclaim"
         if out=$("$@" --fail-fast --json 2>&1); then
             printf '%s\n' "$out"
             return 0
         fi
         case "$(error_code "$out")" in
+            rate_limited)
+                echo "boat-check: Boat refused $what because no starts are left; try again later" >&2
+                printf '%s\n' "$out"
+                return 3 ;;
             no_ready_machine) why="Boat has no ready machine" ;;
             sandbox_stopping) why="the sandbox is still stopping" ;;
             *) case "$out" in
@@ -274,14 +330,22 @@ boat_start() {
 }
 
 ensure_sandbox() {
-    local s out rc from=()
+    local s out rc from=() reclaim="" # boat_start reads reclaim
     if [ -n "$id" ]; then
         s=$(wait_state "$id") || exit 1
         case "$s" in
             ready | idle | running) return 0 ;;
-            stopped | error)
-                need_start "resuming $id"
-                echo "boat-check: resuming $id" >&2
+            stopping | stopped | error)
+                # A resume while the sandbox is stopping, or within 10 minutes of the stop, usually
+                # takes its machine back without a start. The state can be stale by the time Boat
+                # sees the resume, so it always passes the start check (see need_start).
+                reclaim=reclaim
+                need_start "resuming $id" reclaim
+                if [ "$s" = stopping ]; then
+                    echo "boat-check: resuming $id while it stops" >&2
+                else
+                    echo "boat-check: resuming $id" >&2
+                fi
                 out=$(boat_start "resuming $id" boat resume "$id" --ttl "$((idle + max_run))") && return 0
                 rc=$?
                 # The half-done resume behind "already in progress" may have finished after all.
@@ -319,7 +383,7 @@ ensure_sandbox() {
     if [ -z "$id" ]; then
         local any
         any=$(printf '%s\n' "$out" | jq -r '.id // empty' 2>/dev/null | head -n 1) || true
-        [ -z "$any" ] || echo "$any" >"$statefile"
+        [ -z "$any" ] || { echo "$any" >"$statefile"; id=$any; } # so the exit trap stops it
         echo "boat-check: creating the sandbox failed:" >&2
         printf '%s\n' "$out" | tail -n 5 >&2
         exit 1
@@ -403,6 +467,7 @@ EOF
 # save (a new snapshotId under the name) to read ready.
 save_snapshot() {
     local old state="" deadline=$((SECONDS + 600))
+    # shellcheck disable=SC2016 # expands in the sandbox
     boat exec "$id" --timeout 120 'rm -rf "$HOME/jev-lab-runs" && sync' >/dev/null
     old=$(boat snapshots --json 2>/dev/null | jq -r --arg n "$snapshot" '[.named[]? | select(.name == $n) | .snapshotId][0] // ""' || true)
     echo "boat-check: saving $id as $snapshot" >&2
