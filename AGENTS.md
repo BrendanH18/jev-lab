@@ -61,13 +61,14 @@ server tests can fail with `PermissionError`.
 
 Needs a `TYPESAFE_API_KEY` (get one at console.typesafe.ai) to make live calls; the offline test
 suite does not need one. The app requires Python 3.10+ and the official `typesafe-sdk`. CI
-(`.github/workflows/test.yml`) runs the locked-SDK suite on 3.10–3.14 and separate lint-and-format,
-JavaScript and sample-picture jobs. `.github/workflows/audit.yml` audits
+(`.github/workflows/test.yml`) runs the locked-SDK suite on 3.10–3.14 in a matrix, then the lint-and-format,
+JavaScript and sample-picture checks as steps of its `All tests passed` job. `.github/workflows/audit.yml` audits
 `uv.lock` (`uv audit`) on PRs and weekly, and `.github/workflows/codeql.yml` runs CodeQL (Actions, JavaScript,
 Python) on PRs, `main` and weekly; GitHub's CodeQL default setup must stay off. Every job runs on Namespace runners
 (`namespace-profile-gitrunner`, Ubuntu 24.04), never GitHub-hosted ones. The main ruleset requires
-the `All tests passed` job, which passes only when every other job in `test.yml` passed: add any new
-test job to its `needs`.
+the `All tests passed` job, which passes only when its own checks and every other job in `test.yml` passed: add
+any new test job to its `needs`. Add a check that takes seconds as a step of that job rather than as a job of its
+own: Namespace starts concurrent runners in waves, so each extra runner can delay every queued job.
 
 ## Cloud sandboxes (Boat)
 
