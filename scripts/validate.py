@@ -5,7 +5,8 @@
 
 Use it after changing question wording, thresholds, or the model version. It makes paid API calls
 and prints a human-readable report; nothing is cached or reused by the app. Costs use the client's
-fixed pricing estimate. Use --strict to fail on scenario mismatches or incomplete runs.
+fixed pricing estimate. Use --strict to check model names and fail on scenario mismatches or
+incomplete runs.
 """
 
 from __future__ import annotations
@@ -22,7 +23,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jev import calibrate, claims, counter, dispatch, examples, find, hello, images, play, reviews, shield, workbench  # noqa: E402
 from jev.autopilot import Autopilot  # noqa: E402
-from jev.client import JevClient, JevError, JevResult, SpendGuard  # noqa: E402
+from jev.client import (  # noqa: E402
+    ALIASES,
+    JevClient,
+    JevError,
+    JevResult,
+    SpendGuard,
+    has_known_input_price,
+    is_versioned,
+    price_per_input_token,
+    resolve_alias,
+)
 from jev.config import Settings  # noqa: E402
 from jev.scenarios import COMMANDS, INBOX  # noqa: E402
 from jev.world import World  # noqa: E402
@@ -41,6 +52,29 @@ class StrictClient(JevClient):
     def __init__(self, settings: Settings | None = None):
         settings = settings or Settings()
         super().__init__(settings, guard=SpendGuard(settings.budget_usd, settings.rpm, wait_for_rate_limit=True))
+        self.answered_by: set[str] = set()
+        self.model_issue: str | None = None
+
+    def check_model_catalog(self) -> list[str]:
+        """Check the account's listed names before making paid calls."""
+        catalog = self.models()
+        models = catalog.get("models") if isinstance(catalog, dict) else None
+        if (
+            not isinstance(models, list)
+            or not models
+            or any(
+                not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not entry["name"]
+                for entry in models
+            )
+        ):
+            raise JevError("TypeSafe returned an invalid model list.", status=502)
+        names = sorted({entry["name"] for entry in models})
+        unknown = sorted(
+            name for name in {*names, self.model} if name.lower().startswith("jev-") and not known_jev_model(name)
+        )
+        if unknown:
+            raise JevError("Update the Jev alias and input price tables for: %s" % ", ".join(unknown))
+        return names
 
     def system_one(
         self,
@@ -49,12 +83,43 @@ class StrictClient(JevClient):
         assets: dict[str, dict] | None = None,
         model: str | None = None,
     ) -> JevResult:
+        # Some demos can recover from a failed call. A model mismatch invalidates the whole run.
+        if self.model_issue:
+            raise JevError(self.model_issue, status=502)
         result = super().system_one(state, questions, assets=assets, model=model)
+        requested = result.request["model"]
+        expected = resolve_alias(requested)
+        if is_versioned(expected) and expected.count(".") == 1:
+            expected += ".0"
+        answered = result.response.get("model")
+        if isinstance(answered, str) and answered:
+            self.answered_by.add(answered)
+        if not isinstance(answered, str) or not is_versioned(answered):
+            self.model_issue = "%s did not report a versioned model in the response." % requested
+        elif not has_known_input_price(answered):
+            self.model_issue = "Add %s to the Jev input price table." % answered
+        elif answered != expected and (answered.count(".") != 1 or answered + ".0" != expected):
+            self.model_issue = "%s expected %s and reported %s." % (requested, expected, answered)
+        if self.model_issue:
+            raise JevError(self.model_issue, status=502)
         answers = result.answers or {}
         missing = [qid for qid in questions if answers.get(qid) is None]
         if missing:
             raise JevError("Response missing answers: %s" % ", ".join(missing), status=502)
         return result
+
+
+def known_jev_model(name: str) -> bool:
+    if is_versioned(name):
+        return has_known_input_price(name)
+    target = ALIASES.get(name)
+    return bool(
+        target
+        and is_versioned(target)
+        and has_known_input_price(name)
+        and has_known_input_price(target)
+        and price_per_input_token(name) == price_per_input_token(target)
+    )
 
 
 @dataclass
@@ -471,7 +536,9 @@ def run(client: JevClient, out: dict, validation: Validation) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", help="write the full answers as JSON here")
-    parser.add_argument("--strict", action="store_true", help="exit nonzero on a scenario miss or incomplete run")
+    parser.add_argument(
+        "--strict", action="store_true", help="fail on model drift, a scenario miss, or an incomplete run"
+    )
     args = parser.parse_args(argv)
     client = StrictClient() if args.strict else JevClient()
     if not client.configured:
@@ -482,13 +549,20 @@ def main(argv: list[str] | None = None) -> int:
     validation = Validation()
     started = time.perf_counter()
     try:
+        if isinstance(client, StrictClient):
+            names = client.check_model_catalog()
+            out["models"] = {"available": names}
+            print("Available model names: %s" % ", ".join(names))
         run(client, out, validation)
     except JevError as err:
         validation.incomplete += 1
         print("\nStopped: %s" % err)
         return 2
     finally:
-        if args.strict:
+        if isinstance(client, StrictClient):
+            answered_by = sorted(client.answered_by)
+            out.setdefault("models", {}).update(answered_by=answered_by, issue=client.model_issue)
+            print("\nModels reported by responses: %s" % (", ".join(answered_by) or "none"))
             print(
                 "\nStrict validation · %d matched, %d missed, %d incomplete"
                 % (validation.matched, validation.missed, validation.incomplete)
@@ -500,7 +574,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.out:
             Path(args.out).write_text(json.dumps(out, indent=1, default=str))
-    return int(args.strict and (validation.missed > 0 or validation.incomplete > 0))
+    return int(
+        isinstance(client, StrictClient) and bool(validation.missed or validation.incomplete or client.model_issue)
+    )
 
 
 if __name__ == "__main__":

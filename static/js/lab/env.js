@@ -49,7 +49,7 @@ let installed = null;
 
 // The keyboard help dialog: the built-in shortcuts and every mounted command, with its shortcut when it has one.
 // Returns its close function; a second call while it is open does nothing.
-function helpDialog(lab) {
+function helpDialog(lab, prepareCommands) {
   let release = null;
   let wrap = null;
   const close = () => {
@@ -63,7 +63,21 @@ function helpDialog(lab) {
   const open = () => {
     if (wrap) return;
     const mac = isMac();
-    const rows = keyboardHelp(commandRows(lab));
+    const list = h("tbody");
+    const refresh = () =>
+      mount(
+        list,
+        keyboardHelp(commandRows(lab)).map((row) =>
+          h(
+            "tr",
+            { "data-lab-command": row.key || null },
+            h("td", {}, row.keys ? h("kbd", {}, keysLabel(row.keys, mac)) : h("span", { class: "faint" }, "Palette")),
+            h("td", {}, row.title),
+            h("td", { class: "faint" }, row.group || ""),
+          ),
+        ),
+      );
+    refresh();
     const closeBtn = h("button", { class: "btn ghost sm", type: "button", onclick: () => close() }, "Close");
     wrap = h(
       "div",
@@ -101,23 +115,7 @@ function helpDialog(lab) {
               "table",
               { class: "table" },
               h("thead", {}, h("tr", {}, h("th", {}, "Keys"), h("th", {}, "Does"), h("th", {}, "Where"))),
-              h(
-                "tbody",
-                {},
-                rows.map((row) =>
-                  h(
-                    "tr",
-                    { "data-lab-command": row.key || null },
-                    h(
-                      "td",
-                      {},
-                      row.keys ? h("kbd", {}, keysLabel(row.keys, mac)) : h("span", { class: "faint" }, "Palette"),
-                    ),
-                    h("td", {}, row.title),
-                    h("td", { class: "faint" }, row.group || ""),
-                  ),
-                ),
-              ),
+              list,
             ),
           ),
         ),
@@ -126,6 +124,9 @@ function helpDialog(lab) {
     release = openLayer("help", close);
     document.body.append(wrap);
     closeBtn.focus();
+    prepareCommands(() => {
+      if (list.isConnected) refresh();
+    });
   };
   return { open, close, isOpen: () => !!wrap };
 }
@@ -137,6 +138,10 @@ export function installLab(lab, chrome = {}) {
   if (installed) return installed;
   let palette = null;
   let release = null;
+  const prepareCommands = (refresh) =>
+    lab
+      .load?.()
+      .then(refresh, () => toast("Some Lab commands could not be loaded. Reload the page to try again.", "error"));
   const close = () => {
     if (!palette) return;
     palette.node.remove();
@@ -152,8 +157,12 @@ export function installLab(lab, chrome = {}) {
     release = openLayer("palette", close);
     document.body.append(palette.node);
     palette.input.focus();
+    const opened = palette;
+    prepareCommands(() => {
+      if (palette === opened) opened.refresh();
+    });
   };
-  const help = helpDialog(lab);
+  const help = helpDialog(lab, prepareCommands);
   const ctx = chromeCtx({
     path: () => location.pathname,
     url: () => location.href,

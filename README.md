@@ -197,8 +197,10 @@ uv run --locked scripts/check.py
 uv run --locked scripts/check.py support-tickets --drift new.jsonl  # compare unlabeled rows with that dataset
 ```
 
+For your own CI, use [the saved check's JSON or GitHub Actions output](docs/workbench.md#run-a-saved-check-in-your-ci).
+
 `validate.py` makes paid API calls using the configured key and prints observed results. With
-`--strict`, a missed expectation or an incomplete scenario returns a nonzero exit code. Omit the
+`--strict`, a missed expectation, an incomplete scenario, or Jev model drift returns a nonzero exit code. Omit the
 flag to use the original observation report. Review the report before sharing it.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and pull request guidance, and the

@@ -8,6 +8,7 @@
     uv run scripts/check.py support-tickets --drift new.jsonl  # do these unlabeled rows still look like the dataset?
     uv run scripts/check.py --upgrade-to jev-1.15.0  # can each check move to this version, and with which thresholds?
     uv run scripts/check.py support-tickets --estimate  # calls and an upper bound on their cost; no model calls
+    uv run scripts/check.py support-tickets --format github  # GitHub Actions annotations
 
 A check (jev/checks.py) gates some of a dataset's questions at fixed thresholds and names two targets: the
 accuracy the automated rows must reach and the share of labeled rows that must be automated. This script
@@ -16,6 +17,9 @@ from an earlier run is reused.
 
 Exit status: 0 when every check passed, 1 when any failed, 2 when a check could not be judged (no key,
 budget or rate limit reached, rows without answers, no labeled rows) or no check was found.
+
+--format json prints one aggregate report and --format github prints GitHub Actions annotations. These formats
+are for ordinary check reruns and omit row inputs, model answers and human labels. --out is a detailed export.
 
 --drift FILE (jev/drift.py) runs one check's dataset and the rows in FILE, one per line as in the Workbench's Bulk
 box, and compares them through the check's gate: the share automated, each question's answers and confidence,
@@ -161,6 +165,59 @@ def print_report(rep: dict) -> None:
     if rep["mistakes_total"] > MISTAKES_PRINTED:
         print("  ...and %d more automated rows with a wrong answer" % (rep["mistakes_total"] - MISTAKES_PRINTED))
     print("  %s" % rep["status"].upper())
+
+
+def check_summary(rep: dict) -> dict:
+    """Allowlist aggregate results for CI logs. Diagnostic strings can include input or label values."""
+    summary = {key: rep[key] for key in ("id", "status", "rows", "labeled", "automated", "targets") if key in rep}
+    if "slice_targets" in rep:
+        summary["slice_targets"] = [
+            {
+                "number": number,
+                "status": target["status"],
+                "rows": target["rows"],
+                "targets": target["targets"],
+            }
+            for number, target in enumerate(rep["slice_targets"], 1)
+        ]
+    return summary
+
+
+def github_annotation(status: str, message: str) -> None:
+    level = "notice" if status == "pass" else "error"
+    escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::{level} title=Jev Workbench check::{escaped}")
+
+
+def print_ci_result(output_format: str, result: dict) -> None:
+    if output_format == "json":
+        print(json.dumps(result))
+        return
+    for check in result["checks"]:
+        status = check["status"]
+        details = [f"{check['id']}: {status.upper()}"]
+        if status == "error":
+            details.append("could not judge the check")
+        for name, target in check.get("targets", {}).items():
+            details.append(f"{name} {pct(target['value']).strip()} (target {pct(target['target']).strip()})")
+        for target in check.get("slice_targets", []):
+            if target["status"] != "pass":
+                details.append(f"required slice {target['number']}: {target['status'].upper()}")
+        github_annotation(status, " · ".join(details))
+    github_annotation(result["status"], f"{result['passed']} of {result['total']} checks passed")
+
+
+def check_preflight_error(output_format: str, total: int, code: str, message: str) -> int:
+    if output_format == "text":
+        print(message)
+    elif output_format == "json":
+        print_ci_result(
+            output_format,
+            {"status": "error", "total": total, "passed": 0, "checks": [], "usage": None, "error": code},
+        )
+    else:
+        github_annotation("error", message)
+    return 2
 
 
 def p_text(value) -> str:
@@ -461,6 +518,9 @@ def main(argv=None) -> int:
     parser.add_argument("ids", nargs="*", help="dataset ids to check (default: every dataset with a check)")
     parser.add_argument("--model", help="ask this model instead of the one each check names")
     parser.add_argument("--list", action="store_true", help="list the checks and exit, without model calls")
+    parser.add_argument(
+        "--format", choices=("text", "json", "github"), default="text", help="format for ordinary saved-check reruns"
+    )
     parser.add_argument("--out", help="write the reports as JSON here (they include rows and answers)")
     parser.add_argument("--drift", metavar="FILE", help="compare the unlabeled rows in FILE with one check's dataset")
     parser.add_argument(
@@ -474,19 +534,27 @@ def main(argv=None) -> int:
         help="print the calls and an upper bound on their cost instead of running; no model calls",
     )
     args = parser.parse_args(argv)
+    if args.format != "text" and (args.list or args.estimate or args.drift is not None or args.upgrade_to is not None):
+        parser.error("--format json and --format github apply only to ordinary saved-check reruns")
 
     with_checks = {d["id"]: d for d in checks.listed()}
     ids = args.ids or sorted(with_checks)
     unknown = [i for i in ids if i not in with_checks]
     if unknown:
-        print(
+        return check_preflight_error(
+            args.format,
+            len(ids),
+            "unknown_check",
             "No check saved in: %s. Datasets with a check: %s"
-            % (", ".join(unknown), ", ".join(sorted(with_checks)) or "none")
+            % (", ".join(unknown), ", ".join(sorted(with_checks)) or "none"),
         )
-        return 2
     if not ids:
-        print("No dataset in data/workbench/datasets/ holds a check. Save one from the Workbench's Policy panel.")
-        return 2
+        return check_preflight_error(
+            args.format,
+            0,
+            "no_checks",
+            "No dataset in data/workbench/datasets/ holds a check. Save one from the Workbench's Policy panel.",
+        )
     if args.list:
         print_list(with_checks[i] for i in ids)
         return 0
@@ -502,12 +570,20 @@ def main(argv=None) -> int:
 
     client = JevClient()
     if not client.configured:
-        print("No API key. Set TYPESAFE_API_KEY or add it to .env.")
-        return 2
-    rows = sum(with_checks[i]["rows"] for i in ids)
-    print(
-        "%d check%s, %d rows, one call per row, via %s" % (len(ids), "" if len(ids) == 1 else "s", rows, client.backend)
-    )
+        return check_preflight_error(
+            args.format, len(ids), "missing_key", "No API key. Set TYPESAFE_API_KEY or add it to .env."
+        )
+    return run_checks(args, ids, with_checks, client)
+
+
+def run_checks(args: argparse.Namespace, ids: list[str], with_checks: dict, client: JevClient) -> int:
+    plain_text = args.format == "text"
+    if plain_text:
+        rows = sum(with_checks[i]["rows"] for i in ids)
+        print(
+            "%d check%s, %d rows, one call per row, via %s"
+            % (len(ids), "" if len(ids) == 1 else "s", rows, client.backend)
+        )
     started = time.perf_counter()
     reports = []
     try:
@@ -516,27 +592,42 @@ def main(argv=None) -> int:
                 rep = checks.run(client, dataset_id, args.model)
             except workbench.WorkbenchError as err:
                 rep = {"id": dataset_id, "status": "error", "reasons": [str(err)]}
-                print("\n%s\n  - %s\n  ERROR" % (dataset_id, err))
+                if plain_text:
+                    print("\n%s\n  - %s\n  ERROR" % (dataset_id, err))
             else:
-                print_report(rep)
+                if plain_text:
+                    print_report(rep)
             reports.append(rep)
     except JevError as err:
-        print("\nStopped: %s" % err)
-        reports.append({"status": "error", "reasons": [str(err)]})
+        if plain_text:
+            print("\nStopped: %s" % err)
+        reports.append({"id": dataset_id, "status": "error", "reasons": [str(err)]})
     finally:
         s = client.guard.snapshot()
-        print(
-            "\n%d live calls · %d input tokens · $%.5f · %.1f s"
-            % (s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started)
-        )
+        if plain_text:
+            print(
+                "\n%d live calls · %d input tokens · $%.5f · %.1f s"
+                % (s["live_calls"], s["input_tokens"], s["spent_usd"], time.perf_counter() - started)
+            )
         if args.out:
             Path(args.out).write_text(json.dumps(reports, indent=1, default=str))
     statuses = [r["status"] for r in reports]
     passed = statuses.count("pass")
-    print("%d of %d checks passed" % (passed, len(ids)))
-    if "error" in statuses:
-        return 2
-    return 1 if "fail" in statuses else 0
+    status = "error" if "error" in statuses else "fail" if "fail" in statuses else "pass"
+    if plain_text:
+        print("%d of %d checks passed" % (passed, len(ids)))
+    else:
+        print_ci_result(
+            args.format,
+            {
+                "status": status,
+                "total": len(ids),
+                "passed": passed,
+                "checks": [check_summary(rep) for rep in reports],
+                "usage": {key: s[key] for key in ("live_calls", "input_tokens", "spent_usd")},
+            },
+        )
+    return {"pass": 0, "fail": 1, "error": 2}[status]
 
 
 if __name__ == "__main__":

@@ -1241,6 +1241,35 @@ responses. See [the live-run instructions](../AGENTS.md#cloud-sandboxes-boat).
 | `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
 | `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, optional `slice_targets` (each slice's status, reasons, targets, counts, and accuracy), `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, `answered_by`, and `notes` |
 
+#### Run a saved check in your CI
+
+Use the [Reviews walkthrough](#route-reviews-by-topic) to create a synthetic dataset and export
+`gate.py`. For an illustrative check, set the accuracy target to 75% and the automation target to
+50%, using the measured accuracy option. If the gate automates three of the four labeled reviews
+and gets all three right, the check passes with 100% accuracy and 75% automation. A fresh run
+measures its own answers and can produce a different result. Keep the saved check alongside the
+gate you deploy so you can evaluate the same questions, thresholds, and model settings.
+
+On a trusted runner with the repository and its locked dependencies available, put
+`review-topics.json` under `data/workbench/datasets/` and inject `TYPESAFE_API_KEY` through your
+runner's secret store. Run the estimate before wiring up the paid step. On GitHub Actions, use
+`--format github` to show check results as workflow annotations:
+
+```sh
+uv run --locked scripts/check.py review-topics --estimate
+uv run --locked scripts/check.py review-topics --format github
+```
+
+For another CI system, capture the structured summary:
+
+```sh
+uv run --locked scripts/check.py review-topics --format json > check-summary.json
+```
+
+Both formats preserve the check exit codes. The JSON summary covers status, counts, targets and
+usage, with slice targets identified by position. The CI formats leave row inputs, labels, and
+answers out of their output. The default text report remains useful for a local investigation.
+
 #### Move a check to a new version
 
 When TypeSafe ships a new version, a pinned check keeps asking the version it was tuned on. **Try a new

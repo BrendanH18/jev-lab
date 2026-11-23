@@ -6,7 +6,8 @@ import { stringify } from "./workbench-build.js";
 import { render } from "./workbench.js";
 import { rowsText, bulkUnsaved, loadPictureUrls, rowsPayload, rowText } from "./workbench-bulk.js";
 import { agreeQuestions } from "./workbench-dataset-agreement.js";
-import { runCheck, CHECK_BADGE } from "./workbench-checks.js";
+import { runCheck } from "./workbench-checks.js";
+import { CHECK_BADGE } from "./workbench-checks-report.js";
 import { queueReady, queueSelect } from "./workbench-review.js";
 import { withCI } from "./workbench-calibrate.js";
 

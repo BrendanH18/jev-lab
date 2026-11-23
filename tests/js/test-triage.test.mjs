@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import * as tools from "../../static/js/test-selection.js";
+import { workbenchSource as source } from "./workbench-source.mjs";
 
 const items = [
   {
@@ -128,7 +128,6 @@ test("selected observation summary counts unknowns and excludes unselected and p
   });
 });
 
-const source = readFileSync(new URL("../../static/js/workbench-tests.js", import.meta.url), "utf8");
 const body = (name) =>
   source.match(new RegExp(`(?:export )?(?:async )?function ${name}\\([^]*?\\n\\}`))[0].replace(/^export /, "");
 function harness() {

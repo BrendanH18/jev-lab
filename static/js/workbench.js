@@ -348,6 +348,19 @@ export function render() {
 function applyWorkbenchHash(previousHash = "") {
   const hash = location.hash;
   if (hash.startsWith(TOOL_HASH)) {
+    if (!W.lab.surface(TOOLBOX_LAB)) {
+      W.tab = "toolbox";
+      render();
+      W.lab.load().then(
+        () => {
+          if (location.hash === hash) applyWorkbenchHash(previousHash);
+        },
+        () => {
+          // The Toolbox shows the load error in its panel.
+        },
+      );
+      return;
+    }
     const key = hash.slice(TOOL_HASH.length);
     const found = W.lab.entries(TOOLBOX_LAB, "tool").some(([id]) => key === id);
     const state = W.lab.view(TOOLBOX_LAB).tool;
@@ -356,7 +369,7 @@ function applyWorkbenchHash(previousHash = "") {
     render();
     if (found) {
       const form = $("#toolbox-panel .lab-tool-form");
-      (form.querySelector("input, select, textarea") || form.querySelector("button"))?.focus();
+      (form?.querySelector("input, select, textarea") || form?.querySelector("button"))?.focus();
     } else {
       toast("This tool is unavailable. Choose another tool from the Toolbox.");
     }

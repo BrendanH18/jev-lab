@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added aggregate JSON and GitHub Actions output for saved Workbench checks.
+- Strict live validation checks listed Jev names and verifies the model version each response reports.
+- Workbench loads most Lab tools when first opened and keeps its keyboard shortcuts ready at startup.
+- Split Calibrate, Policy, Checks, Tests, and Bulk responsibilities so Workbench modules stay
+  under 1,200 lines.
 - Enabled HTTP/1.1 connection reuse and conditional requests for static assets. HTML and API
   responses keep their no-store policy.
 - Added a guided Reviews-to-Workbench walkthrough with labeled sample rows, a Policy gate export,

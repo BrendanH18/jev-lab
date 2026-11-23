@@ -6,8 +6,9 @@ import shutil
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -472,6 +473,14 @@ class ScriptTests(Temp):
             code = check_script.main(list(argv))
         return code, out.getvalue()
 
+    def configured(self, probs=None):
+        client = self.client(probs)
+        client.configured, client.backend = True, "fake"
+        client.guard = SimpleNamespace(
+            snapshot=lambda: {"live_calls": len(client.calls), "input_tokens": 6000, "spent_usd": 0.01}
+        )
+        return client
+
     def test_list_makes_no_calls(self):
         self.save()
         code, out = self.main("--list")
@@ -487,20 +496,13 @@ class ScriptTests(Temp):
 
     def test_exit_status_follows_the_checks(self):
         self.save()
-        good = self.client()
-        good.configured, good.backend = True, "fake"
-        good.guard = type(
-            "G", (), {"snapshot": lambda self: {"live_calls": 6, "input_tokens": 6000, "spent_usd": 0.0}}
-        )()
-        code, out = self.main(client=good)
+        code, out = self.main(client=self.configured())
         self.assertEqual(code, 0, out)
         self.assertIn("PASS", out)
         self.assertIn("1 of 1 checks passed", out)
         worse = {t: p for t, (p, _l) in ROWS.items()}
         worse["Love the beans"] = 0.98
-        bad = self.client(worse)
-        bad.configured, bad.backend, bad.guard = True, "fake", good.guard
-        code, out = self.main("refunds", "--model", "jev-1.14.0", client=bad)
+        code, out = self.main("refunds", "--model", "jev-1.14.0", client=self.configured(worse))
         self.assertEqual(code, 1, out)
         self.assertIn("FAIL", out)
         self.assertIn("wrong but automated, row 4: Love the beans", out)
@@ -529,6 +531,75 @@ class ScriptTests(Temp):
         code, out = self.main(client=broke)
         self.assertEqual(code, 2, out)
         self.assertIn("stopped early", out)
+
+    def test_json_reruns_a_saved_check_and_exports_aggregate_results(self):
+        self.save()
+        client = self.configured()
+        code, out = self.main("refunds", "--format", "json", client=client)
+        self.assertEqual(code, 0, out)
+        report = json.loads(out)
+        self.assertEqual((report["status"], report["total"], report["passed"]), ("pass", 1, 1))
+        self.assertEqual(report["usage"], {"live_calls": 6, "input_tokens": 6000, "spent_usd": 0.01})
+        [summary] = report["checks"]
+        self.assertEqual(
+            summary,
+            {
+                "id": "refunds",
+                "status": "pass",
+                "rows": 6,
+                "labeled": 5,
+                "automated": 4,
+                "targets": {
+                    "accuracy": {"ok": True, "value": 1.0, "target": 0.9, "bound": "estimate"},
+                    "coverage": {"ok": True, "value": 0.8, "target": 0.5},
+                },
+            },
+        )
+
+    def test_json_and_github_omit_mistakes_while_out_keeps_details(self):
+        self.save()
+        worse = {t: p for t, (p, _l) in ROWS.items()}
+        worse["Love the beans"] = 0.98
+        report_file = self.dir / "detailed.json"
+        code, out = self.main("--format", "json", "--out", str(report_file), client=self.configured(worse))
+        self.assertEqual(code, 1, out)
+        report = json.loads(out)
+        self.assertEqual((report["status"], report["passed"]), ("fail", 0))
+        self.assertNotIn("mistakes", report["checks"][0])
+        self.assertNotIn("Love the beans", out)
+        [detailed] = json.loads(report_file.read_text())
+        self.assertEqual(detailed["mistakes"][0]["row"], "Love the beans")
+
+        code, out = self.main("--format", "github", client=self.configured(worse))
+        self.assertEqual(code, 1, out)
+        self.assertEqual(
+            out.splitlines(),
+            [
+                "::error title=Jev Workbench check::refunds: FAIL · accuracy 75.0%25 (target 90.0%25)"
+                " · coverage 80.0%25 (target 50.0%25)",
+                "::error title=Jev Workbench check::0 of 1 checks passed",
+            ],
+        )
+
+    def test_ci_preflight_errors_and_mode_validation_make_no_model_calls(self):
+        code, out = self.main("--format", "json")
+        self.assertEqual(code, 2, out)
+        self.assertEqual(json.loads(out)["error"], "no_checks")
+        self.save()
+        client = self.configured()
+        unknown = "missing%\r\nname"
+        code, out = self.main(unknown, "--format", "github", client=client)
+        self.assertEqual(code, 2, out)
+        self.assertEqual(len(out.splitlines()), 1)
+        self.assertIn("missing%25%0D%0Aname", out)
+        client.configured = False
+        code, out = self.main("--format", "json", client=client)
+        self.assertEqual(code, 2, out)
+        self.assertEqual(json.loads(out)["error"], "missing_key")
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as err:
+            self.main("--format", "json", "--estimate", client=client)
+        self.assertEqual(err.exception.code, 2)
+        self.assertEqual(client.calls, [])
 
 
 if __name__ == "__main__":
