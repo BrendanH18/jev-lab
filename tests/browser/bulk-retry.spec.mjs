@@ -35,6 +35,11 @@ test("Bulk retries only the selected unanswered row and keeps human labels and d
   });
 
   await page.goto(`${app.base}/workbench#build`);
+  const basic = page.getByRole("button", { name: "Basic", exact: true });
+  const advanced = page.getByRole("button", { name: "Advanced", exact: true });
+  const tabs = page.getByRole("tablist", { name: "Workbench sections" });
+  await expect(basic).toHaveAttribute("aria-pressed", "true");
+  await expect(tabs.getByRole("tab")).toHaveText(["Build", "Bulk"]);
   await page.getByRole("button", { name: "Raw JSON", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Questions as JSON" })
@@ -63,6 +68,21 @@ test("Bulk retries only the selected unanswered row and keeps human labels and d
   await expect(table.getByRole("combobox", { name: "Label for row 1" })).toHaveValue("yes");
   await expect(draft).toHaveValue("no");
 
+  await expect(page.getByRole("heading", { name: "Policy", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Calibrate", exact: true })).toHaveCount(0);
+  await advanced.click();
+  await expect(advanced).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "Calibrate", exact: true })).toBeVisible();
+  await tabs.getByRole("tab", { name: "Compare", exact: true }).click();
+  await basic.click();
+  await expect(page).toHaveURL(`${app.base}/workbench#build`);
+  await tabs.getByRole("tab", { name: "Build", exact: true }).press("ArrowRight");
+  await expect(tabs.getByRole("tab", { name: "Bulk", exact: true })).toBeFocused();
+  await expect(table.getByRole("heading", { name: "1 of 3 rows" })).toBeVisible();
+  await expect(rows).toHaveValue(input);
+  await expect(draft).toHaveValue("no");
+  expect(calls).toHaveLength(3);
+
   await table.getByText("Choose retry rows · 2 selected", { exact: true }).click();
   await table.getByRole("checkbox", { name: "Retry row 3" }).uncheck();
   failing.clear();
@@ -78,4 +98,11 @@ test("Bulk retries only the selected unanswered row and keeps human labels and d
   await expect(draft).toHaveValue("no");
   expect(calls.slice(3)).toEqual([{ text: toRetry }]);
   expect(errors).toEqual([]);
+});
+
+test("direct links reveal advanced tabs", async ({ page }) => {
+  await page.goto(`${app.base}/workbench#toolbox`);
+  await expect(page.getByRole("button", { name: "Advanced", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("tab", { name: "Toolbox", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Toolbox", exact: true })).toBeVisible();
 });

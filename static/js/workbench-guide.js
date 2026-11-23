@@ -20,7 +20,7 @@ export function workflowSteps(snapshot = {}) {
       status: questionCount ? "Questions selected" : "Start here",
       enabled: true,
       detail:
-        "Choose the judgments your code needs. Check the wording in Build; Bulk can also use sample or saved questions.",
+        "Bring a request over from Reviews using Inspect JSON → Open in Workbench, or define your own questions in Build.",
     },
     {
       id: "rows",
@@ -31,7 +31,7 @@ export function workflowSteps(snapshot = {}) {
       status: rowCount ? "Rows in editor" : "Add inputs",
       enabled: true,
       detail:
-        "Paste rows, import CSV, or load a dataset. Include the inputs and pictures your application will receive.",
+        "To try Bulk with labeled data, load the sample rows and select Sample: support triage. For your own questions, paste matching inputs, import CSV, or load a dataset.",
     },
     {
       id: "labels",
@@ -67,14 +67,14 @@ export function workflowSteps(snapshot = {}) {
     },
     {
       id: "review",
-      title: "Export a gate and review traffic",
+      title: "Export a gate and rerun a check",
       tab: "bulk",
       target: "#datasets",
-      action: "Open datasets and Review",
-      status: hasSavedCheck ? "Saved check available" : "Save a check for the review cycle",
+      action: "Open saved datasets",
+      status: hasSavedCheck ? "Saved check available" : "Save a check from Policy",
       enabled: true,
       detail:
-        "Export a gate from Policy or a saved check. Run it in your application, then load its decisions into the dataset's Review queue for human labels and blind audits.",
+        "Export a gate from Policy or a saved check. Use scripts/check.py to rerun the saved check after changing the model or data.",
     },
   ];
 }
@@ -89,7 +89,7 @@ export function renderWorkbenchGuide(
   return h(
     "details",
     { class: "panel", open, ontoggle: (event) => onToggle(event.target.open) },
-    h("summary", { class: "panel-head" }, "Workbench guide · from questions to reviewed decisions"),
+    h("summary", { class: "panel-head" }, "Workbench guide · from questions to a saved check"),
     h(
       "div",
       { class: "panel-body grid", style: { gap: "12px" } },

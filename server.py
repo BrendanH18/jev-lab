@@ -10,6 +10,7 @@ by jev/security.py so that other websites cannot drive this server or spend your
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
@@ -1202,6 +1203,7 @@ CSP = (
 
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     server_version = "JevLab/" + VERSION
     port = 8321
 
@@ -1210,30 +1212,46 @@ class Handler(BaseHTTPRequestHandler):
             return
         sys.stderr.write("  %s  %s\n" % (time.strftime("%H:%M:%S"), fmt % args))
 
-    def _send(self, status, payload, content_type="application/json"):
+    def _send(self, status, payload, content_type="application/json", *, etag=None):
         data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
-        # Header values must stay on one line, including MIME types inferred from static paths.
-        content_type = content_type.replace("\r", "").replace("\n", "")
         self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        if status != 304:
+            # Header values must stay on one line, including MIME types inferred from static paths.
+            content_type = content_type.replace("\r", "").replace("\n", "")
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+        if etag:
+            self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache" if etag else "no-store")
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", CSP)
         self.end_headers()
-        self.wfile.write(data)
+        if status != 304:
+            self.wfile.write(data)
 
     def _handle(self, method):
         path = urlparse(self.path).path.rstrip("/") or "/"
+        # Reuse a connection only after a request with unambiguous framing has been fully read.
+        if self.headers.get_all("Transfer-Encoding"):
+            self.close_connection = True
+            return self._send(400, {"error": "Transfer-Encoding is not supported"})
         try:
-            length = int(self.headers.get("Content-Length") or 0)
+            values = self.headers.get_all("Content-Length", ["0"])
+            (raw_length,) = values
+            raw_length = raw_length.strip(" \t")
+            if not raw_length.isascii() or not raw_length.isdecimal():
+                raise ValueError
+            length = int(raw_length)
         except ValueError:
-            return self._send(400, {"error": "Content-Length must be a non-negative integer"})
-        if length < 0:
+            self.close_connection = True
             return self._send(400, {"error": "Content-Length must be a non-negative integer"})
         reason = security.check_request(method, self.headers, SESSION_TOKEN, self.port, has_body=length > 0)
         if reason:
+            if length:
+                self.close_connection = True
             return self._send(403, {"error": security.REASONS[reason], "reason": reason})
         route = ROUTES.get((method, path))
         if route:
@@ -1242,8 +1260,13 @@ class Handler(BaseHTTPRequestHandler):
                 score_route = path in ("/api/workbench/compare/score", "/api/workbench/compare/slices")
                 allowance = COMPARE_RETRY_OVERHEAD if retry_route else COMPARE_SCORE_OVERHEAD if score_route else 0
                 if length > MAX_BODY_BYTES + allowance:
+                    self.close_connection = True
                     raise BadRequest("Request body too large")
-                body = json.loads(self.rfile.read(length).decode() or "{}") if length else {}
+                raw_body = self.rfile.read(length) if length else b""
+                if len(raw_body) != length:
+                    self.close_connection = True
+                    raise BadRequest("Incomplete request body")
+                body = json.loads(raw_body.decode()) if length else {}
                 if not isinstance(body, dict):
                     raise BadRequest("Body must be a JSON object")
                 if length > MAX_BODY_BYTES and not (
@@ -1271,6 +1294,8 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send(500, {"error": "Server error: %s" % err})
             return
+        if length:
+            self.close_connection = True
         if method != "GET":
             return self._send(404, {"error": "Not found"})
         if path in PAGES:
@@ -1285,10 +1310,20 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.isfile(file):
             return self._send(404, {"error": "Not found"})
         ctype = mimetypes.guess_type(file)[0] or "application/octet-stream"
+        is_api = path == "/api" or path.startswith("/api/")
+        is_html = ctype in ("text/html", "application/xhtml+xml")
         if ctype.startswith("text/") or ctype.endswith("javascript"):
             ctype += "; charset=utf-8"
         with open(file, "rb") as asset:
-            self._send(200, asset.read(), ctype)
+            data = asset.read()
+        if is_api or is_html:
+            return self._send(200, data, ctype)
+        etag = '"%s"' % hashlib.sha256(data).hexdigest()
+        condition = ",".join(self.headers.get_all("If-None-Match", ()))
+        tags = (tag.strip().removeprefix("W/") for tag in condition.split(","))
+        if condition.strip() == "*" or etag in tags:
+            return self._send(304, b"", etag=etag)
+        self._send(200, data, ctype, etag=etag)
 
     def do_GET(self):
         self._handle("GET")

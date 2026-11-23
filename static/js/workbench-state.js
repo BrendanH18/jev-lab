@@ -2,6 +2,7 @@
 // use to tell whether a report still matches the rows, questions and labels it was made from. Imports nothing.
 export const W = {
   guideOpen: false,
+  advanced: false,
   tab: "build",
   stateText: "",
   questions: [],

@@ -798,7 +798,7 @@ export function updatePolicy() {
       ? h(
           "p",
           { class: "faint" },
-          `${rep.rules.length === 1 ? "A rule" : `${rep.rules.length} rules`} from Rules above send${rep.rules.length === 1 ? "s" : ""} ${rep.routed_held_by_rules} of this run's ${rep.routed} rows to review whatever their confidence, and Tune, the cost, the check on unseen rows, a saved check, and the exported gate do the same.`,
+          `${rep.rules.length === 1 ? "A rule" : `${rep.rules.length} rules`} from Advanced → Rules send${rep.rules.length === 1 ? "s" : ""} ${rep.routed_held_by_rules} of this run's ${rep.routed} rows to review whatever their confidence, and Tune, the cost, the check on unseen rows, a saved check, and the exported gate do the same.`,
         )
       : null,
     rep.unlabeled
