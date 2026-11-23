@@ -56,7 +56,8 @@ test("a retry selection changed while Compare's spend confirmation is pending se
   await page.goto(`${app.base}/workbench#compare`);
   await page.getByLabel("Variant A questions as JSON").fill(JSON.stringify(question("A")));
   await page.getByLabel("Variant B questions as JSON").fill(JSON.stringify(question("B")));
-  await page.getByLabel("Rows, shared with the Bulk tab").fill("row one\nrow two\nrow three");
+  const rows = ["row one", "row two", "row three"].map((text) => JSON.stringify({ text, _expect: { urgent: true } }));
+  await page.getByLabel("Rows, shared with the Bulk tab").fill(rows.join("\n"));
 
   // A first run in which rows two and three fail on both variants: four unanswered calls.
   stub.failing = new Set(["row two", "row three"]);
@@ -110,5 +111,15 @@ test("a retry selection changed while Compare's spend confirmation is pending se
   expect(dialogs[1]).toContain("up to 3 live calls");
   const sent = stub.calls.map(({ row, variant }) => `${row} ${variant}`).sort();
   expect(sent).toEqual(["row three A", "row two A", "row two B"]);
+
+  // The report covers the two answered pairs. Changing the cascade uses those answers.
+  const cascade = page.locator("#cascade");
+  await expect(cascade.getByRole("heading")).toContainText("2 labeled rows");
+  await cascade.getByLabel("Variant the cascade asks first").selectOption("B");
+  await expect(cascade.locator("#cas-table tbody th").first()).toHaveText("B alone");
+  await cascade.getByRole("slider").fill("0.92");
+  await expect(cascade.locator("#cas-value")).toHaveText("0.92");
+  await expect(cascade.locator("#cas-code")).toContainText(">= 0.92");
+  expect(stub.calls).toHaveLength(3);
   expect(errors).toEqual([]);
 });

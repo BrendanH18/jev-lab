@@ -1,12 +1,12 @@
 // Tests of the Workbench Compare Lab surfaces: the builders in static/js/lab/surfaces/workbench-compare.js (item
 // shapes, shown(), data, every action's guard, replaceItems/importItems invariants) and the hooks in
-// static/js/workbench-compare.js, rebuilt from the page source with stand-ins and run against a real Lab host.
+// the Compare modules, rebuilt from the page source with stand-ins and run against a real Lab host.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { compareRowsCtx, compareVariantsCtx } from "../../../static/js/lab/surfaces/workbench-compare.js";
 import { createLab } from "../../../static/js/lab/host.js";
+import { moduleSources } from "../workbench-source.mjs";
 import { probePack } from "./fixture-pack.mjs";
 import { fakeDom, fakeEnv, find, findAll, textOf } from "./harness.mjs";
 import {
@@ -493,9 +493,12 @@ test("variants: the editors' buttons keep their guards, and no action presses Ru
   assert.deepEqual(running.log, []);
 });
 
-// ---------- the hooks in static/js/workbench-compare.js ----------
+// ---------- the hooks in the Workbench Compare modules ----------
 
-const source = readFileSync(new URL("../../../static/js/workbench-compare.js", import.meta.url), "utf8");
+const source = Object.entries(moduleSources)
+  .filter(([file]) => /^workbench-compare(?:-[a-z-]+)?\.js$/.test(file))
+  .map(([, contents]) => contents)
+  .join("\n");
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const HOOKS = [
   "renderCompareRows",
@@ -712,6 +715,6 @@ test("hook: the variants ctx edits the editors' JSON and refreshes them, and nev
 
 test("hook: the page reaches Lab only through W", () => {
   for (const name of HOOKS) assert.ok(!/\bLAB\b/.test(body(name)), `${name} must not name LAB`);
-  assert.ok(!/^import[^;]*lab\//m.test(source), "workbench-compare.js imports no Lab module");
+  assert.ok(!/^import[^;]*lab\//m.test(source), "the Compare modules import no Lab module");
   assert.match(source, /cmpLabSection\("workbench\.compare\.variants", cmpLabVariants\(\)\)/);
 });

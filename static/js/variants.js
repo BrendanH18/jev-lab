@@ -1,6 +1,17 @@
 // Variant helpers for Workbench Compare, free of the DOM so tests/js can import them.
 import { parseUniqueJson } from "./build-request.js";
 
+export const VARIANTS = ["A", "B"];
+// How B's rows can be rewritten (jev/perturb.py). Each keeps the row's meaning, and the same rows get the same
+// rewrite on every run, so with B a copy of A a changed answer is an effect of the rewrite alone.
+export const PERTURBS = {
+  "": "as written",
+  typos: "with typos",
+  lowercase: "in lowercase",
+  distractor: "with an unrelated sentence added",
+  shuffle: "with JSON fields shuffled",
+};
+
 // A variant's questions from the JSON typed in its editor: an object keyed by question id, with repeated keys refused.
 // Throws an Error with the message the Compare tab shows under the editor. name is "A" or "B".
 export function parseVariantText(text, name) {
