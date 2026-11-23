@@ -46,6 +46,7 @@ const TABS = [
   ["examples", "Examples"],
   ["toolbox", "Toolbox"],
 ];
+const BASIC_TABS = new Set(["build", "bulk"]);
 // Lab surfaces of the page shell and the Toolbox tab (contract: static/js/lab/surfaces/workbench-shell.js). The shell's
 // ctx is built once and mounted on every render, so its commands reach every tab; the gallery's surface lives in
 // static/js/examples-browser.js. Page code reaches Lab only through W, so views rendered in tests/js see no Lab.
@@ -93,6 +94,8 @@ async function boot() {
   W.compare.terse = sample.terse_questions;
   W.compare.variants[0].text = JSON.stringify(sample.questions, null, 2);
   W.compare.variants[1].text = JSON.stringify(sample.terse_questions, null, 2);
+  $("#workbench-basic").addEventListener("click", () => setWorkbenchMode(false));
+  $("#workbench-advanced").addEventListener("click", () => setWorkbenchMode(true));
   wbShellReady = true;
   const first = W.examples[0];
   let handed = null;
@@ -114,6 +117,16 @@ async function boot() {
 }
 
 // ---------- tabs and the page shell ----------
+function setWorkbenchMode(advanced) {
+  if (advanced === W.advanced) return;
+  W.advanced = advanced;
+  if (!advanced && !BASIC_TABS.has(W.tab)) {
+    openWorkbenchTab("build");
+    return;
+  }
+  render();
+}
+
 // Shows a tab exactly as a click on the tab bar does. Switching keeps every editor, queue and draft (they live in W).
 function openWorkbenchTab(tab) {
   if (tab === "toolbox" && W.tab === tab && location.hash.startsWith(TOOL_HASH)) return;
@@ -247,6 +260,16 @@ export function renderGuide() {
 }
 
 export function render() {
+  // A shared link or an action that opens an advanced tab also reveals its tab.
+  if (!BASIC_TABS.has(W.tab)) W.advanced = true;
+  for (const [mode, selected] of [
+    ["basic", !W.advanced],
+    ["advanced", W.advanced],
+  ]) {
+    const button = $(`#workbench-${mode}`);
+    button?.classList.toggle("active", selected);
+    button?.setAttribute("aria-pressed", String(selected));
+  }
   syncAttachedSets();
   LAB.unmountAll(["chrome"]); // only the surfaces rendered below stay reachable from the command palette
   const shell = shellLabCtx();
@@ -280,10 +303,11 @@ export function render() {
   if (wbShellRenderedTab !== null && wbShellRenderedTab !== W.tab) wbShellPreviousTab = wbShellRenderedTab;
   wbShellRenderedTab = W.tab;
   // The tab bar follows the WAI-ARIA tabs pattern: one tab in the Tab order, arrow keys move and wrap, Home/End.
-  const tabIds = TABS.map(([k]) => k);
+  const visibleTabs = W.advanced ? TABS : TABS.filter(([id]) => BASIC_TABS.has(id));
+  const tabIds = visibleTabs.map(([k]) => k);
   mount(
     "#tabs",
-    TABS.map(([k, label]) =>
+    visibleTabs.map(([k, label]) =>
       h(
         "button",
         {
@@ -311,7 +335,7 @@ export function render() {
   $("#view")?.setAttribute("aria-labelledby", `tab-${W.tab}`);
   renderGuide();
   if (W.tab === "bulk") {
-    updateCal();
+    if (W.advanced) updateCal();
     updatePolicy();
   }
   if (W.tab === "compare") {
@@ -352,7 +376,7 @@ window.addEventListener("hashchange", (event) => {
 window.addEventListener(
   "resize",
   debounce(() => {
-    if (W.tab === "bulk") updateCal();
+    if (W.tab === "bulk" && W.advanced) updateCal();
     if (W.tab === "compare") {
       updateCmpChart();
       updateCascade();

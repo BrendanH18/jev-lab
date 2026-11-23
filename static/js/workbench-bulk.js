@@ -513,38 +513,17 @@ export function renderBulk() {
             ),
           ),
         ),
-        h(
-          "div",
-          { class: "panel" },
-          h("div", { class: "panel-head" }, h("h2", {}, "Why this matters")),
-          h(
-            "div",
-            { class: "panel-body grid", style: { gap: "6px", fontSize: "12.5px" } },
-            h(
-              "p",
-              { class: "muted" },
-              "At $0.042 per million input tokens, a question set over a million short messages costs about ",
-              h("b", {}, "$10"),
-              ". That is why “classify everything, then sort” is finally practical.",
-            ),
-            h(
-              "p",
-              { class: "muted" },
-              "With labeled rows, Calibrate shows how often each answer was right and where to set the confidence threshold: above it your code acts, below it a person reviews. Choose the threshold from your own data, not a default.",
-            ),
-          ),
-        ),
       ),
     ),
     datasetEditsBody(),
     h("div", { id: "prelabel-panel" }, prelabelBody()),
     b.csv.open ? renderImport() : null,
     b.gateExport ? renderGateExport() : null,
-    b.result ? renderCosts() : null,
-    b.result ? renderCalibrate() : null,
-    b.result ? renderAnswerSets() : null,
-    b.result ? renderReview() : null,
-    b.result ? renderRules() : null,
+    b.result && W.advanced ? renderCosts() : null,
+    b.result && W.advanced ? renderCalibrate() : null,
+    b.result && W.advanced ? renderAnswerSets() : null,
+    b.result && W.advanced ? renderReview() : null,
+    b.result && W.advanced ? renderRules() : null,
     b.result ? renderPolicy() : null,
     b.result ? renderBulkTable() : null,
   );
@@ -629,7 +608,10 @@ async function runBulk() {
       await Promise.all([recalibrate(), repolicy(), loadPictureUrls(b.result.results)]);
       if (b.result.stopped) toast(b.result.stopped, "error");
       render();
-      $("#calibrate")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      ($(W.advanced ? "#calibrate" : "#policy") || $("#bulk-table"))?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     } catch (e) {
       handleError(e);
       render();
@@ -939,7 +921,9 @@ function bulkTableBody() {
             th("__row", "#"),
             h("th", {}, "row"),
             qids.map((q) => th(q, q)),
-            calQ ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), h("th", {}, "route")] : null,
+            calQ
+              ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), W.advanced ? h("th", {}, "route") : null]
+              : null,
           ),
         ),
         h(
@@ -951,7 +935,7 @@ function bulkTableBody() {
                 {},
                 h(
                   "td",
-                  { colspan: String(2 + qids.length + (calQ ? 3 : 0)), class: "faint" },
+                  { colspan: String(2 + qids.length + (calQ ? 2 + Number(W.advanced) : 0)), class: "faint" },
                   "No row matches the Lab filters.",
                 ),
               )
@@ -1011,7 +995,7 @@ function bulkTableBody() {
                           : statusBadge("fail", "Wrong")
                         : null,
                     ),
-                    h("td", { class: "route" }),
+                    W.advanced ? h("td", { class: "route" }) : null,
                   ]
                 : null,
             ),

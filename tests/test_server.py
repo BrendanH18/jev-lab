@@ -2,9 +2,11 @@
 
 import http.client
 import json
+import socket
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
@@ -48,6 +50,18 @@ class HttpTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(temp.cleanup)
+        root = Path(temp.name)
+        settings = Settings(environ={}, env_file=root / ".env")
+        for patcher in (
+            patch.multiple(server, PROJECT_ROOT=root, settings=settings, client=JevClient(settings)),
+            patch("jev.config.WORKBENCH_DIR", root / "workbench"),
+            patch("jev.workbench.WORKBENCH_DIR", root / "workbench"),
+        ):
+            patcher.start()
+            cls.addClassCleanup(patcher.stop)
+
         class QuietHandler(server.Handler):
             def log_message(self, *_args):
                 pass
@@ -74,12 +88,13 @@ class HttpTests(unittest.TestCase):
     def test_pages_receive_session_token_and_security_headers(self):
         for path in server.PAGES:
             with self.subTest(path=path):
-                status, headers, body = self.request("GET", path)
+                status, headers, body = self.request("GET", path, headers={"If-None-Match": "*"})
                 self.assertEqual(status, 200)
                 self.assertIn('name="jev-csrf"', body.decode())
                 self.assertIn(server.SESSION_TOKEN, body.decode())
                 self.assertEqual(headers["Content-Type"], "text/html; charset=utf-8")
                 self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertNotIn("ETag", headers)
                 self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
                 csp = headers["Content-Security-Policy"]
                 self.assertIn("script-src 'self'", csp)
@@ -182,6 +197,50 @@ class HttpTests(unittest.TestCase):
                 self.assertIn("charset=utf-8", headers["Content-Type"])
                 self.assertTrue(body)
 
+    def test_static_assets_revalidate_on_a_persistent_http11_connection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            static = Path(folder)
+            asset = static / "asset.css"
+            asset.write_bytes(b"body { color: red; }")
+            with (
+                patch.object(server, "STATIC", static),
+                closing(http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)) as conn,
+            ):
+                conn.request("GET", "/asset.css")
+                response = conn.getresponse()
+                self.assertEqual((response.status, response.version), (200, 11))
+                self.assertEqual(response.read(), asset.read_bytes())
+                self.assertEqual(response.getheader("Cache-Control"), "no-cache")
+                tag = response.getheader("ETag")
+                self.assertRegex(tag, r'^"[0-9a-f]{64}"$')
+                original_socket = conn.sock
+
+                for condition in (tag, '"old", W/' + tag, "*"):
+                    with self.subTest(condition=condition):
+                        conn.request("GET", "/asset.css", headers={"If-None-Match": condition})
+                        response = conn.getresponse()
+                        self.assertEqual((response.status, response.read()), (304, b""))
+                        self.assertIsNone(response.getheader("Content-Length"))
+                        self.assertEqual(response.getheader("Cache-Control"), "no-cache")
+                        self.assertEqual(response.getheader("ETag"), tag)
+                        self.assertEqual(response.getheader("Content-Security-Policy"), server.CSP)
+
+                asset.write_bytes(b"body { color: blue; }")
+                conn.request("GET", "/asset.css", headers={"If-None-Match": tag})
+                response = conn.getresponse()
+                self.assertEqual((response.status, response.read()), (200, asset.read_bytes()))
+                self.assertNotEqual(response.getheader("ETag"), tag)
+                self.assertIs(conn.sock, original_socket)
+
+    def test_direct_html_and_api_responses_do_not_revalidate(self):
+        for path, expected_status in (("/workbench.html", 200), ("/api/status", 200), ("/api/absent", 404)):
+            with self.subTest(path=path):
+                status, headers, body = self.request("GET", path, headers={"If-None-Match": "*"})
+                self.assertEqual(status, expected_status)
+                self.assertTrue(body)
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                self.assertNotIn("ETag", headers)
+
     def test_workbench_modules_are_served_as_javascript(self):
         # The Workbench page loads workbench.js, which imports its panels from static/js/workbench-*.js.
         modules = sorted(path.name for path in (server.STATIC / "js").glob("workbench*.js"))
@@ -196,9 +255,11 @@ class HttpTests(unittest.TestCase):
                 self.assertTrue(body)
 
     def test_foreign_host_is_rejected(self):
-        status, _, body = self.request("GET", "/", headers={"Host": "attacker.example"})
-        self.assertEqual(status, 403)
-        self.assertEqual(json.loads(body)["reason"], "host")
+        for path in ("/", "/css/app.css"):
+            with self.subTest(path=path):
+                status, _, body = self.request("GET", path, headers={"Host": "attacker.example", "If-None-Match": "*"})
+                self.assertEqual(status, 403)
+                self.assertEqual(json.loads(body)["reason"], "host")
 
     def test_static_content_type_cannot_inject_headers_or_body(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -217,31 +278,53 @@ class HttpTests(unittest.TestCase):
                     self.assertNotIn("X-Injected", headers)
                     self.assertEqual(headers["Content-Type"], "text/cssX-Injected: yesinjected body; charset=utf-8")
                     self.assertEqual(headers["Content-Length"], str(len(asset)))
-                    self.assertEqual(headers["Cache-Control"], "no-store")
+                    self.assertEqual(headers["Cache-Control"], "no-cache")
                     self.assertEqual(body, asset)
 
     def test_post_without_session_token_is_rejected(self):
-        status, _, body = self.request("POST", "/api/workbench/export", "{}", {"Content-Type": "application/json"})
+        status, headers, body = self.request(
+            "POST", "/api/workbench/export", "{}", {"Content-Type": "application/json"}
+        )
         self.assertEqual(status, 403)
+        self.assertEqual(headers["Connection"], "close")
         self.assertEqual(json.loads(body)["reason"], "token")
 
     def test_invalid_content_lengths_are_rejected_without_reading_body(self):
         for length in ("not-a-number", "-1"):
             with self.subTest(length=length):
-                status, _, body = self.request(
+                status, headers, body = self.request(
                     "POST", "/api/workbench/export", headers=self.post_headers(**{"Content-Length": length})
                 )
                 self.assertEqual(status, 400)
+                self.assertEqual(headers["Connection"], "close")
                 self.assertIn("Content-Length", json.loads(body)["error"])
 
     def test_oversized_body_is_rejected_without_reading_it(self):
-        status, _, body = self.request(
+        status, headers, body = self.request(
             "POST",
             "/api/workbench/export",
             headers=self.post_headers(**{"Content-Length": str(server.MAX_BODY_BYTES + 1)}),
         )
         self.assertEqual(status, 400)
+        self.assertEqual(headers["Connection"], "close")
         self.assertEqual(json.loads(body)["error"], "Request body too large")
+
+    def test_unsupported_transfer_encoding_closes_the_connection(self):
+        status, headers, body = self.request(
+            "POST", "/api/workbench/export", headers=self.post_headers(**{"Transfer-Encoding": "chunked"})
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(headers["Connection"], "close")
+        self.assertEqual(json.loads(body)["error"], "Transfer-Encoding is not supported")
+
+    def test_incomplete_body_closes_the_connection(self):
+        with closing(http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)) as conn:
+            conn.request("POST", "/api/workbench/export", "{}", self.post_headers(**{"Content-Length": "3"}))
+            conn.sock.shutdown(socket.SHUT_WR)
+            response = conn.getresponse()
+            self.assertEqual(response.status, 400)
+            self.assertEqual(response.getheader("Connection"), "close")
+            self.assertEqual(json.loads(response.read())["error"], "Incomplete request body")
 
     def test_non_object_json_body_is_rejected(self):
         status, _, body = self.request("POST", "/api/workbench/export", "[]", self.post_headers())
@@ -359,10 +442,15 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(json.loads(body)["datasets"], [])
 
     def test_static_traversal_cannot_read_sibling_with_matching_prefix(self):
-        with tempfile.TemporaryDirectory(prefix="static-private-", dir=server.PROJECT_ROOT) as folder:
-            sibling = Path(folder)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            static = root / "static"
+            static.mkdir()
+            sibling = root / "static-private"
+            sibling.mkdir()
             (sibling / "private.txt").write_text("private fixture")
-            status, _, body = self.request("GET", "/../%s/private.txt" % sibling.name)
+            with patch.object(server, "STATIC", static):
+                status, _, body = self.request("GET", "/../static-private/private.txt")
         self.assertEqual(status, 404)
         self.assertNotIn(b"private fixture", body)
 

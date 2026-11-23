@@ -1,12 +1,15 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import { startBrowserApp } from "./app.mjs";
 
 const calls = [];
 let app;
+let topics = new Map();
 
 test.beforeAll(async () => {
   app = await startBrowserApp((request) => {
     calls.push(request);
+    const topic = topics.get(request.state.review.text) || "cafe_service";
     const score = (id, level) => ({
       type: "score",
       score: level,
@@ -19,7 +22,7 @@ test.beforeAll(async () => {
       {
         model: "jev-1.14.0",
         answers: {
-          topic: { type: "choice", choice: "cafe_service", probabilities: { cafe_service: 1 }, confidence: 1 },
+          topic: { type: "choice", choice: topic, probabilities: { [topic]: 1 }, confidence: 1 },
           severity: score("severity", 0),
           tone: score("tone", 4),
           safety: { type: "noul", noul: calls.length === 1 ? 0.12 : 0.34 },
@@ -36,7 +39,10 @@ test.afterAll(async () => {
   await app?.close();
 });
 
-test("Reviews opens its request in Workbench, where Run sends it again", async ({ context, page }) => {
+test("Reviews opens in Workbench and the tutorial produces an exported gate and saved check", async ({
+  context,
+  page,
+}) => {
   const errors = [];
   const watchErrors = (tab) => {
     tab.on("pageerror", (error) => errors.push(error.message));
@@ -81,5 +87,32 @@ test("Reviews opens its request in Workbench, where Run sends it again", async (
   expect(calls).toHaveLength(2);
   expect(calls[1]).toEqual(calls[0]);
   expect(Object.keys(calls[1].questions.topic.criteria)).toEqual(Object.keys(calls[0].questions.topic.criteria));
+
+  const guide = await readFile(new URL("../../docs/workbench.md", import.meta.url), "utf8");
+  const rows = guide.match(/```jsonl\r?\n([\s\S]*?)\r?\n```/)[1];
+  const inputs = rows.split("\n").map((row) => JSON.parse(row));
+  topics = new Map(inputs.map((row) => [row.review.text, row._expect.topic]));
+
+  await workbench.getByRole("tab", { name: "Bulk", exact: true }).click();
+  await workbench.locator("#bulk-rows").getByRole("textbox").fill(rows);
+  await workbench.getByRole("textbox", { name: "Dataset name" }).fill("Review topics");
+  await workbench.getByRole("button", { name: "Save rows and labels" }).click();
+  const dataset = workbench.locator('[data-dataset-id="review-topics"]');
+  await expect(dataset.getByText("loaded", { exact: true })).toBeVisible();
+  await workbench.getByRole("button", { name: "Run 4 rows", exact: true }).click();
+  const policy = workbench.locator("#policy");
+  await expect(policy.getByRole("heading", { name: "Policy", exact: true })).toBeVisible();
+  await expect(policy.locator(".pol-gate input:checked")).toHaveCount(1);
+  await expect(policy.getByRole("checkbox", { name: "topic choice", exact: true })).toBeChecked();
+  await policy.getByRole("button", { name: "Export as a module", exact: true }).click();
+  const download = workbench.waitForEvent("download");
+  await workbench.getByRole("button", { name: "Download gate.py", exact: true }).click();
+  expect((await download).suggestedFilename()).toBe("gate.py");
+  await policy.getByRole("button", { name: "Save check to review-topics", exact: true }).click();
+  await expect(dataset.getByRole("button", { name: /^Run check · 4 calls$/ })).toBeVisible();
+  expect(calls.slice(2).map(({ state }) => state)).toEqual(
+    expect.arrayContaining(inputs.map(({ shop, review }) => ({ shop, review }))),
+  );
+  expect(calls).toHaveLength(6);
   expect(errors).toEqual([]);
 });

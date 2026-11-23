@@ -3,16 +3,67 @@
 Open `/workbench` on your running Jev Lab server. The Workbench lets you edit requests, inspect
 answers, save expectations, evaluate batches, and export requests for your own application.
 
-Expand **Workbench guide** above the current tab to follow the path from questions to reviewed
-traffic. Its shortcuts open existing panels and describe the current workspace. They never run
-requests, apply labels, or save data. You can keep using the tabs and panels independently.
+## Route Reviews by topic
 
-The latest editor and catalog controls are listed in three focused guides:
-[Build editing](build-improvements.md), [saved-test diagnostics](test-improvements.md),
-and [dataset browsing](catalog-improvements.md). Each describes the successive batches of controls and their
-data and spending boundaries.
+Start Jev Lab and set a TypeSafe API key through the [quick start](../README.md#quick-start). This
+walkthrough uses four fictional reviews with human labels for `topic`. Triaging one review, running
+four Bulk rows, and rerunning the saved check take nine model calls in total.
 
-## Build a request
+1. Open **Reviews**, pick a sample, and select **Triage review**. Open **Inspect JSON** on the result,
+   then select **Open in Workbench**. In the new tab, **Build** shows the state and six questions the
+   demo sent. The handoff carries the request. Build gets its own answers if you select **Run**.
+2. Open **Bulk** and replace the contents of **Rows** with the [labeled samples](#labeled-review-rows).
+   Keep **Current Build questions** selected so Bulk asks the Reviews questions. Name the dataset
+   `Review topics`, leave **Save the selected questions with the rows** checked, and select **Save rows
+   and labels**. Check the spend preview and select **Run 4 rows**. The `_expect` fields hold your labels.
+   Only `shop` and `review` are sent as state.
+3. In **Policy**, leave `topic` as the only selected gate. The threshold controls which `topic` answers go
+   to automation. Read **automated** for the share of labeled rows that clear the gate and
+   **accuracy** for the fraction of those answers that match their label. Try a tuned threshold
+   if Policy finds one at your target. With four rows, treat the numbers as a walkthrough and
+   use [held-out rows](#hold-out-test-rows) before relying on the gate.
+4. Select **Export as a module**, choose **Python**, and select **Download gate.py**. Its
+   [`decide(state)`](#export-a-gate-as-code) sends the Reviews questions and returns `auto` or
+   `review` using your Policy threshold. Return to **Save as a check** in Policy, choose minimum
+   accuracy and automation targets, and select **Save check to review-topics**. This stores the
+   configuration with the dataset so you can rerun it.
+5. Preview the check's spend and rerun it from the repository root. For the live rerun, save the
+   key to `.env` from the app or set `TYPESAFE_API_KEY` in the shell that runs the check.
+
+   ```sh
+   uv run --locked scripts/check.py review-topics --estimate
+   uv run --locked scripts/check.py review-topics
+   ```
+
+   The check makes fresh model calls. Read the accuracy and automation results against your
+   targets. Exit status `0` means both targets passed, `1` means a target missed, and `2` means
+   the check could not be judged. See [Keep a gate as a check](#keep-a-gate-as-a-check) for details.
+
+Try **Autopilot** next to see how two question sets compose in one call. Inspect its request for
+the `shield.` and `dispatch.` question prefixes, then see how the two sets feed separate decisions.
+
+### Labeled review rows
+
+```jsonl
+{"shop":"Harbor Coffee Co., a small coffee roaster with two cafés, an online shop, an app, and a bean subscription","review":{"channel":"Map listing","text":"The staff at Harbor Coffee helped us find a table and brought our drinks right away."},"_expect":{"topic":"cafe_service"}}
+{"shop":"Harbor Coffee Co., a small coffee roaster with two cafés, an online shop, an app, and a bean subscription","review":{"channel":"Website review","text":"My Harbor Coffee parcel arrived four days after the delivery date they promised."},"_expect":{"topic":"delivery_timing"}}
+{"shop":"Harbor Coffee Co., a small coffee roaster with two cafés, an online shop, an app, and a bean subscription","review":{"channel":"App store review","text":"Harbor Coffee charged me twice for this month's bean subscription. Please refund one charge."},"_expect":{"topic":"subscription_billing"}}
+{"shop":"Harbor Coffee Co., a small coffee roaster with two cafés, an online shop, an app, and a bean subscription","review":{"channel":"Website review","text":"The seal on my bag of Harbor Coffee beans split and beans spilled into the parcel."},"_expect":{"topic":"packaging_shipping"}}
+```
+
+## Reference
+
+Use **Basic** for Build and the Bulk path through Policy, export, and saved checks. Switch to
+**Advanced** for the other Workbench tools. Expand **Workbench guide** for shortcuts based on your
+current workspace. The shortcuts open panels, and you choose when to run, apply, or save.
+
+- [Author a request](#build-a-request), [attach images](#add-images), or [save expectations](#save-expectations).
+- [Run Bulk](#evaluate-rows-in-bulk), [import CSV](#import-a-csv), or [save a dataset](#save-rows-and-labels).
+- [Tune a threshold](#measure-accuracy-and-choose-a-threshold), [fit a Policy](#gate-several-questions-at-once), or [export a gate](#export-a-gate-as-code).
+- [Keep a check](#keep-a-gate-as-a-check), [compare incoming traffic](#compare-new-rows-with-a-checks-dataset), or [review routed rows](#label-the-rows-a-gate-routed).
+- [Compare variants](#compare-two-variants) or review the [application limits](#application-limits).
+
+### Build a request
 
 State may be text or a JSON value. Questions are an object keyed by stable question IDs. Start
 with this fictional support ticket and paste the questions into the JSON editor:
@@ -69,7 +120,7 @@ bytes, and pictures; these are input counts, not model usage or a token estimate
 Raw JSON edits remain visible as a warning after switching to the editor. Apply them or use
 **Discard Raw edits**, which asks before discarding them.
 
-## Check your questions
+### Check your questions
 
 **Check questions**, beside **Export code**, reads the request for common mistakes before you pay for
 a call. It is plain code, so it makes no model call and costs nothing. Each finding names its question
@@ -105,7 +156,7 @@ keyed by reference. It returns `findings`, each with its `level` (`problem` or `
 `question` (or `null` for the state), `message`, and `guide` link, problems first; `counts` per level;
 and `guide`. It makes no model call.
 
-## Add images
+### Add images
 
 Images and Box questions are early TypeSafe features, labeled
 [dreamer-ready](https://docs.typesafe.ai/images): fine for prototypes, but the request format and
@@ -134,7 +185,7 @@ the top bar. Jev Lab sends the `TypeSafe-Danger-Zone-Images: true` header for yo
 Answers panel draws each Box on the picture its question names. The **Find it in a photo** example
 shows the pattern.
 
-## Start from a demo's request
+### Start from a demo's request
 
 Every demo shows its request in **Inspect JSON**. **Open in Workbench**, at the top of that drawer,
 opens the Workbench in a new tab with that request in Build: the state and questions exactly as the
@@ -153,7 +204,7 @@ server. The Workbench reads it once when it loads, then removes it; a request no
 minutes is ignored. A request too large to store, usually because of a large photo, shows an error.
 In that case, open the Workbench and add the photo there.
 
-## Save expectations
+### Save expectations
 
 Save a run as a test, name it, and edit its expectations to the behavior you intend. Defaults
 reflect the observed answer; review them rather than treating them as ground truth.
@@ -203,7 +254,7 @@ Sample drawings are saved by name. Uploaded pictures are saved beside the tests 
 `data/workbench/images/`, named by a hash of their bytes. These files can be committed, so use
 synthetic data and review each fixture and picture first.
 
-## Evaluate rows in bulk
+### Evaluate rows in bulk
 
 Supply one row per line or a JSON array. A text line becomes an object using the selected field
 name (default `text`); a line that is a JSON object, and every object or array in a JSON array,
@@ -214,7 +265,7 @@ Empty rows are removed, and only the first 200 remaining rows are processed. Eac
 separate model call. A missing-key or budget error stops new work where possible; already admitted
 calls may complete. Per-row errors remain visible in the results.
 
-### Retry a partial run
+#### Retry a partial run
 
 After a run with failed or skipped rows, **Retry unanswered rows** sends only those rows again.
 Expand the row chooser to select specific unanswered rows. Filter it to failed or skipped rows,
@@ -238,7 +289,7 @@ inputs keep separate indices. A selection must contain unique, valid indices. An
 never runs the whole batch. Bulk returns selected results with their original indices and a `model`
 field naming the requested configuration used for every call in that attempt.
 
-### Preview the spend before a paid run
+#### Preview the spend before a paid run
 
 Next to every paid Workbench run button (Bulk's and Compare's **Run** buttons, a saved check's **Run
 check**, the **Compare** buttons under **Compare new rows** and **Try a new version**, and **Run all
@@ -264,7 +315,7 @@ stops the run once it is spent, and the remaining rows get no answer. A run that
 error and asks before it runs, so you can cancel and fix the input or start it anyway. In the terminal, `uv run scripts/check.py <id> --estimate` prints the same preview for a
 check, and composes with `--model`, `--drift rows.jsonl` and `--upgrade-to <version>`.
 
-### Picture rows
+#### Picture rows
 
 A JSON row can carry a picture under `"_image"`: the name of a bundled sample (`torn-bag`,
 `intact-bag`, `crushed-box`, `grinder-ok`) or of a picture added with **Add pictures**. The picture is
@@ -289,11 +340,11 @@ mean overlap. A Box has no options, so its gate reads its confidence under eithe
 confusion matrix. Policy, the costs, and the check on unseen rows read Choice, Noul, and Score answers
 only. Exported gates accept the same picture rows and return Box coordinates, while their thresholds
 still read only Choice, Noul, and Score. Copy the pictures into the exported gate's working directory
-or pass an image directory to its `decide` function; see [Export a gate](#export-a-gate). A dataset saved
+or pass an image directory to its `decide` function. See [Export a gate](#export-a-gate-as-code). A dataset saved
 with Box questions needs a picture on every row. Images are dreamer-ready in TypeSafe's terms, and each
 picture adds image tokens to its row's call.
 
-## Check dataset health
+### Check dataset health
 
 Before running Bulk, choose **Check dataset health** to inspect the current rows and selected
 questions for duplicate inputs, conflicting labels, missing or invalid labels, and tuning/test
@@ -312,7 +363,7 @@ These counts describe label availability, not accuracy, representative coverage,
 check's slice-target pass. Editing rows or selected questions hides the old report; check again
 to inspect the changed data.
 
-## Import a CSV
+### Import a CSV
 
 Labeled data usually lives in a spreadsheet. **Import CSV**, beside **Load sample rows**, turns one
 into rows. Choose a file or paste the text. The first line must name the columns; commas, tabs, and
@@ -354,7 +405,7 @@ each column by name: `state`, `skip`, or `label:<question id>`. It returns `deli
 and `labeled`, `labels` per question, and `problems`, one per value that fits no answer: its `column`,
 `question`, `value`, and number of `rows`.
 
-## Measure accuracy and choose a threshold
+### Measure accuracy and choose a threshold
 
 A JSON row can carry labels under `_expect`, keyed by question ID. Jev Lab removes them before the
 call, so the model never sees them, and returns them beside the answers:
@@ -409,7 +460,7 @@ labels past a reload, [save the rows as a dataset](#save-rows-and-labels). Thres
 from a few dozen rows are a first look: each row of 40 moves accuracy by 2.5 points. Label more of
 your own data before relying on a threshold, and pin the model version when you compare runs.
 
-### Recalibrate probabilities
+#### Recalibrate probabilities
 
 In Calibrate, choose a question and signal, then **Fit and check probability maps**.
 This reuses the current Bulk answers and labels with no extra model calls. Test rows
@@ -447,7 +498,7 @@ remain uncertain; repeated selection on the same labels can still overfit.
 the recommended map refitted on all tuning rows, or identity for keep raw. Pass the
 same signal used here. Gate exports and saved checks continue to use raw signals.
 
-### Targets at 95% confidence
+#### Targets at 95% confidence
 
 Accuracy measured on a sample is itself uncertain. Every accuracy in Calibrate, Policy, and Compare
 shows a 95% Wilson score interval: the range of true accuracies these rows are consistent with.
@@ -473,7 +524,7 @@ The interval treats your labeled rows as a random sample of the items the gate w
 threshold from the same rows still favors thresholds that happen to fit them, so confirm the
 threshold on rows you did not tune on before you rely on it.
 
-## Send review a short list: answer sets
+### Send review a short list: answer sets
 
 A gate either acts on the top answer or sends the whole row to a person, who then reads every option. Often
 Jev is unsure between two or three options, and the right one is almost always among them. **Answer sets**,
@@ -527,7 +578,7 @@ when there are fewer labeled rows than `needed`), `summary`, `holdout` (with `sp
 chose, and `unreached`, the folds with too few rows to fit one), `slices`, and one entry per labeled row with
 its `set`, `route`, and whether the list a person sees holds the label (`covered`).
 
-## Save rows and labels
+### Save rows and labels
 
 The rows box and the labels you choose in the results table live only in the browser, so a reload
 loses them; the page asks before it does. **Datasets**, on the Bulk tab, saves them as a file:
@@ -599,7 +650,7 @@ synthetic dataset as a fixture, review its rows and add it with `git add -f`.
 | `POST /api/workbench/datasets/load` | `id` | `dataset`: the saved file |
 | `POST /api/workbench/datasets/delete` | `id` | `deleted`: whether a file was removed |
 
-### Undo a dataset change: history
+#### Undo a dataset change: history
 
 Saving over a dataset replaces its file, so every write that replaces or deletes
 `data/workbench/datasets/<id>.json` first copies the file as it stands, byte for byte, to
@@ -640,7 +691,7 @@ datasets by name or ID to find a kept history; filtering does not discard an ope
 | `POST /api/workbench/datasets/history/preview` | `id`, `revision` | the replacement-preview summary, with `revision` (the current file's token) and `restoring` |
 | `POST /api/workbench/datasets/history/restore` | `id`, `revision`, `preview_revision` | `dataset`: saved summary; `check_dropped` when the revision's check no longer fits |
 
-### Share a dataset with its pictures
+#### Share a dataset with its pictures
 
 Choose **Download ZIP** beside a saved dataset to bundle its saved rows, human labels,
 questions, consistency rules, labeling guidelines, check settings (including review shortlists), test
@@ -666,7 +717,7 @@ No dependencies or model calls are needed.
 | `POST /api/workbench/datasets/bundle/preview` | `data`: base64 ZIP | `dataset`: validated contents, `summary`, `images`: count, `exists`: whether its ID is saved |
 | `POST /api/workbench/datasets/bundle/import` | `data`, optional `name`, `replace` (default false) | `dataset`: saved summary |
 
-### Write labeling guidelines
+#### Write labeling guidelines
 
 Two people often label the same row differently because nobody wrote down what each answer
 means, and [Label agreement](#measure-label-agreement) shows how much that caps any accuracy you
@@ -715,7 +766,7 @@ check or moving it to a new version keeps them.
 | `POST /api/workbench/datasets/guidelines` | `id` | `questions`, `guidelines`, `warnings` for any dropped, `saved_at` |
 | `POST /api/workbench/datasets/guidelines/save` | `id`, `guidelines` (`{}` removes them) | `guidelines` as saved, `dataset`: summary |
 
-## Review labels
+### Review labels
 
 Every accuracy, threshold, and tuned gate rests on the labels, and labels written by people contain
 mistakes. **Review labels**, below Calibrate, points at the labels worth a second look and the rows
@@ -745,7 +796,7 @@ each label joins Calibrate's scored rows.
 `distance` to the threshold, and whether it is `above` it; and per-question counts of labeled,
 disagreeing, strong, and invalid labels.
 
-## Measure label agreement
+### Measure label agreement
 
 Review labels finds labels the model disagrees with. It cannot tell you how often two careful people would
 label the same row differently, and every accuracy in the Workbench is measured against one person's labels.
@@ -794,7 +845,7 @@ It makes no model calls.
 | `POST /api/workbench/datasets/agreement` | `id`, and `items` (each a `row_id` and `labels`) or `text` (the CSV filled in) | `questions`: per question `rows`, `agree`, `agreement` with `low` and `high`, `kappa`, and `mixups`; `overall`; `disagreements` (up to 500) with `disagreements_total`; `counts` (`rows`, `matched`, `not_found`, `repeated`, `unlabeled`, `compared`, `all_agree`, `only_second`); and `problems` |
 | `POST /api/workbench/datasets/agreement/settle` | `id`, `items`, each a `row_id` and `labels` (`null` removes a label) | `dataset`: the summary; `changed`, the labels written; and `rows` changed |
 
-## Check answers against each other
+### Check answers against each other
 
 Each question is asked on its own, so nothing stops a row from coming back as a refund request
 routed to the team that handles nothing. **Rules**, between Review labels and Policy, check what a
@@ -833,11 +884,11 @@ exported `decide(state)` returns the rules a row breaks under `rules` and routes
 Calibrate measures one question alone and ignores rules. Rules are saved with a dataset, comments
 included.
 
-## Gate several questions at once
+### Gate several questions at once
 
 Calibrate chooses a threshold for one question. An application usually acts on an item only when
 every answer it uses is confident: route a ticket automatically when the department is clear and
-the refund intent is clear, and send it to a person otherwise. **Policy**, below Calibrate, scores
+the refund intent is clear, and send it to a person otherwise. **Policy**, in Bulk, scores
 that combined gate over the same Bulk answers, without model calls.
 
 Check the questions your code acts on, up to ten, and set a threshold for each. All gates read the
@@ -862,7 +913,7 @@ gated questions it finds the best thresholds on 0.01 steps. With more, it is a s
 guarantee that no better combination exists. Tuned thresholds fit the rows they were tuned on, so confirm them on
 more labeled rows before relying on them.
 
-### Do the gates earn their place?
+#### Do the gates earn their place?
 
 Every gated question is one more answer that must be confident before a row is automated, and every question in a
 request lengthens it. **Check each gate**, in Policy, retunes the gate at one target accuracy, 90%, 95%, or 99%, with
@@ -892,7 +943,7 @@ the `rules` that read it, and the `off` and `dropped` outcomes, `dropped` being 
 `gates` (`null` when no thresholds reach the target), `labeled`, `automated`, `coverage`, and `accuracy` with `low`
 and `high`.
 
-## Accuracy by slice
+### Accuracy by slice
 
 An overall accuracy can hide a part of the data where the answers are much worse: one channel, one
 language, one product line. **By slice**, in Calibrate and in Policy, groups the scored rows by the
@@ -923,7 +974,7 @@ number of `values`), the `field` used, `overall`, and `slices`, largest first. E
 `automated_correct`, `wrong_automated`, `automated_accuracy` with `automated_low` and `automated_high`,
 and the test's `p` and `below` for automated rows and `p_all` and `below_all` for every row.
 
-## Choose a threshold by cost
+### Choose a threshold by cost
 
 An accuracy target says how often the automated answers are right. An application pays for two things instead:
 a person reviewing an item, and code acting on a wrong answer. **Costs**, above Calibrate, takes both prices. The
@@ -962,7 +1013,7 @@ Workbench shows them: an option key, `yes` or `no`, or a level number as text. T
 `gates`, and, for one question, a `sweep` with the cost at every threshold. Each carries `automated`, `wrong`,
 `cost` over the labeled rows, and `per_1000`.
 
-## Check on unseen rows
+### Check on unseen rows
 
 Calibrate's shortcuts and Policy's **Tune** choose thresholds from the same labeled rows they report
 accuracy on, so that accuracy favors thresholds that happen to fit those rows. **Check on unseen
@@ -1018,7 +1069,7 @@ held-out folds), `gap`, `below`, `spread`, `unreached`, and the per-fold `parts`
 `gap` in cost per 1,000 rows, `worse`, `review_folds` (folds whose cheapest choice is to review every row),
 `spread`, and `parts`.
 
-## Hold out test rows
+### Hold out test rows
 
 Calibrate, Policy, the costs, Review labels, Rules, and Compare all choose something on the labeled rows they report
 on: a threshold, a wording, a variant. [Check on unseen rows](#check-on-unseen-rows) says what one tuning run
@@ -1062,7 +1113,7 @@ pays off as the dataset grows.
 | `POST /api/workbench/datasets/test/score` | `id`, `rows` (Policy's rows for every test row), `gates`, optional `signal`, `rules`, and `model` | Policy's counts and accuracy over the test rows, per-question `accuracy` with intervals, `look` (this look's number), and `earlier` looks |
 | `POST /api/workbench/datasets/test/remove` | `id` | `removed`: whether the dataset had test rows |
 
-## Keep a gate as a check
+### Keep a gate as a check
 
 Policy's thresholds are chosen on one run. When you later reword a question or move to a new model,
 the same thresholds may automate more rows, or fewer, and at a different accuracy. A **check** keeps
@@ -1097,7 +1148,7 @@ check reruns exactly what the file holds.
 }
 ```
 
-### Require targets for a slice
+#### Require targets for a slice
 
 An overall pass can hide a channel or language where the gate performs poorly. In **Save as a
 check**, add a slice target by selecting an input field and its text value, then choose the minimum
@@ -1132,7 +1183,7 @@ every slice. Exported gates continue to route individual rows using thresholds a
 targets evaluate a batch, and do not change per-row routing. Only configuration is saved, never
 measured slice results.
 
-### Pin the model version
+#### Pin the model version
 
 An alias such as `jev-latest` points at a new version when TypeSafe ships one, so a gate that asks an
 alias can start getting answers from a model it was never tuned on, with no change on your side.
@@ -1190,7 +1241,7 @@ responses. See [the live-run instructions](../AGENTS.md#cloud-sandboxes-boat).
 | `POST /api/workbench/checks/delete` | `id` | `removed`: whether the dataset held a check |
 | `POST /api/workbench/checks/run` | `id`, optional `model` | `status` (`pass`, `fail`, or `error`), `reasons`, `targets` (`accuracy` and `coverage`, each with `ok`, `value`, and `target`), Policy's counts and accuracy, optional `slice_targets` (each slice's status, reasons, targets, counts, and accuracy), `mistakes` (up to 20), `errors`, `cost_usd`, `input_tokens`, `latency_ms_median`, `model`, `answered_by`, and `notes` |
 
-### Move a check to a new version
+#### Move a check to a new version
 
 When TypeSafe ships a new version, a pinned check keeps asking the version it was tuned on. **Try a new
 version**, under the dataset, answers whether the check can move, and with which thresholds. Name the version to
@@ -1228,7 +1279,7 @@ should stay, and 2 when one could not be judged. `--out` writes the reports, whi
 | --- | --- | --- |
 | `POST /api/workbench/checks/upgrade` | `id`, `model` (the version to try) | `verdict` (`keep`, `retune`, `stay`, or `error`), `reasons`, `current` and `candidate` (the saved gate judged on each side: `status`, `targets`, `accuracy`, `coverage`, and counts), `retuned` (`gates`, its `report`, and `unseen`, the cross-validated `accuracy` and `coverage`), `paired` (the four row counts, `p`, and each side's accuracy), `changed` (per gated question and the first rows), `sides` (each side's `model`, `answered_by`, cost, and median latency), `proposals` (`saved` and `retuned`: a check to save with `POST /api/workbench/checks`, or `null`), `notes`, `cost_usd`, and `calls` |
 
-## Compare new rows with a check's dataset
+### Compare new rows with a check's dataset
 
 A check's accuracy holds for rows like the ones it was tuned on. Its intervals assume the labeled rows
 are a random sample of the items the gate will see, and traffic changes: a new product, a new channel, a
@@ -1322,7 +1373,7 @@ and `counts` for queued, existing, repeated, and unsupported inputs. This queue 
 short `thin` preview. The append endpoint validates labels against the saved questions, rejects a stale
 question snapshot or held-out input, and rejects an over-capacity request without partially saving it.
 
-## Export a gate as code
+### Export a gate as code
 
 A gate is only useful once your application applies it. **Export as a module**, under Policy's gate
 code, and **Export as code**, beside a saved check, write the gate as a file to add to your
@@ -1362,7 +1413,7 @@ python gate.py < rows.jsonl > decisions.jsonl
 node gate.mjs < rows.jsonl > decisions.jsonl
 ```
 
-### Pictures in exported gates
+#### Pictures in exported gates
 
 Picture rows use the same `_image` name as Bulk. Before running, copy the named sample PNGs from
 `static/img/samples/` and uploaded files from `data/workbench/images/` into the working directory.
@@ -1406,7 +1457,7 @@ returns `python` and `javascript`.
 An optional `answer_sets` object maps question IDs to `{"cut": 0.2, "coverage": 0.9}`; cuts are from 0
 to 1 and coverage is above 0 and below 1. Saved checks accept the same field. It affects candidates only.
 
-## Label the rows a gate routed
+### Label the rows a gate routed
 
 A gate in your application sends some rows to review, and a person decides them there. Those decisions are
 labels, and they are the rows the gate finds hardest. **Review queue**, beside a saved check's **Export as
@@ -1521,7 +1572,7 @@ asks the model again.
 | `POST /api/workbench/checks/decisions/session/import` | `id`, original `text`, `session` | Validated `report`, human `edits`, count-only summary; no writes or model calls |
 | `POST /api/workbench/checks/decisions/add` | `id`, `items`, each with its `row`, `labels`, and, for the audit, `kind` and `answers` | `dataset`: the summary; `added`; `already`, rows the dataset had; and `audit`: `rows`, `correct`, `accuracy` with `accuracy_low` and `accuracy_high`, the `target` and whether it is met (`ok`), the `wrong` rows, and `by_slice` (each `field` and its `slices`, with `value`, counts, accuracy and interval), or `null` without audited rows |
 
-## Compare two variants
+### Compare two variants
 
 **Compare** answers "did this change help?" A variant is a question set and a model. Variant A
 starts as the sample questions and variant B as the same questions with one-word options and
@@ -1558,7 +1609,7 @@ Scoring reuses the answers, so changing the question or the gate makes no calls.
 Build** or **Use B in Build** copies that variant's questions into the Build tab. Pin model
 versions when you compare wording, so an alias update cannot change one side of the comparison.
 
-### Retry unanswered calls
+#### Retry unanswered calls
 
 After a partial run, open the retry chooser to inspect each failed or skipped call by original row
 number, variant, and Choice order when the variant averages both orders. All unanswered calls are
@@ -1571,7 +1622,7 @@ When a row has answers from both variants, the paired report and its slice score
 the same terms as the original run. Retries use the current server session and its remaining budget.
 A server restart starts a new session.
 
-### Order check
+#### Order check
 
 A model can lean on the order of a Choice question's options, preferring whichever is listed first
 or last, instead of reading the row. Calibrate and Compare cannot see that on their own, because
@@ -1597,7 +1648,7 @@ often ones where two options fit about equally, and sharper option descriptions 
 than a new order. If rows are labeled, the usual accuracy and McNemar comparison shows whether
 either order is more accurate. The check costs one extra call per row, like any comparison.
 
-### Order averaging
+#### Order averaging
 
 When the order check finds answers that move with the order, one fix is to ask both orders and let
 code combine them. **Average A's orders**, on variant B, makes B a copy of A, with the same model and
@@ -1628,7 +1679,7 @@ of scoring, and the spend of the call that did answer still counts. With only on
 the agreement table is a plain agreement table, never an order or input check. `POST
 /api/workbench/compare` takes `"average_orders": true` on a variant.
 
-### Input check
+#### Input check
 
 A good answer should not move when a customer makes a typo, writes in lowercase, adds a line that has
 nothing to do with the question, or when another system lists a record's fields in another order. The
@@ -1658,7 +1709,7 @@ rewrite, the question leans on surface features, and clearer instructions or opt
 usually help. The check costs one extra call per row, like any comparison. `POST /api/workbench/compare`
 takes the rewrite as `"perturb"` on a variant: `typos`, `lowercase`, `distractor`, or `shuffle`.
 
-### Cascade
+#### Cascade
 
 A cascade asks one variant first and asks the other only when the first is unsure: below a
 threshold on the selected gate. A common setup puts a cheaper or faster variant first and a
@@ -1682,7 +1733,7 @@ Cascade scores use the labeled rows that both variants answered, like the rest o
 few dozen rows, one row moves accuracy by several points, so confirm a cascade on more labeled
 rows before you use it.
 
-## Export a request
+### Export a request
 
 Export generates Python using the official SDK, JavaScript using the official SDK, or curl.
 Generation runs locally and does not require a model call. The exports expect you to supply
@@ -1695,7 +1746,7 @@ Requests with pictures load each one from a file named in the snippet: the sampl
 the snippet first. The SDK snippets pass them as `assets`, and the curl snippet sends a multipart
 request with one file part per picture.
 
-## Application limits
+### Application limits
 
 | Input | Limit |
 | --- | --- |
@@ -1721,7 +1772,7 @@ request with one file part per picture.
 These are local application limits, not a statement of provider-wide API limits. Validation
 behavior is defined in [`jev/workbench.py`](../jev/workbench.py).
 
-### Label missing tuning rows before Bulk
+#### Label missing tuning rows before Bulk
 
 In Bulk, **Label missing rows** opens blank human-label controls for missing Choice, Noul,
 and Score labels. It uses the selected questions and current rows box, without model calls.
@@ -1755,7 +1806,7 @@ or dataset write. Apply updates the rows editor and clears old Bulk results; sav
 explicitly to retain the labels. Changing rows, questions, or drafts invalidates a pending preview.
 
 
-## Keep requests and inputs safe while iterating
+### Keep requests and inputs safe while iterating
 
 **Download Build draft** saves the current unrun request: input state, ordered questions, and
 pictures. It contains no answers or API settings. **Restore Build draft** validates the request
@@ -1800,58 +1851,25 @@ have the same text search. These controls only hide items; their queues and huma
 and **Run all** continues to run every saved test. **Run selected** uses the explicit selection,
 including selected tests hidden by a filter.
 
-### Thirty editor and catalog improvements
+<a id="thirty-editor-and-catalog-improvements"></a>
 
-Build provides ten additional tools:
+#### Editor, suite, and catalog controls
 
-1. Search question IDs, instructions, and criteria.
-2. Filter questions by type.
-3. Clear question filters.
-4. Read the live shown/total count; runs and exports still include every question.
-5. Collapse all shown questions.
-6. Expand all shown questions.
-7. Move a question first.
-8. Move a question last.
-9. Copy one question's request JSON, without expectations or answers.
-10. Compact object/array state JSON, preserving values and rejecting duplicate keys.
+In Build, search by question ID, instructions, and criteria or filter by type. You can collapse
+or expand the shown questions together, move a question to either end, and copy its request JSON.
+Run and export include the full request. Reordering and state edits mark previous answers outdated.
+**Format JSON** and the compact JSON action preserve values and reject duplicate keys.
 
-Question filters and collapse state affect presentation only. Reordering and state edits mark
-existing answers outdated. Plain text state remains supported.
+In Tests, filter by expectations, pictures, or selection, and sort by name, question or expectation
+counts, or problems. Deselect or invert visible tests while keeping selections outside the current
+filter. Resetting the view preserves selection and current results. **Run selected** uses the full
+selection, including hidden tests.
 
-Saved Tests provides ten additional controls:
-
-1. Filter tests with or without expectations.
-2. Filter tests with or without pictures.
-3. Show selected or unselected tests.
-4. Sort names Z–A.
-5. Sort by fewest questions.
-6. Sort by most expectations.
-7. Sort problems first: errors, failed expectations, not run, then passed.
-8. Deselect visible tests while retaining hidden selections.
-9. Invert visible selection while retaining hidden selections.
-10. Reset filters, search, and sorting without clearing selection or session results.
-
-Selections and results remain in the current page session. These controls never start a paid run;
-Run selected still uses all selected IDs, including hidden ones.
-
-The dataset catalog provides ten additional metadata controls:
-
-1. Sort names Z–A.
-2. Sort by fewest rows.
-3. Sort by most rows without labels.
-4. Sort by most saved questions.
-5. Sort by most held-out rows.
-6. Filter by minimum row count.
-7. Filter by maximum row count.
-8. Filter by minimum labeled-row count.
-9. Filter by minimum count of rows without labels.
-10. Filter by minimum saved-question count.
-
-Open **Filter by counts** to combine whole, nonnegative bounds with the other catalog filters.
-Blank bounds are disabled; zero is an explicit bound. Counts use catalog summaries: a row with
-labels may still lack labels for some questions. Filtering and sorting preserve mounted queues
-and human drafts. Clear dataset filters resets count bounds too; catalog CSV uses the shown order
-and contains summary metadata only.
+In Datasets, open **Filter by counts** to combine whole-row and question counts with other catalog
+filters. Blank bounds are disabled, and zero is an explicit bound. The count of rows with labels is
+the number with at least one label. Use [dataset health](#check-dataset-health) for completeness and
+validity. Catalog filters and sorting preserve open queues and drafts. The catalog CSV uses the
+shown order and includes summary metadata.
 
 **Compare by slice** groups successful paired tuning answers by a selected input field, retaining
 full normalized value identities even when display text is shortened. It shows accuracy intervals,
@@ -1875,10 +1893,4 @@ labeling panel or its CSV/draft handoff uses the full eligible snapshot rather t
 | `POST /api/workbench/compare/slices` | Answer `rows` with original inputs, optional `field`, `signal`, `first`, `bound` | Successful-pair scores by input value |
 | `POST /api/workbench/compare/labeling` | Original `rows`, A's `questions`, disagreement `indices`, `qid` | Blank prelabel queue at original row positions |
 
-The [100-improvement inventory](workbench-improvements-100.md) covers the latest local authoring,
-suite-triage, catalog and example-discovery controls, including their export boundaries.
-
-The latest [100 local workflow improvements](workbench-improvements-next-100.md) add content
-cleanup with preview and Undo, saved-suite schema planning and pasted-ID selection, dataset split
-progress filters with filter Undo, and pinned example discovery with authored-request handoffs.
-Their controls make no model calls; editing, saving and paid runs remain separate explicit actions.
+The [changelog](../CHANGELOG.md) records the editor, suite, catalog, and example-gallery changes.

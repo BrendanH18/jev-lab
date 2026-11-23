@@ -157,6 +157,7 @@
       .crit .cr:not(.score):not(.noul) { grid-template-columns: minmax(0, 1fr) auto; }
       .crit .cr:not(.score):not(.noul) > :first-child { grid-column: 1 / -1; }
     }
+    #workbench-mode { margin-bottom: 10px; }
     @media (max-width: 1000px) { .wb-grid, .cmp-grid { grid-template-columns: 1fr; } .qcard .row { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>
@@ -168,6 +169,10 @@
         <h1>Build your own: state in, typed answers out, code around it</h1>
         <p class="lede">Write a state and some questions, run them, and see the probabilities. Save what you agree with as a test, run your tests whenever you change wording or the model version, run one question set over hundreds of rows, compare two versions of it on labeled rows, and export working code for the official SDKs.</p>
       </div>
+    </div>
+    <div class="tabs" id="workbench-mode" role="group" aria-label="Workbench view">
+      <button type="button" class="tab active" id="workbench-basic" aria-pressed="true">Basic</button>
+      <button type="button" class="tab" id="workbench-advanced" aria-pressed="false">Advanced</button>
     </div>
     <div class="tabbar" id="tabs" role="tablist" aria-label="Workbench sections"></div>
     <div id="workbench-guide"></div>
