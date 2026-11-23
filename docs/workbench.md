@@ -1169,7 +1169,12 @@ uv run --locked scripts/check.py                     # every dataset that holds 
 uv run --locked scripts/check.py support-tickets     # some of them, by id
 uv run --locked scripts/check.py --model jev-1.14.0  # ask another model than the checks name
 uv run --locked scripts/check.py --list              # show the checks, and any that ask an alias; no model calls
+uv run --locked scripts/check.py support-tickets --estimate  # calls and an upper bound on their cost; no model calls
 ```
+
+`--list` and `--estimate` make no calls and need no key. The other forms make one live call per row.
+[Drift](#compare-new-rows-with-a-checks-dataset) and [version moves](#move-a-check-to-a-new-version)
+have their own options.
 
 It makes paid calls with the configured key and prints one report per check. It exits 0 when every
 check passed, 1 when any failed, and 2 when a check could not be judged or none was found. `--out
