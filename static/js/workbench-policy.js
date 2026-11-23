@@ -869,7 +869,7 @@ export function updatePolicy() {
       h(
         "p",
         { class: "muted", style: { fontSize: "13px" } },
-        "No row is labeled for every gated question yet, so accuracy is unknown. Label rows in the table below or uncheck questions without labels.",
+        "No row is labeled for every gated question yet, so accuracy is unknown. In Advanced → Calibrate, pick a gated question, then label it in the results table. You can also uncheck questions without labels.",
       ),
       code,
       h("div", { class: "grid", style: { gap: "4px", fontSize: "12.5px" } }, notes),

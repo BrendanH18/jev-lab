@@ -608,7 +608,10 @@ async function runBulk() {
       await Promise.all([recalibrate(), repolicy(), loadPictureUrls(b.result.results)]);
       if (b.result.stopped) toast(b.result.stopped, "error");
       render();
-      $(W.advanced ? "#calibrate" : "#policy")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      ($(W.advanced ? "#calibrate" : "#policy") || $("#bulk-table"))?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     } catch (e) {
       handleError(e);
       render();
