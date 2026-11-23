@@ -379,22 +379,24 @@ export function catalogCsv(items) {
   return [fields, ...rows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 
+// The server's file name for a dataset name (jev/workbench.py slugify), to warn before replacing one.
+export const slugOf = (name) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
 export function datasetCopyName(name, items) {
-  const slug = (value) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60);
   // Leave room for the suffix so long source names cannot collide after slug truncation.
   const shortened = String(name || "Dataset")
     .trim()
     .slice(0, 40);
-  const base = slug(shortened) ? shortened : "Dataset";
+  const base = slugOf(shortened) ? shortened : "Dataset";
   const used = new Set(items.map((item) => item.id));
   for (let n = 1; ; n++) {
     const candidate = `${base} copy${n === 1 ? "" : ` ${n}`}`;
-    if (!used.has(slug(candidate))) return candidate;
+    if (!used.has(slugOf(candidate))) return candidate;
   }
 }
 

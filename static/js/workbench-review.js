@@ -1,12 +1,11 @@
-import { confirmAgreementDiscard } from "./workbench-datasets.js";
-import { confirmDriftDiscard } from "./workbench-drift.js";
 // Review queue (jev/decisions.py): label the rows an exported gate sent to review and its audit sample.
 import { api, h, handleError, icon, mount, pct, stat, toast } from "./common.js";
 import { labelShortcut } from "./prelabel.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 import { rowsText, bulkUnsaved, loadPictureUrls, rowText } from "./workbench-bulk.js";
-import { agreeQuestions } from "./workbench-datasets.js";
+import { agreeQuestions, confirmAgreementDiscard } from "./workbench-dataset-agreement.js";
+import { confirmDriftDiscard } from "./workbench-drift.js";
 import { withCI, labelText, labelValue } from "./workbench-calibrate.js";
 
 // ---------- Review queue ----------

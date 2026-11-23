@@ -1,5 +1,5 @@
 // Tests of the Lab surfaces of the Workbench Datasets panel (static/js/lab/surfaces/workbench-datasets.js) and of the
-// hooks in static/js/workbench-datasets.js and static/js/history.js that route the page through them.
+// hooks in the Workbench catalog, label agreement and history modules that route the page through them.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -493,7 +493,7 @@ function catalogPage({ withLab = true } = {}) {
     loadDataset() {},
     loadDatasetCopy() {},
     exportBundle() {},
-    agreeRun: () => ({}),
+    openDatasetAgreement() {},
     render() {},
     catalogDefaults: catalog.catalogDefaults,
   });

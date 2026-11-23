@@ -13,7 +13,7 @@ import {
   labelSelect,
   rowText,
 } from "./workbench-bulk.js";
-import { agreeQuestions } from "./workbench-datasets.js";
+import { agreeQuestions } from "./workbench-dataset-agreement.js";
 import { SIGNALS, labelText, labelValue, syncAttachedSets } from "./workbench-calibrate.js";
 import { policyQids, policyRows } from "./workbench-policy.js";
 

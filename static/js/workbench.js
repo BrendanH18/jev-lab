@@ -14,7 +14,7 @@ import { renderTests } from "./workbench-tests.js";
 import { rowsText, bulkUnsaved, countRows, bulkQuestions, renderBulk } from "./workbench-bulk.js";
 import { healthContext } from "./workbench-import.js";
 import { datasetEditsUnsaved } from "./dataset-edits.js";
-import { agreementSessionsUnsaved } from "./workbench-datasets.js";
+import { agreementSessionsUnsaved } from "./workbench-dataset-agreement.js";
 import { preparedLabelsUnsaved } from "./workbench-labeling.js";
 import { reviewQueuesUnsaved, confirmReviewDiscard } from "./workbench-review.js";
 import { driftQueuesUnsaved } from "./workbench-drift.js";
