@@ -39,7 +39,7 @@ version in `biome.jsonc`'s `$schema`. Fix all lint and format findings.
 
 ### Checks while working and at hand-off
 
-Owner decision (2026-11-22): CI is the gate. It runs the full suite once, on the pushed commit, and
+Owner decision (2026-11-22): CI is the gate. It runs the full suite once on every pushed commit, and
 `main` requires its **All tests passed** check. Don't run the full `scripts/boat-check.sh` before
 handing work back. Every check it runs is a `test.yml` job, and CI also runs the SDK suite on
 Python 3.10–3.14.
@@ -51,19 +51,20 @@ Python 3.10–3.14.
   `uv run --locked ruff check && uv run --locked ruff format --check`.
 - JavaScript, CSS and JSON: `uv run --locked node --test tests/js/<area>.test.mjs` (or
   `tests/js/lab/*.test.mjs` for Lab) and `npm run --silent lint`. After changing Lab packs or
-  surfaces, run `node scripts/lab_inventory.mjs` in the worktree and commit its indexes. Files a
-  check writes on Boat never come back. For changed browser modules, also run
+  surfaces, run `node scripts/lab_inventory.mjs` in the worktree so the regenerated indexes are part
+  of the change. Files a check writes on Boat never come back. For changed browser modules, also run
   `node --input-type=module --check < static/js/<file>.js`.
 - Browser flows: `npx playwright test tests/browser/<flow>.spec.mjs` for the flows a change touches.
   The warm snapshot has Chromium. A cold sandbox needs `npx playwright install --with-deps chromium`.
 - Sample pictures: after changing `scripts/draw_samples.py` or `static/img/samples`, run
   `python3 scripts/draw_samples.py && git add --intent-to-add static/img/samples && git diff --exit-code --stat static/img/samples`.
-- Then push and let CI run everything. When a CI job fails, reproduce that job or its failing test on
-  Boat with the script, fix it and push again. Use the full check only to reproduce CI failures or
-  with `--save` to refresh the warm snapshot.
-- CI doesn't cover these. Do them before hand-off when they apply: for interface changes, inspect the
-  affected pages at desktop and narrow widths as [CONTRIBUTING.md](CONTRIBUTING.md#checks-on-boat)
-  describes. Run `scripts/boat-check.sh --save` after changing `uv.lock`, `package-lock.json`, Node or
+- CI runs the full suite on every pushed commit. When a CI job fails, reproduce that job or its
+  failing test on Boat with the script and fix it. Use the full check only to reproduce CI failures
+  or with `--save` to refresh the warm snapshot.
+- CI doesn't cover these. Do them before hand-off when they apply. For changes that alter visible UI,
+  inspect the affected pages at desktop and narrow widths as
+  [CONTRIBUTING.md](CONTRIBUTING.md#checks-on-boat) describes. This is computer use, so delegate it to
+  Codex with GPT-6.2 Astra (`gpt-6.2-astra`). Run `scripts/boat-check.sh --save` after changing `uv.lock`, `package-lock.json`, Node or
   Python. Run the live `scripts/validate.py --strict` only when the owner asks (see Live model runs).
 - In the hand-off report, list the targeted checks that ran and say that CI runs the full check.
 
