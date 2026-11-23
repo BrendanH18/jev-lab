@@ -5,7 +5,7 @@ import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 import { tuningResults, rowText, bulkQuestionsForResult } from "./workbench-bulk.js";
-import { testBody } from "./workbench-datasets.js";
+import { testBody } from "./workbench-dataset-holdout.js";
 import { exportGate, gateModel, pinControl, checkSaveBody } from "./workbench-checks.js";
 import {
   SIGNALS,
