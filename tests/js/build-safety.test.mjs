@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   editorQuestionError,
@@ -10,7 +9,8 @@ import {
   buildContextChanged,
 } from "../../static/js/build-request.js";
 
-const source = readFileSync(new URL("../../static/js/workbench-build.js", import.meta.url), "utf8");
+import { workbenchSource as source } from "./workbench-source.mjs";
+
 const body = (name, async = false) =>
   source.match(new RegExp(`${async ? "async " : ""}function ${name}\\([^]*?\\n\\}`))[0];
 const toQuestions = new Function(
@@ -225,7 +225,10 @@ test("shared question replacement clears hidden Raw edits and invalidates pendin
     "parseState",
     "imagesPayload",
     `let buildRawText = "unapplied raw edits", buildRunSequence = 1, buildRunning = true,
-    buildRunContext = "old", buildDraftPreview = {}, buildBaseline = null;
+    buildRunContext = "old", buildDraftPreview = {}, buildBaseline = null,
+    buildCleanupPreview = null, buildCleanupUndo = null;
+    ${body("invalidateBuildRun")}; ${body("clearBuildRunContext")};
+    ${body("resetBuildRaw")}; ${body("resetBuildDraft")}; ${body("resetBuildQuestionCleanup")};
     ${body("loadInto")}; ${body("applyBuildQuestions")};
     return { applyBuildQuestions, raw: () => buildRawText, sequence: () => buildRunSequence, running: () => buildRunning };`,
   )(
