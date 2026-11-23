@@ -158,7 +158,7 @@ bug #91 and Dependabot PR #86.
   Playwright (D1): `@playwright/test` pinned in `package.json` as a dev dependency next to Biome. A new
   CI job on `ubuntu-24.04` installs Chromium, starts `server.py` on loopback with a
   temporary data directory and a fake model backend, and joins `All tests passed`'s `needs`. Agents
-  run it on Boat. The app keeps its zero runtime dependencies on the frontend and no build step.
+  run the affected specs on Boat. The app keeps its zero runtime dependencies on the frontend and no build step.
 - Split `workbench-build.js`, `workbench-datasets.js` and `workbench-compare.js` along their existing
   seams (editor, catalog, retries). Replace cross-module reads of `W` with a few named actions in
   `workbench-state.js`. Target: no module over 1,200 lines, and the cycle count falling.
@@ -222,7 +222,7 @@ bug #91 and Dependabot PR #86.
 
 ## Decisions
 
-Made by the maintainer on 2026-11-21, except D9 (2026-11-22).
+Made by the maintainer on 2026-11-21, except D9 and D10 (2026-11-22).
 
 - **D1. Playwright: approved** as a dev-only test dependency for browser smoke tests in CI (February).
 - **D2. Python 3.9 fallback: dropped.** The official SDK becomes the only client (December).
@@ -232,7 +232,7 @@ Made by the maintainer on 2026-11-21, except D9 (2026-11-22).
   (December).
 - **D5. Prune Lab really hard.** Keep at most about 10% of packs, or fold the survivors into their
   panels (January, with a second pass in April).
-- **D6. One reused Boat sandbox per worktree.** Hand-off checks run through `scripts/boat-check.sh`, which
+- **D6. One reused Boat sandbox per worktree.** Boat checks run through `scripts/boat-check.sh`, which
   creates one long-lived sandbox per worktree from the `jev-lab-warm` snapshot and reuses it, instead of a
   new `boat run` sandbox per check. The account's 200 daily starts are shared by every project and ran out
   on 2026-11-21. Check sandboxes carry no credentials (`--no-env`).
@@ -248,3 +248,9 @@ Made by the maintainer on 2026-11-21, except D9 (2026-11-22).
   back without a start. `JEV_BOAT_IDLE` keeps it running only when the owner asks. The keepalive that renews
   auto-stop during a check exits, and stops the sandbox, once `scripts/boat-check.sh` is gone, and the exit
   trap is armed before the sandbox is created or resumed.
+- **D10. CI runs the full check; agents run targeted checks** (2026-11-22). CI runs the full suite once, on
+  the pushed commit, and `main` requires **All tests passed**. Agents no longer run the full
+  `scripts/boat-check.sh` before hand-off. While working, they run the tests that cover their change and lint
+  for the areas they touched through `scripts/boat-check.sh -- CMD`, then push. A failed CI job is reproduced
+  on Boat, fixed and pushed again. The full Boat check is for reproducing CI failures and refreshing the warm
+  snapshot. Every check it runs is already a `test.yml` job.

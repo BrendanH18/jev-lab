@@ -10,8 +10,8 @@ private data and personal notes out of the repository. [CONTRIBUTING.md](CONTRIB
 Run builds, tests, untrusted code, Docker and long jobs on Boat. See the sandbox rules below.
 
 ```sh
-scripts/boat-check.sh                    # all hand-off checks
-scripts/boat-check.sh -- CMD             # one command
+scripts/boat-check.sh -- CMD             # a targeted check while working
+scripts/boat-check.sh                    # full check: reproduce CI failures, refresh with --save
 scripts/boat-check.sh --status            # inspect without starting a sandbox
 scripts/boat-check.sh --done              # delete the sandbox when work in the worktree ends
 scripts/boat-check.sh --save              # check and refresh the warm snapshot
@@ -37,6 +37,39 @@ For a cold sandbox, use `uv sync --locked && npm ci && npx playwright install --
 Biome and Playwright are the only npm dependencies and are pinned for development. Match Biome's
 version in `biome.jsonc`'s `$schema`. Fix all lint and format findings.
 
+### Checks while working and at hand-off
+
+Owner decision (2026-11-22): CI is the gate. It runs the full suite once on every pushed commit, and
+`main` requires its **All tests passed** check. Don't run the full `scripts/boat-check.sh` before
+handing work back. Every check it runs is a `test.yml` job, and CI also runs the SDK suite on
+Python 3.10–3.14.
+
+- While working, run targeted checks on Boat with `scripts/boat-check.sh -- CMD`: the tests that
+  cover the code you changed and lint for the areas you touched. Join them into one command, since
+  each call may resume the sandbox.
+- Python: `uv run --locked python -m unittest tests.test_<module>` for each affected module, plus
+  `uv run --locked ruff check && uv run --locked ruff format --check`.
+- JavaScript, CSS and JSON: `uv run --locked node --test tests/js/<area>.test.mjs` (or
+  `tests/js/lab/*.test.mjs` for Lab) and `npm run --silent lint`. After changing Lab packs or
+  surfaces, run `node scripts/lab_inventory.mjs` in the worktree so the regenerated indexes are part
+  of the change. Files a check writes on Boat never come back. For changed browser modules, also run
+  `node --input-type=module --check < static/js/<file>.js`.
+- Browser flows: `npx playwright test tests/browser/<flow>.spec.mjs` for the flows a change touches.
+  The warm snapshot has Chromium. A cold sandbox needs `npx playwright install --with-deps chromium`.
+- Sample pictures: after changing `scripts/draw_samples.py` or `static/img/samples`, run
+  `python3 scripts/draw_samples.py && git add --intent-to-add static/img/samples && git diff --exit-code --stat static/img/samples`.
+- CI runs the full suite on every pushed commit. When a CI job fails, reproduce that job or its
+  failing test on Boat with the script and fix it. Use the full check only to reproduce CI failures
+  or with `--save` to refresh the warm snapshot.
+- CI doesn't cover these. Do them before hand-off when they apply. For changes that alter visible UI,
+  inspect the affected pages at desktop and narrow widths as
+  [CONTRIBUTING.md](CONTRIBUTING.md#checks-on-boat) describes. This is computer use, so delegate it to
+  Codex with GPT-6.2 Astra (`gpt-6.2-astra`). Run `scripts/boat-check.sh --save` after changing `uv.lock`, `package-lock.json`, Node or
+  Python. Run the live `scripts/validate.py --strict` only when the owner asks (see Live model runs).
+- In the hand-off report, list the targeted checks that ran and say that CI runs the full check.
+
+### CI
+
 - Use standard GitHub-hosted `ubuntu-24.04` runners for this public repository. Paid larger runners
   are prohibited. The locked-SDK suite runs on Python 3.10–3.14. The browser suite has its own job.
 - The required **All tests passed** job depends on every other job in `test.yml` and runs lint,
@@ -56,8 +89,8 @@ The owner's daily starts are shared across projects. [Boat documentation](https:
   `jev-lab-warm` (uv, Node 22, locked venv, Biome, Playwright and Chromium) or starts cold. Each
   later check pushes to a fresh directory and runs with `boat exec --timeout 0`.
 - The script uses `--no-env`. Check sandboxes receive no GitHub, agent or model credentials. The
-  full check runs all jobs even when one fails and exits nonzero on any failure. Its SDK suite
-  runs on Python 3.12. Use CI for version-specific failures.
+  full check runs every `test.yml` job even when one fails and exits nonzero on any failure. Its SDK
+  suite runs on one Python version, which the check prints. Use CI for version-specific failures.
 - The sandbox runs only during a check and stops when it ends, pass or fail. A stopped sandbox
   bills nothing. A check within 10 minutes of the stop usually takes the kept machine back without a
   start, and a later one resumes for one start. Never keep a sandbox running to save a start.
