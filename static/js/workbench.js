@@ -262,7 +262,10 @@ export function renderGuide() {
 export function render() {
   // A shared link or an action that opens an advanced tab also reveals its tab.
   if (!BASIC_TABS.has(W.tab)) W.advanced = true;
-  for (const [mode, selected] of [["basic", !W.advanced], ["advanced", W.advanced]]) {
+  for (const [mode, selected] of [
+    ["basic", !W.advanced],
+    ["advanced", W.advanced],
+  ]) {
     const button = $(`#workbench-${mode}`);
     button?.classList.toggle("active", selected);
     button?.setAttribute("aria-pressed", String(selected));

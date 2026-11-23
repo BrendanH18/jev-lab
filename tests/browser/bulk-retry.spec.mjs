@@ -70,9 +70,11 @@ test("Bulk retries only the selected unanswered row and keeps human labels and d
 
   await expect(page.getByRole("heading", { name: "Policy", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Calibrate", exact: true })).toHaveCount(0);
+  await expect(table.getByRole("columnheader", { name: "route", exact: true })).toHaveCount(0);
   await advanced.click();
   await expect(advanced).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("heading", { name: "Calibrate", exact: true })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "route", exact: true })).toBeVisible();
   await tabs.getByRole("tab", { name: "Compare", exact: true }).click();
   await basic.click();
   await expect(page).toHaveURL(`${app.base}/workbench#build`);

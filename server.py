@@ -1235,6 +1235,9 @@ class Handler(BaseHTTPRequestHandler):
     def _handle(self, method):
         path = urlparse(self.path).path.rstrip("/") or "/"
         # Reuse a connection only after a request with unambiguous framing has been fully read.
+        if self.headers.defects:
+            self.close_connection = True
+            return self._send(400, {"error": "Invalid request headers"})
         if self.headers.get_all("Transfer-Encoding"):
             self.close_connection = True
             return self._send(400, {"error": "Transfer-Encoding is not supported"})

@@ -608,7 +608,7 @@ async function runBulk() {
       await Promise.all([recalibrate(), repolicy(), loadPictureUrls(b.result.results)]);
       if (b.result.stopped) toast(b.result.stopped, "error");
       render();
-      $("#calibrate")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      $(W.advanced ? "#calibrate" : "#policy")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e) {
       handleError(e);
       render();
@@ -918,7 +918,9 @@ function bulkTableBody() {
             th("__row", "#"),
             h("th", {}, "row"),
             qids.map((q) => th(q, q)),
-            calQ ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), h("th", {}, "route")] : null,
+            calQ
+              ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), W.advanced ? h("th", {}, "route") : null]
+              : null,
           ),
         ),
         h(
@@ -930,7 +932,7 @@ function bulkTableBody() {
                 {},
                 h(
                   "td",
-                  { colspan: String(2 + qids.length + (calQ ? 3 : 0)), class: "faint" },
+                  { colspan: String(2 + qids.length + (calQ ? 2 + Number(W.advanced) : 0)), class: "faint" },
                   "No row matches the Lab filters.",
                 ),
               )
@@ -990,7 +992,7 @@ function bulkTableBody() {
                           : statusBadge("fail", "Wrong")
                         : null,
                     ),
-                    h("td", { class: "route" }),
+                    W.advanced ? h("td", { class: "route" }) : null,
                   ]
                 : null,
             ),

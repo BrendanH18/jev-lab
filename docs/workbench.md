@@ -27,7 +27,8 @@ four Bulk rows, and rerunning the saved check take nine model calls in total.
    `review` using your Policy threshold. Return to **Save as a check** in Policy, choose minimum
    accuracy and automation targets, and select **Save check to review-topics**. This stores the
    configuration with the dataset so you can rerun it.
-5. From the repository root, preview the check's spend and rerun it from your terminal:
+5. Preview the check's spend and rerun it from the repository root. For the live rerun, save the
+   key to `.env` from the app or set `TYPESAFE_API_KEY` in the shell that runs the check.
 
    ```sh
    uv run --locked scripts/check.py review-topics --estimate

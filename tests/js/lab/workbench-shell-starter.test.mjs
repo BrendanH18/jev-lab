@@ -139,7 +139,7 @@ checkPack(
       text:
         "# Workbench checklist\n\n- [x] Define typed questions — Questions selected\n- [x] Add representative inputs — Rows in editor\n" +
         "- [ ] Inspect and label the data — Inspect before spending\n- [x] Run the selected questions — Current run available\n" +
-        "- [ ] Tune a policy and save a check — Policy available\n- [ ] Export a gate and review traffic — Save a check for the review cycle\n",
+        "- [ ] Tune a policy and save a check — Policy available\n- [ ] Export a gate and rerun a check — Save a check from Policy\n",
       filename: "workbench-checklist.md",
       check: () => {
         // Before the page loads: workflowSteps({}) — nothing is done and labels, run and policy are not available.
@@ -149,7 +149,7 @@ checkPack(
           "# Workbench checklist\n\n- [ ] Define typed questions — Start here\n- [ ] Add representative inputs — Add inputs\n" +
             "- [ ] Inspect and label the data — Inspect before spending (not available yet)\n- [ ] Run the selected questions — Live call required (not available yet)\n" +
             "- [ ] Tune a policy and save a check — Needs a current run with a gateable question (not available yet)\n" +
-            "- [ ] Export a gate and review traffic — Save a check for the review cycle\n",
+            "- [ ] Export a gate and rerun a check — Save a check from Policy\n",
         );
       },
     },

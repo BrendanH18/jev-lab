@@ -6,6 +6,7 @@ import socket
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
@@ -203,7 +204,7 @@ class HttpTests(unittest.TestCase):
             asset.write_bytes(b"body { color: red; }")
             with (
                 patch.object(server, "STATIC", static),
-                http.client.HTTPConnection("127.0.0.1", self.port, timeout=5) as conn,
+                closing(http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)) as conn,
             ):
                 conn.request("GET", "/asset.css")
                 response = conn.getresponse()
@@ -256,9 +257,7 @@ class HttpTests(unittest.TestCase):
     def test_foreign_host_is_rejected(self):
         for path in ("/", "/css/app.css"):
             with self.subTest(path=path):
-                status, _, body = self.request(
-                    "GET", path, headers={"Host": "attacker.example", "If-None-Match": "*"}
-                )
+                status, _, body = self.request("GET", path, headers={"Host": "attacker.example", "If-None-Match": "*"})
                 self.assertEqual(status, 403)
                 self.assertEqual(json.loads(body)["reason"], "host")
 
@@ -319,7 +318,7 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(json.loads(body)["error"], "Transfer-Encoding is not supported")
 
     def test_incomplete_body_closes_the_connection(self):
-        with http.client.HTTPConnection("127.0.0.1", self.port, timeout=5) as conn:
+        with closing(http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)) as conn:
             conn.request("POST", "/api/workbench/export", "{}", self.post_headers(**{"Content-Length": "3"}))
             conn.sock.shutdown(socket.SHUT_WR)
             response = conn.getresponse()

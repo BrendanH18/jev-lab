@@ -39,7 +39,10 @@ test.afterAll(async () => {
   await app?.close();
 });
 
-test("Reviews opens in Workbench and the tutorial produces an exported gate and saved check", async ({ context, page }) => {
+test("Reviews opens in Workbench and the tutorial produces an exported gate and saved check", async ({
+  context,
+  page,
+}) => {
   const errors = [];
   const watchErrors = (tab) => {
     tab.on("pageerror", (error) => errors.push(error.message));
