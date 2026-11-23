@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { workbenchSource } from "./workbench-source.mjs";
 
+const setBuildBaseline = workbenchSource.match(/function setBuildBaseline\(context\) \{[\s\S]*?\n\}/)[0];
+
 test("saving edited questions omits removed expectations and preserves current ones", async () => {
   // Exercise the page's real submit handler without booting the DOM or making model calls.
   const source = workbenchSource;
@@ -27,7 +29,7 @@ test("saving edited questions omits removed expectations and preserves current o
     "questionEditorError",
     "buildContext",
     "buildResultStale",
-    `let buildRawText = null, buildBaseline = null; ${handler}; return saveTest;`,
+    `let buildRawText = null, buildBaseline = null; ${setBuildBaseline}; ${handler}; return saveTest;`,
   )(
     state,
     api,
@@ -71,7 +73,8 @@ test("editing while Save is pending leaves the newer Build request unsaved", asy
     "questionEditorError",
     "buildContext",
     "buildResultStale",
-    `let buildRawText = null, buildBaseline = null; ${handler}; return { saveTest, baseline: () => buildBaseline };`,
+    `let buildRawText = null, buildBaseline = null; ${setBuildBaseline}; ${handler};
+    return { saveTest, baseline: () => buildBaseline };`,
   )(
     W,
     api,

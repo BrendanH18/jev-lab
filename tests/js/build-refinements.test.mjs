@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   buildRefinementFacts,
@@ -26,7 +25,8 @@ const row = (id = "route", type = "choice") => ({
   noulYes: " Yes ",
   noulNo: "No",
 });
-const source = readFileSync(new URL("../../static/js/workbench-build.js", import.meta.url), "utf8");
+import { workbenchSource as source } from "./workbench-source.mjs";
+
 const body = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0];
 const h = (tag, attrs = {}, ...children) => ({
   tag,

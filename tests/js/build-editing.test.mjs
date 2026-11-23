@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   uniqueQuestionId,
@@ -16,7 +15,8 @@ import {
   buildEditorContext,
 } from "../../static/js/build-request.js";
 
-const source = readFileSync(new URL("../../static/js/workbench-build.js", import.meta.url), "utf8");
+import { workbenchSource as source } from "./workbench-source.mjs";
+
 const body = (name, async = false) =>
   source.match(new RegExp(`${async ? "async " : ""}function ${name}\\([^]*?\\n\\}`))[0];
 const question = (id = "route", type = "choice") => ({

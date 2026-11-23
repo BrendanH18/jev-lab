@@ -1,14 +1,14 @@
 // The Build tab's Lab surfaces (static/js/lab/surfaces/workbench-build.js) and their hooks in
-// static/js/workbench-build.js: item shapes, shown() with page and Lab filters, data, every action's guard, and the
+// the Workbench Build modules: item shapes, shown() with page and Lab filters, data, every action's guard, and the
 // page functions that apply Lab's filters, sort and reset (rebuilt from the page source, as the build-*.test.mjs do).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { definePack } from "../../../static/js/lab/kit.js";
 import { createLab } from "../../../static/js/lab/host.js";
 import { wbBuildQuestionsCtx, wbBuildResultCtx } from "../../../static/js/lab/surfaces/workbench-build.js";
 import { matchesEditorQuestion } from "../../../static/js/build-editing.js";
+import { workbenchSource as source } from "../workbench-source.mjs";
 import {
   buildExpect,
   buildOddResult,
@@ -20,7 +20,7 @@ import {
 
 const QUESTIONS = "workbench.build.questions";
 const RESULT = "workbench.build.result";
-const source = readFileSync(new URL("../../../static/js/workbench-build.js", import.meta.url), "utf8");
+
 const body = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0];
 const row = (id, type = "noul", extra = {}) => ({
   id,
@@ -638,7 +638,7 @@ test("answer actions guard Inspect, Save and focus, and none presses Run", () =>
   assert.equal(ctx.actions.importItems, undefined);
 });
 
-// ---------- the hooks in static/js/workbench-build.js ----------
+// ---------- the hooks in the Workbench Build modules ----------
 
 function pageWith(rows, expect = {}) {
   const host = lab();

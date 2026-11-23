@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { renameEditorQuestion, duplicateChoiceOption, moveEditorEntryTo } from "../../static/js/build-editing.js";
 import { editorQuestionError } from "../../static/js/build-request.js";
 
-const source = readFileSync(new URL("../../static/js/workbench-build.js", import.meta.url), "utf8");
+import { workbenchSource as source } from "./workbench-source.mjs";
+
 const body = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0];
 const question = (id = "route", type = "choice") => ({
   id,
