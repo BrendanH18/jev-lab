@@ -50,8 +50,9 @@ Python 3.10–3.14.
 - Python: `uv run --locked python -m unittest tests.test_<module>` for each affected module, plus
   `uv run --locked ruff check && uv run --locked ruff format --check`.
 - JavaScript, CSS and JSON: `uv run --locked node --test tests/js/<area>.test.mjs` (or
-  `tests/js/lab/*.test.mjs` for Lab) and `npm run --silent lint`. Add `node scripts/lab_inventory.mjs`
-  after changing Lab packs or surfaces. For changed browser modules, also run
+  `tests/js/lab/*.test.mjs` for Lab) and `npm run --silent lint`. After changing Lab packs or
+  surfaces, run `node scripts/lab_inventory.mjs` in the worktree and commit its indexes. Files a
+  check writes on Boat never come back. For changed browser modules, also run
   `node --input-type=module --check < static/js/<file>.js`.
 - Browser flows: `npx playwright test tests/browser/<flow>.spec.mjs` for the flows a change touches.
   The warm snapshot has Chromium. A cold sandbox needs `npx playwright install --with-deps chromium`.
@@ -88,7 +89,7 @@ The owner's daily starts are shared across projects. [Boat documentation](https:
   later check pushes to a fresh directory and runs with `boat exec --timeout 0`.
 - The script uses `--no-env`. Check sandboxes receive no GitHub, agent or model credentials. The
   full check runs every `test.yml` job even when one fails and exits nonzero on any failure. Its SDK
-  suite runs on Python 3.12. Use CI for version-specific failures.
+  suite runs on one Python version, which the check prints. Use CI for version-specific failures.
 - The sandbox runs only during a check and stops when it ends, pass or fail. A stopped sandbox
   bills nothing. A check within 10 minutes of the stop usually takes the kept machine back without a
   start, and a later one resumes for one start. Never keep a sandbox running to save a start.

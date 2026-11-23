@@ -88,8 +88,8 @@ scripts/boat-check.sh --save             # full check, then refresh the jev-lab-
 ```
 
 The full check runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests, the locked-SDK
-suite on Python 3.12 only, the browser tests and the sample pictures). CI also runs the locked-SDK suite on
-every supported Python version. The sandbox carries no credentials and is stopped as soon as each check ends,
+suite on the one Python version the check prints, the browser tests and the sample pictures). CI also runs
+the locked-SDK suite on every supported Python version. The sandbox carries no credentials and is stopped as soon as each check ends,
 since a stopped sandbox costs nothing and a check within 10 minutes usually takes its machine back without a
 new start. It never runs a live model call: live runs get a separate sandbox (see `AGENTS.md`). `--help` lists
 the options.
