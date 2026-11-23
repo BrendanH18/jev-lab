@@ -20,7 +20,9 @@ import { reviewQueuesUnsaved, confirmReviewDiscard } from "./workbench-review.js
 import { driftQueuesUnsaved } from "./workbench-drift.js";
 import { updateCal, syncAttachedSets } from "./workbench-calibrate.js";
 import { updatePolicy } from "./workbench-policy.js";
-import { renderCompare, updateCmpChart, updateCascade } from "./workbench-compare.js";
+import { renderCompare } from "./workbench-compare.js";
+import { updateCmpChart } from "./workbench-compare-report.js";
+import { updateCascade } from "./workbench-compare-cascade.js";
 
 // Labeling guidelines (static/js/guidelines.js): human-only, shown beside label controls, never sent to the model.
 // Kept on W so a view rendered without it (tests/js) simply shows no guideline.
