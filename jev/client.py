@@ -71,6 +71,11 @@ def price_per_input_token(model: str) -> float:
     return max(_KNOWN_INPUT_USD.values())
 
 
+def has_known_input_price(model: str) -> bool:
+    """Whether this exact name or version is in the maintained price table."""
+    return model in _KNOWN_INPUT_USD
+
+
 def resolve_alias(model: str) -> str:
     """The versioned id a known alias points at; other names are returned unchanged."""
     return ALIASES.get(model or "", model or "")

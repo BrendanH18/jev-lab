@@ -715,6 +715,23 @@ const blockOf = (tree, name) => find(tree, (node) => node.attrs["data-lab-block"
 const control = (root, label) => find(root, (node) => node.attrs["aria-label"] === label);
 const button = (root, text) => find(root, (node) => node.tag === "button" && textOf(node).startsWith(text));
 
+test("a deferred disclosure still loads when another disclosure for the same surface closes", async () => {
+  const lab = createLab([], {}, { counts: { "test.list": improvements.length }, load: async () => [pack] });
+  const sections = [lab.section(fakeEnv(), "test.list", fakeCtx()), lab.section(fakeEnv(), "test.list", fakeCtx())];
+  for (const section of sections) {
+    const body = find(section, (node) => node.attrs.class === "lab-body");
+    Object.assign(body, { isConnected: true, parentElement: section });
+    section.open = true;
+    fire(section, "toggle", { target: section });
+    assert.match(textOf(body), /Loading tools/);
+  }
+  sections[0].open = false;
+  fire(sections[0], "toggle", { target: sections[0] });
+  await lab.load();
+  assert.ok(blockOf(sections[1], "refine"));
+  assert.doesNotMatch(textOf(sections[1]), /Loading tools/);
+});
+
 test("the section shows one block per kind in use, with counts, and renders closed blocks without content", () => {
   const { tree, lab, ctx, env } = openSection();
   assert.equal(tree.tag, "details");

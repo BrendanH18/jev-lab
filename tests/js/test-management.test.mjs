@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
 import {
   visibleTests,
   testInputBytes,
@@ -9,6 +8,7 @@ import {
   testStatusSummary,
   selectedTestIds,
 } from "../../static/js/test-selection.js";
+import { workbenchSource as source } from "./workbench-source.mjs";
 
 const items = [
   {
@@ -107,7 +107,6 @@ test("visible status summary contains current session status counts only", () =>
 });
 
 test("new test controls use current visible scope or full selected scope", () => {
-  const source = readFileSync(new URL("../../static/js/workbench-tests.js", import.meta.url), "utf8");
   assert.match(source, /downloadTestMetadata\(shownTests\(\), "csv"\)/);
   for (const format of ["json", "csv"]) {
     assert.match(

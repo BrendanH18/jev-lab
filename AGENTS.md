@@ -143,7 +143,9 @@ pass them on the command line, or copy `.env` to a sandbox.
 
 Use `scripts/validate.py --strict` after changing demo questions, thresholds, examples or the
 model version. Every built-in scenario must pass on the live model. Strict mode fails on a miss or
-an incomplete scenario. Unit tests exercise logic with fake answers and cannot verify model judgments.
+an incomplete scenario. It checks the account's listed Jev names against the alias and price tables
+before making paid calls, then verifies the version reported by the responses. Unit tests exercise
+logic with fake answers and cannot verify model judgments.
 
 `scripts/check.py` reruns saved Workbench checks with live calls. Its options and exit codes are in the
 [Workbench guide](docs/workbench.md#keep-a-gate-as-a-check).

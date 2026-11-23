@@ -59,6 +59,14 @@ class SliceCliTests(unittest.TestCase):
             self.assertIn("slice 'channel' = 'email': FAIL (1 rows, 1 labeled)", text)
             self.assertIn("accuracy 0.0%, target 100.0%  FAIL", text)
             self.assertEqual(len(client.calls), 10)
+            code, text = main("channels", "--format", "json")
+            self.assertEqual(code, 1, text)
+            [summary] = json.loads(text)["checks"]
+            self.assertTrue(summary["targets"]["accuracy"]["ok"])
+            [required] = summary["slice_targets"]
+            self.assertEqual((required["number"], required["status"], required["rows"]), (1, "fail", 1))
+            self.assertFalse(required["targets"]["accuracy"]["ok"])
+            self.assertNotIn("email", text)
             checks.save_check("channels", dict(spec, slice_targets=[dict(target, value="missing")]))
             code, text = main("channels")
             self.assertEqual(code, 2, text)

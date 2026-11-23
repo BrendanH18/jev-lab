@@ -39,7 +39,7 @@ test.afterAll(async () => {
   await app?.close();
 });
 
-test("Reviews opens in Workbench and the tutorial produces an exported gate and saved check", async ({
+test("Reviews opens in Workbench and the tutorial produces an exported gate and a passing check", async ({
   context,
   page,
 }) => {
@@ -109,10 +109,15 @@ test("Reviews opens in Workbench and the tutorial produces an exported gate and 
   await workbench.getByRole("button", { name: "Download gate.py", exact: true }).click();
   expect((await download).suggestedFilename()).toBe("gate.py");
   await policy.getByRole("button", { name: "Save check to review-topics", exact: true }).click();
-  await expect(dataset.getByRole("button", { name: /^Run check · 4 calls$/ })).toBeVisible();
+  const rerun = dataset.getByRole("button", { name: /^Run check · 4 calls$/ });
+  await expect(rerun).toBeVisible();
   expect(calls.slice(2).map(({ state }) => state)).toEqual(
     expect.arrayContaining(inputs.map(({ shop, review }) => ({ shop, review }))),
   );
   expect(calls).toHaveLength(6);
+  await rerun.click();
+  await expect(dataset.getByText("Passed", { exact: true })).toBeVisible();
+  expect(calls).toHaveLength(10);
+  expect(calls.slice(6)).toEqual(expect.arrayContaining(calls.slice(2, 6)));
   expect(errors).toEqual([]);
 });

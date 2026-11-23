@@ -58,22 +58,33 @@ class ValidateCliTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def cli(self, *args, picker=passing_picks, drop_answer=None, rpm=120):
+    def cli(
+        self,
+        *args,
+        picker=passing_picks,
+        drop_answer=None,
+        rpm=120,
+        model="jev-latest",
+        names=("jev-latest", "jev-preview", "jev-1.14.0", "jev-1.13.0"),
+        answered_by="jev-1.14.0",
+    ):
         def answer(_client, payload):
             state, questions = payload["state"], payload["questions"]
             answers = fake_answers(questions, picker(state, questions))
             if drop_answer:
                 answers.pop(drop_answer(state, questions), None)
-            return {"model": payload["model"], "answers": answers, "usage": {"input_tokens": 1000}}
+            return {"model": answered_by, "answers": answers, "usage": {"input_tokens": 1000}}
 
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(stdout):
             settings = Settings(
-                environ={"TYPESAFE_API_KEY": "sk-test", "JEV_LAB_RPM": str(rpm)}, env_file=Path(tmp) / ".env"
+                environ={"TYPESAFE_API_KEY": "sk-test", "JEV_LAB_RPM": str(rpm), "TYPESAFE_DEFAULT_MODEL": model},
+                env_file=Path(tmp) / ".env",
             )
             with (
                 patch.object(validate, "Settings", return_value=settings),
                 patch.object(validate.JevClient, "_post_system_one", answer),
+                patch.object(validate.JevClient, "models", return_value={"models": [{"name": name} for name in names]}),
                 patch.object(validate, "JevClient", return_value=validate.JevClient(settings)),
             ):
                 status = validate.main(list(args))
@@ -84,6 +95,32 @@ class ValidateCliTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("8 matched, 0 missed, 0 incomplete", output)
         self.assertIn("accuracy   0% on 1 labeled", output)
+        self.assertIn("Models reported by responses: jev-1.14.0", output)
+
+    def test_strict_stops_before_paid_calls_for_unknown_jev_names(self):
+        code, output = self.cli("--strict", names=("jev-latest", "jev-2.0.0", "jev-nightly"))
+        self.assertEqual(code, 2, output)
+        self.assertIn("Update the Jev alias and input price tables for: jev-2.0.0, jev-nightly", output)
+        self.assertIn("0 live calls", output)
+
+    def test_strict_uses_the_response_to_verify_alias_targets(self):
+        for answered, reason in [
+            ("jev-1.13.0", "jev-latest expected jev-1.14.0 and reported jev-1.13.0"),
+            ("jev-2.0.0", "Add jev-2.0.0 to the Jev input price table"),
+            ("jev-latest", "jev-latest did not report a versioned model in the response"),
+            (None, "jev-latest did not report a versioned model in the response"),
+        ]:
+            with self.subTest(answered=answered):
+                code, output = self.cli("--strict", names=("jev-latest", "jev-preview"), answered_by=answered)
+                self.assertEqual(code, 2, output)
+                self.assertIn(reason, output)
+
+    def test_strict_requires_the_pinned_model_version(self):
+        code, output = self.cli("--strict", model="jev-1.13.0")
+        self.assertEqual(code, 2, output)
+        self.assertIn("jev-1.13.0 expected jev-1.13.0 and reported jev-1.14.0", output)
+        code, output = self.cli("--strict", model="jev-1.14")
+        self.assertEqual(code, 0, output)
 
     def test_strict_fails_on_a_mismatched_example_and_keeps_the_report(self):
         def pick(state, questions):
@@ -97,7 +134,9 @@ class ValidateCliTests(unittest.TestCase):
             code, output = self.cli("--strict", "--out", str(path), picker=pick)
             self.assertEqual(code, 1, output)
             self.assertIn("7 matched, 1 missed, 0 incomplete", output)
-            self.assertEqual(json.loads(path.read_text())["examples"]["failed"], 1)
+            report = json.loads(path.read_text())
+            self.assertEqual(report["examples"]["failed"], 1)
+            self.assertEqual(report["models"]["answered_by"], ["jev-1.14.0"])
 
     def test_strict_marks_a_missing_workbench_answer_incomplete(self):
         code, output = self.cli(

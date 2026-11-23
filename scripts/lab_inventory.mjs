@@ -4,11 +4,19 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { improvementsOf } from "../static/js/lab/kit.js";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKS_DIR = join(ROOT, "static/js/lab/packs");
 const PAGES_DIR = join(ROOT, "static/js/lab/pages");
 const SURFACES_DIR = join(ROOT, "static/js/lab/surfaces");
+// The other Workbench surface builders have no surviving packs after the Lab prune.
+const WORKBENCH_BUILDER_FILES = [
+  "workbench-analysis.js",
+  "workbench-build.js",
+  "workbench-checks.js",
+  "workbench-shell.js",
+];
 // Every page gets an index, even with no packs of its own, so its entry module can always import one.
 export const PAGES = [
   "index",
@@ -61,13 +69,33 @@ function pageIndex(page, files, surfaces) {
     'import { createLab } from "../host.js";',
   ];
   surfaces.forEach((file, index) => lines.push(`import * as s${index} from "../surfaces/${file}";`));
-  files.forEach((entry, index) => lines.push(`import p${index} from "../packs/${entry.page}/${entry.file}";`));
-  lines.push(
-    "",
-    `export const PACKS = [${files.map((_, index) => `p${index}`).join(", ")}];`,
-    `export const LAB = createLab(PACKS, { ${surfaces.map((_, index) => `...s${index}`).join(", ")} });`,
-    "",
-  );
+  // Keep the chrome and packs with keyboard shortcuts ready before any tools are opened.
+  const deferred =
+    page === "workbench"
+      ? files.filter(
+          ({ pack, page: owner }) =>
+            owner === page && !pack.features.some((feature) => feature.kind === "command" && feature.keys),
+        )
+      : [];
+  const eager = files.filter((entry) => !deferred.includes(entry));
+  eager.forEach((entry, index) => lines.push(`import p${index} from "../packs/${entry.page}/${entry.file}";`));
+  lines.push("", `export const PACKS = [${eager.map((_, index) => `p${index}`).join(", ")}];`);
+  const builders = `{ ${surfaces.map((_, index) => `...s${index}`).join(", ")} }`;
+  if (deferred.length) {
+    const counts = new Map();
+    for (const { pack } of deferred) {
+      counts.set(pack.surface, (counts.get(pack.surface) || 0) + improvementsOf(pack).length);
+    }
+    lines.push(
+      `export const LAB = createLab(PACKS, ${builders}, {`,
+      `  counts: ${JSON.stringify(Object.fromEntries(counts))},`,
+      "  load: async () => (await Promise.all([",
+      ...deferred.map(({ page: owner, file }) => `    import("../packs/${owner}/${file}"),`),
+      "  ])).map((module) => module.default),",
+      "});",
+    );
+  } else lines.push(`export const LAB = createLab(PACKS, ${builders});`);
+  lines.push("");
   return lines.join("\n");
 }
 
@@ -88,7 +116,11 @@ export async function generate() {
     }
     files.set(
       `static/js/lab/pages/${page}.js`,
-      pageIndex(page, [...loaded.filter((entry) => entry.page === page), ...chrome], surfaces),
+      pageIndex(
+        page,
+        [...loaded.filter((entry) => entry.page === page), ...chrome],
+        page === "workbench" ? surfaces.filter((file) => WORKBENCH_BUILDER_FILES.includes(file)) : surfaces,
+      ),
     );
   }
 

@@ -35,12 +35,15 @@ const newView = () => ({
 });
 
 // builders: the ctx builders of static/js/lab/surfaces/*.js for this page, so page code can reach them as LAB.builders.
-export function createLab(packs, builders = {}) {
+export function createLab(eagerPacks, builders = {}, deferred = null) {
+  const packs = [];
   const surfaces = new Map();
+  const deferredCounts = new Map(Object.entries(deferred?.counts || {}));
   const seen = new Set();
-  for (const pack of packs) {
+  function addPack(pack) {
     if (seen.has(pack.id)) throw new Error(`Lab pack ${pack.id} is loaded twice`);
     seen.add(pack.id);
+    packs.push(pack);
     if (!surfaces.has(pack.surface)) {
       surfaces.set(pack.surface, { id: pack.surface, packs: [], count: 0, facts: new Map(), byKind: {} });
     }
@@ -53,6 +56,15 @@ export function createLab(packs, builders = {}) {
     }
     surface.count += improvementsOf(pack).length;
   }
+  for (const pack of eagerPacks) addPack(pack);
+
+  let pending;
+  function load() {
+    pending ??= deferred.load().then((loaded) => {
+      for (const pack of loaded) addPack(pack);
+    });
+    return pending;
+  }
   const views = new Map();
   const mounted = new Map();
   const view = (id) => {
@@ -64,12 +76,13 @@ export function createLab(packs, builders = {}) {
   const lab = {
     packs,
     builders,
+    ...(deferred ? { load } : {}),
     surface: (id) => surfaces.get(id) || null,
     surfaceIds: () => [...surfaces.keys()],
     entries,
     view,
     // How many improvements a surface holds, for its "Lab tools · N" heading.
-    count: (id) => surfaces.get(id)?.count || 0,
+    count: (id) => surfaces.get(id)?.count || deferredCounts.get(id) || 0,
     matches(id, item, ctx) {
       const surface = surfaces.get(id);
       return !surface || !views.has(id) || matchesFilters(item, views.get(id).filters, surface.facts, ctx);
@@ -147,10 +160,11 @@ export function createLab(packs, builders = {}) {
     // The Lab tools block for a surface, or null when no pack contributes to it. Gives ctx its env (toast, copy,
     // download) and mounts the surface so its commands are reachable.
     section(env, id, ctx, options = {}) {
-      if (!surfaces.has(id)) return null;
+      const unloaded = !surfaces.has(id);
+      if (unloaded && !deferredCounts.has(id)) return null;
       if (!ctx.env) ctx.env = env;
       mounted.set(id, ctx);
-      return renderSection(env, lab, id, ctx, options);
+      return renderSection(env, lab, id, ctx, options, unloaded ? load : null);
     },
     improvements: () => packs.flatMap((pack) => improvementsOf(pack)),
   };

@@ -4,20 +4,19 @@
 import { createLab } from "../host.js";
 import * as s0 from "../surfaces/workbench-analysis.js";
 import * as s1 from "../surfaces/workbench-build.js";
-import * as s2 from "../surfaces/workbench-bulk.js";
-import * as s3 from "../surfaces/workbench-checks.js";
-import * as s4 from "../surfaces/workbench-compare.js";
-import * as s5 from "../surfaces/workbench-datasets.js";
-import * as s6 from "../surfaces/workbench-labeling.js";
-import * as s7 from "../surfaces/workbench-shell.js";
-import * as s8 from "../surfaces/workbench-tests.js";
-import p0 from "../packs/workbench/build-diff.js";
-import p1 from "../packs/workbench/policy-rules-routing.js";
-import p2 from "../packs/workbench/review-queue-copies.js";
-import p3 from "../packs/workbench/tb-sample-sizes.js";
-import p4 from "../packs/workbench/workbench-shell-starter.js";
-import p5 from "../packs/workbench/workbench-toolbox-starter.js";
-import p6 from "../packs/chrome/chrome-essentials.js";
+import * as s2 from "../surfaces/workbench-checks.js";
+import * as s3 from "../surfaces/workbench-shell.js";
+import p0 from "../packs/workbench/workbench-shell-starter.js";
+import p1 from "../packs/chrome/chrome-essentials.js";
 
-export const PACKS = [p0, p1, p2, p3, p4, p5, p6];
-export const LAB = createLab(PACKS, { ...s0, ...s1, ...s2, ...s3, ...s4, ...s5, ...s6, ...s7, ...s8 });
+export const PACKS = [p0, p1];
+export const LAB = createLab(PACKS, { ...s0, ...s1, ...s2, ...s3 }, {
+  counts: {"workbench.build.questions":32,"workbench.policy":7,"workbench.review.queue":19,"workbench.toolbox":10},
+  load: async () => (await Promise.all([
+    import("../packs/workbench/build-diff.js"),
+    import("../packs/workbench/policy-rules-routing.js"),
+    import("../packs/workbench/review-queue-copies.js"),
+    import("../packs/workbench/tb-sample-sizes.js"),
+    import("../packs/workbench/workbench-toolbox-starter.js"),
+  ])).map((module) => module.default),
+});

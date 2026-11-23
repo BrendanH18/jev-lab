@@ -1,13 +1,13 @@
 // The Workbench Tests tab's Lab surface: the builder (static/js/lab/surfaces/workbench-tests.js), the Lab option of
-// test-selection.js visibleTests, and the hook in static/js/workbench-tests.js, rebuilt from its source the way the
+// test-selection.js visibleTests, and the hook in static/js/workbench-tests-view.js, rebuilt from its source the way the
 // page's own tests do (tests/js/test-triage.test.mjs).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import * as tools from "../../../static/js/test-selection.js";
 import { createLab } from "../../../static/js/lab/host.js";
 import { testsItemsCtx } from "../../../static/js/lab/surfaces/workbench-tests.js";
+import { workbenchSource as source } from "../workbench-source.mjs";
 import { probePack } from "./fixture-pack.mjs";
 import { fakeEnv } from "./harness.mjs";
 import {
@@ -418,9 +418,8 @@ test("open, inspect and resetFilters wrap the page's own handlers with their gua
   bare.refresh();
 });
 
-// ---------- the hook in static/js/workbench-tests.js ----------
+// ---------- The Tests tab's Lab hook ----------
 
-const source = readFileSync(new URL("../../../static/js/workbench-tests.js", import.meta.url), "utf8");
 const body = (name) =>
   source.match(new RegExp(`(?:export )?(?:async )?function ${name}\\([^]*?\\n\\}`))[0].replace(/^export /, "");
 const pageNodes = (node) =>

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   suiteInventoryText,
@@ -18,6 +17,7 @@ import {
   testStatusSummary,
   testObservedSummary,
 } from "../../static/js/test-selection.js";
+import { workbenchSource as source } from "./workbench-source.mjs";
 
 const items = [
   {
@@ -122,7 +122,6 @@ test("deleted or changed tests lose obsolete answers, but their actual spend rem
   assert.equal(completedAfterEdit.cost_usd, 0.02);
 });
 
-const source = readFileSync(new URL("../../static/js/workbench-tests.js", import.meta.url), "utf8");
 const body = (name) => source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0];
 function runHarness(overrides = {}) {
   const W = { items: structuredClone(items), runResults: null };

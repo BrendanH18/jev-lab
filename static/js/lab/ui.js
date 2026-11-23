@@ -1259,40 +1259,70 @@ function panelBlocks(s) {
 // ---------- the section ----------
 
 // The Lab tools block for one surface. options: { title, flat } (flat renders the tools without the disclosure).
-export function renderSection(env, lab, id, ctx, options = {}) {
-  const surface = lab.surface(id);
-  if (!surface) return null;
+export function renderSection(env, lab, id, ctx, options = {}, load = null) {
+  if (!load && !lab.surface(id)) return null;
   const view = lab.view(id);
   const body = env.h("div", { class: "lab-body" });
-  // onList: refreshers the open blocks register for the parts that depend on the shown list. listChanged() runs them
-  // after a filter, sort or edit changes that list, without rebuilding the control being used.
-  const s = { env, lab, id, ctx, view, surface, options, redraw: () => {}, onList: new Map() };
-  s.listChanged = () => {
-    view.findings = null;
-    for (const refresh of [...s.onList.values()]) refresh();
-  };
-  s.redraw = () => (
-    s.onList.clear(),
-    env.mount(
-      body,
-      [
-        refineBlock(s),
-        checksBlock(s),
-        transformBlock(s),
-        metricsBlock(s),
-        exportBlock(s),
-        importBlock(s),
-        commandBlock(s),
-        toolsBlock(s),
-        panelBlocks(s),
-      ]
-        .flat()
-        .filter(Boolean),
-    )
-  );
-  s.redraw();
-  if (options.flat) return env.h("div", { class: "lab flat", "data-lab-surface": id }, body);
+  let drawn = false;
+  let loading = false;
+  function showBody() {
+    if (drawn || loading) return;
+    const surface = lab.surface(id);
+    if (!surface) {
+      loading = true;
+      env.mount(body, env.h("p", { class: "faint", role: "status" }, "Loading tools…"));
+      load().then(
+        () => {
+          loading = false;
+          if (body.isConnected && (options.flat || body.parentElement?.open)) showBody();
+        },
+        () => {
+          loading = false;
+          drawn = true;
+          env.mount(
+            body,
+            env.h(
+              "p",
+              { class: "lab-error", role: "alert" },
+              "Lab tools could not be loaded. Reload the page to try again.",
+            ),
+          );
+        },
+      );
+      return;
+    }
+    drawn = true;
+    // onList: refreshers the open blocks register for the parts that depend on the shown list. listChanged() runs them
+    // after a filter, sort or edit changes that list, without rebuilding the control being used.
+    const s = { env, lab, id, ctx, view, surface, options, redraw: () => {}, onList: new Map() };
+    s.listChanged = () => {
+      view.findings = null;
+      for (const refresh of [...s.onList.values()]) refresh();
+    };
+    s.redraw = () => (
+      s.onList.clear(),
+      env.mount(
+        body,
+        [
+          refineBlock(s),
+          checksBlock(s),
+          transformBlock(s),
+          metricsBlock(s),
+          exportBlock(s),
+          importBlock(s),
+          commandBlock(s),
+          toolsBlock(s),
+          panelBlocks(s),
+        ]
+          .flat()
+          .filter(Boolean),
+      )
+    );
+    s.redraw();
+  }
   const open = !!view.open.section;
+  if (!load || open || options.flat) showBody();
+  if (options.flat) return env.h("div", { class: "lab flat", "data-lab-surface": id }, body);
   return env.h(
     "details",
     {
@@ -1301,6 +1331,7 @@ export function renderSection(env, lab, id, ctx, options = {}) {
       "data-lab-surface": id,
       ontoggle: (event) => {
         view.open.section = !!event.target.open;
+        if (view.open.section) showBody();
       },
     },
     env.h("summary", {}, `${options.title || "Lab tools"} · ${lab.count(id)}`),
@@ -1391,5 +1422,5 @@ export function renderPalette(env, lab, close) {
       h("p", { class: "faint lab-palette-hint" }, "Enter runs the highlighted command · arrow keys move · Esc closes"),
     ),
   );
-  return { node, input, state };
+  return { node, input, state, refresh: fill };
 }

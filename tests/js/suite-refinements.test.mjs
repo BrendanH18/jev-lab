@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import * as tools from "../../static/js/test-selection.js";
+import { workbenchSource as source } from "./workbench-source.mjs";
 
 const items = [
   {
@@ -118,7 +118,6 @@ test("first-N selection respects visible ordering, retains hidden selection and 
   assert.deepEqual(tools.firstVisibleSuiteIds(items, ["a"], [], "3"), ["a"]);
 });
 
-const source = readFileSync(new URL("../../static/js/workbench-tests.js", import.meta.url), "utf8");
 const body = (name) =>
   source.match(new RegExp(`(?:export )?(?:async )?function ${name}\\([^]*?\\n\\}`))[0].replace(/^export /, "");
 function harness() {
