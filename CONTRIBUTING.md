@@ -74,21 +74,25 @@ npx playwright test
 ### Checks on Boat
 
 The maintainer's agents run these checks on [Boat](https://docs.boat.dev) sandboxes rather than on their
-own machines. `scripts/boat-check.sh` runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests,
-the locked-SDK suite on Python 3.12 only, the browser tests and the sample pictures) in one
-sandbox per worktree, created from the `jev-lab-warm` snapshot and reused by later runs.
-CI still runs the locked-SDK suite on every supported Python version:
+own machines, in one sandbox per worktree created from the `jev-lab-warm` snapshot and reused by later runs.
+CI is the gate: it runs the full suite once on the pushed commit, and `main` requires its **All tests passed**
+check. While working, agents run only the tests that cover their change and lint for the areas they touched,
+then push and let CI run everything. When a CI job fails, they reproduce that job or its failing test on Boat,
+fix it and push again:
 
 ```sh
-scripts/boat-check.sh                    # all hand-off checks; exits nonzero if any failed
-scripts/boat-check.sh -- npm run lint    # one command in a fresh copy of the worktree
+scripts/boat-check.sh -- 'uv run --locked python -m unittest tests.test_gate && npm run --silent lint'
+scripts/boat-check.sh                    # full check, to reproduce CI failures; exits nonzero if any failed
 scripts/boat-check.sh --done             # delete the worktree's sandbox when the work ends
-scripts/boat-check.sh --save             # checks, then refresh the jev-lab-warm snapshot
+scripts/boat-check.sh --save             # full check, then refresh the jev-lab-warm snapshot
 ```
 
-The sandbox carries no credentials and is stopped as soon as each check ends, since a stopped sandbox
-costs nothing and a check within 10 minutes usually takes its machine back without a new start. It never
-runs a live model call: live runs get a separate sandbox (see `AGENTS.md`). `--help` lists the options.
+The full check runs the jobs of CI's `test.yml` (Ruff, Biome, JavaScript syntax and tests, the locked-SDK
+suite on Python 3.12 only, the browser tests and the sample pictures). CI also runs the locked-SDK suite on
+every supported Python version. The sandbox carries no credentials and is stopped as soon as each check ends,
+since a stopped sandbox costs nothing and a check within 10 minutes usually takes its machine back without a
+new start. It never runs a live model call: live runs get a separate sandbox (see `AGENTS.md`). `--help` lists
+the options.
 
 For interface changes, also inspect the affected pages in a browser at desktop and narrow widths.
 Check keyboard navigation, empty and error states, and the request inspector where relevant.
