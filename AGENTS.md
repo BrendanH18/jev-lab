@@ -3,7 +3,8 @@
 Jev Lab is a public repository (`BrendanH18/jev-lab`) with eight demos and a Workbench for TypeSafe's
 Jev model. It uses a stdlib Python HTTP server, the official SDK on Python 3.10+, and vanilla
 JavaScript and CSS with no build step. All demos use the fictional Harbor Coffee Co. Keep secrets,
-private data and personal notes out of the repository. [CONTRIBUTING.md](CONTRIBUTING.md)
+private data and personal notes out of the repository. [CONTRIBUTING.md](CONTRIBUTING.md) is the
+guide for human contributors. Agents follow this file.
 
 ## Commands and CI
 
@@ -81,7 +82,8 @@ Python 3.10–3.14.
 
 ## Cloud sandboxes (Boat)
 
-Run `boat limits` before any command that starts a sandbox and get prices from the current output.
+`scripts/boat-check.sh` reads `boat limits --json` itself. Run `boat limits` before a hand-run `boat new`
+or `boat run` and get prices from the current output.
 The owner's daily starts are shared across projects. [Boat documentation](https://docs.boat.dev/llms.txt)
 
 - Reuse one sandbox per worktree with `scripts/boat-check.sh`. Its ID lives in the worktree's Git
@@ -143,11 +145,8 @@ Use `scripts/validate.py --strict` after changing demo questions, thresholds, ex
 model version. Every built-in scenario must pass on the live model. Strict mode fails on a miss or
 an incomplete scenario. Unit tests exercise logic with fake answers and cannot verify model judgments.
 
-`uv run scripts/check.py` reruns saved Workbench checks with one live call per row and exits nonzero
-on a missed target. `<id> --drift rows.jsonl` exits nonzero on a shift in unlabeled traffic.
-`--upgrade-to <version>` reruns the tuned-on and candidate models and exits nonzero when a check
-should stay on its tuned-on version. `--list` and `--estimate` make no calls and require no key.
-Estimates support `--model`, `--drift` and `--upgrade-to`.
+`scripts/check.py` reruns saved Workbench checks with live calls. Its options and exit codes are in the
+[Workbench guide](docs/workbench.md#keep-a-gate-as-a-check).
 
 ## Architecture and security
 
