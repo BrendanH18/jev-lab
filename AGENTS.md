@@ -8,7 +8,15 @@ guide for human contributors. Agents follow this file.
 
 ## Commands and CI
 
-Run builds, tests, untrusted code, Docker and long jobs on Boat. See the sandbox rules below.
+Use Boat as the compute for your task (owner, 2026-11-25). Anything that runs a program to do work
+happens in a Boat sandbox, never on the machine the agent runs on: builds, tests, lint, browser
+checks, large downloads, Docker, untrusted code and long jobs. That machine is the owner's Mac or a
+Raspberry Pi with 8 GB of RAM shared by every agent and the T3 server, where one heavy command
+stalls them all. Only light work stays local: reading and editing files, git, searches such as
+`git grep`, the `boat` CLI and the exceptions this file lists. If you're unsure, use Boat. If Boat
+can't start a sandbox, don't fall back to local compute: tell the owner what still needs a Boat run.
+Work this file keeps on the Mac (no GPU or macOS on Boat) can't run on the Pi either; an agent there
+leaves it to the owner and says so in its hand-off. See the sandbox rules below.
 
 ```sh
 scripts/boat-check.sh -- CMD             # a targeted check while working
