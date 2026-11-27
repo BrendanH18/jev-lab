@@ -243,15 +243,29 @@ test("canceling the shared discard guard keeps guideline drafts and makes no sav
     prompts = [];
   const queue = { edits: { 2: { dept: "billing" } } };
   const W = { bulk: { checkRuns: { tickets: { queue } } } };
-  const content = new Function(
+  const interactiveH = (tag, attrs, ...children) => ({
+    ...h(tag, attrs, ...children),
+    listeners: {},
+    addEventListener(name, fn) {
+      this.listeners[name] = fn;
+    },
+  });
+  const store = new Function(
     "W",
     "window",
-    "confirmDriftDiscard",
-    "confirmAgreementDiscard",
+    "createGuidelines",
+    "h",
+    "api",
     `${body("replaceQueue")}; ${body("confirmReviewDiscard")}; ${body("bulkPanel")};
+    const confirmDriftDiscard = () => true;
+    const confirmAgreementDiscard = () => true;
+    const handleError = () => {};
+    const toast = () => {};
+    const render = () => {};
     function renderBulk() {}
     function bulkPanelDrafts() {}
-    return bulkPanel();`,
+    bulkPanel();
+    return W.guides;`,
   )(
     W,
     {
@@ -260,27 +274,13 @@ test("canceling the shared discard guard keeps guideline drafts and makes no sav
         return false;
       },
     },
-    () => true,
-    () => true,
-  );
-  const deferredPanels = new Map([["bulk", { content }]]);
-  const callback = source.match(/beforeSave:\s*(\(id\)\s*=>\s*[^,]+),/)[1];
-  const beforeSave = new Function("deferredPanels", `return (${callback});`)(deferredPanels);
-  const interactiveH = (tag, attrs, ...children) => ({
-    ...h(tag, attrs, ...children),
-    listeners: {},
-    addEventListener(name, fn) {
-      this.listeners[name] = fn;
-    },
-  });
-  const store = createGuidelines({
-    h: interactiveH,
-    api: async (path, data) => {
+    createGuidelines,
+    interactiveH,
+    async (path, data) => {
       calls.push(path);
       return { id: data.id, saved_at: "now", questions: Q, guidelines: {}, warnings: [] };
     },
-    beforeSave,
-  });
+  );
   const dataset = { id: "tickets", saved_at: "now" };
   store.toggle(dataset).attrs.onclick();
   await new Promise((resolve) => setImmediate(resolve));

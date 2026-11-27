@@ -1,6 +1,75 @@
 import { expect, test } from "@playwright/test";
 import { startBrowserApp } from "./app.mjs";
 
+test("Build defers its result tools until an editor action needs them", async ({ page }) => {
+  let calls = 0;
+  const app = await startBrowserApp(() => {
+    calls++;
+    return [500, {}];
+  });
+  try {
+    const requests = [];
+    page.on("request", (request) => requests.push(new URL(request.url()).pathname));
+    await page.goto(`${app.base}/workbench`);
+    const editor = page.getByRole("textbox", { name: "Request state" });
+    await editor.fill('{"review":"Great coffee"}');
+    const results = "/js/workbench-build-results.js";
+    expect(requests).not.toContain(results);
+
+    await page.getByRole("button", { name: "Export code", exact: true }).click();
+    const exportPanel = page.locator("#export");
+    await expect(exportPanel.getByRole("heading", { name: "This request as code" })).toBeVisible();
+    await expect(exportPanel.locator("pre")).toContainText("Great coffee");
+    await exportPanel.getByRole("button", { name: "JavaScript SDK" }).click();
+    await expect(exportPanel.locator("pre")).toContainText("Great coffee");
+
+    await page.getByRole("button", { name: "Check questions", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Question checks" })).toBeVisible();
+    expect(requests.filter((path) => path === results)).toHaveLength(1);
+    expect(calls).toBe(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test("first Build Run detects a model change while the result module loads", async ({ page }) => {
+  let calls = 0;
+  const app = await startBrowserApp(() => {
+    calls++;
+    return [500, {}];
+  });
+  let release;
+  const ready = new Promise((resolve) => {
+    release = resolve;
+  });
+  try {
+    const results = "**/js/workbench-build-results.js";
+    await page.route(results, async (route) => {
+      await ready;
+      await route.continue();
+    });
+    await page.goto(`${app.base}/workbench`);
+    const resultRequest = page.waitForRequest(results);
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await resultRequest;
+    const modelChange = await page.request.post(`${app.base}/api/model`, {
+      headers: { "X-Jev-Token": await page.locator('meta[name="jev-csrf"]').getAttribute("content") },
+      data: { model: "jev-1.14.1" },
+    });
+    expect(modelChange.ok()).toBe(true);
+    await expect(page.locator("#key-pill")).toContainText("jev-1.14.0");
+    release();
+
+    await expect(page.getByRole("alert").filter({ hasText: "The selected model changed." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
+    await expect(page.locator("#key-pill")).toContainText("jev-1.14.1");
+    expect(calls).toBe(0);
+  } finally {
+    release();
+    await app.close();
+  }
+});
+
 test("Build and Compare share rows without loading the Bulk panel", async ({ page }) => {
   let calls = 0;
   const app = await startBrowserApp(() => {
@@ -23,8 +92,14 @@ test("Build and Compare share rows without loading the Bulk panel", async ({ pag
     await page.goto(`${app.base}/workbench`);
     const editor = page.getByRole("textbox", { name: "Request state" });
     await editor.fill('{"review":"Great coffee"}');
+    const bulkOnly = [
+      "/js/guidelines.js",
+      "/js/lab/surfaces/workbench-analysis.js",
+      "/js/lab/surfaces/workbench-checks.js",
+    ];
     for (const path of [
       bulkModule,
+      ...bulkOnly,
       "/js/workbench-datasets.js",
       "/js/workbench-policy.js",
       "/js/workbench-review.js",
@@ -46,6 +121,7 @@ test("Build and Compare share rows without loading the Bulk panel", async ({ pag
     const rowsPanel = bulk.locator("#bulk-rows");
     const rows = rowsPanel.getByRole("textbox");
     await expect(rows).toHaveValue("An edited review");
+    for (const path of bulkOnly) expect(requests).toContain(path);
     await expect
       .poll(() =>
         rowsPanel.evaluate((node) =>

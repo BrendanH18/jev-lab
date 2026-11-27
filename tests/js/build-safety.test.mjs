@@ -103,13 +103,20 @@ test("editing updates the stale warning and save guard without replacing the foc
   assert.equal(nodes["#build-save-test"].disabled, false);
 });
 
-test("a request edited while Run is in flight retains the original context for the stale warning", async () => {
+test("Run keeps the clicked request while loading the renderer and discards results after replacement", async () => {
   const W = { stateText: "original", questions: [choice()], images: [], saveOpen: true };
   let complete;
-  const api = () =>
-    new Promise((resolve) => {
+  let releaseRenderer;
+  const renderer = new Promise((resolve) => {
+    releaseRenderer = resolve;
+  });
+  const requests = [];
+  const api = (_path, request) => {
+    requests.push(request);
+    return new Promise((resolve) => {
       complete = resolve;
     });
+  };
   const context = () => buildEditorContext(W.stateText, W.questions, {});
   const harness = new Function(
     "W",
@@ -120,8 +127,12 @@ test("a request edited while Run is in flight retains the original context for t
     "imagesPayload",
     "render",
     "handleError",
+    "currentStatus",
+    "renderer",
     `
     let buildRunning = false, buildRunSequence = 0, buildRunContext = null;
+    let buildResults;
+    async function loadBuildResults() { buildResults = await renderer; }
     ${body("run", true)};
     return { run, resultContext: () => buildRunContext, replace: () => ++buildRunSequence };
   `,
@@ -136,10 +147,22 @@ test("a request edited while Run is in flight retains the original context for t
     (e) => {
       throw e;
     },
+    () => ({ model: "jev-1.14.0" }),
+    renderer,
   );
   const original = context();
   const pending = harness.run();
-  W.stateText = "edited while waiting";
+  W.stateText = "edited while the renderer loads";
+  await harness.run();
+  assert.equal(requests.length, 0);
+  releaseRenderer({});
+  await renderer;
+  await Promise.resolve();
+  assert.deepEqual(
+    requests.map(({ state }) => state),
+    ["original"],
+  );
+  assert.equal(requests[0].expected_model, "jev-1.14.0");
   complete({ answers: {}, trace: { request: {} } });
   await pending;
   assert.equal(harness.resultContext(), original);

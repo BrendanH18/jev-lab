@@ -197,7 +197,7 @@ bug #91 and Dependabot PR #86.
 | Open correctness bugs in quantitative tools | ≥1 (#91) | 0 known (#91 fixed) | 0, each tool with a reference-value test |
 | Live validation | Manual; exits 0 on misses | `--strict` exists; runs are manual | Manual `--strict` run on Boat recorded in every PR that changes wording, thresholds or the model |
 | Lab | 198 JS + 35 Python packs, 134,510 lines | 7 JS + 4 Python packs, 11,226 lines | ≤20 JS packs, <15,000 lines (or folded into panels) |
-| Workbench boot | 168 modules, 4.28 MB | 31 JavaScript files, 460 KB decoded (2026-11-27) | ≤25 modules, ≤500 KB |
+| Workbench boot | 168 modules, 4.28 MB | 25 JavaScript files, 368 KB decoded (2026-11-27) | ≤25 modules, ≤500 KB |
 | Client backends | SDK + Python 3.9 `urllib` fallback | SDK only | SDK only |
 | Third-party requests from the app | Google Fonts | None | None |
 | Largest Workbench module | 2,855 lines | 1,168 lines | ≤1,200 lines |
@@ -209,7 +209,9 @@ bug #91 and Dependabot PR #86.
 The 2026-11-27 startup measurement uses Chromium's Resource Timing through the point where the
 Build request editor becomes editable in a fresh browser context on Boat. Deferring Tests, Compare
 and Examples brought it from 69 JavaScript files and 1,117 KB decoded to 57 files and 937 KB.
-Deferring Bulk brought it down to 31 files and 460,143 decoded bytes.
+Deferring Bulk brought it down to 31 files and 460,143 decoded bytes. Deferring Build result
+rendering, Bulk guidelines, and the Policy and Review Lab builders brought it to
+25 files and 368,163 decoded bytes.
 
 ## Top risks
 

@@ -2,15 +2,13 @@
 // script again instead. The Lab packs the workbench page loads (its own, then the page-wide "chrome" packs) and the
 // ctx builders of its surfaces, which page code reaches as LAB.builders.
 import { createLab } from "../host.js";
-import * as s0 from "../surfaces/workbench-analysis.js";
-import * as s1 from "../surfaces/workbench-build.js";
-import * as s2 from "../surfaces/workbench-checks.js";
-import * as s3 from "../surfaces/workbench-shell.js";
+import * as s0 from "../surfaces/workbench-build.js";
+import * as s1 from "../surfaces/workbench-shell.js";
 import p0 from "../packs/workbench/workbench-shell-starter.js";
 import p1 from "../packs/chrome/chrome-essentials.js";
 
 export const PACKS = [p0, p1];
-export const LAB = createLab(PACKS, { ...s0, ...s1, ...s2, ...s3 }, {
+export const LAB = createLab(PACKS, { ...s0, ...s1 }, {
   counts: {"workbench.build.questions":32,"workbench.policy":7,"workbench.review.queue":19,"workbench.toolbox":10},
   load: async () => (await Promise.all([
     import("../packs/workbench/build-diff.js"),

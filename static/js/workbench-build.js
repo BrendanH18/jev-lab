@@ -7,7 +7,7 @@ import {
   formatBuildState,
   parseBuildState,
 } from "./build-request.js";
-import { $, callStats, currentStatus, h, icon, inspect, toast } from "./common.js";
+import { $, api, callStats, currentStatus, h, handleError, icon, inspect, refreshStatus, toast } from "./common.js";
 import {
   buildEditState,
   buildRawText,
@@ -18,6 +18,7 @@ import {
   undoBuildQuestion,
 } from "./workbench-build-editor.js";
 import {
+  imageNames,
   imagesFromSpecs,
   imagesPayload,
   renderBuildDraft,
@@ -35,27 +36,34 @@ import {
   resetBuildQuestionCleanup,
   visibleBuildQuestions,
 } from "./workbench-build-question-tools.js";
-import {
-  boxWarning,
-  buildRunContext,
-  buildRunning,
-  checkQuestions,
-  clearBuildRunContext,
-  exportCode,
-  invalidateBuildRun,
-  openBuildSaveForm,
-  renderBoxes,
-  renderBuildAnswerCards,
-  renderExport,
-  renderLint,
-  renderSaveForm,
-  run,
-} from "./workbench-build-results.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 
 export const TYPES = ["noul", "choice", "score", "box"];
 let buildBaseline = null;
+let buildResults;
+let buildRunContext = null;
+let buildRunSequence = 0;
+let buildRunning = false;
+
+async function loadBuildResults() {
+  try {
+    buildResults ??= await import("./workbench-build-results.js");
+  } catch (error) {
+    throw new Error("Could not load Build results. Download unsaved work before reloading Workbench.", {
+      cause: error,
+    });
+  }
+}
+
+function invalidateBuildRun() {
+  buildRunSequence += 1;
+  buildRunning = false;
+}
+
+function clearBuildRunContext() {
+  buildRunContext = null;
+}
 
 // Lab surface of this tab (contract: static/js/lab/surfaces/workbench-build.js). Functions that tests rebuild from
 // this source reach Lab only through W (W.lab, W.labEnv, W.buildLabCtx), so they spell this id as a literal.
@@ -202,6 +210,104 @@ export const blankRow = (type) => ({
 
 export function setBuildBaseline(context) {
   buildBaseline = context;
+}
+
+async function run() {
+  if (buildRunning) return;
+  const questions = validBuildQuestions();
+  if (!questions) return;
+  const context = buildContext();
+  const expectedModel = currentStatus().model;
+  const sequence = ++buildRunSequence;
+  buildRunning = true;
+  render();
+  try {
+    const images = W.images.map((i) => ({ ...i }));
+    const request = {
+      state: parseState(W.stateText),
+      questions,
+      images: imagesPayload(),
+      expected_model: expectedModel,
+    };
+    // Load the renderer before spending, using the request captured at the click.
+    if (!buildResults) await loadBuildResults();
+    if (sequence !== buildRunSequence) return;
+    const result = await api("/api/workbench/run", request);
+    if (sequence !== buildRunSequence) return;
+    result.images = images;
+    W.result = result;
+    buildRunContext = context;
+    W.saveOpen = false;
+  } catch (e) {
+    handleError(e);
+    if (e.status === 400) void refreshStatus();
+  } finally {
+    if (sequence === buildRunSequence) {
+      buildRunning = false;
+      render();
+    }
+  }
+}
+
+async function checkQuestions({ scroll = true } = {}) {
+  const questions = validBuildQuestions();
+  if (!questions) return;
+  const context = buildContext();
+  try {
+    const request = { state: parseState(W.stateText), questions, images: imageNames() };
+    if (!buildResults) await loadBuildResults();
+    const report = await api("/api/workbench/lint", request);
+    if (context !== buildContext()) return;
+    W.lint = report;
+    render();
+    if (scroll) $("#lint")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    handleError(e);
+  }
+}
+
+async function exportCode() {
+  try {
+    const questions = validBuildQuestions();
+    if (!questions) return;
+    const context = buildContext();
+    const request = {
+      state: parseState(W.stateText),
+      questions,
+      images: imageNames(),
+      expected_model: currentStatus().model,
+    };
+    if (!buildResults) await loadBuildResults();
+    const exported = await api("/api/workbench/export", request);
+    if (context !== buildContext()) return;
+    W.exported = exported;
+    render();
+    $("#export")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    handleError(e);
+    if (e.status === 400) void refreshStatus();
+  }
+}
+
+function boxWarning() {
+  const st = currentStatus();
+  const hasBox = W.questions.some((q) => q.type === "box");
+  if (!hasBox || !st.configured || st.supports_box) return null;
+  return h(
+    "div",
+    { class: "panel-body", style: { paddingBottom: 0 } },
+    h(
+      "div",
+      { class: "callout" },
+      icon("alert"),
+      h(
+        "div",
+        {},
+        h("b", {}, `${st.model} cannot answer Box questions.`),
+        h("div", { class: "muted" }, "Box needs Jev 1.14 or later. Change the model from the key menu in the top bar."),
+      ),
+    ),
+  );
 }
 
 export const sampleUrl = (name) => `/img/samples/${name}.png`;
@@ -612,7 +718,7 @@ export function renderBuild() {
             class: "btn sm",
             id: "build-save-test",
             disabled: !W.result || buildResultStale(),
-            onclick: () => openBuildSaveForm(),
+            onclick: () => buildResults.openBuildSaveForm(),
           },
           icon("save"),
           "Save as test",
@@ -630,8 +736,8 @@ export function renderBuild() {
             "div",
             { class: "panel-body grid", style: { gap: "12px" } },
             callStats(W.result.meta, () => inspect(W.result.trace, "Workbench · one Jev request")),
-            renderBoxes(),
-            h("div", { class: "answers", id: "build-answers" }, renderBuildAnswerCards()),
+            buildResults.renderBoxes(),
+            h("div", { class: "answers", id: "build-answers" }, buildResults.renderBuildAnswerCards()),
           )
         : h(
             "div",
@@ -639,9 +745,9 @@ export function renderBuild() {
             "Press Run. Every question is evaluated in parallel against the state, in one request.",
           ),
     ),
-    W.lint ? renderLint() : null,
-    W.saveOpen && W.result && !buildResultStale() ? renderSaveForm() : null,
-    W.exported ? renderExport() : null,
+    W.lint ? buildResults.renderLint() : null,
+    W.saveOpen && W.result && !buildResultStale() ? buildResults.renderSaveForm() : null,
+    W.exported ? buildResults.renderExport() : null,
     h(
       "div",
       { class: "panel" },

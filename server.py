@@ -544,12 +544,22 @@ def api_wb_examples(_body):
     return {"examples": examples.public_examples()}
 
 
+def wb_build_model(body: dict) -> str:
+    model = client.model
+    expected = body.get("expected_model")
+    if expected is not None and expected != model:
+        raise BadRequest("The selected model changed. Review the current model and try again.")
+    return model
+
+
 def api_wb_run(body):
-    return workbench.run(client, body.get("state"), body.get("questions"), body.get("images"))
+    return workbench.run(
+        client, body.get("state"), body.get("questions"), body.get("images"), model=wb_build_model(body)
+    )
 
 
 def api_wb_export(body):
-    return workbench.export(body.get("state"), body.get("questions"), client.model, body.get("images"))
+    return workbench.export(body.get("state"), body.get("questions"), wb_build_model(body), body.get("images"))
 
 
 def api_wb_lint(body):

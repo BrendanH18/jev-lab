@@ -343,6 +343,21 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(set(json.loads(body)), {"python", "javascript", "curl"})
 
+    def test_build_run_and_export_reject_a_changed_model(self):
+        payload = json.dumps(
+            {
+                "state": "A synthetic ticket",
+                "questions": {"urgent": {"type": "noul", "instructions": "Is the ticket urgent?"}},
+                "expected_model": f"{server.client.model}-different",
+            }
+        )
+        with patch.object(server.client, "system_one", side_effect=AssertionError("Unexpected API call")):
+            for action in ("run", "export"):
+                with self.subTest(action=action):
+                    status, _, body = self.request("POST", f"/api/workbench/{action}", payload, self.post_headers())
+                    self.assertEqual(status, 400)
+                    self.assertIn("The selected model changed", json.loads(body)["error"])
+
     def test_dataset_bundle_routes_roundtrip_without_model_calls(self):
         from jev import workbench
 
