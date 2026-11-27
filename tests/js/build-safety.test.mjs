@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   editorQuestionError,
@@ -9,7 +10,7 @@ import {
   buildContextChanged,
 } from "../../static/js/build-request.js";
 
-import { workbenchSource as source } from "./workbench-source.mjs";
+import { JS_DIR, workbenchSource as source } from "./workbench-source.mjs";
 
 const body = (name, async = false) =>
   source.match(new RegExp(`${async ? "async " : ""}function ${name}\\([^]*?\\n\\}`))[0];
@@ -101,6 +102,29 @@ test("editing updates the stale warning and save guard without replacing the foc
   edit();
   assert.equal(nodes["#build-stale"].style.display, "none");
   assert.equal(nodes["#build-save-test"].disabled, false);
+});
+
+test("a status refresh cannot restore a model superseded while the request was in flight", async () => {
+  const common = readFileSync(new URL("common.js", JS_DIR), "utf8");
+  const refresh = common.match(/async function refreshStatus\(\) \{.*?\n\}/s)[0];
+  let releaseStatus;
+  const response = new Promise((resolve) => {
+    releaseStatus = resolve;
+  });
+  const harness = new Function(
+    "api",
+    `
+    let status = { model: "jev-1.14.0" };
+    const renderPill = () => {};
+    const window = { dispatchEvent() {} };
+    ${refresh}
+    return { refreshStatus, setStatus: (value) => { status = value; } };`,
+  )(() => response);
+  const pending = harness.refreshStatus();
+  const newer = { model: "jev-1.14.2" };
+  harness.setStatus(newer);
+  releaseStatus({ model: "jev-1.14.1" });
+  assert.deepEqual(await pending, newer);
 });
 
 test("Run keeps the clicked request while loading the renderer and discards results after replacement", async () => {

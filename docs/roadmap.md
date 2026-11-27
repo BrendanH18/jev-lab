@@ -211,7 +211,7 @@ Build request editor becomes editable in a fresh browser context on Boat. Deferr
 and Examples brought it from 69 JavaScript files and 1,117 KB decoded to 57 files and 937 KB.
 Deferring Bulk brought it down to 31 files and 460,143 decoded bytes. Deferring Build result
 rendering, Bulk guidelines, and the Policy and Review Lab builders brought it to
-25 files and 368,163 decoded bytes.
+25 files and 368,356 decoded bytes.
 
 ## Top risks
 

@@ -576,8 +576,12 @@ export function currentStatus() {
 }
 
 export async function refreshStatus() {
+  const before = status;
   try {
-    status = await api("/api/status");
+    const received = await api("/api/status");
+    // A model or key change may have published newer status while this request was in flight.
+    if (status !== before) return status;
+    status = received;
     renderPill();
     window.dispatchEvent(new CustomEvent("jev:status", { detail: status }));
   } catch (e) {
