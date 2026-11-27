@@ -47,9 +47,7 @@ export function exampleMetadata(example) {
   };
 }
 
-// lab: optional Lab hooks { matches(example) -> boolean, arrange(examples) -> examples } (static/js/lab/surfaces/
-// workbench-shell.js). Lab's filter is one more test of "is this example shown"; Lab's sort applies after the page's.
-export function visibleExamples(examples, view = {}, lab = null) {
+export function visibleExamples(examples, view = {}) {
   const shown = examples.filter((example) => {
     const meta = exampleMetadata(example);
     if (!matchesExampleRefinements(example, view)) return false;
@@ -60,8 +58,7 @@ export function visibleExamples(examples, view = {}, lab = null) {
       (view.expectations === "without" && meta.expectation_count)
     )
       return false;
-    if (view.stateType && view.stateType !== "all" && meta.state_type !== view.stateType) return false;
-    return !lab?.matches || lab.matches(example) !== false;
+    return !view.stateType || view.stateType === "all" || meta.state_type === view.stateType;
   });
   const byCount = (example) => exampleMetadata(example).question_count;
   if (view.sort === "title") shown.sort((a, b) => a.title.localeCompare(b.title));
@@ -72,60 +69,21 @@ export function visibleExamples(examples, view = {}, lab = null) {
     const direction = ["state-largest", "criteria-most"].includes(view.sort) ? -1 : 1;
     shown.sort((a, b) => direction * (exampleCounts(a)[field] - exampleCounts(b)[field]));
   }
-  return lab?.arrange ? lab.arrange(shown) : shown;
+  return shown;
 }
 
 export function exampleMetadataJson(examples) {
   return JSON.stringify(examples.map(exampleMetadata), null, 2);
 }
 
-// The Lab surface of the gallery (contract: static/js/lab/surfaces/workbench-shell.js, shellExamplesCtx).
-const EXAMPLES_LAB = "workbench.examples.gallery";
-
-// lab: optional { host, env, loaded } — the page's Lab host (W.lab), its env (W.labEnv) and () => the example last
-// opened into Build. Without it, or before the host has the gallery's builder, the gallery works exactly as before.
-export function renderExamplesBrowser(h, examples, onOpen, lab = null) {
+export function renderExamplesBrowser(h, examples, onOpen) {
   const view = exampleBrowserView;
   // Update just the cards/count so typing and filter changes keep native focus.
   let cards, count, download, expand, collapse, root, tools, typeSummary, feedback;
-  const host = lab?.host || null;
   const resetView = () => {
     Object.assign(view, exampleBrowserDefaults());
-    host?.reset?.(EXAMPLES_LAB);
-    root.replaceWith(renderExamplesBrowser(h, examples, onOpen, lab));
+    root.replaceWith(renderExamplesBrowser(h, examples, onOpen));
   };
-  const labCtx =
-    typeof host?.builders?.shellExamplesCtx === "function"
-      ? host.builders.shellExamplesCtx({
-          examples: () => examples,
-          visible: (hooks) => visibleExamples(examples, view, hooks),
-          view: () => view,
-          pins: () => view.pins,
-          expanded: () => view.expanded,
-          loaded: () => lab.loaded?.() ?? null,
-          matches: (item, ctx) => host.matches(EXAMPLES_LAB, item, ctx),
-          arrange: (items, ctx) => host.arrange(EXAMPLES_LAB, items, ctx),
-          open: (example) => onOpen(example),
-          pin: (id) => {
-            view.pins.add(id);
-            refresh();
-          },
-          unpin: (id) => {
-            view.pins.delete(id);
-            refresh();
-          },
-          expand: (id) => {
-            view.expanded.add(id);
-            refresh();
-          },
-          collapse: (id) => {
-            view.expanded.delete(id);
-            refresh();
-          },
-          resetView,
-          refresh: () => refresh(),
-        })
-      : null;
   const transfer = async (text) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -142,14 +100,11 @@ export function renderExamplesBrowser(h, examples, onOpen, lab = null) {
   };
   // Pinned handoffs intentionally include hidden pins in the selected sort order.
   const pinned = () => visibleExamples(examples, { sort: view.sort }).filter((ex) => view.pins.has(ex.id));
-  // Lab's items are positions in this gallery, so its shown list maps back to the authored examples.
-  const shown = () =>
-    labCtx ? labCtx.shown().map((item) => examples[item.position - 1]) : visibleExamples(examples, view);
+  const shown = () => visibleExamples(examples, view);
   const refresh = () => {
     const visible = shown();
     const totals = visible.reduce((sum, ex) => sum + exampleMetadata(ex).question_count, 0);
-    const active = labCtx ? host.active?.(EXAMPLES_LAB) || 0 : 0;
-    count.textContent = `${visible.length} of ${examples.length} examples · ${totals} authored questions${active ? ` · ${active} Lab setting${active === 1 ? "" : "s"} active` : ""}`;
+    count.textContent = `${visible.length} of ${examples.length} examples · ${totals} authored questions`;
     cards.replaceChildren(
       ...(visible.length
         ? visible.map(card)
@@ -515,7 +470,6 @@ export function renderExamplesBrowser(h, examples, onOpen, lab = null) {
   typeSummary = h("p", { class: "faint", "aria-live": "polite" });
   feedback = h("p", { class: "faint", role: "status" });
   refresh();
-  const labSection = labCtx ? host.section(lab.env, EXAMPLES_LAB, labCtx) : null;
   root = h(
     "div",
     { class: "grid", id: "examples-browser", style: { gap: "16px" } },
@@ -526,7 +480,6 @@ export function renderExamplesBrowser(h, examples, onOpen, lab = null) {
     ),
     controls,
     advanced,
-    labSection,
     count,
     typeSummary,
     tools,

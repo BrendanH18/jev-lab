@@ -314,14 +314,7 @@ function preparedLabelCsv(state, report) {
 function nextPreparedLabel(direction = 1) {
   const state = W.bulk.prelabel;
   if (state.busy || !state.report || state.context !== prelabelContext()) return;
-  // With a Lab filter active, Next skips the rows it hides (the queue never draws them), still in rows-box order.
-  const lab = W.lab?.active?.("workbench.labeling.queue") ? W.labelingLab : null;
-  const item = nextLabel(
-    lab ? state.report.items.filter((entry) => lab.page.matches(entry)) : state.report.items,
-    state.drafts,
-    state.nextIndex,
-    direction,
-  );
+  const item = nextLabel(state.report.items, state.drafts, state.nextIndex, direction);
   if (!item) return;
   state.nextIndex = item.index;
   state.status = "incomplete";
@@ -337,12 +330,7 @@ export function prelabelBody() {
   const drafts = report ? state.drafts : {};
   const filled = Object.values(drafts).reduce((n, labels) => n + Object.keys(labels).length, 0);
   const progress = labelProgress(report?.items || [], drafts);
-  const byStatus = visibleLabels(report?.items || [], drafts, state.status || "all");
-  // Lab (contract: static/js/lab/surfaces/workbench-labeling.js) is reached only through W: without it, or with no Lab
-  // filter or sort active, the queue shows exactly the rows the status filter leaves, in rows-box order.
-  const lab = report && W.lab?.builders?.labelingQueueCtx ? labelingLab() : null;
-  const labActive = lab ? W.lab.active("workbench.labeling.queue") : 0;
-  const visible = labActive ? lab.page.visible() : byStatus;
+  const visible = visibleLabels(report?.items || [], drafts, state.status || "all");
   return h(
     "div",
     {
@@ -475,49 +463,11 @@ export function prelabelBody() {
               { class: "faint" },
               "Filters change the rows shown. Apply includes drafts from every slice. Next follows the current slice and wraps to the first incomplete row. While focused in this panel, Ctrl/⌘+Enter goes to the next incomplete row; Ctrl/⌘+Shift+Enter goes to the previous one. Tab and arrow keys keep their usual behavior.",
             ),
-            lab
-              ? W.lab.section(W.labEnv, "workbench.labeling.queue", lab, { title: "Lab tools for the labeling queue" })
-              : null,
             h(
               "div",
               { id: "prelabel-queue", class: "grid", style: { gap: "10px" } },
-              labActive
-                ? h(
-                    "p",
-                    {
-                      class: "faint",
-                      role: "status",
-                      style: {
-                        fontSize: "12.5px",
-                        margin: 0,
-                        display: "flex",
-                        gap: "8px",
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                      },
-                    },
-                    `Showing ${visible.length} of ${byStatus.length} rows this status leaves · ${labActive} Lab setting${labActive === 1 ? "" : "s"} active. Drafts on hidden rows stay, and Apply includes every slice.`,
-                    h(
-                      "button",
-                      {
-                        class: "btn sm ghost",
-                        onclick: () => {
-                          W.lab.reset("workbench.labeling.queue");
-                          render();
-                        },
-                      },
-                      "Clear Lab filters and sort",
-                    ),
-                  )
-                : null,
               report.items.length && !visible.length
-                ? h(
-                    "p",
-                    { class: "muted" },
-                    labActive && byStatus.length
-                      ? "No row matches the Lab filters."
-                      : "No rows match this labeling status.",
-                  )
+                ? h("p", { class: "muted" }, "No rows match this labeling status.")
                 : null,
               visible.map((item) =>
                 h(
@@ -601,78 +551,6 @@ export function prelabelBody() {
         : null,
     ),
   );
-}
-
-// ---------- Lab surface "workbench.labeling.queue" (contract: static/js/lab/surfaces/workbench-labeling.js) ----------
-// Built once per page session from W.lab.builders and kept on W, so prelabelBody and nextPreparedLabel reach it only
-// through W. Every field reads W at call time: Compare's handoff replaces W.bulk.prelabel as a whole.
-function labelingLab() {
-  if (W.labelingLab) return W.labelingLab;
-  const build = W.lab?.builders?.labelingQueueCtx;
-  if (typeof build !== "function") return null;
-  W.labelingLab = build({
-    state: () => W.bulk.prelabel,
-    current: () => W.bulk.prelabel.context === prelabelContext(),
-    pictures: () => W.bulk.pictures,
-    dataset: () => W.bulk.dataset,
-    guidelines: () => W.guides?.peek?.(W.bulk.dataset.id) || null,
-    matches: (item, ctx) => W.lab.matches("workbench.labeling.queue", item, ctx),
-    arrange: (items, ctx) => W.lab.arrange("workbench.labeling.queue", items, ctx),
-    writeDrafts: (changes, label) => labelingLabWrite(changes, label),
-    goTo: (index) => labelingLabGoTo(index),
-    next: (direction) => nextPreparedLabel(direction),
-    setStatus: (status) => {
-      W.bulk.prelabel.status = status;
-      render();
-    },
-    prepare: (field, value) => prepareLabels(field, value),
-    resetFilters: () => {
-      W.bulk.prelabel.status = "all";
-      W.lab?.reset("workbench.labeling.queue");
-      render();
-    },
-    refresh: () => labelingLabRefresh(),
-  });
-  return W.labelingLab;
-}
-
-// A Lab edit of the drafts takes the path a label select takes: drafts change (null clears), a pending import preview
-// is dropped, and nothing reaches the rows box until Apply.
-function labelingLabWrite(changes, label) {
-  const state = W.bulk.prelabel;
-  for (const [index, labels] of changes) {
-    const target = (state.drafts[index] ||= Object.create(null));
-    for (const [qid, value] of Object.entries(labels)) {
-      if (value === null) delete target[qid];
-      else target[qid] = value;
-    }
-  }
-  state.csvPreview = null;
-  render();
-  toast(
-    `${label}: draft labels changed on ${changes.length} row${changes.length === 1 ? "" : "s"}. Apply labels to rows, then Save dataset, to keep them.`,
-  );
-}
-
-function labelingLabGoTo(index) {
-  W.bulk.prelabel.nextIndex = index;
-  render();
-  const target = $(`#prelabel-row-${index}`);
-  target?.scrollIntoView({ behavior: "smooth", block: "center" });
-  (target?.querySelector("select:not(:disabled)") || target)?.focus({ preventScroll: true });
-}
-
-// Lab filters and sorts redraw the queue rows and the "showing N" line only, so the Lab section keeps its controls.
-function labelingLabRefresh() {
-  const panel = $("#prelabel-panel");
-  if (!panel) return;
-  const fresh = h("div", {}, prelabelBody());
-  for (const id of ["prelabel-status", "prelabel-queue"]) {
-    const live = $(`#${id}`, panel),
-      next = $(`#${id}`, fresh);
-    if (!live || !next) return void mount(panel, prelabelBody());
-    live.replaceWith(next);
-  }
 }
 
 // ---------- Review labels ----------

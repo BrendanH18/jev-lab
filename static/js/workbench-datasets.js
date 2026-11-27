@@ -25,7 +25,7 @@ import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
 import { rowsText, bulkUnsaved, replaceRows, settleLabels, rowsPayload, bulkQuestions } from "./workbench-bulk.js";
 import { checkItem } from "./workbench-checks.js";
-import { agreeButton, agreePanel, openDatasetAgreement } from "./workbench-dataset-agreement.js";
+import { agreeButton, agreePanel } from "./workbench-dataset-agreement.js";
 import { bundleImportForm, exportBundle } from "./workbench-dataset-bundles.js";
 import { testControl } from "./workbench-dataset-holdout.js";
 import { preparedLabelsUnsaved } from "./workbench-labeling.js";
@@ -204,7 +204,6 @@ const datasetHistory = createHistory({
   handleError,
   render: () => render(),
   beforeRestore: confirmReviewDiscard,
-  lab: (id, control) => (W.lab?.builders?.datasetsHistoryCtx ? datasetsHistoryLab(id, control) : null),
   afterRestore: async (id) => {
     const b = W.bulk;
     delete b.checkRuns[id];
@@ -244,8 +243,6 @@ export function renderDatasets() {
   const labeledText = (x) =>
     `${x.rows} row${x.rows === 1 ? "" : "s"} · ${x.labeled} labeled` +
     (x.questions ? ` · ${x.questions} question${x.questions === 1 ? "" : "s"}` : "");
-  // Lab (contract: static/js/lab/surfaces/workbench-datasets.js) filters like any catalog filter and sorts after the page.
-  const catalogLab = W.lab?.builders?.datasetsCatalogCtx ? datasetsCatalogLab() : null;
   const catalogOrder = sortedCatalog(b.datasets, filters.sort, filters.pinnedIds);
   return h(
     "div",
@@ -297,24 +294,17 @@ export function renderDatasets() {
           )
         : null,
       datasetSearchControls(filters),
-      catalogLab
-        ? W.lab.section(W.labEnv, "workbench.datasets.catalog", catalogLab, {
-            title: "Lab tools for the dataset catalog",
-          })
-        : null,
       b.datasets.length
         ? h(
             "div",
             { id: "dataset-search-results" },
-            (catalogLab ? catalogLab.page.arrange(catalogOrder) : catalogOrder).map((x) =>
+            catalogOrder.map((x) =>
               h(
                 "div",
                 {
                   class: "item dataset-search-item",
                   "data-dataset-id": x.id,
-                  style: {
-                    display: matchesCatalog(x, filters) && (!catalogLab || catalogLab.page.matches(x)) ? "" : "none",
-                  },
+                  style: { display: matchesCatalog(x, filters) ? "" : "none" },
                 },
                 h(
                   "div",
@@ -420,13 +410,8 @@ function datasetSearchControls(filters) {
         `${label}: ${value} ×`,
       ),
     );
-  // Lab's filters count like every catalog filter (and so scope every "shown" action); Lab's sort applies last.
-  const lab = W.lab?.builders?.datasetsCatalogCtx ? datasetsCatalogLab().page : null;
-  const ordered = () => {
-    const list = sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds);
-    return lab ? lab.arrange(list) : list;
-  };
-  const visible = () => ordered().filter((item) => matchesCatalog(item, filters) && (!lab || lab.matches(item)));
+  const ordered = () => sortedCatalog(W.bulk.datasets, filters.sort, filters.pinnedIds);
+  const visible = () => ordered().filter((item) => matchesCatalog(item, filters));
   const update = () => {
     const shown = visible();
     const matches = new Set(shown.map((item) => item.id));
@@ -481,7 +466,7 @@ function datasetSearchControls(filters) {
     const active = catalogActiveFilters(filters);
     const activeCount = $("#dataset-catalog-active-count");
     if (activeCount)
-      activeCount.textContent = `${active.length} active dataset filter${active.length === 1 ? "" : "s"}${labText()}`;
+      activeCount.textContent = `${active.length} active dataset filter${active.length === 1 ? "" : "s"}`;
     const filterSummary = $("#dataset-catalog-filter-summary");
     if (filterSummary) filterSummary.textContent = catalogFilterSummary(filters);
     $("#dataset-catalog-filter-chips")?.replaceChildren?.(...activeChips());
@@ -541,27 +526,9 @@ function datasetSearchControls(filters) {
     update();
   };
   const clear = () => {
-    if (W.lab) {
-      W.lab.reset("workbench.datasets.catalog");
-      const section = $('[data-lab-surface="workbench.datasets.catalog"]');
-      if (section && lab)
-        section.replaceWith(
-          W.lab.section(W.labEnv, "workbench.datasets.catalog", datasetsCatalogLab(), {
-            title: "Lab tools for the dataset catalog",
-          }) || "",
-        );
-    }
     applyFilters(catalogDefaults());
     search.focus();
   };
-  const labText = () => {
-    const count = W.lab?.active("workbench.datasets.catalog") || 0;
-    return count ? ` · ${count} Lab setting${count === 1 ? "" : "s"} active` : "";
-  };
-  if (lab) {
-    W.datasetsCatalogRefresh = update;
-    W.datasetsCatalogClear = clear;
-  }
   const download = (items, format, name) => {
     if (!items.length) return;
     const url = URL.createObjectURL(
@@ -947,7 +914,7 @@ function datasetSearchControls(filters) {
     h(
       "span",
       { class: "faint", id: "dataset-catalog-active-count", "aria-live": "polite" },
-      `${catalogActiveFilters(filters).length} active dataset filter${catalogActiveFilters(filters).length === 1 ? "" : "s"}${labText()}`,
+      `${catalogActiveFilters(filters).length} active dataset filter${catalogActiveFilters(filters).length === 1 ? "" : "s"}`,
     ),
     h(
       "details",
@@ -1085,75 +1052,4 @@ function datasetSearchControls(filters) {
       "A labeled row has at least one saved label; this does not establish complete or valid labels. Filters only change the list shown. Pins last for this page session; clearing filters keeps them.",
     ),
   );
-}
-
-// ---------- Lab surfaces (contract: static/js/lab/surfaces/workbench-datasets.js) ----------
-// Each ctx is built on first use from the page's own state and handlers, and reached only behind a W.lab check, so the
-// tests that rebuild page functions from source (without W.lab) never touch them.
-
-// "workbench.datasets.catalog": one ctx for the page session. refresh() and resetFilters() go through the catalog's own
-// update and clear, which only hide and reorder the mounted cards, so open human queues stay mounted.
-function datasetsCatalogLab() {
-  const id = "workbench.datasets.catalog";
-  if (!W.datasetsCatalogLab)
-    W.datasetsCatalogLab = W.lab.builders.datasetsCatalogCtx({
-      datasets: () => W.bulk.datasets,
-      filters: () => W.bulk.datasetSearch,
-      loadedId: () => W.bulk.dataset.id,
-      unsaved: () => bulkUnsaved(),
-      saveBusy: () => !!W.bulk.datasetSaveBusy,
-      copyBusy: () => !!W.bulk.datasetCopyBusy,
-      agreementOpen: (datasetId) => !!W.bulk.agreeRuns[datasetId]?.open,
-      matches: (item, ctx) => W.lab.matches(id, item, ctx),
-      arrange: (list, ctx) => W.lab.arrange(id, list, ctx),
-      load: (datasetId) => loadDataset(datasetId),
-      loadCopy: (datasetId) => loadDatasetCopy(datasetId),
-      downloadBundle: (datasetId) => exportBundle(datasetId),
-      setPins: (ids) => {
-        W.bulk.datasetSearch.pinnedIds = ids;
-        if (W.datasetsCatalogRefresh) W.datasetsCatalogRefresh();
-        else render();
-      },
-      openAgreement: openDatasetAgreement,
-      resetFilters: () => {
-        if (W.datasetsCatalogClear) return W.datasetsCatalogClear();
-        Object.assign(W.bulk.datasetSearch, catalogDefaults(), { pinnedIds: W.bulk.datasetSearch.pinnedIds });
-        W.lab.reset(id);
-        return render();
-      },
-      refresh: () => (W.datasetsCatalogRefresh ? W.datasetsCatalogRefresh() : render()),
-      now: () => Date.now(),
-    });
-  return W.datasetsCatalogLab;
-}
-
-// "workbench.datasets.history": one ctx per dataset whose History panel is open (history.js passes its control).
-function datasetsHistoryLab(datasetId, control) {
-  const id = "workbench.datasets.history";
-  const labs = W.datasetsHistoryLabs || (W.datasetsHistoryLabs = {});
-  if (!labs[datasetId] || labs[datasetId].control !== control) {
-    const ctx = W.lab.builders.datasetsHistoryCtx({
-      datasetId,
-      state: () => control.state(),
-      deleted: () => control.deleted(),
-      matches: (item, c) => W.lab.matches(id, item, c),
-      arrange: (list, c) => W.lab.arrange(id, list, c),
-      reload: () => control.reload(),
-      preview: (entry) => control.preview(entry),
-      cancelPreview: () => control.cancelPreview(),
-      restore: () => control.restore(),
-      setChangedOnly: (on) => control.setChangedOnly(on),
-      refresh: () => render(),
-      now: () => Date.now(),
-    });
-    labs[datasetId] = { control, ctx };
-  }
-  const ctx = labs[datasetId].ctx;
-  return {
-    matches: ctx.page.matches,
-    arrange: ctx.page.arrange,
-    active: () => W.lab.active(id),
-    reset: () => W.lab.reset(id),
-    section: () => W.lab.section(W.labEnv, id, ctx, { title: "Lab tools for revisions" }),
-  };
 }

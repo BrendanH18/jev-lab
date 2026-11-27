@@ -42,7 +42,7 @@ def test_indexes(dataset: dict) -> List[int]:
 
 def choose(dataset: dict, share: Any = DEFAULT_SHARE, seed: Optional[int] = None) -> Tuple[List[int], List[List[int]]]:
     """(positions of the labeled rows, the exact-input groups to hold out) for a new split, without writing anything.
-    lock() holds out what this returns; `lab.py splits plan` previews it. seed: None draws at random."""
+    lock() holds out what this returns. seed: None draws at random."""
     if isinstance(share, bool) or not isinstance(share, (int, float)) or not MIN_SHARE <= share <= MAX_SHARE:
         raise WorkbenchError("share must be a number from %g to %g" % (MIN_SHARE, MAX_SHARE))
     if test_indexes(dataset):

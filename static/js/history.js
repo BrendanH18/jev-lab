@@ -50,38 +50,13 @@ export function restoreMessage(report, entry) {
   );
 }
 
-// deps: { h, api, icon, toast, handleError, render, beforeRestore(id), afterRestore(id), confirm, lab }
-// lab(id, control), optional: the page's Lab hook for the "workbench.datasets.history" surface. It returns null, or
-// { matches(entry), arrange(entries), active(), reset(), section() }; control is this panel's own state and
-// operations for one dataset ({ state(), deleted(), reload(), preview(entry), cancelPreview(), restore(),
-// setChangedOnly(on), render() }), the same object on every call. Without it the panel behaves exactly as before.
+// deps: { h, api, icon, toast, handleError, render, beforeRestore(id), afterRestore(id), confirm }
 export function createHistory(deps) {
   const ask = deps.confirm || ((text) => globalThis.confirm(text));
   const runs = {};
   const gone = { open: false, busy: false, list: null, query: "" };
   const run = (id) =>
     runs[id] || (runs[id] = { open: false, busy: false, list: null, preview: null, changedOnly: false });
-  const controls = {};
-  const control = (id) =>
-    controls[id] ||
-    (controls[id] = {
-      state: () => run(id),
-      deleted: () => gone.list,
-      reload: () => refresh(id),
-      preview: (entry) => preview(id, entry),
-      cancelPreview: () => {
-        run(id).preview = null;
-        deps.render();
-      },
-      restore: () => restore(id),
-      setChangedOnly: (on) => {
-        const state = run(id);
-        state.changedOnly = on;
-        if (on && state.preview?.entry.current) state.preview = null;
-        deps.render();
-      },
-      render: () => deps.render(),
-    });
 
   async function refresh(id) {
     const state = run(id);
@@ -179,11 +154,7 @@ export function createHistory(deps) {
     const state = run(id);
     if (!state.open) return null;
     const list = state.list?.id === id ? state.list.revisions : null;
-    // Lab's filters count like the page's own; Lab's sort applies after the page's (newest first) order.
-    const lab = deps.lab ? deps.lab(id, control(id)) : null;
-    const kept = list?.filter((entry) => (!state.changedOnly || !entry.current) && (!lab || lab.matches(entry)));
-    const visible = lab && kept ? lab.arrange(kept) : kept;
-    const labActive = lab ? lab.active() : 0;
+    const visible = list?.filter((entry) => !state.changedOnly || !entry.current);
     const shown = state.preview;
     return h(
       "div",
@@ -217,36 +188,11 @@ export function createHistory(deps) {
           )
         : null,
       list?.length
-        ? h(
-            "span",
-            { class: "faint", "aria-live": "polite" },
-            `${visible.length} of ${list.length} revisions shown` +
-              (labActive ? ` · ${labActive} Lab setting${labActive === 1 ? "" : "s"} active` : ""),
-          )
+        ? h("span", { class: "faint", "aria-live": "polite" }, `${visible.length} of ${list.length} revisions shown`)
         : null,
       list?.length && !visible.length
-        ? h(
-            "p",
-            { class: "faint" },
-            labActive
-              ? "No kept revision matches the filters. Clear them to preview one."
-              : "Every kept revision matches the current file. Clear the filter to preview one.",
-          )
+        ? h("p", { class: "faint" }, "Every kept revision matches the current file. Clear the filter to preview one.")
         : null,
-      labActive
-        ? h(
-            "button",
-            {
-              class: "btn sm ghost",
-              onclick: () => {
-                lab.reset();
-                deps.render();
-              },
-            },
-            "Clear Lab filters and sort",
-          )
-        : null,
-      lab ? lab.section() : null,
       state.busy && !list ? h("p", { class: "faint" }, "Reading history…") : null,
       list && !list.length
         ? h(

@@ -1,5 +1,4 @@
-"""Lab packs for the Python side: extra question checks, dataset health and Bulk preflight findings, row formats,
-local JSON routes and offline command-line commands.
+"""Lab packs for the Python side: extra question checks, dataset health findings and Bulk preflight notes.
 
 A pack is one module in jev/lab/packs that defines PACK = kit.define_pack({...}); its id is the module name with
 hyphens. Packs are plain code: nothing here calls the model or the network, and nothing writes outside the guarded
@@ -40,11 +39,6 @@ def all_packs() -> List[dict]:
 def features(kind: str) -> List[Tuple[dict, dict]]:
     """(pack, feature) for every feature of one kind, in pack then declaration order."""
     return [(pack, feature) for pack in all_packs() for feature in pack["features"] if feature["kind"] == kind]
-
-
-def improvements() -> List[dict]:
-    """Every numbered improvement the Python packs hold; see kit.improvements_of."""
-    return [item for pack in all_packs() for item in kit.improvements_of(pack)]
 
 
 def code(pack: dict, feature: dict) -> str:
@@ -104,19 +98,3 @@ def preflight_findings(state, questions: Dict[str, dict], refs, row: int) -> Lis
         for question, message in results:
             out.append({"row": row, "question": question, "code": code(pack, feature), "message": message})
     return out
-
-
-def routes() -> Dict[Tuple[str, str], Callable[[dict], dict]]:
-    """The local JSON routes packs add, as server.ROUTES entries. All are POST under /api/lab/."""
-    out: Dict[Tuple[str, str], Callable[[dict], dict]] = {}
-    for _pack, feature in features("route"):
-        key = ("POST", feature["path"])
-        if key in out:
-            raise kit.PackError("Lab route %s is declared twice" % feature["path"])
-        out[key] = feature["handler"]
-    return out
-
-
-def formats() -> List[Tuple[dict, dict]]:
-    """(pack, feature) for every row format."""
-    return features("format")

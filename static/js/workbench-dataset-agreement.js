@@ -39,11 +39,6 @@ function agreeRun(id) {
   );
 }
 
-export function openDatasetAgreement(id) {
-  agreeRun(id).open = true;
-  render();
-}
-
 export function agreementSessionsUnsaved(id = null) {
   return Object.entries(W.bulk.agreeRuns || {}).some(
     ([key, run]) => (id === null || key === id) && agreementEditsUnsaved(run),
@@ -333,11 +328,6 @@ async function drawAgreeSample(id) {
 function agreeSampleView(x, a) {
   const s = a.sample;
   const given = secondItems(s.items, a.labels).length;
-  // Lab (contract: static/js/lab/surfaces/workbench-datasets.js) hides cards and sorts them; every label stays in a.labels
-  // and Compare still sends every labeled row.
-  const lab = W.lab?.builders?.datasetsAgreementCtx ? datasetsAgreementLab(x) : null;
-  const cards = lab ? lab.page.arrange(s.items.filter((item) => lab.page.matches(item))) : s.items;
-  const labActive = lab ? W.lab.active("workbench.datasets.agreement") : 0;
   const card = (item) => {
     const labels = a.labels[item.row_id] || (a.labels[item.row_id] = Object.create(null)); // a question id may be __proto__
     const done = item.questions.every((q) => labels[q] !== null && labels[q] !== undefined);
@@ -413,28 +403,7 @@ function agreeSampleView(x, a) {
       "The saved labels stay hidden until you compare; the rows box shows them if this dataset is loaded there, so label from this list.",
     ),
     agreeQuestions(s.questions),
-    lab
-      ? W.lab.section(W.labEnv, "workbench.datasets.agreement", lab, { title: "Lab tools for the agreement sample" })
-      : null,
-    labActive
-      ? h(
-          "p",
-          { class: "faint", style: { fontSize: "12px", margin: 0 } },
-          `Showing ${cards.length} of ${s.items.length} sampled rows · ${labActive} Lab setting${labActive === 1 ? "" : "s"} active. Labels on hidden rows stay, and Compare sends every labeled row. `,
-          h(
-            "button",
-            {
-              class: "btn sm ghost",
-              onclick: () => {
-                W.lab.reset("workbench.datasets.agreement");
-                render();
-              },
-            },
-            "Clear Lab filters and sort",
-          ),
-        )
-      : null,
-    h("div", { class: "queue-list" }, cards.map(card)),
+    h("div", { class: "queue-list" }, s.items.map(card)),
     h(
       "div",
       { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
@@ -790,33 +759,4 @@ async function saveSettled(id) {
   }
   a.busy = false;
   render();
-}
-
-// "workbench.datasets.agreement": one ctx per dataset with an agreement sample on screen.
-function datasetsAgreementLab(dataset) {
-  const id = "workbench.datasets.agreement";
-  const labs = W.datasetsAgreementLabs || (W.datasetsAgreementLabs = {});
-  const datasetId = dataset.id;
-  if (!labs[datasetId])
-    labs[datasetId] = W.lab.builders.datasetsAgreementCtx({
-      datasetId,
-      datasetName: () => W.bulk.datasets.find((entry) => entry.id === datasetId)?.name || datasetId,
-      run: () => W.bulk.agreeRuns[datasetId] || null,
-      matches: (item, ctx) => W.lab.matches(id, item, ctx),
-      arrange: (list, ctx) => W.lab.arrange(id, list, ctx),
-      setLabel: (rowId, question, value) => {
-        changeSecondLabel(agreeRun(datasetId), rowId, question, value);
-        render();
-      },
-      compare: () => compareAgreement(datasetId),
-      settle: (rowId, question, value) => {
-        const a = agreeRun(datasetId);
-        a.choices[settleKey(rowId, question)] = value;
-        a.sessionPreview = null;
-        render();
-      },
-      refresh: () => render(),
-      now: () => Date.now(),
-    });
-  return labs[datasetId];
 }

@@ -7,7 +7,7 @@ import {
   formatBuildState,
   parseBuildState,
 } from "./build-request.js";
-import { $, callStats, currentStatus, h, icon, inspect, mount, toast } from "./common.js";
+import { $, callStats, currentStatus, h, icon, inspect, toast } from "./common.js";
 import {
   buildEditState,
   buildRawText,
@@ -57,10 +57,9 @@ import { render } from "./workbench.js";
 export const TYPES = ["noul", "choice", "score", "box"];
 let buildBaseline = null;
 
-// Lab surfaces of this tab (contract: static/js/lab/surfaces/workbench-build.js). Functions that tests rebuild from
-// this source reach Lab only through W (W.lab, W.labEnv, W.buildLabCtx), so they spell these ids as literals.
+// Lab surface of this tab (contract: static/js/lab/surfaces/workbench-build.js). Functions that tests rebuild from
+// this source reach Lab only through W (W.lab, W.labEnv, W.buildLabCtx), so they spell this id as a literal.
 const BUILD_LAB_QUESTIONS = "workbench.build.questions";
-export const BUILD_LAB_RESULT = "workbench.build.result";
 
 // ---------- data helpers ----------
 const parseMaybeJson = (s) => {
@@ -292,16 +291,15 @@ function compactBuildStateText() {
 }
 
 // ---------- Lab ----------
-// The Lab ctx of this tab's two surfaces, built once per page session from the builders the page's Lab index
-// provides (W.lab.builders), and kept on W so the filter functions above reach it the way they reach W.lab. null
-// until those builders exist. Every action goes through the same functions as the tab's own buttons.
+// The Lab ctx of this tab's questions, built once per page session from the builder the page's Lab index provides
+// (W.lab.builders), and kept on W so the filter functions above reach it the way they reach W.lab. null until that
+// builder exists. Every action goes through the same functions as the tab's own buttons.
 function buildLabContexts() {
   if (W.buildLabCtx) return W.buildLabCtx;
-  const builders = W.lab?.builders;
-  if (!builders?.wbBuildQuestionsCtx || !builders?.wbBuildResultCtx) return null;
-  const currentIds = () => W.questions.map((row) => String(row.id || "").trim()).filter(Boolean);
+  const build = W.lab?.builders?.wbBuildQuestionsCtx;
+  if (!build) return null;
   W.buildLabCtx = {
-    questions: builders.wbBuildQuestionsCtx({
+    questions: build({
       rows: () => W.questions,
       expect: () => W.expect,
       stateText: () => W.stateText,
@@ -348,27 +346,6 @@ function buildLabContexts() {
       refresh: () => {
         refreshQuestionVisibility();
         arrangeBuildQuestionCards();
-      },
-    }),
-    result: builders.wbBuildResultCtx({
-      result: () => W.result,
-      expect: () => W.expect,
-      stale: () => buildResultStale(),
-      running: () => buildRunning,
-      currentIds,
-      saveOpen: () => W.saveOpen,
-      arrange: (items, ctx) => W.lab.arrange(BUILD_LAB_RESULT, items, ctx),
-      matches: (item, ctx) => W.lab.matches(BUILD_LAB_RESULT, item, ctx),
-      inspect: () => inspect(W.result.trace, "Workbench · one Jev request"),
-      openSave: () => openBuildSaveForm(true),
-      focusQuestion: (qid) => {
-        const index = W.questions.findIndex((row) => String(row.id || "").trim() === qid);
-        if (index < 0 || !visibleBuildQuestions().includes(W.questions[index])) return false;
-        navigateBuildQuestion(index);
-        return true;
-      },
-      refresh: () => {
-        if ($("#build-answers")) mount("#build-answers", renderBuildAnswerCards());
       },
     }),
   };
@@ -661,14 +638,6 @@ export function renderBuild() {
             { class: "empty" },
             "Press Run. Every question is evaluated in parallel against the state, in one request.",
           ),
-      labCtx
-        ? (() => {
-            const section = W.lab.section(W.labEnv, BUILD_LAB_RESULT, labCtx.result, {
-              title: "Lab tools for answers",
-            });
-            return section ? h("div", { class: "panel-body", style: { paddingTop: 0 } }, section) : null;
-          })()
-        : null,
     ),
     W.lint ? renderLint() : null,
     W.saveOpen && W.result && !buildResultStale() ? renderSaveForm() : null,

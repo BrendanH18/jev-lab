@@ -10,13 +10,6 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKS_DIR = join(ROOT, "static/js/lab/packs");
 const PAGES_DIR = join(ROOT, "static/js/lab/pages");
 const SURFACES_DIR = join(ROOT, "static/js/lab/surfaces");
-// The other Workbench surface builders have no surviving packs after the Lab prune.
-const WORKBENCH_BUILDER_FILES = [
-  "workbench-analysis.js",
-  "workbench-build.js",
-  "workbench-checks.js",
-  "workbench-shell.js",
-];
 // Every page gets an index, even with no packs of its own, so its entry module can always import one.
 export const PAGES = [
   "index",
@@ -80,7 +73,7 @@ function pageIndex(page, files, surfaces) {
   const eager = files.filter((entry) => !deferred.includes(entry));
   eager.forEach((entry, index) => lines.push(`import p${index} from "../packs/${entry.page}/${entry.file}";`));
   lines.push("", `export const PACKS = [${eager.map((_, index) => `p${index}`).join(", ")}];`);
-  const builders = `{ ${surfaces.map((_, index) => `...s${index}`).join(", ")} }`;
+  const builders = surfaces.length ? `{ ${surfaces.map((_, index) => `...s${index}`).join(", ")} }` : "{}";
   if (deferred.length) {
     const counts = new Map();
     for (const { pack } of deferred) {
@@ -116,11 +109,7 @@ export async function generate() {
     }
     files.set(
       `static/js/lab/pages/${page}.js`,
-      pageIndex(
-        page,
-        [...loaded.filter((entry) => entry.page === page), ...chrome],
-        page === "workbench" ? surfaces.filter((file) => WORKBENCH_BUILDER_FILES.includes(file)) : surfaces,
-      ),
+      pageIndex(page, [...loaded.filter((entry) => entry.page === page), ...chrome], surfaces),
     );
   }
 

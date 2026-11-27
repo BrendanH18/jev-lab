@@ -36,7 +36,7 @@
         "useIterableCallbackReturn": "off" // 91 findings, mostly forEach callbacks written as expressions
       },
       "correctness": {
-        "noPrecisionLoss": "off" // 85 findings, nearly all full-precision constants in static/js/lab/lib/math.js
+        "noPrecisionLoss": "off" // the full-precision constants in static/js/lab/lib/math.js
       }
     }
   },

@@ -1079,7 +1079,7 @@ function auditSlices(a) {
 export function reviewQueueLab(x) {
   const build = W.lab?.builders?.reviewQueueCtx;
   if (typeof build !== "function") return null;
-  const labs = (W.checkLabs ||= { list: null, review: {}, drift: {} });
+  const labs = (W.checkLabs ||= { review: {} });
   const id = x.id;
   const queue = () => W.bulk.checkRuns[id]?.queue;
   return (labs.review[id] ||= build({

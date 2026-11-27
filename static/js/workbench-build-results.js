@@ -16,7 +16,6 @@ import {
 import { buildRawText } from "./workbench-build-editor.js";
 import { imageFor, imageNames, imagesPayload } from "./workbench-build-inputs.js";
 import {
-  BUILD_LAB_RESULT,
   buildContext,
   buildResultStale,
   parseState,
@@ -54,46 +53,17 @@ function defaultExpect(answer) {
   return answer.noul >= 0.5 ? { min: 0.5 } : { max: 0.5 };
 }
 
-// The answer cards of the latest Run: every answer in response order, unless Lab filters hide some or a Lab sort
-// reorders them.
+// The answer cards of the latest Run: every answer in response order.
 export function renderBuildAnswerCards() {
   const r = W.result;
   if (!r) return [];
   const questions = r.trace.request.questions;
-  const ctx = W.buildLabCtx?.result;
-  if (!ctx) return Object.entries(r.answers).map(([qid, a]) => answerCard(qid, a, questions[qid]));
-  const total = ctx.items().length;
-  const shown = ctx.shown();
-  const active = W.lab?.active?.(BUILD_LAB_RESULT) || 0;
-  const wide = { gridColumn: "1 / -1" };
-  return [
-    total && !shown.length
-      ? h("div", { class: "empty", style: wide }, "No answer matches the Lab filters.")
-      : shown.map((item) => answerCard(item.id, r.answers[item.id], questions[item.id])),
-    active
-      ? h(
-          "div",
-          { class: "faint", style: { ...wide, fontSize: "12px" }, role: "status" },
-          `${shown.length} of ${total} answers shown · ${active} Lab setting${active === 1 ? "" : "s"} active `,
-          h(
-            "button",
-            {
-              class: "btn sm ghost",
-              onclick: () => {
-                W.lab.reset(BUILD_LAB_RESULT);
-                render();
-              },
-            },
-            "Clear Lab filters and sort",
-          ),
-        )
-      : null,
-  ];
+  return Object.entries(r.answers).map(([qid, a]) => answerCard(qid, a, questions[qid]));
 }
 
-// The Save as test button's toggle, or open only (Lab's openSave). Expectations default from the answers.
-export function openBuildSaveForm(open = !W.saveOpen) {
-  W.saveOpen = open;
+// The Save as test button's toggle. Expectations default from the answers.
+export function openBuildSaveForm() {
+  W.saveOpen = !W.saveOpen;
   if (W.saveOpen && !Object.keys(W.expect).length)
     W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)]));
   render();

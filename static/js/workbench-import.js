@@ -330,7 +330,7 @@ function renderImportResult() {
 // A health report describes the current rows and selected questions, never a prior Bulk run's answers.
 export const healthContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty, W.bulk.health.field]);
 
-// The "Check dataset health" button; also Lab's workbench.bulk.rows checkHealth action.
+// The "Check dataset health" button.
 export async function checkHealth() {
   if (W.bulk.health.busy) return;
   if (!settleLabels("Check the rows box")) return;

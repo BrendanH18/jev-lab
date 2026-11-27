@@ -46,12 +46,6 @@ const MODEL_CALLING = Object.freeze([
   "drift",
   "upgrade",
 ]);
-// Local actions that share a name with the list above, each checked by hand to make no model call.
-const ALLOWED = Object.freeze({
-  // The page's restore preview of a saved dataset revision (counts and configuration changes, no model call).
-  sampleDatasetsHistoryCtx: ["preview"],
-});
-
 // The endpoints of the pages' model-calling and paid operations (plus /api/play/new, which starts a game: a builder
 // has no reason to name it either). A path is matched whole, so the plain-code ones that share a prefix
 // (/api/shield/rescore, /api/dispatch/replan, /api/workbench/compare/score, ...) are not caught.
@@ -85,25 +79,7 @@ const fixtureFiles = readdirSync(FIXTURES)
   .sort();
 
 test("the denylist leaves the surfaces' local actions alone", () => {
-  for (const name of [
-    "select",
-    "setPolicy",
-    "setWeights",
-    "draftCommand",
-    "replan",
-    "pickTool",
-    "runPlan",
-    "reset",
-    "inspect",
-    "compare",
-    "checkHealth",
-    "checkPreflight",
-    "checkQuestions",
-    "checkUnseen",
-    "checkGates",
-    "prepare",
-    "newGame",
-  ]) {
+  for (const name of ["checkQuestions", "checkUnseen", "checkGates", "exportCode", "exportGate", "next"]) {
     assert.equal(MODEL_CALLING.includes(name), false, `${name} is a local action`);
   }
   assert.equal(mentions("POST /api/shield/rescore re-decides", "/api/shield"), false);
@@ -124,22 +100,19 @@ test("no fixture ctx offers an action that calls the model", async () => {
         ctx && ctx.actions && typeof ctx.actions === "object",
         `${file} ${exported}() builds a ctx with actions`,
       );
-      const allowed = ALLOWED[exported] || [];
-      const offending = Object.keys(ctx.actions).filter(
-        (name) => MODEL_CALLING.includes(name) && !allowed.includes(name),
-      );
+      const offending = Object.keys(ctx.actions).filter((name) => MODEL_CALLING.includes(name));
       assert.deepEqual(offending, [], `${file} ${exported}(): actions that would call the model`);
       checked++;
     }
   }
-  assert.ok(checked >= 40, `every fixture ctx was checked (${checked})`);
+  assert.ok(checked >= 6, `every fixture ctx was checked (${checked})`);
 });
 
 test("no surface builder mentions a paid endpoint", () => {
   const files = readdirSync(SURFACES)
     .filter((name) => name.endsWith(".js"))
     .sort();
-  assert.ok(files.length >= 19);
+  assert.ok(files.length >= 5);
   for (const file of files) {
     const source = readFileSync(join(SURFACES, file), "utf8");
     const found = PAID_ENDPOINTS.filter((endpoint) => mentions(source, endpoint));

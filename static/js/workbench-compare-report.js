@@ -7,7 +7,7 @@ import { applyBuildQuestions, toQuestions } from "./workbench-build.js";
 import { render } from "./workbench.js";
 import { loadPictureUrls, rowsPayload, rowText } from "./workbench-bulk.js";
 import { svg, SIGNALS, boundSelect, interval, withCI, syncAttachedSets } from "./workbench-calibrate.js";
-import { cascadeBlock, updateCascade } from "./workbench-compare-cascade.js";
+import { cascadeBlock } from "./workbench-compare-cascade.js";
 
 // Question ids both variants asked with the same type, in A's order.
 export function cmpQuestions(res) {
@@ -686,14 +686,10 @@ function sentText(res, index) {
   ]);
 }
 
-// The disagreement table of the scored question. Its rows are the Lab surface "workbench.compare.rows" (contract in
-// static/js/lab/surfaces/workbench-compare.js): Lab filters and sorts pick and order the rows listed here, and with
-// none active the table is the server's list as it was. The labeling handoff always sends every disagreement.
+// The disagreement table of the scored question: the server's list. The labeling handoff sends every disagreement.
 export function renderCompareRows() {
   const c = W.compare;
   const rep = c.report;
-  const lab = cmpLabRows();
-  const section = cmpLabSection("workbench.compare.rows", lab);
   return h(
     "div",
     { class: "panel", id: "compare-rows" },
@@ -701,9 +697,8 @@ export function renderCompareRows() {
       "div",
       { class: "panel-head" },
       icon("list"),
-      h("h2", { id: "cmp-rows-title" }, cmpRowsTitle(lab)),
+      h("h2", {}, `Rows where A and B answer “${c.qid}” differently · ${rep.disagreements.length}`),
       h("div", { class: "spacer" }),
-      h("span", { id: "cmp-rows-reset" }, cmpRowsReset(lab)),
       h("span", { class: "faint", style: { fontSize: "12px" } }, `${rep.agree} of ${rep.answered_both} rows agree`),
       h(
         "button",
@@ -715,41 +710,11 @@ export function renderCompareRows() {
         c.labelingBusy ? "Preparing labels…" : "Label missing disagreement inputs",
       ),
     ),
-    h("div", { id: "cmp-rows-list" }, cmpRowsList(lab)),
-    section ? h("div", { class: "panel-body" }, section) : null,
+    cmpRowsList(),
   );
 }
 
-// The disagreements to list: the server's list, or, while a Lab filter or sort is active, the rows Lab shows.
-function cmpShownDisagreements(lab) {
-  const rep = W.compare.report;
-  if (!lab || !W.lab?.active("workbench.compare.rows")) return rep.disagreements;
-  const byIndex = new Map(rep.disagreements.map((d) => [d.index, d]));
-  return lab
-    .shown()
-    .map((item) => byIndex.get(item.index))
-    .filter(Boolean);
-}
-
-function cmpRowsTitle(lab) {
-  const c = W.compare;
-  const total = c.report.disagreements.length;
-  const count =
-    lab && W.lab?.active("workbench.compare.rows") ? `${cmpShownDisagreements(lab).length} of ${total}` : String(total);
-  return `Rows where A and B answer “${c.qid}” differently · ${count}`;
-}
-
-function cmpRowsReset(lab) {
-  return lab && W.lab?.active("workbench.compare.rows")
-    ? h(
-        "button",
-        { class: "btn sm ghost", title: "Clear the Lab filters and sort of this table", onclick: resetCmpRowsLab },
-        "Show every disagreement",
-      )
-    : null;
-}
-
-function cmpRowsList(lab) {
+function cmpRowsList() {
   const res = W.compare.result;
   const rep = W.compare.report;
   const verdicts = { a_only: ["pass", "A right"], b_only: ["pass", "B right"], both_wrong: ["fail", "Both wrong"] };
@@ -769,8 +734,6 @@ function cmpRowsList(lab) {
     );
   if (!rep.disagreements.length)
     return h("div", { class: "panel-body muted" }, "A and B gave the same answer on every row they both answered.");
-  const list = cmpShownDisagreements(lab);
-  if (!list.length) return h("div", { class: "panel-body muted" }, "No disagreement matches the Lab filters.");
   return h(
     "div",
     { class: "scroll" },
@@ -794,7 +757,7 @@ function cmpRowsList(lab) {
       h(
         "tbody",
         {},
-        list.map((d) =>
+        rep.disagreements.map((d) =>
           h(
             "tr",
             {},
@@ -814,80 +777,6 @@ function cmpRowsList(lab) {
       ),
     ),
   );
-}
-
-// Lab's refresh: the table and its heading count only, so the Lab section keeps its controls and focus.
-function refreshCmpRows() {
-  if (!W.compare.report || !$("#cmp-rows-list")) return;
-  const lab = cmpLabRows();
-  mount("#cmp-rows-title", cmpRowsTitle(lab));
-  mount("#cmp-rows-reset", cmpRowsReset(lab));
-  mount("#cmp-rows-list", cmpRowsList(lab));
-}
-
-function resetCmpRowsLab() {
-  W.lab?.reset("workbench.compare.rows");
-  refreshCmpRows();
-  const section = cmpLabSection("workbench.compare.rows", cmpLabRows());
-  if (section) $('[data-lab-surface="workbench.compare.rows"]')?.replaceWith(section);
-}
-
-// The Lab tools block of a surface, or null while the page's Lab has no ctx builder or no pack for it.
-export function cmpLabSection(id, ctx) {
-  return ctx && W.lab?.section ? W.lab.section(W.labEnv, id, ctx) : null;
-}
-
-// The ctx of the Lab surface "workbench.compare.rows", or null before the page's Lab has its builder. Every field
-// reads W.compare when called, so a ctx built at one render never goes stale.
-function cmpLabRows() {
-  const build = W.lab?.builders?.compareRowsCtx;
-  if (!build) return null;
-  const c = W.compare;
-  return build({
-    result: () => c.result,
-    report: () => c.report,
-    qid: () => c.qid,
-    signal: () => c.signal,
-    bound: () => c.bound,
-    first: () => c.first,
-    cascadeT: () => c.cascadeT,
-    slices: () => c.slices,
-    slicesError: () => c.slicesError,
-    reportError: () => c.reportError,
-    running: () => !!c.running,
-    labeling: () => c.labelingBusy,
-    matches: (item, ctx) => W.lab.matches("workbench.compare.rows", item, ctx),
-    arrange: (items, ctx) => W.lab.arrange("workbench.compare.rows", items, ctx),
-    refresh: () => refreshCmpRows(),
-    selectQuestion: async (qid) => {
-      c.qid = qid;
-      await rescoreCompare();
-      render();
-    },
-    setSignal: async (signal) => {
-      c.signal = signal;
-      await rescoreCompare();
-      render();
-    },
-    setBound: async (bound) => {
-      c.bound = bound;
-      const keep = c.cascadeT; // as the targets select: the basis changes only the targets
-      await rescoreCompare();
-      c.cascadeT = keep;
-      render();
-    },
-    setFirst: async (name) => {
-      c.first = name;
-      await rescoreCompare();
-      render();
-    },
-    setCascadeThreshold: (t) => {
-      c.cascadeT = t;
-      updateCascade();
-    },
-    labelDisagreements: () => handoffCompareDisagreements(),
-    useInBuild: (i) => cmpUseInBuild(i),
-  });
 }
 
 function compareSlices() {

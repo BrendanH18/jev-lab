@@ -214,7 +214,6 @@ function costsBody() {
     remount();
   };
   const usable = c.mistakes.filter((m) => m.label !== m.answer);
-  const lab = costsLab();
   return [
     h(
       "div",
@@ -262,12 +261,7 @@ function costsBody() {
         h(
           "div",
           { class: "grid", style: { gap: "8px", marginTop: "8px" } },
-          h("div", { id: "cost-lab-note" }, costsLabNote()),
-          h(
-            "div",
-            { id: "cost-mistakes", class: "grid", style: { gap: "8px" } },
-            costsLabRows(c.mistakes.map(costMistakeRow)),
-          ),
+          h("div", { id: "cost-mistakes", class: "grid", style: { gap: "8px" } }, c.mistakes.map(costMistakeRow)),
           h(
             "div",
             {},
@@ -284,7 +278,6 @@ function costsBody() {
           ),
         ),
       ),
-      lab ? W.lab.section(W.labEnv, COSTS_LAB, lab, { title: "Lab tools for priced mistakes" }) : null,
     ),
   ];
 }
@@ -515,8 +508,8 @@ export function holdoutPanel(state, id, qids) {
 }
 
 // Reads the question, signal, and target basis when the check starts: a control can change before the panel re-renders.
-// Exported for the Lab surfaces' checkUnseen actions (static/js/lab/surfaces/workbench-analysis.js), which press this
-// same button.
+// Exported for the Policy Lab surface's checkUnseen action (static/js/lab/surfaces/workbench-analysis.js), which presses
+// this same button.
 export async function runHoldout(state, id, qids) {
   const seq = ++state.holdoutSeq;
   const questions = qids();
@@ -719,95 +712,4 @@ function costRow(rep) {
         : null,
     ),
   );
-}
-
-// ---------- Lab surface "workbench.costs" (contract: static/js/lab/surfaces/workbench-analysis.js) ----------
-// The priced mistakes as a Lab list. The page reaches Lab only through W (W.lab, W.labEnv, W.lab.builders): without
-// them there is no ctx and no section, and Costs works exactly as it does without Lab. The ctx is built once per page
-// session and reads W when called. Lab edits take the path the list's own controls take: the list re-renders and every
-// cost and unseen-row check follows (costChanged).
-const COSTS_LAB = "workbench.costs";
-const costsLabCtxs = {};
-
-function costsLab() {
-  if (costsLabCtxs.ctx) return costsLabCtxs.ctx;
-  const build = W.lab?.builders?.costsCtx;
-  if (typeof build !== "function") return null;
-  costsLabCtxs.ctx = build({
-    result: () => W.bulk.result,
-    costs: () => W.bulk.costs,
-    payload: () => costsPayload(),
-    calQid: () => W.bulk.cal.qid,
-    calThreshold: () => W.bulk.cal.threshold,
-    calCost: () => W.bulk.cal.cost,
-    active: () => activeGates(),
-    policyCost: () => W.bulk.policy.cost,
-    cheapest: () => W.bulk.policy.cheapest,
-    matches: (item, ctx) => W.lab.matches(COSTS_LAB, item, ctx),
-    arrange: (items, ctx) => W.lab.arrange(COSTS_LAB, items, ctx),
-    refresh: () => refreshCostsLab(),
-    write: (mistakes) =>
-      costsLabWrite(() => {
-        W.bulk.costs.mistakes = mistakes;
-      }),
-    setPrices: (review, error) =>
-      costsLabWrite(() => {
-        Object.assign(W.bulk.costs, { review, error });
-      }),
-  });
-  return costsLabCtxs.ctx;
-}
-
-// A Lab change of the prices: the state changes now and every cost recomputes (debounced), as typing does. Lab records
-// its one-step Undo after this returns, so the panel re-renders a microtask later, with the Undo in place.
-function costsLabWrite(change) {
-  change();
-  costChanged();
-  Promise.resolve().then(() => {
-    if ($("#costs")) mount("#costs", ...costsBody());
-  });
-}
-
-// The mistake rows to list: every row, or while a Lab setting is active the ones Lab shows, in Lab's order. rows are the
-// page's own row nodes in list order, so each keeps the index its controls edit.
-function costsLabRows(rows) {
-  const ctx = W.lab?.active?.(COSTS_LAB) ? costsLab() : null;
-  if (!ctx) return rows;
-  const all = ctx.items();
-  return ctx
-    .shown()
-    .map((item) => rows[all.indexOf(item)])
-    .filter(Boolean);
-}
-
-function costsLabNote() {
-  const ctx = costsLab();
-  const active = ctx ? W.lab.active(COSTS_LAB) : 0;
-  if (!active) return null;
-  return h(
-    "p",
-    {
-      class: "faint",
-      role: "status",
-      style: { fontSize: "12px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" },
-    },
-    `Lab shows ${ctx.shown().length} of ${ctx.items().length} priced mistakes · ${active} Lab setting${active === 1 ? "" : "s"} active. Every price still applies.`,
-    h(
-      "button",
-      {
-        class: "btn sm ghost",
-        onclick: () => {
-          W.lab.reset(COSTS_LAB);
-          if ($("#costs")) mount("#costs", ...costsBody());
-        },
-      },
-      "Clear Lab filters and sort",
-    ),
-  );
-}
-
-// Lab's refresh: the mistake rows and the note only, so the Lab section keeps its controls and focus.
-function refreshCostsLab() {
-  if ($("#cost-mistakes")) mount("#cost-mistakes", costsLabRows(W.bulk.costs.mistakes.map(costMistakeRow)));
-  if ($("#cost-lab-note")) mount("#cost-lab-note", costsLabNote());
 }

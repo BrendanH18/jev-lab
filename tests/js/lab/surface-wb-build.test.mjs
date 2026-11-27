@@ -1,4 +1,4 @@
-// The Build tab's Lab surfaces (static/js/lab/surfaces/workbench-build.js) and their hooks in
+// The Build tab's Lab surface (static/js/lab/surfaces/workbench-build.js) and its hooks in
 // the Workbench Build modules: item shapes, shown() with page and Lab filters, data, every action's guard, and the
 // page functions that apply Lab's filters, sort and reset (rebuilt from the page source, as the build-*.test.mjs do).
 import assert from "node:assert/strict";
@@ -6,20 +6,12 @@ import { test } from "node:test";
 
 import { definePack } from "../../../static/js/lab/kit.js";
 import { createLab } from "../../../static/js/lab/host.js";
-import { wbBuildQuestionsCtx, wbBuildResultCtx } from "../../../static/js/lab/surfaces/workbench-build.js";
+import { wbBuildQuestionsCtx } from "../../../static/js/lab/surfaces/workbench-build.js";
 import { matchesEditorQuestion } from "../../../static/js/build-editing.js";
 import { workbenchSource as source } from "../workbench-source.mjs";
-import {
-  buildExpect,
-  buildOddResult,
-  buildResult,
-  buildRows,
-  sampleBuildQuestionsCtx,
-  sampleBuildResultCtx,
-} from "./fixtures/workbench-build.mjs";
+import { buildExpect, buildRows, sampleBuildQuestionsCtx } from "./fixtures/workbench-build.mjs";
 
 const QUESTIONS = "workbench.build.questions";
-const RESULT = "workbench.build.result";
 
 const body = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0];
 const row = (id, type = "noul", extra = {}) => ({
@@ -36,7 +28,7 @@ const row = (id, type = "noul", extra = {}) => ({
   ...extra,
 });
 
-// A Lab with one numeric fact per surface, so filters and sorts can be set the way the Refine bar sets them.
+// A Lab with numeric facts on the questions surface, so filters and sorts can be set the way the Refine bar sets them.
 const lab = () =>
   createLab([
     definePack({
@@ -53,12 +45,6 @@ const lab = () =>
         },
         { id: "loop", kind: "fact", type: "number", label: "shown count", value: (item, ctx) => ctx.shown().length },
       ],
-    }),
-    definePack({
-      id: "test-answer-facts",
-      surface: RESULT,
-      title: "Answer facts",
-      features: [{ id: "conf", kind: "fact", type: "number", label: "confidence", value: (item) => item.confidence }],
     }),
   ]);
 
@@ -518,126 +504,6 @@ test("question actions guard before reaching the page", () => {
   assert.throws(() => wbBuildQuestionsCtx({ rows: () => [row("a")] }).actions.checkQuestions(), /cannot do that here/);
 });
 
-// ---------- workbench.build.result ----------
-
-test("answer items carry the documented fields in response order, with the expectation the editor holds now", () => {
-  const ctx = sampleBuildResultCtx();
-  const items = ctx.items();
-  assert.deepEqual(
-    items.map((item) => item.id),
-    ["intent", "urgency", "angry", "mug_box", "refund_amount_ok", "tone"],
-  );
-  assert.deepEqual(Object.keys(items[0]), [
-    "id",
-    "position",
-    "type",
-    "instructions",
-    "criteria",
-    "value",
-    "display",
-    "scale",
-    "probabilities",
-    "top",
-    "confidence",
-    "box",
-    "expectation",
-    "answer",
-  ]);
-  assert.ok(items.every((item) => Object.isFrozen(item) && Object.isFrozen(item.answer)));
-  assert.deepEqual(items[0].criteria[2], { key: "other", text: "" });
-  assert.deepEqual(
-    [items[1].value, items[1].display, items[1].scale, items[1].top],
-    [1.35, "1.35 / 2", 2, { key: "1", p: 0.45 }],
-  );
-  assert.deepEqual([items[2].value, items[2].display, items[2].confidence], [0.64, "64.0%", null]);
-  assert.equal(items[2].probabilities[1].key, "no");
-  assert.ok(Math.abs(items[2].probabilities[1].p - 0.36) < 1e-12);
-  assert.deepEqual(items[3].box, { left: 0.25, top: 0.3, right: 0.65, bottom: 0.7 });
-  assert.equal(items[3].display, "40% × 40%");
-  assert.equal(items[4].instructions, '{"ask":"Does `order_total` match the refund asked for?"}');
-  assert.deepEqual(
-    items.map((item) => item.expectation === null),
-    [false, true, false, false, true, true],
-  );
-  assert.equal(ctx.items()[0], items[0]);
-  ctx.page.expect = { ...ctx.page.expect, urgency: { min: 1 } };
-  assert.deepEqual(ctx.items()[1].expectation, { min: 1 });
-  assert.deepEqual(
-    ctx.items().map((item, index) => ctx.itemName(item, index)),
-    ["intent", "urgency", "angry", "mug_box", "refund_amount_ok", "tone"],
-  );
-});
-
-test("odd answers give nulls rather than throwing, and no Run gives an empty list", () => {
-  const items = sampleBuildResultCtx({ result: buildOddResult() }).items();
-  assert.deepEqual(
-    items.map((item) => [item.id, item.value, item.display, item.top]),
-    [
-      ["level", null, "", { key: "0", p: 0.5 }],
-      ["pick", "x_y", "x y", null],
-      ["spot", null, "", null],
-      ["future", null, "", null],
-    ],
-  );
-  assert.deepEqual(items[0].probabilities, [{ key: "0", p: 0.5 }]);
-  assert.equal(items[0].scale, 1);
-  const none = sampleBuildResultCtx({ result: null });
-  assert.deepEqual(
-    [none.items(), none.shown(), none.data.meta, none.data.request, none.data.pictures, none.data.stale],
-    [[], [], null, null, [], false],
-  );
-});
-
-test("answer data and shown(): measurements, pictures without bytes, Lab filters and sort", () => {
-  const ctx = sampleBuildResultCtx();
-  assert.equal(ctx.data.meta.cost_usd, 0.000412);
-  assert.deepEqual(Object.keys(ctx.data.request), ["state", "model", "questions"]);
-  assert.ok(!JSON.stringify(ctx.data.pictures).includes("AAAA"));
-  assert.deepEqual(ctx.data.currentIds, ["intent", "urgency", "angry", "mug_box", "refund_amount_ok", "tone"]);
-  assert.equal(sampleBuildResultCtx({ stale: true }).data.stale, true);
-  assert.deepEqual(
-    sampleBuildResultCtx({ hide: ["angry"], order: ["tone"] })
-      .shown()
-      .map((item) => item.id),
-    ["tone", "intent", "urgency", "mug_box", "refund_amount_ok"],
-  );
-
-  const host = lab();
-  let result = buildResult();
-  const live = wbBuildResultCtx({
-    result: () => result,
-    matches: (item, c) => host.matches(RESULT, item, c),
-    arrange: (items, c) => host.arrange(RESULT, items, c),
-  });
-  host.view(RESULT).filters = [{ key: "test-answer-facts/conf", op: "max", value: "0.6" }];
-  host.view(RESULT).sort = { key: "test-answer-facts/conf", dir: "asc" };
-  assert.deepEqual(
-    live.shown().map((item) => item.id),
-    ["urgency", "tone"],
-  );
-  result = null;
-  assert.deepEqual(live.shown(), []);
-});
-
-test("answer actions guard Inspect, Save and focus, and none presses Run", () => {
-  const ctx = sampleBuildResultCtx();
-  assert.equal("run" in ctx.actions, false, "no action presses Run (a live model call)");
-  ctx.actions.inspect();
-  ctx.actions.openSave();
-  ctx.actions.focusQuestion("angry");
-  assert.deepEqual(ctx.log, [["inspect"], ["openSave"], ["focusQuestion", "angry"]]);
-  assert.throws(() => sampleBuildResultCtx({ result: null }).actions.inspect(), /Press Run first/);
-  assert.throws(() => sampleBuildResultCtx({ result: null }).actions.openSave(), /Press Run first/);
-  assert.throws(() => sampleBuildResultCtx({ stale: true }).actions.openSave(), /Run the edited request/);
-  assert.throws(() => sampleBuildResultCtx().actions.focusQuestion("gone"), /No question in the editor/);
-  assert.throws(
-    () => sampleBuildResultCtx({ hide: ["tone"] }).actions.focusQuestion("tone"),
-    /hidden by the question filters/,
-  );
-  assert.equal(ctx.actions.replaceItems, undefined, "answers are read-only");
-  assert.equal(ctx.actions.importItems, undefined);
-});
-
 // ---------- the hooks in the Workbench Build modules ----------
 
 function pageWith(rows, expect = {}) {
@@ -806,58 +672,6 @@ test("the shown count names active Lab settings, and Clear question filters and 
   );
   insert(0, true);
   assert.equal(W.lab.active(QUESTIONS), 0, "an inserted card is never hidden by a Lab filter");
-});
-
-test("answer cards follow Lab filters and sort, with a count and a reset, and are unchanged without Lab", () => {
-  const h = (tag, attrs = {}, ...children) => ({
-    tag,
-    attrs: attrs || {},
-    children: children.flat(Infinity).filter((child) => child !== null && child !== undefined),
-  });
-  const answerCard = (qid) => ({ card: qid });
-  const result = buildResult();
-  const make = (W) =>
-    new Function(
-      "W",
-      "h",
-      "answerCard",
-      "render",
-      "BUILD_LAB_RESULT",
-      `${body("renderBuildAnswerCards")}; return renderBuildAnswerCards;`,
-    )(W, h, answerCard, () => {}, RESULT);
-  assert.deepEqual(make({ result: null })(), []);
-  const all = ["intent", "urgency", "angry", "mug_box", "refund_amount_ok", "tone"];
-  assert.deepEqual(
-    make({ result })().map((node) => node.card),
-    all,
-    "no Lab ctx: every answer in response order",
-  );
-  const host = lab();
-  const W = { result, lab: host };
-  W.buildLabCtx = {
-    result: wbBuildResultCtx({
-      result: () => W.result,
-      matches: (item, c) => host.matches(RESULT, item, c),
-      arrange: (items, c) => host.arrange(RESULT, items, c),
-    }),
-  };
-  const [cards, note] = make(W)();
-  assert.deepEqual(
-    cards.map((node) => node.card),
-    all,
-    "Lab present but idle: the same cards",
-  );
-  assert.equal(note, null);
-  host.view(RESULT).filters = [{ key: "test-answer-facts/conf", op: "min", value: "0.5" }];
-  host.view(RESULT).sort = { key: "test-answer-facts/conf", dir: "desc" };
-  const [sorted, status] = make(W)();
-  assert.deepEqual(
-    sorted.map((node) => node.card),
-    ["intent", "mug_box", "tone"],
-  );
-  assert.match(status.children[0], /^3 of 6 answers shown · 2 Lab settings active/);
-  host.view(RESULT).filters = [{ key: "test-answer-facts/conf", op: "min", value: "0.99" }];
-  assert.equal(make(W)()[0].children[0], "No answer matches the Lab filters.");
 });
 
 test("Question checks list the Python packs' extra findings after the built-in ones, without changing the counts", () => {

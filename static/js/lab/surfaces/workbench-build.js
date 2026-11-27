@@ -1,12 +1,12 @@
-// Lab surfaces of the Workbench Build tab (static/js/workbench-build.js): the request editor's questions and the
-// answers of the user's own latest Run. Pure code: it imports only the kit and the Build tab's pure request helpers,
-// touches no DOM, storage or network, and is tested in Node (tests/js/lab/surface-wb-build.test.mjs). Fixtures for
-// pack tests: tests/js/lab/fixtures/workbench-build.mjs (sampleBuildQuestionsCtx, sampleBuildResultCtx).
+// Lab surface of the Workbench Build tab (static/js/workbench-build.js): the request editor's questions. Pure code: it
+// imports only the kit and the Build tab's pure request helpers, touches no DOM, storage or network, and is tested in
+// Node (tests/js/lab/surface-wb-build.test.mjs). Fixture for pack tests: tests/js/lab/fixtures/workbench-build.mjs
+// (sampleBuildQuestionsCtx).
 //
 // ============================== CONTRACT FOR PACK AUTHORS ==============================
 //
-// Both ctx objects are { items(), shown(), data, actions, refresh(), itemName(item, index) }, built ONCE per page
-// session by the page (W.buildLabCtx), so every read is live. items() and shown() are evaluated at call time and
+// The ctx is { items(), shown(), data, actions, refresh(), itemName(item, index) }, built ONCE per page session by the
+// page (W.buildLabCtx.questions), so every read is live. items() and shown() are evaluated at call time and
 // return the SAME frozen item objects (compare by identity) while nothing they describe changed. Items and every
 // data value are deeply frozen plain JSON: read them, never write to them, and read data when you need it rather
 // than keeping a copy across renders.
@@ -70,7 +70,7 @@
 //   expect       { [qid]: expectation }   every human expectation the editor holds, including ones whose question
 //                was renamed by typing (they wait for their id to come back and are dropped on Save). {} when none.
 //   answers      { [qid]: answer } | null   the answers of the CURRENT USER'S latest Run in this page session (the
-//                same raw shapes as workbench.build.result's item.answer). null before the first Run of the loaded
+//                raw answer shapes the server returns). null before the first Run of the loaded
 //                request, after loading another request, and after adding or removing a picture.
 //   stale        boolean   answers exist but the request changed since that Run (the page shows "These answers are
 //                from the previous request"). A pack that shows an answer next to a question must say so when stale.
@@ -122,7 +122,7 @@
 //                compact keeps every literal). Guard: state kind "invalid".
 //   undoRemove()  The "Undo remove" button. Guard: a removed question is waiting (the page refuses a reused id).
 //   clearFilters()  The "Clear question filters" button: clears the page's question filters AND Lab's filters/sort.
-// There is no action that runs the model on this surface (Run is on workbench.build.result).
+// There is no action that runs the model on this surface: only the user's own press of Run runs the request.
 //
 // refresh() re-applies the filters to the cards and re-orders them for a Lab sort without re-rendering the page,
 // so focus and typing survive.
@@ -145,73 +145,6 @@
 //     option text of its own (leave new text blank).
 //   - Score level order IS the numeric meaning: an edit that moves, inserts or removes levels must say so in its
 //     label or help. Choice sorts keep each key with its description.
-//
-// ---------------------------------------------------------------------------------------------------------------
-// SURFACE "workbench.build.result"  —  builder wbBuildResultCtx(source)  —  the Answers panel after Run
-// ---------------------------------------------------------------------------------------------------------------
-// The list is the answers of the CURRENT USER'S latest Run of the Build request in this page session, one item per
-// answered question in the response's order (the request order). items() is [] before the first Run, after another
-// request is loaded and after a picture is added or removed. A new Run replaces every item. The page has no filter
-// of its own, so shown() is items() after Lab's filters and Lab's sort; the page shows exactly those answer cards in
-// that order, with "x of y answers shown" and a reset while a Lab setting is active. Read-only: answers are model
-// output, so there is no replaceItems or importItems (no Edits, no Paste to import).
-// Kinds this surface hosts: fact, diagnostic, metric, exporter, command, tool, panel (behavior).
-//
-// Item (one answer):
-//   id            string   the question id (qid). Unique. itemName() returns it.
-//   position      number   1-based position in the response's answer order
-//   type          string   "choice" | "score" | "noul" | "box" as the response says
-//   instructions  string   the instructions as SENT (a structured instruction is given as JSON text); "" if none
-//   criteria      [{ key, text }]   the criteria as sent: Choice options (key, description; a description sent as
-//                          null reads ""), Score levels keyed "0", "1", … (the answer's legend when the sent question
-//                          has none), Noul "true"/"false" when sent, Box []
-//   value         string | number | null   Choice: the chosen key. Score: the score (a float from 0 to scale). Noul:
-//                          P(yes) from 0 to 1. Box or a missing/odd value: null.
-//   display       string   what the card prints: Choice "making request" (underscores as spaces), Score "1.62 / 2",
-//                          Noul "97.0%", Box "40% × 20%" (width × height); "" when nothing usable
-//   scale         number | null   Score only: the highest level index (levels - 1)
-//   probabilities [{ key, p }]   Choice: one per option the response listed, in response order; Score: one per level
-//                          ("0", "1", …); Noul: [{ key: "yes", p }, { key: "no", p: 1 - p }] (a plain subtraction:
-//                          compare with a tolerance); Box: []. Entries whose p is not a finite number are left out.
-//   top           { key, p } | null   the most likely entry of probabilities (the first one on a tie)
-//   confidence    number | null   the answer's own confidence. Noul answers carry none: null.
-//   box           { left, top, right, bottom } | null   Box only: fractions of the picture's width and height
-//   expectation   object | null   the human expectation the editor holds NOW for this id (it may have been edited
-//                          after the Run); null when none
-//   answer        object   the raw answer exactly as the server returned it (a frozen copy)
-//
-// data (live getters, frozen):
-//   meta         { model, latency_ms, question_count, input_tokens, output_tokens, cost_usd, backend } | null —
-//                the server's MEASUREMENTS of that one Run (every field may be missing). cost_usd is measured, not
-//                an estimate. null before a Run.
-//   request      { state, model, questions } | null   exactly what that Run sent (pictures as references only)
-//   pictures     [{ ref, sample, name, format }]   the pictures attached at Run time, never bytes
-//   stale        boolean   the request changed since the Run (the page shows the outdated banner; Save is disabled)
-//   running      boolean   a Run is in flight (its answers replace these when they arrive)
-//   expect       { [qid]: expectation }   the editor's human expectations now
-//   currentIds   [qid, ...]   the editor's non-blank question ids now, in request order (an answer whose id is not
-//                here belongs to a question that was renamed or removed since the Run)
-//   saveOpen     boolean   the "Save as a test" form is open
-//
-// actions (each throws an Error with a message for the user when its guard refuses). NO ACTION ON THIS SURFACE CALLS
-// THE MODEL OR SPENDS BUDGET: only the user's own press of the Run button runs the request, and no action presses it.
-//   inspect()      Opens Inspect JSON on the Run's exact request and response. Guard: a Run exists.
-//   openSave()     Opens the "Save as a test" form (expectations default from the answers, as the button does).
-//                  Guards: a Run exists and is not stale.
-//   focusQuestion(id)   Scrolls to that question's editor card. Guards: a card has this id now and is shown.
-// refresh() re-renders the answer cards from shown().
-//
-// Content boundaries for workbench.build.result:
-//   - Every item is an answer the current user requested in this page session. A pack may show, measure, compare and
-//     export those. Never show a made-up, sample, remembered or predicted answer, never keep answers beyond the page
-//     session (no storage, no files written by the pack), and say "outdated" whenever data.stale.
-//   - Exports that hold answers, probabilities or meta say so in their label or help. An export described as a
-//     request or a handoff carries state, model and questions only, never answers (AGENTS.md's handoff rule).
-//   - A rule a pack applies to probabilities (a margin, a threshold, "would go to review", "meets the expectation")
-//     is plain local code: advisory, labeled as such, and never worded as the model's answer. Expectation checks
-//     mirror jev/workbench.py check_expectation and say they are local.
-//   - Metrics over meta are measurements of this Run. A projection (per thousand calls) is arithmetic on a measured
-//     Run and says so; it is never shown as spend.
 import { clone } from "../kit.js";
 import { editorQuestionError, parseBuildState } from "../../build-request.js";
 
@@ -222,11 +155,7 @@ const EMPTY_OBJECT = Object.freeze({});
 
 const isObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const hasOwn = (object, key) => isObject(object) && Object.hasOwn(object, key);
-const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const str = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : String(value));
-const asText = (value) =>
-  typeof value === "string" ? value : value === null || value === undefined ? "" : (JSON.stringify(value) ?? "");
-const percent = (value, digits = 0) => `${(value * 100).toFixed(digits)}%`;
 
 function deepFreeze(value) {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -723,207 +652,6 @@ export function wbBuildQuestionsCtx(source = {}) {
     },
     itemName: (item, index) =>
       item && typeof item.qid === "string" && item.qid ? item.qid : `question ${item?.position ?? index + 1}`,
-  };
-  return ctx;
-}
-
-// ---------- workbench.build.result ----------
-
-function resultCriteria(type, question, answer) {
-  const criteria = isObject(question) ? question.criteria : undefined;
-  if (type === "score") {
-    if (Array.isArray(criteria)) return criteria.map((text, index) => ({ key: String(index), text: asText(text) }));
-    return Object.entries(isObject(answer.legend) ? answer.legend : {}).map(([key, text]) => ({
-      key,
-      text: asText(text),
-    }));
-  }
-  if ((type === "choice" || type === "noul") && isObject(criteria))
-    return Object.entries(criteria).map(([key, text]) => ({ key, text: asText(text) }));
-  return [];
-}
-
-function answerItem(id, answer, question, position, expect) {
-  const type = typeof answer.type === "string" ? answer.type : "";
-  let probabilities = [];
-  if (type === "noul") {
-    const yes = finite(answer.noul);
-    probabilities =
-      yes === null
-        ? []
-        : [
-            { key: "yes", p: yes },
-            { key: "no", p: 1 - yes },
-          ];
-  } else if (type === "choice" || type === "score") {
-    probabilities = Object.entries(isObject(answer.probabilities) ? answer.probabilities : {}).flatMap(([key, p]) =>
-      finite(p) === null ? [] : [{ key, p }],
-    );
-  }
-  let box = null;
-  if (type === "box" && isObject(answer.box)) {
-    const edges = ["left", "top", "right", "bottom"].map((edge) => finite(answer.box[edge]));
-    if (!edges.includes(null)) box = { left: edges[0], top: edges[1], right: edges[2], bottom: edges[3] };
-  }
-  const criteria = resultCriteria(type, question, answer);
-  let value = null,
-    display = "",
-    scale = null;
-  if (type === "choice") {
-    value = answer.choice === null || answer.choice === undefined ? null : String(answer.choice);
-    if (value !== null) display = value.replace(/_/g, " ");
-  } else if (type === "score") {
-    value = finite(answer.score);
-    const levels =
-      isObject(answer.legend) && Object.keys(answer.legend).length
-        ? Object.keys(answer.legend).length
-        : criteria.length;
-    scale = levels ? levels - 1 : null;
-    if (value !== null) display = scale === null ? value.toFixed(2) : `${value.toFixed(2)} / ${scale}`;
-  } else if (type === "noul") {
-    value = finite(answer.noul);
-    if (value !== null) display = percent(value, 1);
-  } else if (box) display = `${percent(box.right - box.left)} × ${percent(box.bottom - box.top)}`;
-  let top = null;
-  for (const entry of probabilities) if (!top || entry.p > top.p) top = entry;
-  return deepFreeze({
-    id,
-    position,
-    type,
-    instructions: isObject(question) ? asText(question.instructions) : "",
-    criteria,
-    value,
-    display,
-    scale,
-    probabilities,
-    top: top ? { ...top } : null,
-    confidence: type === "noul" ? null : finite(answer.confidence),
-    box,
-    expectation: hasOwn(expect, id) ? clone(expect[id]) : null,
-    answer: clone(answer),
-  });
-}
-
-// source: {
-//   result()   W.result: { answers, meta, trace: { request }, images } of the latest Run, or null
-//   expect()   W.expect        stale()  buildResultStale()        running()  a Run is in flight
-//   currentIds()   the editor's non-blank ids now          saveOpen()   W.saveOpen
-//   matches(item, ctx), arrange(items, ctx)   LAB.matches / LAB.arrange for this surface
-//   inspect(), openSave(), focusQuestion(id) -> false when the card is missing or hidden, refresh()
-// }
-export function wbBuildResultCtx(source = {}) {
-  let built = { result: null, key: null, items: EMPTY };
-  let viewMemo = { result: null, view: null };
-  const result = () => {
-    const raw = read(source, "result", null);
-    return isObject(raw) && isObject(raw.answers) ? raw : null;
-  };
-  const expectOf = () => {
-    const expect = read(source, "expect", EMPTY_OBJECT);
-    return isObject(expect) ? expect : EMPTY_OBJECT;
-  };
-  const view = () => {
-    const raw = result();
-    if (!raw) return null;
-    if (viewMemo.result !== raw) {
-      const trace = isObject(raw.trace) ? raw.trace : {};
-      const request = isObject(trace.request) ? trace.request : null;
-      viewMemo = {
-        result: raw,
-        view: deepFreeze({
-          meta: isObject(raw.meta) ? clone(raw.meta) : null,
-          request: request
-            ? clone({
-                state: request.state,
-                model: request.model ?? null,
-                questions: isObject(request.questions) ? request.questions : {},
-              })
-            : null,
-          pictures: picturesOf(raw.images),
-        }),
-      };
-    }
-    return viewMemo.view;
-  };
-  const items = () => {
-    const raw = result();
-    if (!raw) return EMPTY;
-    const expect = expectOf();
-    const ids = Object.keys(raw.answers);
-    const key = JSON.stringify(ids.map((id) => (hasOwn(expect, id) ? expect[id] : null)));
-    if (built.result !== raw || built.key !== key) {
-      const questions = view().request?.questions || {};
-      built = {
-        result: raw,
-        key,
-        items: Object.freeze(
-          Object.entries(raw.answers)
-            .filter(([, answer]) => isObject(answer))
-            .map(([id, answer], index) =>
-              answerItem(id, answer, hasOwn(questions, id) ? questions[id] : null, index + 1, expect),
-            ),
-        ),
-      };
-    }
-    return built.items;
-  };
-  const ctx = {
-    items,
-    shown() {
-      const list = items().filter((item) => !source.matches || source.matches(item, ctx) !== false);
-      const arranged = source.arrange ? source.arrange(list, ctx) : list;
-      return Array.isArray(arranged) ? arranged : list;
-    },
-    data: {
-      get meta() {
-        return view()?.meta ?? null;
-      },
-      get request() {
-        return view()?.request ?? null;
-      },
-      get pictures() {
-        return view()?.pictures ?? EMPTY;
-      },
-      get stale() {
-        return !!result() && read(source, "stale", false) === true;
-      },
-      get running() {
-        return read(source, "running", false) === true;
-      },
-      get expect() {
-        return deepFreeze(JSON.parse(JSON.stringify(expectOf())));
-      },
-      get currentIds() {
-        const ids = read(source, "currentIds", EMPTY);
-        return deepFreeze(Array.isArray(ids) ? ids.filter((id) => typeof id === "string" && id) : []);
-      },
-      get saveOpen() {
-        return read(source, "saveOpen", false) === true;
-      },
-    },
-    actions: {
-      inspect() {
-        if (!result()) throw new Error("Press Run first: there is no request to inspect yet.");
-        return call(source, "inspect");
-      },
-      openSave() {
-        if (!result()) throw new Error("Press Run first: a test saves the answers of a Run as expectations.");
-        if (ctx.data.stale) throw new Error("Run the edited request before saving its expectations as a test.");
-        return call(source, "openSave");
-      },
-      focusQuestion(id) {
-        const qid = str(id).trim();
-        if (!qid || !ctx.data.currentIds.includes(qid))
-          throw new Error(`No question in the editor has the id “${str(id)}” now.`);
-        if (call(source, "focusQuestion", qid) === false)
-          throw new Error(`${qid} is hidden by the question filters. Clear them to go to it.`);
-        return true;
-      },
-    },
-    refresh: () => {
-      if (typeof source.refresh === "function") source.refresh();
-    },
-    itemName: (item, index) => (item && typeof item.id === "string" && item.id ? item.id : String(index + 1)),
   };
   return ctx;
 }
