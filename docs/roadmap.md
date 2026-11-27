@@ -209,7 +209,7 @@ bug #91 and Dependabot PR #86.
 The 2026-11-27 startup measurement uses Chromium's Resource Timing through the point where the
 Build request editor becomes editable in a fresh browser context on Boat. Deferring Tests, Compare
 and Examples brought it from 69 JavaScript files and 1,117 KB decoded to 57 files and 937 KB.
-Deferring Bulk brought it down to 31 files and 459,847 decoded bytes.
+Deferring Bulk brought it down to 31 files and 460,143 decoded bytes.
 
 ## Top risks
 
