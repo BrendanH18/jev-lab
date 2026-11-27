@@ -9,15 +9,14 @@ import { W } from "./workbench-state.js";
 import { LAB } from "./lab/pages/workbench.js";
 import { installLab, labEnv } from "./lab/env.js";
 import { buildUnsaved, loadInto, renderBuild } from "./workbench-build.js";
-import { rowsText, bulkUnsaved, countRows, bulkQuestions, renderBulk } from "./workbench-bulk.js";
-import { healthContext } from "./workbench-import.js";
-import { datasetEditsUnsaved } from "./dataset-edits.js";
-import { agreementSessionsUnsaved } from "./workbench-dataset-agreement.js";
-import { preparedLabelsUnsaved } from "./workbench-labeling.js";
-import { reviewQueuesUnsaved, confirmReviewDiscard } from "./workbench-review.js";
-import { driftQueuesUnsaved } from "./workbench-drift.js";
-import { updateCal, syncAttachedSets } from "./workbench-calibrate.js";
-import { updatePolicy } from "./workbench-policy.js";
+import {
+  rowsText,
+  bulkUnsaved,
+  countRows,
+  bulkQuestions,
+  healthContext,
+  syncAttachedSets,
+} from "./workbench-bulk-inputs.js";
 
 // Labeling guidelines (static/js/guidelines.js): human-only, shown beside label controls, never sent to the model.
 // Kept on W so a view rendered without it (tests/js) simply shows no guideline.
@@ -27,7 +26,7 @@ W.guides = createGuidelines({
   handleError,
   toast,
   rerender: () => render(),
-  beforeSave: (id) => confirmReviewDiscard(id),
+  beforeSave: (id) => deferredPanels.get("bulk").content?.confirmReviewDiscard(id) ?? true,
 });
 // Lab (static/js/lab): this page's packs, the ctx builders of its surfaces (W.lab.builders) and the env they act
 // through. Kept on W, like the guidelines, so a view rendered without it (tests/js) simply shows no Lab tools.
@@ -43,6 +42,12 @@ const TABS = [
 ];
 const BASIC_TABS = new Set(["build", "bulk"]);
 const panelDefinitions = {
+  bulk: {
+    async load() {
+      const { bulkPanel } = await import("./workbench-bulk.js");
+      return bulkPanel();
+    },
+  },
   tests: {
     async load() {
       const { renderTests } = await import("./workbench-tests.js");
@@ -78,6 +83,7 @@ let wbShellReady = false; // boot() has loaded the page's data
 let wbShellRenderedTab = null; // the tab the last render showed
 let wbShellPreviousTab = null; // the tab shown before that one, for data.previousTab
 let wbShellCtx = null;
+let sectionTarget = null;
 
 // ---------- boot ----------
 async function boot() {
@@ -96,15 +102,7 @@ async function boot() {
   W.bulk.rowsText = W.bulk.savedText = rowsText(sample.rows);
   W.bulk.datasets = sets.datasets;
   window.addEventListener("beforeunload", (e) => {
-    if (
-      bulkUnsaved() ||
-      preparedLabelsUnsaved() ||
-      reviewQueuesUnsaved() ||
-      driftQueuesUnsaved() ||
-      datasetEditsUnsaved() ||
-      buildUnsaved() ||
-      agreementSessionsUnsaved()
-    ) {
+    if (Object.values(unsavedWorkbench()).some(Boolean)) {
       e.preventDefault();
       e.returnValue = "";
     }
@@ -157,11 +155,17 @@ function openWorkbenchTab(tab) {
 }
 
 // What a guide step's button does: open its tab and scroll to its area. Navigation only.
-function navigateGuideStep(tab, target) {
-  W.tab = tab;
-  location.hash = tab;
-  render();
-  $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+export function navigateGuideStep(tab, target) {
+  sectionTarget = { tab, target };
+  openWorkbenchTab(tab);
+}
+
+function unsavedWorkbench() {
+  return {
+    build: buildUnsaved(),
+    bulk: bulkUnsaved(),
+    ...deferredPanels.get("bulk").content?.drafts(),
+  };
 }
 
 // The guide's view of the workspace (static/js/workbench-guide.js workflowSteps).
@@ -199,15 +203,7 @@ function shellLabCtx() {
             checks: W.bulk.datasets.filter((d) => d.check).length,
           }
         : null,
-    unsaved: () => ({
-      build: buildUnsaved,
-      bulk: bulkUnsaved,
-      labeling: preparedLabelsUnsaved,
-      review: reviewQueuesUnsaved,
-      drift: driftQueuesUnsaved,
-      datasetEdits: datasetEditsUnsaved,
-      agreement: agreementSessionsUnsaved,
-    }),
+    unsaved: unsavedWorkbench,
     openTab: openWorkbenchTab,
     goToStep: navigateGuideStep,
     setGuideOpen: (open) => {
@@ -410,13 +406,11 @@ async function loadDeferredPanel(tab, panel) {
 function renderView() {
   let view;
   switch (W.tab) {
+    case "bulk":
     case "tests":
     case "compare":
     case "examples":
       view = renderDeferredPanel(W.tab, deferredPanels.get(W.tab));
-      break;
-    case "bulk":
-      view = renderBulk();
       break;
     case "toolbox":
       view = renderToolbox();
@@ -428,11 +422,11 @@ function renderView() {
   const deferred = deferredPanels.get(W.tab);
   panel.setAttribute("aria-labelledby", `tab-${W.tab}`);
   panel.tabIndex = deferred && !deferred.content && deferred.failed !== "catalog" ? 0 : -1;
-  if (W.tab === "bulk") {
-    if (W.advanced) updateCal();
-    updatePolicy();
+  deferred?.content?.update?.();
+  if (sectionTarget && (sectionTarget.tab !== W.tab || !deferred?.pending)) {
+    if (sectionTarget.tab === W.tab) $(sectionTarget.target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    sectionTarget = null;
   }
-  if (W.tab === "compare") deferred?.content?.update();
 }
 
 // Browser history and fresh links use the same registered pack/tool keys as the Toolbox picker.
@@ -480,7 +474,7 @@ window.addEventListener("hashchange", (event) => {
 window.addEventListener(
   "resize",
   debounce(() => {
-    if (W.tab === "bulk" && W.advanced) updateCal();
+    if (W.tab === "bulk") deferredPanels.get("bulk").content?.resize();
     if (W.tab === "compare") deferredPanels.get("compare").content?.update();
   }, 150),
 );

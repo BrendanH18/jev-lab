@@ -3,7 +3,9 @@
 import { $, $$, api, copyText, h, handleError, icon, mount, num, pct, stat, statusBadge, toast } from "./common.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { bulkQuestions, tuningResults, rowText, bulkQuestionsForResult } from "./workbench-bulk.js";
+import { tuningResults, bulkQuestionsForResult } from "./workbench-bulk.js";
+import { rowText, setFitContext, syncAttachedSets } from "./workbench-bulk-inputs.js";
+import { boundSelect, interval, SIGNALS, withCI } from "./workbench-evaluation-ui.js";
 import { rereview, reviewSoon } from "./workbench-labeling.js";
 import { costCalibrate, updateCalCost, clearHoldout, holdoutPanel } from "./workbench-costs.js";
 import { reslice, sliceSoon, sliceBody } from "./workbench-slices.js";
@@ -19,38 +21,6 @@ import {
 // ---------- Calibrate ----------
 // Scores one question's Bulk answers against labels and sweeps a confidence threshold. The server
 // does the arithmetic (jev/calibrate.py); no model calls. The slider and chart update in place.
-const SVGNS = "http://www.w3.org/2000/svg";
-export function svg(tag, attrs = {}, ...children) {
-  const node = document.createElementNS(SVGNS, tag);
-  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
-  for (const c of children.flat(Infinity))
-    if (c !== null && c !== undefined && c !== false)
-      node.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return node;
-}
-export const SIGNALS = { confidence: "confidence", top_probability: "top probability" };
-// What must reach a target accuracy: the accuracy measured on these rows, or its 95% lower bound (jev/calibrate.py).
-const BOUNDS = { estimate: "targets on these rows", lower: "targets at 95% confidence" };
-
-export function boundSelect(state, onChange) {
-  const sel = h(
-    "select",
-    { class: "input", "aria-label": "What must reach a target accuracy" },
-    Object.entries(BOUNDS).map(([k, label]) => h("option", { value: k, selected: k === state.bound }, label)),
-  );
-  sel.addEventListener("change", async () => {
-    state.bound = sel.value;
-    await onChange();
-    render();
-  });
-  return sel;
-}
-// A 95% interval as "81–97%", or "" when there is nothing to measure.
-export const interval = (lo, hi) => (lo === null || lo === undefined ? "" : `${pct(lo)}–${pct(hi)}`);
-export const withCI = (value, lo, hi) =>
-  lo === null || lo === undefined
-    ? value
-    : [value, h("span", { class: "ci", title: "95% interval" }, ` ${interval(lo, hi)}`)];
 // The label of a target that was not reached, saying how many rows a 95% claim needs when that is the reason.
 // A plan (jev/calibrate.py plan()) says how many more labeled rows like these would show the target, if the
 // gate it names keeps its accuracy and share automated; it is an estimate, so the chip's title says so.
@@ -442,22 +412,6 @@ const SET_COVERAGES = [0.8, 0.9, 0.95, 0.99];
 const SETS_SHOWN = 8;
 // The cut as shown; the copied rule uses the full cut and the server's tolerance, so it builds the same sets.
 const cutText = (cut) => cut.toFixed(3);
-// A fit belongs to one run and its labels/questions. Never carry it into a newer run or edited inputs.
-export function setFitContext() {
-  const b = W.bulk;
-  return JSON.stringify([b.labels, b.ranQuestions, bulkQuestions(), b.rowsText]);
-}
-export function syncAttachedSets() {
-  const b = W.bulk;
-  const s = b.sets;
-  const context = setFitContext();
-  if (s.result !== b.result || s.context !== context) {
-    s.attached = {};
-    s.result = b.result;
-    s.context = context;
-    s.fitted = null;
-  }
-}
 export function attachedSetsPayload() {
   syncAttachedSets();
   return Object.keys(W.bulk.sets.attached).length ? structuredClone(W.bulk.sets.attached) : undefined;

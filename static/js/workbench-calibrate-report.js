@@ -1,8 +1,9 @@
 // Calibrate's analysis reports: probability maps, answer diagnostics and the threshold sweep.
 import { $, api, copyText, h, icon, mount, pct, stat } from "./common.js";
 import { W } from "./workbench-state.js";
-import { tuningResults, rowText } from "./workbench-bulk.js";
-import { svg, SIGNALS, interval, withCI } from "./workbench-calibrate.js";
+import { tuningResults } from "./workbench-bulk.js";
+import { rowText } from "./workbench-bulk-inputs.js";
+import { svg, SIGNALS, interval, withCI } from "./workbench-evaluation-ui.js";
 
 // Recalibrate probability values, independently of the routing thresholds above.
 export function probabilityMapsPanel(currentRevision) {

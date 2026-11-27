@@ -1,10 +1,11 @@
 // Checks (jev/checks.py): a Policy gate saved with a dataset, rerun live; the gate export (jev/gate.py), the
 // model upgrade (jev/upgrade.py) and Policy's "Save as a check" form.
-import { $, api, copyText, currentStatus, h, handleError, icon, mount, pct, stat, toast, usd } from "./common.js";
+import { $, api, copyText, h, handleError, icon, mount, pct, stat, toast, usd } from "./common.js";
+import { loadModels } from "./workbench-models.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { bulkUnsaved } from "./workbench-bulk.js";
+import { bulkUnsaved } from "./workbench-bulk-inputs.js";
 import { driftForm, pval, driftReport } from "./workbench-drift.js";
 import {
   newQueue,
@@ -14,32 +15,10 @@ import {
   confirmReviewDiscard,
   reviewQueueLab,
 } from "./workbench-review.js";
-import { withCI, attachedSetsPayload, attachedSetsText } from "./workbench-calibrate.js";
+import { withCI } from "./workbench-evaluation-ui.js";
+import { attachedSetsPayload, attachedSetsText } from "./workbench-calibrate.js";
 import { activeGates, policyRules } from "./workbench-policy.js";
 import { CHECK_BADGE, sliceCheckReport, checkReport } from "./workbench-checks-report.js";
-
-// Shared suggestions for saved checks, upgrades, and Compare. Any model name can still be typed.
-export function loadModels() {
-  const c = W.compare;
-  if (c.models || c.modelsLoading || !currentStatus()?.configured) return;
-  c.modelsLoading = true;
-  api("/api/models")
-    .then((res) => {
-      c.models = (res.models || []).map((m) => m.name);
-      const list = $("#cmp-models");
-      if (list)
-        mount(
-          list,
-          c.models.map((n) => h("option", { value: n })),
-        );
-    })
-    .catch(() => {
-      c.models = []; /* typing a name still works */
-    })
-    .finally(() => {
-      c.modelsLoading = false;
-    });
-}
 
 // ---------- Checks ----------
 // A check (jev/checks.py) keeps Policy's gate with a saved dataset: the gated questions and thresholds, the model, and

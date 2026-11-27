@@ -2,7 +2,8 @@ import { $, api, h, handleError, icon, mount, pct, toast } from "./common.js";
 import { automatedDelta, holdsBackNothing, totalShare, withoutQuestions } from "./prune.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { targetName, withCI } from "./workbench-calibrate.js";
+import { targetName } from "./workbench-calibrate.js";
+import { withCI } from "./workbench-evaluation-ui.js";
 import { gatesText } from "./workbench-costs.js";
 import { activeGates, policyRows, policyRules } from "./workbench-policy.js";
 

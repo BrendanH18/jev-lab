@@ -2,7 +2,8 @@
 import { $, api, debounce, h, handleError, icon, mount, money, pct, stat, statusBadge } from "./common.js";
 import { W } from "./workbench-state.js";
 import { bulkQuestionsForResult } from "./workbench-bulk.js";
-import { svg, withCI, targetName, answerClasses, updateCal } from "./workbench-calibrate.js";
+import { svg, withCI } from "./workbench-evaluation-ui.js";
+import { targetName, answerClasses, updateCal } from "./workbench-calibrate.js";
 import {
   GATEABLE,
   policyQids,

@@ -4,8 +4,9 @@
 import { api, h, handleError, icon, pct, stat, toast } from "./common.js";
 import { W, canon } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { bulkUnsaved, isTest } from "./workbench-bulk.js";
-import { withCI } from "./workbench-calibrate.js";
+import { bulkUnsaved } from "./workbench-bulk-inputs.js";
+import { isTest } from "./workbench-bulk.js";
+import { withCI } from "./workbench-evaluation-ui.js";
 import { loadDataset } from "./workbench-datasets.js";
 import { activeGates, policyRules, policyRows, updatePolicy } from "./workbench-policy.js";
 import { confirmReviewDiscard } from "./workbench-review.js";

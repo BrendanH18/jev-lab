@@ -1,7 +1,8 @@
 // Advisory row checks use the same request-state helpers as Bulk, without model calls.
 import { api, h, handleError } from "./common.js";
 import { W } from "./workbench-state.js";
-import { bulkQuestions, rowsPayload, settleLabels } from "./workbench-bulk.js";
+import { bulkQuestions, rowsPayload } from "./workbench-bulk-inputs.js";
+import { settleLabels } from "./workbench-bulk.js";
 import { questionEditorError } from "./workbench-build.js";
 import { render } from "./workbench.js";
 

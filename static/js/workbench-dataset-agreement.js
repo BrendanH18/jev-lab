@@ -17,9 +17,10 @@ import {
 } from "./agreement.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { rowsText, bulkUnsaved, loadPictureUrls, rowText } from "./workbench-bulk.js";
+import { rowsText, bulkUnsaved, loadPictureUrls, rowText } from "./workbench-bulk-inputs.js";
 import { queueClasses, shownAnswer } from "./workbench-review.js";
-import { withCI, labelText, labelValue } from "./workbench-calibrate.js";
+import { withCI } from "./workbench-evaluation-ui.js";
+import { labelText, labelValue } from "./workbench-calibrate.js";
 
 function agreeRun(id) {
   return (

@@ -4,9 +4,9 @@ import { compareScorePayload } from "./compare-retry.js";
 import { PERTURBS, VARIANTS } from "./variants.js";
 import { W, canon } from "./workbench-state.js";
 import { applyBuildQuestions, toQuestions } from "./workbench-build.js";
-import { render } from "./workbench.js";
-import { loadPictureUrls, rowsPayload, rowText } from "./workbench-bulk.js";
-import { svg, SIGNALS, boundSelect, interval, withCI, syncAttachedSets } from "./workbench-calibrate.js";
+import { navigateGuideStep, render } from "./workbench.js";
+import { loadPictureUrls, rowsPayload, rowText, syncAttachedSets } from "./workbench-bulk-inputs.js";
+import { svg, SIGNALS, boundSelect, interval, withCI } from "./workbench-evaluation-ui.js";
 import { cascadeBlock } from "./workbench-compare-cascade.js";
 
 // Question ids both variants asked with the same type, in A's order.
@@ -935,14 +935,11 @@ async function handoffCompareDisagreements() {
       csvPreview: null,
     };
     await loadPictureUrls(prepared.items);
-    W.tab = "bulk";
-    location.hash = "bulk";
     syncAttachedSets();
     toast(
       "Opened blank human labels for missing disagreement inputs. No answers were copied. Apply and Save when ready.",
     );
-    render();
-    $("#prelabel-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    navigateGuideStep("bulk", "#prelabel-panel");
   } catch (e) {
     handleError(e);
   } finally {

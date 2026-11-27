@@ -1,8 +1,9 @@
 // Explicit human repairs and redundant-copy cleanup. Apply changes the editor, never a saved dataset.
 import { api, h, handleError, photoView, toast } from "./common.js";
 import { W } from "./workbench-state.js";
-import { bulkQuestions, loadPictureUrls, rowsPayload, rowsText, settleLabels } from "./workbench-bulk.js";
-import { labelText, labelValue, syncAttachedSets } from "./workbench-calibrate.js";
+import { bulkQuestions, loadPictureUrls, rowsPayload, rowsText, syncAttachedSets } from "./workbench-bulk-inputs.js";
+import { settleLabels } from "./workbench-bulk.js";
+import { labelText, labelValue } from "./workbench-calibrate.js";
 import { render } from "./workbench.js";
 import { preparedLabelsUnsaved } from "./workbench-labeling.js";
 

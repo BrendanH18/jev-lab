@@ -6,9 +6,8 @@ import { confirmSpend, estimateLine } from "./estimate.js";
 import { W } from "./workbench-state.js";
 import { toQuestions } from "./workbench-build.js";
 import { render } from "./workbench.js";
-import { loadSampleRows, countRows, rowsPayload } from "./workbench-bulk.js";
-import { syncAttachedSets } from "./workbench-calibrate.js";
-import { loadModels } from "./workbench-checks.js";
+import { countRows, rowsPayload, syncAttachedSets } from "./workbench-bulk-inputs.js";
+import { loadModels } from "./workbench-models.js";
 import { updateCascade } from "./workbench-compare-cascade.js";
 import {
   chooseCmpQuestion,
@@ -243,6 +242,15 @@ function averageA() {
   toast("B asks A's questions in both option orders and averages the answers");
 }
 
+async function loadCompareSampleRows() {
+  try {
+    const { loadSampleRows } = await import("./workbench-bulk.js");
+    await loadSampleRows();
+  } catch (e) {
+    handleError(e);
+  }
+}
+
 const runLabel = (n) => [icon("layers"), `Run ${Math.min(n, 200)} rows × 2 variants`];
 
 export function renderCompare() {
@@ -303,7 +311,7 @@ export function renderCompare() {
           count,
           h("span", { class: "faint", style: { fontSize: "12px" } }, "shared with Bulk"),
           h("div", { class: "spacer" }),
-          h("button", { class: "btn sm ghost", onclick: loadSampleRows }, "Load sample rows"),
+          h("button", { class: "btn sm ghost", onclick: loadCompareSampleRows }, "Load sample rows"),
         ),
         h("div", { class: "panel-body" }, rows),
       ),

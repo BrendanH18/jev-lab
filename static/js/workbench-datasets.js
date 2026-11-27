@@ -23,7 +23,8 @@ import {
 import { createHistory } from "./history.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { rowsText, bulkUnsaved, replaceRows, settleLabels, rowsPayload, bulkQuestions } from "./workbench-bulk.js";
+import { rowsText, bulkUnsaved, rowsPayload, bulkQuestions } from "./workbench-bulk-inputs.js";
+import { replaceRows, settleLabels } from "./workbench-bulk.js";
 import { checkItem } from "./workbench-checks.js";
 import { agreeButton, agreePanel } from "./workbench-dataset-agreement.js";
 import { bundleImportForm, exportBundle } from "./workbench-dataset-bundles.js";

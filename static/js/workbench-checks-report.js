@@ -1,6 +1,6 @@
 // Reports for saved checks, including the slice targets shared with model upgrades.
 import { h, icon, ms, pct, stat, usd } from "./common.js";
-import { withCI } from "./workbench-calibrate.js";
+import { withCI } from "./workbench-evaluation-ui.js";
 
 export const CHECK_BADGE = {
   pass: ["good", "check", "Passed"],

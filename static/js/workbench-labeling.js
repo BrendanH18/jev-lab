@@ -4,10 +4,19 @@ import { labelProgress, visibleLabels, nextLabel, labelShortcut } from "./prelab
 import { W, canon } from "./workbench-state.js";
 import { stringify } from "./workbench-build.js";
 import { render } from "./workbench.js";
-import { rowsText, loadPictureUrls, settleLabels, rowsPayload, bulkQuestions, rowText } from "./workbench-bulk.js";
+import {
+  rowsText,
+  loadPictureUrls,
+  rowsPayload,
+  bulkQuestions,
+  rowText,
+  syncAttachedSets,
+} from "./workbench-bulk-inputs.js";
+import { settleLabels } from "./workbench-bulk.js";
 import { labelSelect } from "./workbench-bulk-labels.js";
 import { agreeQuestions } from "./workbench-dataset-agreement.js";
-import { SIGNALS, labelText, labelValue, syncAttachedSets } from "./workbench-calibrate.js";
+import { SIGNALS } from "./workbench-evaluation-ui.js";
+import { labelText, labelValue } from "./workbench-calibrate.js";
 import { policyQids, policyRows } from "./workbench-policy.js";
 
 // Pre-run human labels belong to a snapshot of the inputs and question schema, not model answers.
