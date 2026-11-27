@@ -8,12 +8,15 @@ import { toQuestions } from "./workbench-build.js";
 import { render } from "./workbench.js";
 import { loadSampleRows, countRows, rowsPayload } from "./workbench-bulk.js";
 import { syncAttachedSets } from "./workbench-calibrate.js";
+import { loadModels } from "./workbench-checks.js";
+import { updateCascade } from "./workbench-compare-cascade.js";
 import {
   chooseCmpQuestion,
   cmpQuestions,
   renderCompareReport,
   renderCompareRows,
   rescoreCompare,
+  updateCmpChart,
 } from "./workbench-compare-report.js";
 
 function parseVariant(i) {
@@ -29,27 +32,9 @@ function variantStatus(i) {
   }
 }
 
-// Model suggestions come from GET /v1/models for the connected key; any name can still be typed.
-export function loadModels() {
-  const c = W.compare;
-  if (c.models || c.modelsLoading || !currentStatus()?.configured) return;
-  c.modelsLoading = true;
-  api("/api/models")
-    .then((res) => {
-      c.models = (res.models || []).map((m) => m.name);
-      const list = $("#cmp-models");
-      if (list)
-        mount(
-          list,
-          c.models.map((n) => h("option", { value: n })),
-        );
-    })
-    .catch(() => {
-      c.models = []; /* typing a name still works */
-    })
-    .finally(() => {
-      c.modelsLoading = false;
-    });
+export function updateCompareView() {
+  updateCmpChart();
+  updateCascade();
 }
 
 function variantPanel(i) {

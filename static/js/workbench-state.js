@@ -12,7 +12,9 @@ export const W = {
   exportTab: "python",
   // Question checks (jev/lint.py): the last report for the Build request, made by code, never by the model.
   lint: null,
-  items: [],
+  items: null, // Saved-test catalog, loaded when Tests opens or Build saves a test.
+  testSave: null, // The current Build save, including its catalog refresh.
+  testCatalogRevision: 0, // Counts acknowledged Build writes, even if their catalog refresh fails.
   examples: [],
   runResults: null,
   saveOpen: false,

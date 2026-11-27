@@ -192,12 +192,12 @@ bug #91 and Dependabot PR #86.
 
 ## Success measures
 
-| Measure | 2026-11-20 | 2026-11-26 | May 2027 target |
+| Measure | 2026-11-20 | Latest | May 2027 target |
 | --- | --- | --- | --- |
 | Open correctness bugs in quantitative tools | ≥1 (#91) | 0 known (#91 fixed) | 0, each tool with a reference-value test |
 | Live validation | Manual; exits 0 on misses | `--strict` exists; runs are manual | Manual `--strict` run on Boat recorded in every PR that changes wording, thresholds or the model |
 | Lab | 198 JS + 35 Python packs, 134,510 lines | 7 JS + 4 Python packs, 11,226 lines | ≤20 JS packs, <15,000 lines (or folded into panels) |
-| Workbench boot | 168 modules, 4.28 MB | Lab packs load on first use; not remeasured | ≤25 modules, ≤500 KB |
+| Workbench boot | 168 modules, 4.28 MB | 57 JavaScript files, 937 KB decoded (2026-11-27) | ≤25 modules, ≤500 KB |
 | Client backends | SDK + Python 3.9 `urllib` fallback | SDK only | SDK only |
 | Third-party requests from the app | Google Fonts | None | None |
 | Largest Workbench module | 2,855 lines | 1,168 lines | ≤1,200 lines |
@@ -205,6 +205,10 @@ bug #91 and Dependabot PR #86.
 | `AGENTS.md` | 524 lines | 248 lines | ≤250 lines, invariants intact |
 | Improvement docs | 16 shards | 1 changelog | 1 changelog |
 | Newcomer path | Undefined | Reviews walkthrough and Basic view; walkthrough not yet run | One path, most testers finish it unaided |
+
+The 2026-11-27 startup measurement uses Chromium's Resource Timing through the point where the
+Build request editor becomes editable in a fresh browser context on Boat. Before deferring Tests,
+Compare and Examples, the same probe counted 69 JavaScript files and 1,117 KB decoded.
 
 ## Top risks
 

@@ -456,6 +456,7 @@ export function renderSaveForm() {
 }
 
 async function saveTest() {
+  if (W.testSave) return;
   try {
     if (W.result && buildResultStale())
       return toast("Run the edited request before saving its expectations as a test.", "error");
@@ -465,7 +466,7 @@ async function saveTest() {
     if (error) return toast(error, "error");
     const submittedContext = buildContext();
     const expect = Object.fromEntries(Object.entries(W.expect).filter(([qid]) => Object.hasOwn(questions, qid)));
-    const { item } = await api("/api/workbench/items", {
+    W.testSave = api("/api/workbench/items", {
       id: W.editingId || undefined,
       name: W.saveName,
       notes: W.saveNotes,
@@ -473,8 +474,12 @@ async function saveTest() {
       questions,
       expect,
       images: imagesPayload(),
+    }).then(async ({ item }) => {
+      W.testCatalogRevision += 1;
+      W.items = (await api("/api/workbench/items")).items;
+      return item;
     });
-    W.items = (await api("/api/workbench/items")).items;
+    const item = await W.testSave;
     W.editingId = item.id;
     W.saveOpen = false;
     setBuildBaseline(submittedContext);
@@ -482,5 +487,7 @@ async function saveTest() {
     render();
   } catch (e) {
     handleError(e);
+  } finally {
+    W.testSave = null;
   }
 }
