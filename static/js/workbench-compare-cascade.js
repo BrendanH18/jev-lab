@@ -3,7 +3,7 @@ import { $, copyText, h, icon, mount, ms, pct, usd } from "./common.js";
 import { VARIANTS } from "./variants.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { SIGNALS, svg } from "./workbench-calibrate.js";
+import { SIGNALS, svg } from "./workbench-evaluation-ui.js";
 
 // Ask one variant first and the other only when the first is unsure. Both variants already answered every
 // scored row, so jev/compare.py reads each threshold's accuracy, cost, and latency from those answers.

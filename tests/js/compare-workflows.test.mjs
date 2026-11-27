@@ -439,9 +439,8 @@ function handoffHarness(api, confirm = () => true) {
     "toast",
     "handleError",
     "loadPictureUrls",
-    "location",
+    "navigateGuideStep",
     "syncAttachedSets",
-    "$",
     "applyBuildQuestions",
     body("handoffCompareDisagreements") + "; return handoffCompareDisagreements;",
   )(
@@ -458,9 +457,12 @@ function handoffHarness(api, confirm = () => true) {
       throw error;
     },
     async () => {},
-    location,
+    (tab, target) => {
+      W.tab = tab;
+      location.hash = tab;
+      location.target = target;
+    },
     () => {},
-    () => null,
     (q) => {
       W.questions = q;
       W.result = null;
@@ -490,6 +492,7 @@ test("handoff sends only source inputs/schema/indices and opens blank controls a
   assert.deepEqual(x.W.bulk.prelabel.report, x.prepared);
   assert.equal(x.W.bulk.prelabel.context, JSON.stringify([x.W.bulk.rowsText, x.prepared.questions, false]));
   assert.equal(x.location.hash, "bulk");
+  assert.equal(x.location.target, "#prelabel-panel");
 });
 
 test("canceling handoff preserves Build, editor labels, and unfinished drafts", async () => {

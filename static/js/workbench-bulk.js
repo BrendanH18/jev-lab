@@ -18,16 +18,31 @@ import {
 } from "./common.js";
 import { bulkPreflightBody, checkBulkPreflight } from "./bulk-preflight.js";
 import { bulkRetryContext, bulkRetryRows, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "./bulk-retry.js";
-import { datasetEditsBody, confirmDatasetEditsDiscard } from "./dataset-edits.js";
+import { datasetEditsBody, confirmDatasetEditsDiscard, datasetEditsUnsaved } from "./dataset-edits.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
 import { W } from "./workbench-state.js";
-import { toQuestions, sampleUrl, questionEditorError } from "./workbench-build.js";
+import { questionEditorError, toQuestions } from "./workbench-build.js";
+import {
+  bulkQuestions,
+  bulkUnsaved,
+  countRows,
+  loadPictureUrls,
+  rowLineFor,
+  rowsPayload,
+  rowsText,
+  rowText,
+  setFitContext,
+  syncAttachedSets,
+} from "./workbench-bulk-inputs.js";
 import { renderGuide, render } from "./workbench.js";
 import { labelSelect } from "./workbench-bulk-labels.js";
 import { renderDatasets } from "./workbench-datasets.js";
 import { renderGateExport } from "./workbench-checks.js";
 import { renderImport, healthBody } from "./workbench-import.js";
-import { prelabelBody, renderReview } from "./workbench-labeling.js";
+import { prelabelBody, preparedLabelsUnsaved, renderReview } from "./workbench-labeling.js";
+import { agreementSessionsUnsaved } from "./workbench-dataset-agreement.js";
+import { confirmReviewDiscard, reviewQueuesUnsaved } from "./workbench-review.js";
+import { driftQueuesUnsaved } from "./workbench-drift.js";
 import {
   answerClasses,
   labelText,
@@ -35,38 +50,39 @@ import {
   chooseCalQuestion,
   recalibrate,
   renderCalibrate,
-  setFitContext,
-  syncAttachedSets,
   renderAnswerSets,
+  updateCal,
 } from "./workbench-calibrate.js";
 import { renderCosts } from "./workbench-costs.js";
-import { renderRules, GATEABLE, resetPolicy, repolicy, renderPolicy } from "./workbench-policy.js";
+import { renderRules, GATEABLE, resetPolicy, repolicy, renderPolicy, updatePolicy } from "./workbench-policy.js";
+
+export function bulkPanel() {
+  const resize = () => {
+    if (W.advanced) updateCal();
+  };
+  return {
+    render: renderBulk,
+    update: () => {
+      resize();
+      updatePolicy();
+    },
+    resize,
+    drafts: bulkPanelDrafts,
+    confirmReviewDiscard,
+  };
+}
+
+function bulkPanelDrafts() {
+  return {
+    labeling: preparedLabelsUnsaved(),
+    review: reviewQueuesUnsaved(),
+    drift: driftQueuesUnsaved(),
+    datasetEdits: datasetEditsUnsaved(),
+    agreement: agreementSessionsUnsaved(),
+  };
+}
 
 // ---------- Bulk ----------
-// One row as a line of the rows box, carrying `labels` if given. A text line that would split, lose
-// whitespace, or parse as JSON is written as an object so it survives the trip (the server splits rows
-// on "\n" and trims each line).
-export function rowLineFor(row, labels = null) {
-  const has = labels && Object.keys(labels).length;
-  if (typeof row === "string") {
-    const plain = row === row.trim() && !/^[{[]/.test(row) && !/[\n\r]/.test(row);
-    if (!has && plain) return row;
-    return JSON.stringify(has ? { text: row, _expect: labels } : { text: row });
-  }
-  return JSON.stringify(has ? { ...row, _expect: labels } : row);
-}
-
-// Rows as the rows box shows them: one per line, or a JSON array when a row is itself an array, since
-// an array line would come back as text.
-export function rowsText(rows) {
-  if (rows.some(Array.isArray)) return `[\n${rows.map((r) => JSON.stringify(r)).join(",\n")}\n]`;
-  return rows.map((r) => rowLineFor(r)).join("\n");
-}
-
-// Rows or labels that a reload would lose: the box differs from the last save or load, or labels were
-// typed in the results table and not yet put in the rows.
-export const bulkUnsaved = () => W.bulk.rowsText !== W.bulk.savedText || W.bulk.labelsDirty;
-
 function markUnsaved() {
   syncAttachedSets();
   updateBulkRetry();
@@ -118,22 +134,6 @@ async function addPictures(input) {
     handleError(e);
   }
 }
-// Image URLs for the pictures rows name: samples from static files, uploads fetched once.
-export async function loadPictureUrls(results) {
-  const b = W.bulk;
-  const names = [...new Set(results.map((r) => r.row?._image).filter((n) => typeof n === "string" && !b.pictures[n]))];
-  const files = names.filter((n) => !/^[a-z-]+$/.test(n));
-  for (const n of names) if (/^[a-z-]+$/.test(n)) b.pictures[n] = sampleUrl(n);
-  if (!files.length) return;
-  try {
-    const { pictures } = await api("/api/workbench/pictures/load", { names: files });
-    for (const [n, x] of Object.entries(pictures))
-      b.pictures[n] = `data:image/${x.format === "jpg" ? "jpeg" : "png"};base64,${x.data_base64}`;
-  } catch (e) {
-    handleError(e);
-  }
-}
-
 export async function loadSampleRows() {
   try {
     const s = await api("/api/workbench/bulk/sample");
@@ -162,37 +162,6 @@ export function expectedText(q) {
   if (q.type === "noul") return "yes or no";
   if (q.type === "score") return `a level from 0 to ${(q.criteria || []).length - 1}`;
   return `one of its options (${Object.keys(q.criteria || {}).join(", ")})`;
-}
-
-export function countRows(text) {
-  const t = text.trim();
-  if (t.startsWith("[")) {
-    try {
-      const v = JSON.parse(t);
-      if (Array.isArray(v)) return v.length;
-    } catch {
-      /* count lines */
-    }
-  }
-  return text.split("\n").filter((l) => l.trim()).length;
-}
-
-// The rows box as the server takes it: a JSON array, or the text itself (one row per line).
-export function rowsPayload(rows = W.bulk.rowsText) {
-  if (/^\[/.test(rows.trim())) {
-    try {
-      return JSON.parse(rows);
-    } catch {
-      /* keep text */
-    }
-  }
-  return rows;
-}
-
-export function bulkQuestions() {
-  const b = W.bulk;
-  if (b.source === "dataset" && b.dataset.questions) return b.dataset.questions;
-  return b.source === "sample" ? b.sampleQuestions : toQuestions(W.questions);
 }
 
 function bulkRequestSnapshot() {
@@ -902,24 +871,6 @@ function bulkTableBody() {
 export const isTest = (r) => !!r.row && typeof r.row === "object" && !Array.isArray(r.row) && r.row._test === true;
 // The rows every tuning panel reads: answered, and not test rows.
 export const tuningResults = (res) => res.results.filter((r) => r.answers && !isTest(r));
-
-// A row that is only {"text": ...} reads as its text; anything else shows as JSON. A test row's marker is not shown.
-export function rowText(row) {
-  if (row && typeof row === "object" && !Array.isArray(row) && "_test" in row) {
-    const { _test, ...rest } = row;
-    row = rest;
-  }
-  if (typeof row === "string") return row;
-  if (
-    row &&
-    typeof row === "object" &&
-    !Array.isArray(row) &&
-    Object.keys(row).length === 1 &&
-    typeof row.text === "string"
-  )
-    return row.text;
-  return JSON.stringify(row);
-}
 
 export function bulkQuestionsForResult(res) {
   const first = res.results.find((r) => r.answers);

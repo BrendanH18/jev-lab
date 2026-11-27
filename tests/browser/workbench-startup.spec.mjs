@@ -1,6 +1,72 @@
 import { expect, test } from "@playwright/test";
 import { startBrowserApp } from "./app.mjs";
 
+test("Build and Compare share rows without loading the Bulk panel", async ({ page }) => {
+  let calls = 0;
+  const app = await startBrowserApp(() => {
+    calls++;
+    return [500, {}];
+  });
+  let releaseBulk;
+  const bulkReady = new Promise((resolve) => {
+    releaseBulk = resolve;
+  });
+  try {
+    const requests = [];
+    page.on("request", (request) => requests.push(new URL(request.url()).pathname));
+    const bulkModule = "/js/workbench-bulk.js";
+    await page.route(`**${bulkModule}`, async (route) => {
+      await bulkReady;
+      await route.continue();
+    });
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto(`${app.base}/workbench`);
+    const editor = page.getByRole("textbox", { name: "Request state" });
+    await editor.fill('{"review":"Great coffee"}');
+    for (const path of [
+      bulkModule,
+      "/js/workbench-datasets.js",
+      "/js/workbench-policy.js",
+      "/js/workbench-review.js",
+    ]) {
+      expect(requests).not.toContain(path);
+    }
+
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    await page.getByRole("tab", { name: "Compare" }).click();
+    await page.getByRole("textbox", { name: "Rows, shared with the Bulk tab" }).fill("An edited review");
+    expect(requests).not.toContain(bulkModule);
+
+    await page.getByRole("tab", { name: "Build" }).click();
+    await page.getByText(/Workbench guide · from questions/).click();
+    await page.getByRole("button", { name: "Open rows", exact: true }).click();
+    const bulk = page.getByRole("tabpanel", { name: "Bulk" });
+    await expect(bulk.getByRole("status")).toHaveText("Loading Bulk…");
+    releaseBulk();
+    const rowsPanel = bulk.locator("#bulk-rows");
+    const rows = rowsPanel.getByRole("textbox");
+    await expect(rows).toHaveValue("An edited review");
+    await expect
+      .poll(() =>
+        rowsPanel.evaluate((node) =>
+          Math.abs(node.getBoundingClientRect().top - document.querySelector(".topbar").getBoundingClientRect().bottom),
+        ),
+      )
+      .toBeLessThan(2);
+
+    await rows.fill("A Bulk draft");
+    await page.getByRole("tab", { name: "Build" }).click();
+    await expect(editor).toHaveValue('{"review":"Great coffee"}');
+    await page.getByRole("tab", { name: "Bulk" }).click();
+    await expect(rows).toHaveValue("A Bulk draft");
+    expect(requests.filter((path) => path === bulkModule)).toHaveLength(1);
+    expect(calls).toBe(0);
+  } finally {
+    releaseBulk();
+    await app.close();
+  }
+});
+
 test("Build defers advanced panels and keeps its edits while Tests loads", async ({ page }) => {
   let calls = 0;
   const app = await startBrowserApp(() => {

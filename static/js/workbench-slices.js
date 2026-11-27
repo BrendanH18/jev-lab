@@ -1,6 +1,7 @@
 import { $, api, debounce, h, handleError, mount, pct } from "./common.js";
 import { W } from "./workbench-state.js";
-import { withCI, refreshSets } from "./workbench-calibrate.js";
+import { withCI } from "./workbench-evaluation-ui.js";
+import { refreshSets } from "./workbench-calibrate.js";
 
 // Accuracy for each value of one row field (jev/slices.py), so a part of the data where answers are worse stands out.
 // Calibrate slices its scored rows at the slider's threshold; Policy slices its scored rows at the current gates.

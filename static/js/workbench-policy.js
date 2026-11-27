@@ -3,19 +3,12 @@
 import { $, api, copyText, debounce, h, handleError, icon, mount, pct, stat, statusBadge, toast } from "./common.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
-import { tuningResults, rowText, bulkQuestionsForResult } from "./workbench-bulk.js";
+import { tuningResults, bulkQuestionsForResult } from "./workbench-bulk.js";
+import { rowText } from "./workbench-bulk-inputs.js";
 import { testBody } from "./workbench-dataset-holdout.js";
 import { exportGate, gateModel, pinControl, checkSaveBody } from "./workbench-checks.js";
-import {
-  SIGNALS,
-  boundSelect,
-  interval,
-  withCI,
-  unreached,
-  labeledQids,
-  invalidNote,
-  attachedSetsPayload,
-} from "./workbench-calibrate.js";
+import { SIGNALS, boundSelect, interval, withCI } from "./workbench-evaluation-ui.js";
+import { unreached, labeledQids, invalidNote, attachedSetsPayload } from "./workbench-calibrate.js";
 import { costsPayload, costVs, cheapestChip, clearHoldout, holdoutPanel, runHoldout } from "./workbench-costs.js";
 import { clearPrune, pruneView, runPrune } from "./workbench-policy-prune.js";
 import { sliceSoon, sliceBody } from "./workbench-slices.js";

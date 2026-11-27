@@ -1,16 +1,9 @@
 // Bulk's CSV import (jev/csvimport.py) and dataset health (jev/health.py).
 import { $, api, debounce, h, handleError, icon, mount, num, toast } from "./common.js";
-import { W, canon } from "./workbench-state.js";
+import { W } from "./workbench-state.js";
+import { healthContext, rowLineFor, rowsText, rowsPayload, bulkQuestions } from "./workbench-bulk-inputs.js";
 import { render } from "./workbench.js";
-import {
-  rowLineFor,
-  rowsText,
-  replaceRows,
-  settleLabels,
-  expectedText,
-  rowsPayload,
-  bulkQuestions,
-} from "./workbench-bulk.js";
+import { replaceRows, settleLabels, expectedText } from "./workbench-bulk.js";
 
 // ---------- CSV import ----------
 // The server reads the CSV and checks label columns against the questions selected to run (jev/csvimport.py); no
@@ -326,9 +319,6 @@ function renderImportResult() {
     ),
   );
 }
-
-// A health report describes the current rows and selected questions, never a prior Bulk run's answers.
-export const healthContext = () => canon([W.bulk.rowsText, bulkQuestions(), W.bulk.labelsDirty, W.bulk.health.field]);
 
 // The "Check dataset health" button.
 export async function checkHealth() {

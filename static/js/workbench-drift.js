@@ -4,12 +4,12 @@ import { confirmSpend, estimateLine } from "./estimate.js";
 import { W } from "./workbench-state.js";
 import { stringify } from "./workbench-build.js";
 import { render } from "./workbench.js";
-import { rowsText, bulkUnsaved, loadPictureUrls, rowsPayload, rowText } from "./workbench-bulk.js";
+import { rowsText, bulkUnsaved, loadPictureUrls, rowsPayload, rowText } from "./workbench-bulk-inputs.js";
 import { agreeQuestions } from "./workbench-dataset-agreement.js";
 import { runCheck } from "./workbench-checks.js";
 import { CHECK_BADGE } from "./workbench-checks-report.js";
 import { queueReady, queueSelect } from "./workbench-review.js";
-import { withCI } from "./workbench-calibrate.js";
+import { withCI } from "./workbench-evaluation-ui.js";
 
 // ---------- Drift ----------
 // jev/drift.py runs the dataset's rows and the new rows, both live, and compares them through the check's gate: the share

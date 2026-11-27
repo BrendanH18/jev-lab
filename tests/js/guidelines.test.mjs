@@ -240,7 +240,32 @@ async function storeWith(guidelines) {
 
 test("canceling the shared discard guard keeps guideline drafts and makes no save request", async () => {
   const calls = [],
-    guarded = [];
+    prompts = [];
+  const queue = { edits: { 2: { dept: "billing" } } };
+  const W = { bulk: { checkRuns: { tickets: { queue } } } };
+  const content = new Function(
+    "W",
+    "window",
+    "confirmDriftDiscard",
+    "confirmAgreementDiscard",
+    `${body("replaceQueue")}; ${body("confirmReviewDiscard")}; ${body("bulkPanel")};
+    function renderBulk() {}
+    function bulkPanelDrafts() {}
+    return bulkPanel();`,
+  )(
+    W,
+    {
+      confirm(message) {
+        prompts.push(message);
+        return false;
+      },
+    },
+    () => true,
+    () => true,
+  );
+  const deferredPanels = new Map([["bulk", { content }]]);
+  const callback = source.match(/beforeSave:\s*(\(id\)\s*=>\s*[^,]+),/)[1];
+  const beforeSave = new Function("deferredPanels", `return (${callback});`)(deferredPanels);
   const interactiveH = (tag, attrs, ...children) => ({
     ...h(tag, attrs, ...children),
     listeners: {},
@@ -254,10 +279,7 @@ test("canceling the shared discard guard keeps guideline drafts and makes no sav
       calls.push(path);
       return { id: data.id, saved_at: "now", questions: Q, guidelines: {}, warnings: [] };
     },
-    beforeSave: (id) => {
-      guarded.push(id);
-      return false;
-    },
+    beforeSave,
   });
   const dataset = { id: "tickets", saved_at: "now" };
   store.toggle(dataset).attrs.onclick();
@@ -269,10 +291,10 @@ test("canceling the shared discard guard keeps guideline drafts and makes no sav
   await nodes(panel, "button")
     .find((node) => textOf(node) === "Save guidelines")
     .attrs.onclick();
-  assert.deepEqual(guarded, ["tickets"]);
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /discard its unsaved human labels/);
   assert.deepEqual(calls, ["/api/workbench/datasets/guidelines"]);
   assert.ok(textOf(store.panel(dataset)).includes("Keep this guideline draft"));
-  assert.match(workbenchSource, /beforeSave: \(id\) => confirmReviewDiscard\(id\)/);
 });
 
 test("the Review queue shows guidelines beside its labels and hides matching examples on blind audit rows", async () => {
