@@ -5,12 +5,10 @@ import { $, api, debounce, h, handleError, icon, initChrome, mount, toast } from
 import { readHandoff } from "./handoff.js";
 import { renderWorkbenchGuide, tabForKey, workflowSteps } from "./workbench-guide.js";
 import { createGuidelines } from "./guidelines.js";
-import { renderExamplesBrowser } from "./examples-browser.js";
 import { W } from "./workbench-state.js";
 import { LAB } from "./lab/pages/workbench.js";
 import { installLab, labEnv } from "./lab/env.js";
 import { buildUnsaved, loadInto, renderBuild } from "./workbench-build.js";
-import { renderTests } from "./workbench-tests.js";
 import { rowsText, bulkUnsaved, countRows, bulkQuestions, renderBulk } from "./workbench-bulk.js";
 import { healthContext } from "./workbench-import.js";
 import { datasetEditsUnsaved } from "./dataset-edits.js";
@@ -20,9 +18,6 @@ import { reviewQueuesUnsaved, confirmReviewDiscard } from "./workbench-review.js
 import { driftQueuesUnsaved } from "./workbench-drift.js";
 import { updateCal, syncAttachedSets } from "./workbench-calibrate.js";
 import { updatePolicy } from "./workbench-policy.js";
-import { renderCompare } from "./workbench-compare.js";
-import { updateCmpChart } from "./workbench-compare-report.js";
-import { updateCascade } from "./workbench-compare-cascade.js";
 
 // Labeling guidelines (static/js/guidelines.js): human-only, shown beside label controls, never sent to the model.
 // Kept on W so a view rendered without it (tests/js) simply shows no guideline.
@@ -47,6 +42,31 @@ const TABS = [
   ["toolbox", "Toolbox"],
 ];
 const BASIC_TABS = new Set(["build", "bulk"]);
+const deferredPanels = {
+  tests: {
+    async load() {
+      const { renderTests } = await import("./workbench-tests.js");
+      return { render: renderTests };
+    },
+  },
+  compare: {
+    async load() {
+      const { renderCompare, updateCompareView } = await import("./workbench-compare.js");
+      return { render: renderCompare, update: updateCompareView };
+    },
+  },
+  examples: {
+    async load() {
+      const { renderExamplesBrowser } = await import("./examples-browser.js");
+      return {
+        render: () =>
+          renderExamplesBrowser(h, W.examples, (ex) =>
+            loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id, images: ex.images }),
+          ),
+      };
+    },
+  },
+};
 // Lab surfaces of the page shell and the Toolbox tab (contract: static/js/lab/surfaces/workbench-shell.js). The shell's
 // ctx is built once and mounted on every render, so its commands reach every tab. Page code reaches Lab only through
 // W, so views rendered in tests/js see no Lab.
@@ -62,9 +82,8 @@ let wbShellCtx = null;
 async function boot() {
   await initChrome("/workbench");
   installLab(LAB);
-  const [ex, items, sample, pics, sets] = await Promise.all([
+  const [ex, sample, pics, sets] = await Promise.all([
     api("/api/workbench/examples"),
-    api("/api/workbench/items"),
     api("/api/workbench/bulk/sample"),
     api("/api/images/samples"),
     api("/api/workbench/datasets"),
@@ -73,7 +92,6 @@ async function boot() {
   W.maxImages = pics.limits.max_images;
   W.imageLimits = pics.limits;
   W.examples = ex.examples;
-  W.items = items.items;
   W.bulk.rowsText = W.bulk.savedText = rowsText(sample.rows);
   W.bulk.datasets = sets.datasets;
   window.addEventListener("beforeunload", (e) => {
@@ -174,7 +192,7 @@ function shellLabCtx() {
     counts: () =>
       wbShellReady
         ? {
-            savedTests: W.items.length,
+            savedTests: W.items?.length ?? null,
             examples: W.examples.length,
             datasets: W.bulk.datasets.length,
             checks: W.bulk.datasets.filter((d) => d.check).length,
@@ -274,32 +292,17 @@ export function render() {
   LAB.unmountAll(["chrome"]); // only the surfaces rendered below stay reachable from the command palette
   const shell = shellLabCtx();
   if (shell) W.lab?.mount(SHELL_LAB, shell);
-  let view;
-  switch (W.tab) {
-    case "tests":
-      view = renderTests();
-      break;
-    case "bulk":
-      view = renderBulk();
-      break;
-    case "compare":
-      view = renderCompare();
-      break;
-    case "examples":
-      view = renderExamplesBrowser(h, W.examples, (ex) =>
-        loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id, images: ex.images }),
-      );
-      break;
-    case "toolbox":
-      view = renderToolbox();
-      break;
-    default:
-      W.tab = "build";
-      view = renderBuild();
-  }
   if (wbShellRenderedTab !== null && wbShellRenderedTab !== W.tab) wbShellPreviousTab = wbShellRenderedTab;
   wbShellRenderedTab = W.tab;
+  renderTabs();
+  renderView();
+  renderGuide();
+}
+
+function renderTabs() {
   // The tab bar follows the WAI-ARIA tabs pattern: one tab in the Tab order, arrow keys move and wrap, Home/End.
+  const focused = document.activeElement;
+  const focusedTab = $("#tabs").contains(focused) ? focused.id : null;
   const visibleTabs = W.advanced ? TABS : TABS.filter(([id]) => BASIC_TABS.has(id));
   const tabIds = visibleTabs.map(([k]) => k);
   mount(
@@ -324,21 +327,99 @@ export function render() {
           },
         },
         label,
-        k === "tests" && W.items.length ? ` (${W.items.length})` : "",
+        k === "tests" && W.items?.length ? ` (${W.items.length})` : "",
       ),
     ),
   );
-  mount("#view", view);
-  $("#view")?.setAttribute("aria-labelledby", `tab-${W.tab}`);
-  renderGuide();
+  if (focusedTab) $(`#${focusedTab}`)?.focus();
+}
+
+function renderDeferredPanel(tab, panel) {
+  if (panel.content) return panel.content.render();
+  const label = TABS.find(([id]) => id === tab)[1];
+  if (panel.failed === "module") {
+    return h(
+      "p",
+      { class: "empty", role: "alert" },
+      `Could not load ${label}. Save or download unsaved work before reloading Workbench.`,
+    );
+  }
+  if (panel.failed === "catalog") {
+    return h(
+      "div",
+      { class: "panel panel-body" },
+      h("p", { role: "alert" }, `Could not load ${label}.`),
+      h(
+        "button",
+        {
+          class: "btn",
+          onclick: () => {
+            panel.failed = null;
+            renderView();
+            $("#view").focus();
+          },
+        },
+        "Try again",
+      ),
+    );
+  }
+  panel.pending ??= loadDeferredPanel(tab, panel);
+  return h("p", { class: "empty", role: "status" }, `Loading ${label}…`);
+}
+
+async function loadDeferredPanel(tab, panel) {
+  const catalog =
+    tab === "tests" && W.items === null
+      ? api("/api/workbench/items").then(
+          ({ items }) => {
+            // A Build save can refresh the catalog while the first Tests visit is loading.
+            W.items ??= items;
+            return true;
+          },
+          () => W.items !== null,
+        )
+      : true;
+  try {
+    const [content, catalogReady] = await Promise.all([panel.load(), catalog]);
+    if (catalogReady) {
+      panel.content = content;
+    } else {
+      panel.failed = "catalog";
+    }
+  } catch {
+    panel.failed = "module";
+  }
+  panel.pending = null;
+  if (tab === "tests" && panel.content && W.advanced) renderTabs();
+  if (W.tab === tab) renderView();
+}
+
+function renderView() {
+  let view;
+  switch (W.tab) {
+    case "tests":
+    case "compare":
+    case "examples":
+      view = renderDeferredPanel(W.tab, deferredPanels[W.tab]);
+      break;
+    case "bulk":
+      view = renderBulk();
+      break;
+    case "toolbox":
+      view = renderToolbox();
+      break;
+    default:
+      view = renderBuild();
+  }
+  const panel = mount("#view", view);
+  const deferred = deferredPanels[W.tab];
+  panel.setAttribute("aria-labelledby", `tab-${W.tab}`);
+  panel.tabIndex = deferred && !deferred.content && deferred.failed !== "catalog" ? 0 : -1;
   if (W.tab === "bulk") {
     if (W.advanced) updateCal();
     updatePolicy();
   }
-  if (W.tab === "compare") {
-    updateCmpChart();
-    updateCascade();
-  }
+  if (W.tab === "compare") deferredPanels.compare.content?.update();
 }
 
 // Browser history and fresh links use the same registered pack/tool keys as the Toolbox picker.
@@ -387,10 +468,7 @@ window.addEventListener(
   "resize",
   debounce(() => {
     if (W.tab === "bulk" && W.advanced) updateCal();
-    if (W.tab === "compare") {
-      updateCmpChart();
-      updateCascade();
-    }
+    if (W.tab === "compare") deferredPanels.compare.content?.update();
   }, 150),
 );
 boot().catch(handleError);

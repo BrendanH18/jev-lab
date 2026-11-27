@@ -31,7 +31,8 @@ The Workbench page's entry, [`static/js/workbench.js`](../static/js/workbench.js
 tabs and renders; each panel (Build, Tests, Bulk, CSV import and health, labeling, datasets, checks, drift, the
 review queue, Calibrate, costs, Policy, Compare) lives in a `static/js/workbench-*.js` module, and all of them
 share the page state `W` from [`static/js/workbench-state.js`](../static/js/workbench-state.js). The browser
-loads them as ES modules; there is no build step.
+loads them as ES modules. Tests, Compare, and Examples load when their tabs first open. The
+saved-test catalog loads when Tests opens or after Build saves a test. There is no build step.
 
 [`jev/client.py`](../jev/client.py) is the application boundary for external API access. It
 constructs requests, translates transport errors into `JevError`, records latency and usage,

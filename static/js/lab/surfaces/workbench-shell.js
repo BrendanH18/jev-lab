@@ -35,7 +35,7 @@
 //                         the guide's snapshot of the workspace (numbers are whole numbers >= 0, flags booleans);
 //                         null until the page has loaded its data. currentRun means the Bulk results match the rows
 //                         and questions in the editor now. These describe the workspace, never accuracy.
-//   counts       { savedTests, examples, datasets, checks } | null   how many saved tests, gallery examples, saved
+//   counts       { savedTests, examples, datasets, checks } | null   how many saved tests (null until loaded), gallery examples, saved
 //                         datasets and datasets with a saved check the page holds; null until the page has loaded.
 //   unsaved      { build, bulk, labeling, review, drift, datasetEdits, agreement, any }   booleans: the same tests the
 //                         page's "leave this page?" warning uses; any is true when one of them is.
@@ -179,7 +179,7 @@ export function shellCtx(source = {}) {
             label,
             position: index + 1,
             active: id === open,
-            count: id === "tests" ? (isObject(saved) ? whole(saved.savedTests) : 0) : null,
+            count: id === "tests" && saved?.savedTests !== null ? whole(saved?.savedTests) : null,
           })),
         );
       },
@@ -205,7 +205,7 @@ export function shellCtx(source = {}) {
         const counts = read(source, "counts", null);
         if (!isObject(counts)) return null;
         return Object.freeze({
-          savedTests: whole(counts.savedTests),
+          savedTests: counts.savedTests === null ? null : whole(counts.savedTests),
           examples: whole(counts.examples),
           datasets: whole(counts.datasets),
           checks: whole(counts.checks),
