@@ -14,8 +14,6 @@ export function testResultStatus(result) {
   return !result ? "not-run" : result.error ? "error" : result.ok ? "pass" : "fail";
 }
 
-// lab: the Tests tab's Lab hook ({ matches(test), arrange(tests) }, from the workbench.tests.items ctx), or null.
-// Lab filters count like every other filter here; Lab's sort applies after the page's own.
 export function visibleTests(
   items,
   results,
@@ -60,7 +58,6 @@ export function visibleTests(
     maxCost = "",
     latency = "all",
     cost = "all",
-    lab = null,
     ...refinements
   } = {},
 ) {
@@ -140,8 +137,7 @@ export function visibleTests(
         (typeof item.state === "string" ? "text" : Array.isArray(item.state) ? "array" : "object") === stateType) &&
       countMatches(Object.keys(item.questions || {}).length, minQuestions, true) &&
       countMatches(Object.keys(item.questions || {}).length, maxQuestions, false) &&
-      (selection === "all" || selectedSet.has(item.id) === (selection === "selected")) &&
-      (!lab?.matches || lab.matches(item) !== false),
+      (selection === "all" || selectedSet.has(item.id) === (selection === "selected")),
   );
   // Array#sort is stable; ties retain the saved list's order.
   if (sort === "input-smallest") shown.sort((a, b) => inputBytes(a) - inputBytes(b));
@@ -182,9 +178,7 @@ export function visibleTests(
     const priority = { error: 0, fail: 1, "not-run": 2, pass: 3 };
     shown.sort((a, b) => priority[testResultStatus(byId.get(a.id))] - priority[testResultStatus(byId.get(b.id))]);
   }
-  const refined = refineSuite(shown, { ...refinements, sort });
-  // Lab's sort applies last (static/js/lab/surfaces/workbench-tests.js); with none set the order is unchanged.
-  return lab?.arrange ? lab.arrange(refined) : refined;
+  return refineSuite(shown, { ...refinements, sort });
 }
 
 // Authored counts, never question wording or labels in reports/downloads.

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Finished pruning Lab to the tools on documented workflows: 7 JavaScript and 4 Python packs, about 11,000
+  lines. Removed the Lab surfaces no pack used, the demo pages' Lab filter and sort hooks, and the offline
+  `scripts/lab.py` commands.
 - Added aggregate JSON and GitHub Actions output for saved Workbench checks.
 - Strict live validation checks listed Jev names and verifies the model version each response reports.
 - Workbench loads most Lab tools when first opened and keeps its keyboard shortcuts ready at startup.

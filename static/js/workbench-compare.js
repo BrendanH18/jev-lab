@@ -10,7 +10,6 @@ import { loadSampleRows, countRows, rowsPayload } from "./workbench-bulk.js";
 import { syncAttachedSets } from "./workbench-calibrate.js";
 import {
   chooseCmpQuestion,
-  cmpLabSection,
   cmpQuestions,
   renderCompareReport,
   renderCompareRows,
@@ -302,7 +301,6 @@ export function renderCompare() {
       " tests a fix for an order effect: B asks A's questions twice, once with the options reversed, and averages the answers, so the report shows what a second call per row buys.",
     ),
     h("div", { class: "grid cmp-grid", id: "cmp-variants" }, variantPanel(0), variantPanel(1)),
-    cmpLabSection("workbench.compare.variants", cmpLabVariants()),
     h(
       "datalist",
       { id: "cmp-models" },
@@ -574,55 +572,4 @@ async function retryCompare() {
     c.running = false;
     render();
   }
-}
-
-// The ctx of the Lab surface "workbench.compare.variants" (the questions typed in the two editors), or null before
-// the page's Lab has its builder. Its actions are the editors' own buttons; replacing the list writes the editors'
-// JSON exactly as the fill buttons do.
-function cmpLabVariants() {
-  const build = W.lab?.builders?.compareVariantsCtx;
-  if (!build) return null;
-  const c = W.compare;
-  return build({
-    variants: () => c.variants,
-    currentModel: () => currentStatus()?.model || null,
-    models: () => c.models,
-    rowCount: () => countRows(W.bulk.rowsText),
-    running: () => !!c.running,
-    lastRun: () => c.result?.variants || null,
-    matches: (item, ctx) => W.lab.matches("workbench.compare.variants", item, ctx),
-    arrange: (items, ctx) => W.lab.arrange("workbench.compare.variants", items, ctx),
-    setQuestions: (i, questions) => {
-      c.variants[i].text = JSON.stringify(questions, null, 2);
-    },
-    refresh: () => refreshCmpVariants(),
-    copyAToB: () => cmpCopyA(),
-    reverseA: () => reverseA(),
-    averageA: () => averageA(),
-    fill: (i, from) => {
-      if ((from === "sample" && !W.bulk.sampleQuestions) || (from === "terse" && !c.terse))
-        throw new Error("The sample questions have not loaded yet.");
-      cmpFill(i, from);
-    },
-    setModel: (i, model) => {
-      c.variants[i].model = model;
-      render();
-    },
-    setRows: (kind) => {
-      c.variants[1].perturb = kind;
-      render();
-    },
-    setAsk: (both) => {
-      c.variants[1].average = both;
-      render();
-    },
-  });
-}
-
-// Lab's refresh for the variants: the two editors only, then a change event so the spend preview beside Run follows.
-function refreshCmpVariants() {
-  const grid = $("#cmp-variants");
-  if (!grid) return;
-  mount(grid, variantPanel(0), variantPanel(1));
-  grid.dispatchEvent(new Event("change", { bubbles: true }));
 }

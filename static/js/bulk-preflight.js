@@ -35,12 +35,6 @@ async function inspect() {
   render();
 }
 
-// The page's "Check Bulk inputs" button, for Lab (workbench.bulk.rows: actions.checkPreflight).
-export const checkBulkInputs = () => inspect();
-
-// The last report while it still matches the rows, questions and labels it checked; null otherwise.
-export const bulkPreflightReport = () => (key === context() ? report : null);
-
 export function bulkPreflightBody() {
   const current = key === context() ? report : null;
   return h(

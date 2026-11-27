@@ -51,7 +51,6 @@ from jev import (
     holdout,
     images,
     counter,
-    lab,
     lint,
     policy,
     preflight,
@@ -1188,12 +1187,6 @@ ROUTES = {
     ("POST", "/api/workbench/datasets/agreement/session/import"): api_wb_agreement_session_import,
     ("POST", "/api/workbench/compare/score"): api_wb_compare_score,
 }
-# Local JSON routes from Lab packs (jev/lab/packs, kind route): POST /api/lab/<pack id>/<name>. They are ordinary
-# entries of ROUTES, so every request check in jev/security.py applies to them, and they never call the model.
-for _route, _handler in lab.routes().items():
-    if _route in ROUTES:
-        raise RuntimeError("Lab route %s %s is already a route" % _route)
-    ROUTES[_route] = _handler
 
 CSP = (
     "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "

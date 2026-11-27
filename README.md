@@ -123,11 +123,6 @@ workflows, see the [Workbench guide](docs/workbench.md).
 - **Toolbox** plans finite-batch and stratified audits and computes confidence intervals from counts you enter.
 - **Commands** in the top bar, or Ctrl/Cmd+K, opens app navigation and keyboard help. Workbench also has commands
   for its tabs and guide.
-- Offline commands for saved datasets, tests, question files and statistics run from a terminal with no key:
-
-  ```sh
-  uv run --locked scripts/lab.py --help
-  ```
 
 Python packs also add question checks, dataset health findings and Bulk input notes. Lab tools run locally and make
 no model calls.

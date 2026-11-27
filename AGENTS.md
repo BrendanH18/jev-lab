@@ -36,7 +36,6 @@ uv run --locked python -m unittest tests.test_workbench.ItemTests.test_save_list
 uv run --locked node --test tests/js/*.test.mjs tests/js/lab/*.test.mjs
 npx playwright test                      # headless Chromium, real app and loopback model stub
 node scripts/lab_inventory.mjs           # regenerate JavaScript Lab page indexes
-uv run --locked scripts/lab.py --help     # offline Lab commands
 uv run --locked ruff check && uv run --locked ruff format --check
 npm run lint                             # Biome
 uv run --locked ruff format && npm run format
@@ -223,8 +222,8 @@ changing these workflows.
   libraries are their only imports. Packs reach the page solely through the `ctx` described by
   `static/js/lab/surfaces/`. Do not expose the DOM, storage, network or paid actions through it.
   Pages use `W.lab` or their generated `LAB`. An unrefined list must retain its baseline behavior.
-- Python packs use `jev/lab/kit.py` and never import `jev.client` or use the network. CLI packs
-  load through the app's loaders and honor `--data-dir`. Keep findings in the report's `lab`
+- Python packs use `jev/lab/kit.py` and never import `jev.client` or use the network. They add
+  only question checks, health findings and Bulk preflight notes, kept in the report's `lab`
   field. Lab preflight notes never trigger a run confirmation.
 - Lab never calls the model or spends budget, including indirectly through page commands. Pure
   rescoring and replanning are allowed. Its filters, sorts, drafts, previews and tools stay in the

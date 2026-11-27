@@ -1,20 +1,22 @@
 """Bulk preflight: what a row would send to the model that it should not, or that the model would misread.
 
-Each check receives one row's exact request state (see preflight_states). The first group looks at every text in the
-row for things that should not leave the machine: credentials, card, bank and national id numbers. The second looks
-at the text the questions point at for things the model misreads: words mixing look-alike alphabets, hidden
-direction controls, long runs of one character, and a single field so long that every question pays for it. Notes
-name question ids and paths only, never a value from the state. They are advisory and never ask for a confirm.
+Each check receives the state Bulk would send for one row (workbench.job_state: a text row under "text", the picture
+named under "photo" by its asset reference), the validated questions and the row's picture references. The first
+group looks at every text in the row for things that should not leave the machine: credentials, card, bank and
+national id numbers. The second looks at the text the questions point at for things the model misreads: words mixing
+look-alike alphabets, hidden direction controls, long runs of one character, and a single field so long that every
+question pays for it. Notes name question ids and paths only, never a value from the state. They are advisory and
+never ask for a confirm.
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from jev import lint
 from jev.lab import kit
-from jev.lab.packs import health_inputs, health_values, preflight_requests as requests, preflight_states as states
 
 CREDENTIAL_NAMES = {
     "password",
@@ -37,10 +39,17 @@ CREDENTIAL_NAMES = {
     "authorization",
     "cookie",
 }
+ASKED = ("noul", "choice", "score")  # the question types whose pointed-at text the model reads
 RUN_MIN = 20
 HUGE_FIELD_CHARS = 8_000
 SHOWN_PATHS = 3
 _LOOSE_NAME = re.compile(r"[\s-]+")
+_SECRET = re.compile(
+    r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----|\bsk-(?:live-|proj-|ant-)?[A-Za-z0-9_-]{20,}|\b(?:sk|pk|rk)_live_[A-Za-z0-9]{16,}"
+    r"|\bgh[pousr]_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{40,}|\bAKIA[0-9A-Z]{16}\b|\bxox[abpors]-[A-Za-z0-9-]{10,}"
+    r"|\bAIza[0-9A-Za-z_-]{35}\b|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|\bBearer\s+[A-Za-z0-9._~+/-]{20,}=*"
+)
+_CARD = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
 _LINK_LOGIN = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s/@]+@", re.I)
 _IBAN = re.compile(r"\b([A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?)\b")
 _IBAN_LENGTHS = {
@@ -87,9 +96,89 @@ _BIDI = {"‪", "‫", "‬", "‭", "‮", "⁦", "⁧", "⁨", "⁩", "‎", "
 # ---------- reading ----------
 
 
+def _blank(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, dict)):
+        return len(value) == 0
+    return False
+
+
+def _strings(value: Any, route: str = "") -> Iterator[Tuple[str, str]]:
+    """(path, text) for every text value inside `value`, paths written as questions write them."""
+    if isinstance(value, str):
+        yield route, value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from _strings(item, "%s.%s" % (route, key) if route else str(key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _strings(item, "%s[%d]" % (route, index))
+
+
+def _lookup(value: Any, path: str) -> List[Tuple[str, Any]]:
+    """Every (path as written, value) a backtick path names, by lint._resolve's rules (a field name may hold dots)."""
+
+    def walk(value: Any, rest: str) -> List[Any]:
+        if rest == "":
+            return [value]
+        found: List[Any] = []
+        if isinstance(value, dict):
+            for key in value:
+                if isinstance(key, str) and rest.startswith(key):
+                    tail = rest[len(key) :]
+                    if tail == "" or tail[0] in ".[":
+                        found += walk(value[key], tail[1:] if tail.startswith(".") else tail)
+        elif isinstance(value, list):
+            step = re.match(r"\[(\d+)\]|(\d+)(?=$|[.\[])", rest)
+            if step:
+                index = int(step.group(1) or step.group(2))
+                tail = rest[step.end() :]
+                if index < len(value):
+                    found += walk(value[index], tail[1:] if tail.startswith(".") else tail)
+        return found
+
+    return [(path, item) for item in walk(value, path)]
+
+
+def _read(state: Any, questions: Dict[str, dict], refs: set) -> Iterator[Tuple[Optional[str], str, str]]:
+    """(question id, path, text) for the text each asked question points at on this row. When no question points at
+    any path, every question reads the whole state: then every text in it, with no question id."""
+    pointed = False
+    for qid, question in questions.items():
+        for path in lint._paths(question):
+            if path in refs:
+                continue
+            pointed = True
+            if question["type"] not in ASKED:
+                continue
+            for route, value in _lookup(state, path):
+                for inner, text in _strings(value, route):
+                    if text not in refs:
+                        yield qid, inner, text
+    if not pointed:
+        for path, text in _strings(state):
+            if text not in refs:
+                yield None, path, text
+
+
+def _first_per_question(found: Iterator[Tuple[Optional[str], str]]) -> List[Tuple[Optional[str], str]]:
+    """The first (question id, path) for each question id, in order."""
+    out: Dict[Optional[str], str] = {}
+    for qid, path in found:
+        out.setdefault(qid, path)
+    return list(out.items())
+
+
+def _place(path: str) -> str:
+    return "`%s`" % path if path else "The row's text"
+
+
 def _texts(state: Any, refs: set) -> List[Tuple[str, str]]:
     """(path, text) for every text in the state, picture references left out."""
-    return [(path, text) for path, text in states._strings(state) if text not in refs]
+    return [(path, text) for path, text in _strings(state) if text not in refs]
 
 
 def _paths_with(state: Any, refs: set, test) -> List[str]:
@@ -97,7 +186,7 @@ def _paths_with(state: Any, refs: set, test) -> List[str]:
 
 
 def _where(paths: List[str]) -> str:
-    shown = [requests._place(path) for path in paths[:SHOWN_PATHS]]
+    shown = [_place(path) for path in paths[:SHOWN_PATHS]]
     more = len(paths) - len(shown)
     return ", ".join(shown) + (" and %d more" % more if more else "")
 
@@ -110,7 +199,7 @@ def _verb(paths: List[str]) -> str:
 
 
 def credentials_in_row(state, questions, refs):
-    paths = _paths_with(state, refs, lambda text: bool(health_values._SECRET.search(text)))
+    paths = _paths_with(state, refs, lambda text: bool(_SECRET.search(text)))
     if not paths:
         return []
     return [
@@ -136,7 +225,7 @@ def credential_fields(state, questions, refs):
                 if (
                     isinstance(key, str)
                     and _credential_name(key)
-                    and not health_inputs._blank(item)
+                    and not _blank(item)
                     and not isinstance(item, (dict, list))
                 ):
                     found.append(path)
@@ -170,8 +259,26 @@ def login_in_link(state, questions, refs):
     ]
 
 
+def _luhn(digits: str) -> bool:
+    total = 0
+    for index, ch in enumerate(reversed(digits)):
+        value = int(ch)
+        if index % 2:
+            value = value * 2 - 9 if value > 4 else value * 2
+        total += value
+    return total % 10 == 0
+
+
+def _card(text: str) -> bool:
+    for match in _CARD.finditer(text):
+        digits = re.sub(r"[ -]", "", match.group(0))
+        if 13 <= len(digits) <= 19 and _luhn(digits):
+            return True
+    return False
+
+
 def card_numbers(state, questions, refs):
-    paths = _paths_with(state, refs, health_inputs._card)
+    paths = _paths_with(state, refs, _card)
     if not paths:
         return []
     return [
@@ -249,14 +356,14 @@ def _mixed_word(text: str) -> bool:
 
 
 def mixed_script_words(state, questions, refs):
-    found = ((qid, path) for qid, path, text in requests._read(state, questions, refs) if _mixed_word(text))
+    found = ((qid, path) for qid, path, text in _read(state, questions, refs) if _mixed_word(text))
     return [
         (
             qid,
             "%s on this row has a word mixing Latin letters with look-alike Cyrillic or Greek ones; the model may "
-            "read it as another word, and exact matches in code miss it." % requests._place(path),
+            "read it as another word, and exact matches in code miss it." % _place(path),
         )
-        for qid, path in requests._first_per_question(found)
+        for qid, path in _first_per_question(found)
     ]
 
 
@@ -276,31 +383,31 @@ def direction_controls(state, questions, refs):
 def repeated_character_runs(state, questions, refs):
     found = (
         (qid, path)
-        for qid, path, text in requests._read(state, questions, refs)
+        for qid, path, text in _read(state, questions, refs)
         if any(not m.group(1).isspace() for m in _RUN.finditer(text))
     )
     return [
         (
             qid,
             "%s on this row repeats one character %d or more times in a row; the run pays for padding that tells "
-            "the model nothing." % (requests._place(path), RUN_MIN),
+            "the model nothing." % (_place(path), RUN_MIN),
         )
-        for qid, path in requests._first_per_question(found)
+        for qid, path in _first_per_question(found)
     ]
 
 
 def huge_pointed_field(state, questions, refs):
     lengths: Dict[Tuple[Optional[str], str], int] = {}
-    for qid, path, text in requests._read(state, questions, refs):
+    for qid, path, text in _read(state, questions, refs):
         lengths[(qid, path)] = max(lengths.get((qid, path), 0), len(text))
     found = ((qid, path) for (qid, path), size in lengths.items() if size > HUGE_FIELD_CHARS)
     return [
         (
             qid,
             "%s on this row is over %s characters; the question pays to read all of it on every run. Point it at "
-            "a shorter field or trim the text." % (requests._place(path), format(HUGE_FIELD_CHARS, ",")),
+            "a shorter field or trim the text." % (_place(path), format(HUGE_FIELD_CHARS, ",")),
         )
-        for qid, path in requests._first_per_question(found)
+        for qid, path in _first_per_question(found)
     ]
 
 

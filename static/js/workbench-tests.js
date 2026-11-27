@@ -32,7 +32,6 @@ import {
   unsuccessfulTestIds,
   testCountText,
   refreshTestVisibility,
-  savedTestsLab,
   openItem,
 } from "./workbench-tests-view.js";
 
@@ -84,10 +83,7 @@ export function renderTests() {
     W.items.filter((item) => selected.has(item.id)),
     res,
   );
-  const ordered = visibleTests(W.items, res, {
-    sort: testView.sort,
-    lab: W.lab?.builders?.testsItemsCtx ? { arrange: savedTestsLab().page.arrange } : null,
-  });
+  const ordered = visibleTests(W.items, res, { sort: testView.sort });
   return h(
     "div",
     { class: "grid", style: { gap: "16px" } },
@@ -329,7 +325,6 @@ export function renderTests() {
               onclick: () => {
                 Object.assign(testView, testFilterDefaults());
                 W.testSearch = "";
-                W.lab?.reset("workbench.tests.items");
                 render();
               },
             },
@@ -917,7 +912,6 @@ export function renderTests() {
           " Show result checks and call details",
         ),
         h("span", { class: "faint", id: "saved-test-count", "aria-live": "polite" }, testCountText()),
-        W.lab?.builders?.testsItemsCtx ? W.lab.section(W.labEnv, "workbench.tests.items", savedTestsLab()) : null,
       ),
       W.items.length
         ? h(

@@ -48,8 +48,8 @@ const TABS = [
 ];
 const BASIC_TABS = new Set(["build", "bulk"]);
 // Lab surfaces of the page shell and the Toolbox tab (contract: static/js/lab/surfaces/workbench-shell.js). The shell's
-// ctx is built once and mounted on every render, so its commands reach every tab; the gallery's surface lives in
-// static/js/examples-browser.js. Page code reaches Lab only through W, so views rendered in tests/js see no Lab.
+// ctx is built once and mounted on every render, so its commands reach every tab. Page code reaches Lab only through
+// W, so views rendered in tests/js see no Lab.
 const SHELL_LAB = "workbench.shell";
 const TOOLBOX_LAB = "workbench.toolbox";
 const TOOL_HASH = "#toolbox/";
@@ -286,11 +286,8 @@ export function render() {
       view = renderCompare();
       break;
     case "examples":
-      view = renderExamplesBrowser(
-        h,
-        W.examples,
-        (ex) => loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id, images: ex.images }),
-        { host: W.lab, env: W.labEnv, loaded: () => W.loadedExample },
+      view = renderExamplesBrowser(h, W.examples, (ex) =>
+        loadInto(ex.state, ex.questions, { expect: ex.expect, example: ex.id, images: ex.images }),
       );
       break;
     case "toolbox":

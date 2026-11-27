@@ -2,8 +2,7 @@
 // script again instead. The Lab packs the find page loads (its own, then the page-wide "chrome" packs) and the
 // ctx builders of its surfaces, which page code reaches as LAB.builders.
 import { createLab } from "../host.js";
-import * as s0 from "../surfaces/find.js";
 import p0 from "../packs/chrome/chrome-essentials.js";
 
 export const PACKS = [p0];
-export const LAB = createLab(PACKS, { ...s0 });
+export const LAB = createLab(PACKS, {});

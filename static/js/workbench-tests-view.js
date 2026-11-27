@@ -1,5 +1,5 @@
 // View state, saved test visibility, and actions available from the saved test list.
-import { $, api, currentStatus, handleError, inspect } from "./common.js";
+import { $, api, handleError } from "./common.js";
 import {
   firstVisibleSuiteIds,
   pruneTestResults,
@@ -12,7 +12,6 @@ import {
 } from "./test-selection.js";
 import { W } from "./workbench-state.js";
 import { loadInto } from "./workbench-build.js";
-import { render } from "./workbench.js";
 
 // Filters only change presentation. Selections and session answers survive filters and partial runs.
 const testFilterDefaults = () => ({
@@ -82,13 +81,10 @@ export function reconcileTests() {
   W.runResults = pruneTestResults(W.runResults, W.items);
 }
 
-// Lab's filters count like every page filter, and Lab's sort applies after the page's (W.lab is absent in the tests
-// that rebuild these functions from source, so the Lab parts are skipped there).
 export function shownTests() {
   return visibleTests(W.items, W.runResults, {
     ...testView,
     query: W.testSearch || "",
-    lab: W.lab?.builders?.testsItemsCtx ? savedTestsLab().page : null,
   });
 }
 
@@ -99,8 +95,7 @@ export function unsuccessfulTestIds() {
 }
 
 export function testCountText(shown = shownTests()) {
-  const lab = W.lab?.active("workbench.tests.items") || 0;
-  return `${shown.length} of ${W.items.length} tests shown · ${testView.selected.length} selected${lab ? ` · ${lab} Lab setting${lab === 1 ? "" : "s"} active` : ""}. Run all runs every saved test.`;
+  return `${shown.length} of ${W.items.length} tests shown · ${testView.selected.length} selected. Run all runs every saved test.`;
 }
 
 // Typing into search keeps focus and the cursor, and never changes selection.
@@ -151,53 +146,6 @@ export function refreshTestVisibility() {
     const button = $(`#${id}`);
     if (button) button.disabled = testView.busy || !visible.size;
   }
-  const labSection = W.lab?.builders?.testsItemsCtx ? $('[data-lab-surface="workbench.tests.items"]') : null;
-  if (labSection) labSection.replaceWith(W.lab.section(W.labEnv, "workbench.tests.items", savedTestsLab()) || "");
-}
-
-// Lab surface "workbench.tests.items" (contract: static/js/lab/surfaces/workbench-tests.js). Built once, on first use,
-// from the page's own state and handlers; it is reached only behind a W.lab check.
-export function savedTestsLab() {
-  if (!W.testsLab)
-    W.testsLab = W.lab.builders.testsItemsCtx({
-      items: () => W.items,
-      results: () => W.runResults,
-      shown: () => shownTests(),
-      matches: (item, ctx) => W.lab.matches("workbench.tests.items", item, ctx),
-      arrange: (list, ctx) => W.lab.arrange("workbench.tests.items", list, ctx),
-      selected: () => testView.selected,
-      canUndoSelection: () => testView.previousSelection !== null,
-      busy: () => testView.busy,
-      filters: () => ({
-        ...Object.fromEntries(Object.keys(testFilterDefaults()).map((key) => [key, testView[key]])),
-        query: W.testSearch || "",
-      }),
-      defaults: () => testFilterDefaults(),
-      tab: () => W.tab,
-      editingId: () => W.editingId,
-      status: () => currentStatus(),
-      now: () => Date.now(),
-      setSelection: (ids) => {
-        testView.previousSelection = [...testView.selected];
-        testView.selected = selectedTestIds(W.items, ids);
-        render();
-      },
-      undoSelection: () => {
-        testView.selected = selectedTestIds(W.items, testView.previousSelection || []);
-        testView.previousSelection = null;
-        render();
-      },
-      open: (item) => openItem(item),
-      inspect: (trace, title) => inspect(trace, title),
-      resetFilters: () => {
-        Object.assign(testView, testFilterDefaults());
-        W.testSearch = "";
-        W.lab.reset("workbench.tests.items");
-        render();
-      },
-      refresh: () => render(),
-    });
-  return W.testsLab;
 }
 
 export async function openItem(it) {

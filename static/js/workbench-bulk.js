@@ -16,7 +16,7 @@ import {
   toast,
   usd,
 } from "./common.js";
-import { bulkPreflightBody, bulkPreflightReport, checkBulkInputs, checkBulkPreflight } from "./bulk-preflight.js";
+import { bulkPreflightBody, checkBulkPreflight } from "./bulk-preflight.js";
 import { bulkRetryContext, bulkRetryRows, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "./bulk-retry.js";
 import { datasetEditsBody, confirmDatasetEditsDiscard } from "./dataset-edits.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
@@ -26,8 +26,8 @@ import { renderGuide, render } from "./workbench.js";
 import { labelSelect } from "./workbench-bulk-labels.js";
 import { renderDatasets } from "./workbench-datasets.js";
 import { renderGateExport } from "./workbench-checks.js";
-import { renderImport, healthBody, healthContext, checkHealth } from "./workbench-import.js";
-import { prelabelBody, preparedLabelsUnsaved, renderReview } from "./workbench-labeling.js";
+import { renderImport, healthBody } from "./workbench-import.js";
+import { prelabelBody, renderReview } from "./workbench-labeling.js";
 import {
   answerClasses,
   labelText,
@@ -77,8 +77,6 @@ function markUnsaved() {
   if (labeling) mount(labeling, prelabelBody());
   const el = $("#ds-unsaved");
   if (el) el.style.display = bulkUnsaved() ? "" : "none";
-  const labNote = $("#bulk-rows-lab");
-  if (labNote) mount(labNote, bulkRowsLabNote());
 }
 
 // Replace the rows box, after a confirm when that would lose unsaved rows or labels.
@@ -467,8 +465,6 @@ export function renderBulk() {
             h("code", {}, '{"left": 0.4, "top": 0.3, "right": 0.7, "bottom": 0.6}'),
             ".",
           ),
-          h("div", { id: "bulk-rows-lab" }, bulkRowsLabNote()),
-          bulkLabSection(BULK_ROWS_LAB, bulkRowsLab()),
         ),
       ),
       h(
@@ -743,7 +739,6 @@ function renderBulkTable() {
   const b = W.bulk;
   const res = b.result;
   const tests = res.results.filter(isTest).length;
-  const lab = bulkLabSection(BULK_RESULTS_LAB, bulkResultsLab());
   return h(
     "div",
     { class: "panel", id: "bulk-table" },
@@ -788,13 +783,11 @@ function renderBulkTable() {
           ` ${tests} test row${tests === 1 ? "" : "s"}: their answers stay hidden and no tuning panel reads them. Score a gate on them from Policy's Test rows.`,
         )
       : null,
-    lab ? h("div", { style: { margin: "8px 16px 0" } }, lab) : null,
-    h("div", { id: "bulk-table-body" }, bulkTableBody()),
+    bulkTableBody(),
   );
 }
 
-// The table itself: the rows in the page's order, minus what Lab filters hide, in Lab's sort order when one is set.
-// Lab's refresh() mounts this alone, so the panel above keeps its state.
+// The table itself: the rows in the page's order.
 function bulkTableBody() {
   const b = W.bulk;
   const res = b.result;
@@ -802,17 +795,7 @@ function bulkTableBody() {
   const qids = Object.keys(bulkQuestionsForResult(res));
   const calQ = b.cal.qid;
   const scored = new Map((b.cal.report?.rows || []).map((r) => [r.index, r]));
-  const ordered = bulkTableOrder();
-  const lab = bulkResultsLab();
-  const active = lab ? W.lab.active(BULK_RESULTS_LAB) : 0;
-  let rows = ordered;
-  if (lab) {
-    const byIndex = new Map(ordered.map((r) => [r.index, r]));
-    rows = lab
-      .shown()
-      .map((item) => byIndex.get(item.index))
-      .filter(Boolean);
-  }
+  const rows = bulkTableOrder();
   const th = (key, label) =>
     h(
       "th",
@@ -827,134 +810,92 @@ function bulkTableBody() {
       label,
       b.sortKey === key ? (b.sortDir < 0 ? " ↓" : " ↑") : "",
     );
-  return [
-    active
-      ? h(
-          "p",
-          {
-            class: "faint",
-            role: "status",
-            style: {
-              fontSize: "12.5px",
-              margin: "8px 16px 0",
-              display: "flex",
-              gap: "8px",
-              flexWrap: "wrap",
-              alignItems: "center",
-            },
-          },
-          `Showing ${rows.length} of ${res.results.length} rows · ${active} Lab setting${active === 1 ? "" : "s"} active. Download CSV and retries still cover every row.`,
-          h(
-            "button",
-            {
-              class: "btn sm ghost",
-              onclick: () => {
-                W.lab.reset(BULK_RESULTS_LAB);
-                render();
-              },
-            },
-            "Clear Lab filters and sort",
-          ),
-        )
-      : null,
+  return h(
+    "div",
+    { class: "scroll" },
     h(
-      "div",
-      { class: "scroll" },
+      "table",
+      { class: "table bulk-table" },
       h(
-        "table",
-        { class: "table bulk-table" },
+        "thead",
+        {},
         h(
-          "thead",
+          "tr",
           {},
+          th("__row", "#"),
+          h("th", {}, "row"),
+          qids.map((q) => th(q, q)),
+          calQ
+            ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), W.advanced ? h("th", {}, "route") : null]
+            : null,
+        ),
+      ),
+      h(
+        "tbody",
+        {},
+        rows.map((r) =>
           h(
             "tr",
-            {},
-            th("__row", "#"),
-            h("th", {}, "row"),
-            qids.map((q) => th(q, q)),
-            calQ
-              ? [h("th", {}, `label · ${calQ}`), h("th", {}, "result"), W.advanced ? h("th", {}, "route") : null]
-              : null,
-          ),
-        ),
-        h(
-          "tbody",
-          {},
-          !rows.length && active
-            ? h(
-                "tr",
-                {},
-                h(
-                  "td",
-                  { colspan: String(2 + qids.length + (calQ ? 2 + Number(W.advanced) : 0)), class: "faint" },
-                  "No row matches the Lab filters.",
-                ),
-              )
-            : null,
-          rows.map((r) =>
+            { "data-index": String(r.index) },
+            h("td", { class: "num" }, String(r.index + 1)),
             h(
-              "tr",
-              { "data-index": String(r.index) },
-              h("td", { class: "num" }, String(r.index + 1)),
-              h(
-                "td",
-                { class: "row" },
-                b.pictures[r.row?._image]
-                  ? h("img", { src: b.pictures[r.row._image], alt: r.row._image, class: "row-thumb" })
-                  : null,
-                isTest(r) ? h("span", { class: "badge", style: { marginRight: "6px" } }, "test") : null,
-                rowText(r.row),
-                r.error ? h("div", { style: { color: "var(--critical-text)", fontSize: "12px" } }, r.error) : null,
-              ),
-              qids.map((q) => {
-                if (isTest(r) && r.answers?.[q])
-                  return h(
-                    "td",
-                    { class: `faint${q === calQ ? " cal-col" : ""}`, title: "A test row's answers stay hidden" },
-                    "hidden",
-                  );
-                const v = cellValue(r.answers, q);
+              "td",
+              { class: "row" },
+              b.pictures[r.row?._image]
+                ? h("img", { src: b.pictures[r.row._image], alt: r.row._image, class: "row-thumb" })
+                : null,
+              isTest(r) ? h("span", { class: "badge", style: { marginRight: "6px" } }, "test") : null,
+              rowText(r.row),
+              r.error ? h("div", { style: { color: "var(--critical-text)", fontSize: "12px" } }, r.error) : null,
+            ),
+            qids.map((q) => {
+              if (isTest(r) && r.answers?.[q])
                 return h(
                   "td",
-                  { class: q === calQ ? "cal-col" : "" },
-                  v.heat !== undefined
-                    ? h(
-                        "span",
-                        {},
-                        h("span", { class: "pill-num" }, v.text),
-                        h("span", { class: "heat" }, h("i", { style: { width: pct(v.heat, 1) } })),
-                      )
-                    : h(
-                        "span",
-                        {},
-                        h("span", { class: "cell-choice" }, v.text),
-                        v.sub
-                          ? h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, v.sub)
-                          : null,
-                      ),
+                  { class: `faint${q === calQ ? " cal-col" : ""}`, title: "A test row's answers stay hidden" },
+                  "hidden",
                 );
-              }),
-              calQ
-                ? [
-                    labelCell(r, calQ),
-                    h(
-                      "td",
+              const v = cellValue(r.answers, q);
+              return h(
+                "td",
+                { class: q === calQ ? "cal-col" : "" },
+                v.heat !== undefined
+                  ? h(
+                      "span",
                       {},
-                      scored.has(r.index)
-                        ? scored.get(r.index).correct
-                          ? statusBadge("pass", "Right")
-                          : statusBadge("fail", "Wrong")
+                      h("span", { class: "pill-num" }, v.text),
+                      h("span", { class: "heat" }, h("i", { style: { width: pct(v.heat, 1) } })),
+                    )
+                  : h(
+                      "span",
+                      {},
+                      h("span", { class: "cell-choice" }, v.text),
+                      v.sub
+                        ? h("span", { class: "faint", style: { marginLeft: "6px", fontSize: "11.5px" } }, v.sub)
                         : null,
                     ),
-                    W.advanced ? h("td", { class: "route" }) : null,
-                  ]
-                : null,
-            ),
+              );
+            }),
+            calQ
+              ? [
+                  labelCell(r, calQ),
+                  h(
+                    "td",
+                    {},
+                    scored.has(r.index)
+                      ? scored.get(r.index).correct
+                        ? statusBadge("pass", "Right")
+                        : statusBadge("fail", "Wrong")
+                      : null,
+                  ),
+                  W.advanced ? h("td", { class: "route" }) : null,
+                ]
+              : null,
           ),
         ),
       ),
     ),
-  ];
+  );
 }
 
 // A test row (jev/testsplit.py): held out of every tuning panel and Compare, and its answers stay hidden here.
@@ -1010,154 +951,4 @@ function keepLabels(quiet = false) {
     toast("Rows now carry their labels as JSON lines");
   }
   return true;
-}
-
-// ---------- Lab surfaces (contract: static/js/lab/surfaces/workbench-bulk.js) ----------
-// "workbench.bulk.rows" is the rows box, "workbench.bulk.results" the results table. The page reaches Lab only
-// through W (W.lab, W.labEnv, W.lab.builders): without them there is no ctx, no section and no note, and the Bulk tab
-// works exactly as it does without Lab. Each ctx is built once per page session and reads W at call time.
-const BULK_ROWS_LAB = "workbench.bulk.rows";
-const BULK_RESULTS_LAB = "workbench.bulk.results";
-const bulkLabCtxs = {};
-
-// A surface's Lab tools block, or null when there is no ctx or no pack on the surface.
-function bulkLabSection(id, ctx) {
-  return ctx ? W.lab?.section(W.labEnv, id, ctx) || null : null;
-}
-
-function bulkRowsLab() {
-  if (bulkLabCtxs.rows) return bulkLabCtxs.rows;
-  const build = W.lab?.builders?.bulkRowsCtx;
-  if (typeof build !== "function") return null;
-  bulkLabCtxs.rows = build({
-    rowsText: () => W.bulk.rowsText,
-    questions: () => bulkQuestions(),
-    questionError: () => (W.bulk.source === "current" ? questionEditorError() : null),
-    source: () => W.bulk.source,
-    dataset: () => W.bulk.dataset,
-    unsaved: () => bulkUnsaved(),
-    labelsDirty: () => W.bulk.labelsDirty,
-    running: () => !!W.bulk.running,
-    health: () => (W.bulk.health.context === healthContext() ? W.bulk.health.report : null),
-    preflight: () => bulkPreflightReport(),
-    matches: (item, ctx) => W.lab.matches(BULK_ROWS_LAB, item, ctx),
-    arrange: (items, ctx) => W.lab.arrange(BULK_ROWS_LAB, items, ctx),
-    // The same questions Apply in the repairs panel asks before its drafts would be lost.
-    confirmDiscard: () =>
-      confirmDatasetEditsDiscard() &&
-      (!preparedLabelsUnsaved() ||
-        confirm(
-          "This edit changes the rows box, which discards unapplied pre-run labeling drafts. Apply those labels first to keep them, or continue and discard them?",
-        )),
-    write: (text, label) => bulkLabWriteRows(text, label),
-    checkHealth: () => checkHealth(),
-    checkPreflight: () => checkBulkInputs(),
-    openCsvImport: () => {
-      W.bulk.csv.open = true;
-      render();
-      $("#csv-import")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    },
-    focusLine: (line) => focusBulkRowLine(line),
-    refresh: () => {
-      const note = $("#bulk-rows-lab");
-      if (note) mount(note, bulkRowsLabNote());
-    },
-  });
-  return bulkLabCtxs.rows;
-}
-
-// A Lab edit of the rows box takes the path typing does: the box changes, every panel that reads it sees the change.
-// Lab records its one-step Undo after this returns, so the page renders once it has (a microtask later).
-function bulkLabWriteRows(text, label) {
-  W.bulk.rowsText = text;
-  markUnsaved();
-  toast(`${label}: the rows box changed. Save the dataset to keep it.`);
-  Promise.resolve().then(render);
-}
-
-function focusBulkRowLine(line) {
-  const box = $("#bulk-rows textarea");
-  if (!box) throw new Error("Open the Bulk tab to go to a row.");
-  const lines = box.value.split("\n");
-  const start = lines.slice(0, line - 1).reduce((total, text) => total + text.length + 1, 0);
-  box.focus();
-  box.setSelectionRange(start, start + (lines[line - 1] || "").length);
-}
-
-// Under the rows box while a Lab filter or sort is active: which rows Lab's checks, edits and exports will use.
-function bulkRowsLabNote() {
-  const ctx = bulkRowsLab();
-  const active = ctx ? W.lab.active(BULK_ROWS_LAB) : 0;
-  if (!active) return null;
-  const shown = ctx.shown(),
-    total = ctx.items().length;
-  const listed = shown
-    .slice(0, 20)
-    .map((item) => item.position)
-    .join(", ");
-  return h(
-    "p",
-    {
-      class: "faint",
-      role: "status",
-      style: {
-        fontSize: "12px",
-        marginTop: "8px",
-        display: "flex",
-        gap: "8px",
-        flexWrap: "wrap",
-        alignItems: "center",
-      },
-    },
-    `${active} Lab setting${active === 1 ? "" : "s"} active: ${shown.length} of ${total} rows match${shown.length ? ` (rows ${listed}${shown.length > 20 ? ", …" : ""})` : ""}. ` +
-      "The box still holds every row; Lab checks, edits and exports use the matching rows.",
-    h(
-      "button",
-      {
-        class: "btn sm ghost",
-        onclick: () => {
-          W.lab.reset(BULK_ROWS_LAB);
-          render();
-        },
-      },
-      "Clear Lab filters and sort",
-    ),
-  );
-}
-
-function bulkResultsLab() {
-  if (bulkLabCtxs.results) return bulkLabCtxs.results;
-  const build = W.lab?.builders?.bulkResultsCtx;
-  if (typeof build !== "function") return null;
-  bulkLabCtxs.results = build({
-    result: () => W.bulk.result,
-    order: () => (W.bulk.result ? bulkTableOrder() : []),
-    labels: () => W.bulk.labels,
-    questions: () => W.bulk.ranQuestions,
-    calQuestion: () => W.bulk.cal.qid,
-    calReport: () => W.bulk.cal.report,
-    sort: () => (W.bulk.sortKey ? { key: W.bulk.sortKey, dir: W.bulk.sortDir } : null),
-    requestedModel: () => W.bulk.runRequest?.model,
-    labelsDirty: () => W.bulk.labelsDirty,
-    running: () => !!W.bulk.running,
-    matches: (item, ctx) => W.lab.matches(BULK_RESULTS_LAB, item, ctx),
-    arrange: (items, ctx) => W.lab.arrange(BULK_RESULTS_LAB, items, ctx),
-    sortBy: (key, dir) => {
-      W.bulk.sortKey = key;
-      W.bulk.sortDir = dir;
-      render();
-    },
-    keepLabels: () => keepLabels(),
-    downloadCsv: () => downloadBulkCsv(),
-    focusRow: (index) => {
-      const row = $(`#bulk-table tr[data-index="${index}"]`);
-      if (!row) throw new Error("Open the Bulk tab to go to a row.");
-      row.scrollIntoView({ behavior: "smooth", block: "center" });
-    },
-    refresh: () => {
-      const body = $("#bulk-table-body");
-      if (body && W.bulk.result) mount(body, bulkTableBody());
-    },
-  });
-  return bulkLabCtxs.results;
 }

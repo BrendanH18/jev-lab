@@ -32,7 +32,6 @@ KEY_VALUE_LINES = 2  # a text state with this many "Key: value" lines holds fiel
 # A backticked token that reads as a state path: a field name, then .field, .0, or [0] steps.
 _PATH = re.compile(r"[A-Za-z_][\w-]*(?:\.[\w-]+|\[\d+\])*")
 _TICKED = re.compile(r"`([^`\n]+)`")
-_STEP = re.compile(r"\.([\w-]+)|\[(\d+)\]")
 # Quoted text is data the question carries, such as a search query, so its question marks do not count.
 _QUOTED = re.compile(r"“[^”]*”|‘[^’]*’|\"[^\"]*\"|(?<!\w)'[^'\n]*'(?!\w)|`[^`]*`")
 # Sentence punctuation and quotes, which do not change what a description says. Signs, operators, and

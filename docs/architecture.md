@@ -137,8 +137,8 @@ indexes in `static/js/lab/pages/` from the remaining packs and surfaces.
 
 In Python, `jev/lab/kit.py` defines the pack contract and `jev/lab/__init__.py` finds the packs in `jev/lab/packs/`
 and hooks them in: question checks into `jev/lint.check`, health findings into `jev/health.analyze`, advisory notes
-into `jev/preflight.check` (each under a separate `lab` key, so the built-in results are unchanged), and commands
-into the offline `scripts/lab.py`. Packs never import `jev/client.py`.
+into `jev/preflight.check`, each under a separate `lab` key so the built-in results are unchanged. Packs never import
+`jev/client.py`.
 
 ## Test boundaries
 

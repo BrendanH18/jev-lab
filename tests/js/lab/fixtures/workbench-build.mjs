@@ -1,23 +1,20 @@
-// Fixtures for packs on the Workbench Build tab's surfaces (contract: static/js/lab/surfaces/workbench-build.js).
+// Fixtures for packs on the Workbench Build tab's questions (contract: static/js/lab/surfaces/workbench-build.js).
 // Not a test file.
 //
-//   import { sampleBuildQuestionsCtx, sampleBuildResultCtx, BUILD_RESULT } from "./fixtures/workbench-build.mjs";
+//   import { sampleBuildQuestionsCtx } from "./fixtures/workbench-build.mjs";
 //   const ctx = sampleBuildQuestionsCtx();                 // 7 cards of every type; "tone" is hidden by a page filter
 //   const bare = sampleBuildQuestionsCtx({ rows: [], result: null, lint: null, expect: {} });   // empty editor
-//   const answers = sampleBuildResultCtx();                // the six answers of one Run
-//   const none = sampleBuildResultCtx({ result: null });   // before the first Run
 //
 // Every ctx is made by the real builder from hand-written raw page state, so items and data have exactly the page's
 // shapes. The answers are made up for tests; the page itself only ever shows answers the user requested.
 // overrides: any raw page field below (rows, expect, stateText, images, result, stale, running, rawMode, rawPending,
-// lint, saveOpen, canUndoRemove, maxImages, origin), plus
-//   hide:  qids (or 1-based positions) the page's own filters hide, as a search or type filter would (default
-//          ["tone"] on the questions ctx, [] on the result ctx)
+// lint, canUndoRemove, maxImages, origin), plus
+//   hide:  qids (or 1-based positions) the page's own filters hide, as a search or type filter would (default ["tone"])
 //   order: qids in the order shown() returns them, as an active Lab sort would (others keep their place after)
 // The ctx also carries env (fakeEnv(): toasts, copied, downloads), log: every action the page received, as
 // [name, ...args], and page: the raw state, which commit() (replaceItems/importItems) and addQuestion() change the
 // way the real page does, so a command or edit test can assert the outcome.
-import { wbBuildQuestionsCtx, wbBuildResultCtx } from "../../../../static/js/lab/surfaces/workbench-build.js";
+import { wbBuildQuestionsCtx } from "../../../../static/js/lab/surfaces/workbench-build.js";
 import { fakeEnv } from "../harness.mjs";
 
 // The state of a Harbor Coffee Co. support ticket, as the state editor holds it (JSON text).
@@ -219,26 +216,6 @@ export function buildResult() {
   };
 }
 
-// An odd Run: a missing score, a Choice without probabilities, a Box with a missing edge, an unknown type.
-export function buildOddResult() {
-  return {
-    answers: {
-      level: { type: "score", score: null, legend: { 0: "Low", 1: "High" }, probabilities: { 0: 0.5, 1: "n/a" } },
-      pick: { type: "choice", choice: "x_y", confidence: 0.4 },
-      spot: { type: "box", box: { left: 0.1, top: 0.1, right: 0.4 }, confidence: 0.3 },
-      future: { type: "ranking", ranking: ["a", "b"] },
-    },
-    meta: { model: "jev-1.14" },
-    trace: {
-      request: {
-        state: "plain text",
-        model: "jev-1.14",
-        questions: { level: { type: "score" }, pick: { type: "choice", instructions: "Pick" } },
-      },
-    },
-  };
-}
-
 // The Question checks report after Check questions (W.lint), with one extra advisory finding from a Python pack.
 export function buildLint() {
   return {
@@ -276,7 +253,7 @@ export function buildLint() {
 }
 
 // The raw page state and a source for the builders, with every action logged.
-export function samplePage(overrides = {}, defaults = {}) {
+export function samplePage(overrides = {}) {
   const page = {
     rows: buildRows(),
     expect: buildExpect(),
@@ -288,13 +265,11 @@ export function samplePage(overrides = {}, defaults = {}) {
     rawMode: false,
     rawPending: false,
     lint: buildLint(),
-    saveOpen: false,
     canUndoRemove: false,
     maxImages: 4,
     origin: { example: "support_triage", test: null, handoff: null },
     hide: ["tone"],
     order: null,
-    ...defaults,
   };
   for (const [key, value] of Object.entries(overrides)) page[key] = value;
   const log = [];
@@ -332,9 +307,7 @@ export function samplePage(overrides = {}, defaults = {}) {
     lint: () => page.lint,
     maxImages: () => page.maxImages,
     origin: () => page.origin,
-    saveOpen: () => page.saveOpen,
     canUndoRemove: () => page.canUndoRemove,
-    currentIds: () => page.rows.map((row) => String(row.id || "").trim()).filter(Boolean),
     shownRows: () => page.rows.filter((row, index) => !hidden(row, index)),
     arrange,
     commit: logged("commit", ({ rows, expect }) => {
@@ -368,14 +341,6 @@ export function samplePage(overrides = {}, defaults = {}) {
       page.hide = [];
       page.order = null;
     }),
-    inspect: logged("inspect"),
-    openSave: logged("openSave", () => {
-      page.saveOpen = true;
-    }),
-    focusQuestion: logged(
-      "focusQuestion",
-      (qid) => !page.rows.some((row, index) => String(row.id || "").trim() === qid && hidden(row, index)),
-    ),
     refresh: logged("refresh"),
   };
   return { page, log, source };
@@ -391,10 +356,4 @@ function withExtras(ctx, made) {
 export function sampleBuildQuestionsCtx(overrides = {}) {
   const made = samplePage(overrides);
   return withExtras(wbBuildQuestionsCtx(made.source), made);
-}
-
-export function sampleBuildResultCtx(overrides = {}) {
-  const made = samplePage(overrides, { hide: [] });
-  const ctx = wbBuildResultCtx({ ...made.source, matches: (item) => !(made.page.hide || []).includes(item.id) });
-  return withExtras(ctx, made);
 }
