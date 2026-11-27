@@ -162,6 +162,7 @@ function guideSnapshot() {
   const b = W.bulk;
   const questions = bulkQuestions() || {};
   return {
+    reviewsHandoff: W.handoff?.source === "Reviews",
     questionCount: Object.keys(questions).length,
     rowCount: countRows(b.rowsText),
     currentRun: !!b.result && b.runText === b.rowsText && JSON.stringify(b.ranQuestions) === JSON.stringify(questions),

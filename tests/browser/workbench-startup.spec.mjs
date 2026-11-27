@@ -114,6 +114,7 @@ test("Build and Compare share rows without loading the Bulk panel", async ({ pag
 
     await page.getByRole("tab", { name: "Build" }).click();
     await page.getByText(/Workbench guide · from questions/).click();
+    await expect(page.locator("#workbench-guide").getByText(/Sample: support triage/)).toBeVisible();
     await page.getByRole("button", { name: "Open rows", exact: true }).click();
     const bulk = page.getByRole("tabpanel", { name: "Bulk" });
     await expect(bulk.getByRole("status")).toHaveText("Loading Bulk…");
