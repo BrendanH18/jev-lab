@@ -272,7 +272,10 @@ test("canceling the shared discard guard keeps guideline drafts and makes no sav
   assert.deepEqual(guarded, ["tickets"]);
   assert.deepEqual(calls, ["/api/workbench/datasets/guidelines"]);
   assert.ok(textOf(store.panel(dataset)).includes("Keep this guideline draft"));
-  assert.match(workbenchSource, /beforeSave: \(id\) => confirmReviewDiscard\(id\)/);
+  assert.match(
+    workbenchSource,
+    /beforeSave:\s*\(id\)\s*=>\s*deferredPanels\.get\("bulk"\)\.content\?\.confirmReviewDiscard\(id\)/,
+  );
 });
 
 test("the Review queue shows guidelines beside its labels and hides matching examples on blind audit rows", async () => {
