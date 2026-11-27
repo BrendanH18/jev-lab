@@ -93,7 +93,15 @@ test("Reviews opens in Workbench and the tutorial produces an exported gate and 
   const inputs = rows.split("\n").map((row) => JSON.parse(row));
   topics = new Map(inputs.map((row) => [row.review.text, row._expect.topic]));
 
-  await workbench.getByRole("tab", { name: "Bulk", exact: true }).click();
+  const guidePanel = workbench.locator("#workbench-guide");
+  await guidePanel.getByText(/Workbench guide · from questions/).click();
+  await expect(guidePanel.getByText(/Paste the four labeled review rows/)).toContainText("Current Build questions");
+  await expect(guidePanel.getByRole("link", { name: /^Get the labeled review rows/ })).toHaveAttribute(
+    "href",
+    /\/docs\/workbench\.md#labeled-review-rows$/,
+  );
+  await expect(guidePanel.getByText(/Sample: support triage/)).toHaveCount(0);
+  await guidePanel.getByRole("button", { name: "Open rows", exact: true }).click();
   await workbench.locator("#bulk-rows").getByRole("textbox").fill(rows);
   await workbench.getByRole("textbox", { name: "Dataset name" }).fill("Review topics");
   await workbench.getByRole("button", { name: "Save rows and labels" }).click();

@@ -1,6 +1,7 @@
 // Navigation only: the guide never runs a request or changes the working data.
 export function workflowSteps(snapshot = {}) {
   const {
+    reviewsHandoff = false,
     questionCount = 0,
     rowCount = 0,
     currentRun = false,
@@ -30,8 +31,9 @@ export function workflowSteps(snapshot = {}) {
       action: "Open rows",
       status: rowCount ? "Rows in editor" : "Add inputs",
       enabled: true,
-      detail:
-        "To try Bulk with labeled data, load the sample rows and select Sample: support triage. For your own questions, paste matching inputs, import CSV, or load a dataset.",
+      detail: reviewsHandoff
+        ? "Paste the four labeled review rows into Rows and select Current Build questions."
+        : "To try Bulk with labeled data, load the sample rows and select Sample: support triage. For your own questions, paste matching inputs, import CSV, or load a dataset.",
     },
     {
       id: "labels",
@@ -107,7 +109,25 @@ export function renderWorkbenchGuide(
             {},
             h("b", {}, step.title),
             h("span", { class: "faint" }, ` · ${step.status}`),
-            h("p", { class: "muted" }, step.detail),
+            h(
+              "p",
+              { class: "muted" },
+              step.detail,
+              step.id === "rows" && snapshot.reviewsHandoff
+                ? [
+                    " ",
+                    h(
+                      "a",
+                      {
+                        href: "https://github.com/BrendanH18/jev-lab/blob/main/docs/workbench.md#labeled-review-rows",
+                        target: "_blank",
+                        rel: "noopener noreferrer",
+                      },
+                      "Get the labeled review rows (opens in a new tab)",
+                    ),
+                  ]
+                : null,
+            ),
             h(
               "button",
               {
