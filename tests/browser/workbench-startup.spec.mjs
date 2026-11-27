@@ -19,13 +19,7 @@ test("Build and Compare share rows without loading the Bulk panel", async ({ pag
       await bulkReady;
       await route.continue();
     });
-    await page.addInitScript(() => {
-      const scrollIntoView = Element.prototype.scrollIntoView;
-      Element.prototype.scrollIntoView = function (options) {
-        if (this.id) document.body.dataset.lastScroll = this.id;
-        scrollIntoView.call(this, options);
-      };
-    });
+    await page.setViewportSize({ width: 390, height: 900 });
     await page.goto(`${app.base}/workbench`);
     const editor = page.getByRole("textbox", { name: "Request state" });
     await editor.fill('{"review":"Great coffee"}');
@@ -49,9 +43,16 @@ test("Build and Compare share rows without loading the Bulk panel", async ({ pag
     const bulk = page.getByRole("tabpanel", { name: "Bulk" });
     await expect(bulk.getByRole("status")).toHaveText("Loading Bulk…");
     releaseBulk();
-    const rows = bulk.locator("#bulk-rows").getByRole("textbox");
+    const rowsPanel = bulk.locator("#bulk-rows");
+    const rows = rowsPanel.getByRole("textbox");
     await expect(rows).toHaveValue("An edited review");
-    await expect(page.locator("body")).toHaveAttribute("data-last-scroll", "bulk-rows");
+    await expect
+      .poll(() =>
+        rowsPanel.evaluate((node) =>
+          Math.abs(node.getBoundingClientRect().top - document.querySelector(".topbar").getBoundingClientRect().bottom),
+        ),
+      )
+      .toBeLessThan(2);
 
     await rows.fill("A Bulk draft");
     await page.getByRole("tab", { name: "Build" }).click();

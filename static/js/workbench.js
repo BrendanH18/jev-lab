@@ -424,8 +424,16 @@ function renderView() {
   panel.tabIndex = deferred && !deferred.content && deferred.failed !== "catalog" ? 0 : -1;
   deferred?.content?.update?.();
   if (sectionTarget && (sectionTarget.tab !== W.tab || !deferred?.pending)) {
-    if (sectionTarget.tab === W.tab) $(sectionTarget.target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const section = sectionTarget.tab === W.tab ? $(sectionTarget.target) : null;
     sectionTarget = null;
+    if (section) {
+      // Keep the section below the sticky navigation, which wraps at narrow widths.
+      const headerHeight = $(".topbar")?.getBoundingClientRect().height ?? 0;
+      window.scrollTo({
+        top: window.scrollY + section.getBoundingClientRect().top - headerHeight,
+        behavior: "smooth",
+      });
+    }
   }
 }
 
