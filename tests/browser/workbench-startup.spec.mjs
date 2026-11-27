@@ -108,3 +108,103 @@ test("Tests retries a failed catalog without losing keyboard focus", async ({ pa
     await app.close();
   }
 });
+
+test("first Tests visit waits for a concurrent Build save before offering Run all", ({ page }) =>
+  checkCatalogDuringSave(page, "saved"));
+
+test("first Tests visit uses the valid catalog after a concurrent Build save is rejected", ({ page }) =>
+  checkCatalogDuringSave(page, "rejected"));
+
+test("first Tests visit discards a stale response after the post-save refresh fails", ({ page }) =>
+  checkCatalogDuringSave(page, "refresh-error"));
+
+async function checkCatalogDuringSave(page, outcome) {
+  const saveSucceeds = outcome !== "rejected";
+  const app = await startBrowserApp((request) => [
+    200,
+    {
+      model: "jev-1.14.0",
+      answers: {
+        department: { type: "choice", choice: "billing", probabilities: { billing: 1 }, confidence: 1 },
+        frustration: {
+          type: "score",
+          score: 1,
+          legend: Object.fromEntries(request.questions.frustration.criteria.entries()),
+          probabilities: { 1: 1 },
+          confidence: 1,
+        },
+        is_urgent: { type: "noul", noul: 0.9 },
+      },
+      usage: { input_tokens: 100, output_tokens: 3 },
+    },
+  ]);
+  const { promise: captured, resolve: capture } = Promise.withResolvers();
+  const { promise: oldReady, resolve: releaseOld } = Promise.withResolvers();
+  const { promise: refreshReady, resolve: releaseRefresh } = Promise.withResolvers();
+  try {
+    let gets = 0;
+    await page.route("**/api/workbench/items", async (route) => {
+      if (route.request().method() === "POST") {
+        if (saveSucceeds) return route.continue();
+        await refreshReady;
+        return route.fulfill({ status: 400, json: { error: "Test could not be saved" } });
+      }
+      if (++gets === 1) {
+        const response = await route.fetch();
+        capture();
+        await oldReady;
+        return route.fulfill({ response });
+      }
+      if (gets === 2) {
+        await refreshReady;
+        if (outcome === "refresh-error")
+          return route.fulfill({ status: 503, json: { error: "Catalog refresh unavailable" } });
+      }
+      await route.continue();
+    });
+    await page.goto(`${app.base}/workbench`);
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await page.getByRole("button", { name: "Save as test", exact: true }).click();
+    await page.getByPlaceholder(/^Test name/).fill("Test saved during startup");
+    await page.getByRole("button", { name: "Advanced", exact: true }).click();
+    const tests = page.getByRole("tab", { name: /^Tests/ });
+    await tests.click();
+    await captured;
+    await page.getByRole("tab", { name: "Build" }).click();
+    const pending = page.waitForRequest(
+      (request) =>
+        request.method() === (saveSucceeds ? "GET" : "POST") && request.url().endsWith("/api/workbench/items"),
+    );
+    await page.getByRole("button", { name: "Save to data/workbench/" }).click();
+    await pending;
+    await tests.click();
+    if (outcome === "refresh-error") {
+      releaseRefresh();
+      await expect(page.getByText("Catalog refresh unavailable", { exact: true })).toBeVisible();
+    }
+    const oldResponse = page.waitForResponse(
+      (response) => response.request().method() === "GET" && response.url().endsWith("/api/workbench/items"),
+    );
+    releaseOld();
+    await (await oldResponse).finished();
+    if (outcome === "refresh-error") {
+      const panel = page.getByRole("tabpanel", { name: "Tests" });
+      await expect(panel.getByRole("alert")).toContainText("The catalog changed while loading.");
+      await page.getByRole("button", { name: "Try again" }).click();
+    } else {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await expect(page.getByRole("status").filter({ hasText: "Loading Tests" })).toBeVisible();
+      releaseRefresh();
+    }
+    if (saveSucceeds) {
+      await expect(page.getByText("Test saved during startup", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Run all 1 tests$/ })).toBeEnabled();
+    } else {
+      await expect(page.getByRole("button", { name: /^Run all 0 tests$/ })).toBeDisabled();
+    }
+  } finally {
+    releaseOld();
+    releaseRefresh();
+    await app.close();
+  }
+}

@@ -42,7 +42,7 @@ const TABS = [
   ["toolbox", "Toolbox"],
 ];
 const BASIC_TABS = new Set(["build", "bulk"]);
-const deferredPanels = {
+const panelDefinitions = {
   tests: {
     async load() {
       const { renderTests } = await import("./workbench-tests.js");
@@ -67,6 +67,7 @@ const deferredPanels = {
     },
   },
 };
+const deferredPanels = new Map(Object.entries(panelDefinitions));
 // Lab surfaces of the page shell and the Toolbox tab (contract: static/js/lab/surfaces/workbench-shell.js). The shell's
 // ctx is built once and mounted on every render, so its commands reach every tab. Page code reaches Lab only through
 // W, so views rendered in tests/js see no Lab.
@@ -337,6 +338,7 @@ function renderTabs() {
 function renderDeferredPanel(tab, panel) {
   if (panel.content) return panel.content.render();
   const label = TABS.find(([id]) => id === tab)[1];
+  if (panel.failed === "catalog" && W.items !== null) panel.failed = null;
   if (panel.failed === "module") {
     return h(
       "p",
@@ -348,7 +350,7 @@ function renderDeferredPanel(tab, panel) {
     return h(
       "div",
       { class: "panel panel-body" },
-      h("p", { role: "alert" }, `Could not load ${label}.`),
+      h("p", { role: "alert" }, `Could not load ${label}. ${panel.catalogError}`),
       h(
         "button",
         {
@@ -368,24 +370,35 @@ function renderDeferredPanel(tab, panel) {
 }
 
 async function loadDeferredPanel(tab, panel) {
+  const catalogRevision = W.testCatalogRevision;
   const catalog =
     tab === "tests" && W.items === null
       ? api("/api/workbench/items").then(
-          ({ items }) => {
-            // A Build save can refresh the catalog while the first Tests visit is loading.
-            W.items ??= items;
-            return true;
-          },
-          () => W.items !== null,
+          ({ items }) => ({ items }),
+          (error) => ({ error }),
         )
-      : true;
+      : null;
   try {
-    const [content, catalogReady] = await Promise.all([panel.load(), catalog]);
-    if (catalogReady) {
-      panel.content = content;
-    } else {
-      panel.failed = "catalog";
+    const [content, result] = await Promise.all([panel.load(), catalog]);
+    if (tab === "tests") {
+      // A first-visit response can predate a Build save. Prefer the post-save refresh.
+      const saveError = await W.testSave?.then(
+        () => null,
+        (error) => error,
+      );
+      if (W.items === null) {
+        const catalogChanged = W.testCatalogRevision !== catalogRevision;
+        if (catalogChanged || result?.error) {
+          panel.failed = "catalog";
+          panel.catalogError = catalogChanged
+            ? saveError?.message || "The catalog changed while loading."
+            : result.error.message;
+        } else {
+          W.items = result.items;
+        }
+      }
     }
+    if (!panel.failed) panel.content = content;
   } catch {
     panel.failed = "module";
   }
@@ -400,7 +413,7 @@ function renderView() {
     case "tests":
     case "compare":
     case "examples":
-      view = renderDeferredPanel(W.tab, deferredPanels[W.tab]);
+      view = renderDeferredPanel(W.tab, deferredPanels.get(W.tab));
       break;
     case "bulk":
       view = renderBulk();
@@ -412,14 +425,14 @@ function renderView() {
       view = renderBuild();
   }
   const panel = mount("#view", view);
-  const deferred = deferredPanels[W.tab];
+  const deferred = deferredPanels.get(W.tab);
   panel.setAttribute("aria-labelledby", `tab-${W.tab}`);
   panel.tabIndex = deferred && !deferred.content && deferred.failed !== "catalog" ? 0 : -1;
   if (W.tab === "bulk") {
     if (W.advanced) updateCal();
     updatePolicy();
   }
-  if (W.tab === "compare") deferredPanels.compare.content?.update();
+  if (W.tab === "compare") deferred?.content?.update();
 }
 
 // Browser history and fresh links use the same registered pack/tool keys as the Toolbox picker.
@@ -468,7 +481,7 @@ window.addEventListener(
   "resize",
   debounce(() => {
     if (W.tab === "bulk" && W.advanced) updateCal();
-    if (W.tab === "compare") deferredPanels.compare.content?.update();
+    if (W.tab === "compare") deferredPanels.get("compare").content?.update();
   }, 150),
 );
 boot().catch(handleError);

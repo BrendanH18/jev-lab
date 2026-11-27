@@ -23,8 +23,8 @@
 // data (live getters):
 //   tab          string   the open tab's id: "build" | "tests" | "bulk" | "compare" | "examples" | "toolbox"
 //   tabs         [{ id, label, position, active, count }]   the tab bar in order. position is 1-based; active is true
-//                         for exactly the open tab; count is the number of saved tests for "tests" (0 included, the
-//                         label shows it when above 0) and null for every other tab.
+//                         for exactly the open tab; count is the number of saved tests for "tests" (0 included),
+//                         or null when the page reports its catalog count as unknown or for any other tab.
 //   previousTab  string | null   the tab that was open before the current one in this page session; null at first
 //                         and whenever no other tab has been shown yet.
 //   guideOpen    boolean  whether the Workbench guide disclosure is open
