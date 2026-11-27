@@ -200,9 +200,9 @@ bug #91 and Dependabot PR #86.
 | Workbench boot | 168 modules, 4.28 MB | Lab packs load on first use; not remeasured | ≤25 modules, ≤500 KB |
 | Client backends | SDK + Python 3.9 `urllib` fallback | SDK only | SDK only |
 | Third-party requests from the app | Google Fonts | None | None |
-| Largest Workbench module | 2,855 lines | 1,188 lines | ≤1,200 lines |
+| Largest Workbench module | 2,855 lines | 1,168 lines | ≤1,200 lines |
 | Browser-tested flows | 0 | 7 specs | 4 |
-| `AGENTS.md` | 524 lines | 249 lines | ≤250 lines, invariants intact |
+| `AGENTS.md` | 524 lines | 248 lines | ≤250 lines, invariants intact |
 | Improvement docs | 16 shards | 1 changelog | 1 changelog |
 | Newcomer path | Undefined | Reviews walkthrough and Basic view; walkthrough not yet run | One path, most testers finish it unaided |
 
