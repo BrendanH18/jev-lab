@@ -4,7 +4,6 @@
 import { $, api, debounce, h, handleError, icon, initChrome, mount, toast } from "./common.js";
 import { readHandoff } from "./handoff.js";
 import { renderWorkbenchGuide, tabForKey, workflowSteps } from "./workbench-guide.js";
-import { createGuidelines } from "./guidelines.js";
 import { W } from "./workbench-state.js";
 import { LAB } from "./lab/pages/workbench.js";
 import { installLab, labEnv } from "./lab/env.js";
@@ -18,16 +17,6 @@ import {
   syncAttachedSets,
 } from "./workbench-bulk-inputs.js";
 
-// Labeling guidelines (static/js/guidelines.js): human-only, shown beside label controls, never sent to the model.
-// Kept on W so a view rendered without it (tests/js) simply shows no guideline.
-W.guides = createGuidelines({
-  h,
-  api,
-  handleError,
-  toast,
-  rerender: () => render(),
-  beforeSave: (id) => deferredPanels.get("bulk").content?.confirmReviewDiscard(id) ?? true,
-});
 // Lab (static/js/lab): this page's packs, the ctx builders of its surfaces (W.lab.builders) and the env they act
 // through. Kept on W, like the guidelines, so a view rendered without it (tests/js) simply shows no Lab tools.
 W.lab = LAB;

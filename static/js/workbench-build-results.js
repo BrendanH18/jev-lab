@@ -1,20 +1,7 @@
-// Build Run, results, question checks, code export and saving a test.
-import {
-  $,
-  answerCard,
-  api,
-  copyText,
-  currentStatus,
-  h,
-  handleError,
-  icon,
-  pct,
-  photoView,
-  statusBadge,
-  toast,
-} from "./common.js";
+// Build answers, question check and export output, and saving a test.
+import { answerCard, api, copyText, h, handleError, icon, pct, photoView, statusBadge, toast } from "./common.js";
 import { buildRawText } from "./workbench-build-editor.js";
-import { imageFor, imageNames, imagesPayload } from "./workbench-build-inputs.js";
+import { imageFor, imagesPayload } from "./workbench-build-inputs.js";
 import {
   buildContext,
   buildResultStale,
@@ -22,23 +9,9 @@ import {
   questionEditorError,
   setBuildBaseline,
   toQuestions,
-  validBuildQuestions,
 } from "./workbench-build.js";
 import { W } from "./workbench-state.js";
 import { render } from "./workbench.js";
-
-export let buildRunContext = null;
-let buildRunSequence = 0;
-export let buildRunning = false;
-
-export function invalidateBuildRun() {
-  buildRunSequence += 1;
-  buildRunning = false;
-}
-
-export function clearBuildRunContext() {
-  buildRunContext = null;
-}
 
 function defaultExpect(answer) {
   if (answer.type === "choice") return { choice: answer.choice };
@@ -67,27 +40,6 @@ export function openBuildSaveForm() {
   if (W.saveOpen && !Object.keys(W.expect).length)
     W.expect = Object.fromEntries(Object.entries(W.result.answers).map(([k, a]) => [k, defaultExpect(a)]));
   render();
-}
-
-export function boxWarning() {
-  const st = currentStatus();
-  const hasBox = W.questions.some((q) => q.type === "box");
-  if (!hasBox || !st.configured || st.supports_box) return null;
-  return h(
-    "div",
-    { class: "panel-body", style: { paddingBottom: 0 } },
-    h(
-      "div",
-      { class: "callout" },
-      icon("alert"),
-      h(
-        "div",
-        {},
-        h("b", {}, `${st.model} cannot answer Box questions.`),
-        h("div", { class: "muted" }, "Box needs Jev 1.14 or later. Change the model from the key menu in the top bar."),
-      ),
-    ),
-  );
 }
 
 // Draw every Box answer on the picture its question points at.
@@ -123,55 +75,6 @@ export function renderBoxes() {
         )
       : null,
   );
-}
-
-export async function run() {
-  if (buildRunning) return;
-  const questions = validBuildQuestions();
-  if (!questions) return;
-  const context = buildContext();
-  const sequence = ++buildRunSequence;
-  buildRunning = true;
-  render();
-  try {
-    const images = W.images.map((i) => ({ ...i }));
-    const result = await api("/api/workbench/run", {
-      state: parseState(W.stateText),
-      questions,
-      images: imagesPayload(),
-    });
-    if (sequence !== buildRunSequence) return;
-    result.images = images;
-    W.result = result;
-    buildRunContext = context;
-    W.saveOpen = false;
-  } catch (e) {
-    handleError(e);
-  } finally {
-    if (sequence === buildRunSequence) {
-      buildRunning = false;
-      render();
-    }
-  }
-}
-
-export async function checkQuestions({ scroll = true } = {}) {
-  const questions = validBuildQuestions();
-  if (!questions) return;
-  const context = buildContext();
-  try {
-    const report = await api("/api/workbench/lint", {
-      state: parseState(W.stateText),
-      questions,
-      images: imageNames(),
-    });
-    if (context !== buildContext()) return;
-    W.lint = report;
-    render();
-    if (scroll) $("#lint")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) {
-    handleError(e);
-  }
 }
 
 export function renderLint() {
@@ -264,25 +167,6 @@ export function renderLint() {
       ),
     ),
   );
-}
-
-export async function exportCode() {
-  try {
-    const questions = validBuildQuestions();
-    if (!questions) return;
-    const context = buildContext();
-    const exported = await api("/api/workbench/export", {
-      state: parseState(W.stateText),
-      questions,
-      images: imageNames(),
-    });
-    if (context !== buildContext()) return;
-    W.exported = exported;
-    render();
-    $("#export")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) {
-    handleError(e);
-  }
 }
 
 export function renderExport() {

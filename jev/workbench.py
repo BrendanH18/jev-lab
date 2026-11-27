@@ -129,10 +129,10 @@ def request_images(state: Any, questions: Dict[str, dict], specs: Any) -> Dict[s
     return assets
 
 
-def run(client: JevClient, state: Any, questions: Any, image_specs: Any = None) -> dict:
+def run(client: JevClient, state: Any, questions: Any, image_specs: Any = None, *, model: str | None = None) -> dict:
     state, questions = validate_state(state), validate_questions(questions)
     assets = request_images(state, questions, image_specs)
-    result = client.system_one(state, questions, assets=assets or None)
+    result = client.system_one(state, questions, assets=assets or None, model=model)
     return {"answers": result.answers, "meta": result.meta(), "trace": result.trace()}
 
 

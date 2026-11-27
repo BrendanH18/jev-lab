@@ -20,6 +20,9 @@ import { bulkPreflightBody, checkBulkPreflight } from "./bulk-preflight.js";
 import { bulkRetryContext, bulkRetryRows, bulkRetryPlan, mergeBulkRetry, clearBulkRetryReports } from "./bulk-retry.js";
 import { datasetEditsBody, confirmDatasetEditsDiscard, datasetEditsUnsaved } from "./dataset-edits.js";
 import { confirmSpend, estimateLine } from "./estimate.js";
+import { createGuidelines } from "./guidelines.js";
+import * as policyBuilders from "./lab/surfaces/workbench-analysis.js";
+import * as reviewBuilders from "./lab/surfaces/workbench-checks.js";
 import { W } from "./workbench-state.js";
 import { questionEditorError, toQuestions } from "./workbench-build.js";
 import {
@@ -57,6 +60,9 @@ import { renderCosts } from "./workbench-costs.js";
 import { renderRules, GATEABLE, resetPolicy, repolicy, renderPolicy, updatePolicy } from "./workbench-policy.js";
 
 export function bulkPanel() {
+  if (W.lab) Object.assign(W.lab.builders, policyBuilders, reviewBuilders);
+  // Human-only guidance for datasets and their label controls.
+  W.guides = createGuidelines({ h, api, handleError, toast, rerender: render, beforeSave: confirmReviewDiscard });
   const resize = () => {
     if (W.advanced) updateCal();
   };
@@ -68,7 +74,6 @@ export function bulkPanel() {
     },
     resize,
     drafts: bulkPanelDrafts,
-    confirmReviewDiscard,
   };
 }
 
