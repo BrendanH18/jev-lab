@@ -325,13 +325,16 @@ test("shellLabCtx: built once from the page's state, with the page's own tab swi
     "TABS",
     "workflowSteps",
     "guideSnapshot",
-    "unsavedWorkbench",
+    "buildUnsaved",
+    "bulkUnsaved",
+    "deferredPanels",
     "navigateGuideStep",
     "openWorkbenchTab",
     "renderGuide",
     "$",
     "render",
-    `let wbShellCtx = null; let wbShellReady = true; let wbShellPreviousTab = "tests"; ${body("shellLabCtx")}; return shellLabCtx;`,
+    `let wbShellCtx = null; let wbShellReady = true; let wbShellPreviousTab = "tests";
+    ${body("unsavedWorkbench")}; ${body("shellLabCtx")}; return shellLabCtx;`,
   );
   const snapshot = {
     questionCount: 2,
@@ -341,12 +344,15 @@ test("shellLabCtx: built once from the page's state, with the page's own tab swi
     gateableCount: 2,
     hasSavedCheck: true,
   };
+  const bulkPanel = {};
   const shellLab = make(
     W,
     SHELL_TABS,
     workflowSteps,
     () => snapshot,
-    () => ({ build: true, bulk: false }),
+    () => false,
+    () => false,
+    new Map([["bulk", bulkPanel]]),
     (tab, target) => calls.push(["navigate", tab, target]),
     (tab) => {
       calls.push(["open", tab]);
@@ -363,7 +369,9 @@ test("shellLabCtx: built once from the page's state, with the page's own tab swi
   assert.equal(ctx.data.previousTab, "tests");
   assert.deepEqual(ctx.data.counts, { savedTests: 2, examples: 1, datasets: 2, checks: 1 });
   assert.deepEqual(ctx.data.workspace, snapshot);
-  assert.equal(ctx.data.unsaved.build, true);
+  assert.equal(ctx.data.unsaved.any, false);
+  bulkPanel.content = { drafts: () => ({ review: true }) };
+  assert.equal(ctx.data.unsaved.review, true);
   assert.equal(ctx.data.unsaved.any, true);
   ctx.actions.openTab("toolbox");
   ctx.actions.goToStep("labels");
